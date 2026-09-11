@@ -113,7 +113,7 @@ describe("AttendanceTable — accesibilidad", () => {
     ]);
 
     const row = within(screen.getByTestId("attendance-row-1"));
-    fireEvent.click(row.getByRole("button", { name: /Evaluar/i }));
+    fireEvent.click(row.getByRole("button", { name: /Evaluar|Editar/i }));
 
     const groups = screen.getAllByRole("group");
     // Estado de asistencia + RPE OMNI + Esfuerzo/Actitud/Técnica = 5 grupos
@@ -244,7 +244,7 @@ describe("AttendanceTable — accesibilidad", () => {
         makeAttendance({ id: 1, athlete_id: 1, athlete_name: "Sebastián García", status: "presente" }),
       ]);
       const row = within(screen.getByTestId("attendance-row-1"));
-      fireEvent.click(row.getByRole("button", { name: /Evaluar/i }));
+      fireEvent.click(row.getByRole("button", { name: /Evaluar|Editar/i }));
 
       const results = await axe(container);
       expect(results).toHaveNoViolations();
@@ -256,6 +256,31 @@ describe("AttendanceTable — accesibilidad", () => {
         makeAttendance({ id: 2, athlete_id: 2, athlete_name: "Laura Pérez", status: "ausente" }),
       ]);
       fireEvent.click(screen.getByRole("radio", { name: /Ausencias/i }));
+
+      const results = await axe(container);
+      expect(results).toHaveNoViolations();
+    });
+
+    it("sin violaciones axe en la fila con el campo de razón visible (debajo del control de Estado, sin columna propia)", async () => {
+      const { container } = renderTable([
+        makeAttendance({ id: 1, athlete_id: 1, athlete_name: "Sebastián García", status: "ausente", excuse_reason: "Cita médica" }),
+      ]);
+      // `AttendanceTable` renderiza card móvil + fila de escritorio a la vez
+      // en jsdom (responsividad solo CSS) — ambas muestran el mismo campo de
+      // razón, así que se acota a la fila de escritorio para evitar
+      // "multiple elements found".
+      const row = within(screen.getByTestId("attendance-row-1"));
+      expect(row.getByRole("textbox", { name: /Razón de ausencia/i })).toBeInTheDocument();
+
+      const results = await axe(container);
+      expect(results).toHaveNoViolations();
+    });
+
+    it("sin violaciones axe en la fila con razón visible y la alerta 'Falta razón' activa", async () => {
+      const { container } = renderTable([
+        makeAttendance({ id: 1, athlete_id: 1, athlete_name: "Sebastián García", status: "ausente", excuse_reason: null }),
+      ]);
+      expect(screen.getAllByTestId("needs-reason-alert").length).toBeGreaterThanOrEqual(1);
 
       const results = await axe(container);
       expect(results).toHaveNoViolations();

@@ -46,7 +46,12 @@ export const RUBRIC_VALUES = [1, 2, 3, 4, 5];
  * que el navegador interpole entre los dos tokens existentes sin declarar
  * 11 hex nuevos.
  */
+// Rampa de un solo tono de marca, de un teal muy claro (0) a `--color-primary`
+// (10). Los números van en `charcoal`: contraste WCAG AA >= 5.5:1 incluso en
+// el tramo más oscuro (#20b7c9). La rampa anterior (primary-light → tier-a con
+// números blancos) quedaba entre 1.97:1 y 4.45:1, por debajo de AA en todos
+// los tramos.
 export function rpeSegmentColor(n: number): string {
-  const pct = Math.round((n / 10) * 100);
-  return `color-mix(in oklch, var(--color-tier-a) ${pct}%, var(--color-primary-light))`;
+  const pct = 18 + Math.round((n / 10) * 82);
+  return `color-mix(in oklch, var(--color-primary) ${pct}%, white)`;
 }

@@ -23,8 +23,11 @@ interface RubricSlidersProps {
 // los extremos vía las clases `data-[spacing=0]:first/last` del wrapper de
 // `ToggleGroup`) — la PALABRA de cada nivel es visible en vez de solo el
 // número, pedido del coach para que la rúbrica se lea sin decodificar nada.
+// `text-sm` (ronda de pulido 2026-09-11): con la columna derecha del panel
+// en 440px y 5 opciones, el texto más grande sigue sin partirse (la clase
+// base de `Toggle` ya fuerza `whitespace-nowrap`).
 const rubricWordItemClass =
-  "min-h-12 flex-1 shrink-0 border-r border-[rgba(34,42,53,0.15)] px-1 text-center text-[11px] font-medium text-charcoal transition-colors last:border-r-0 data-[state=on]:bg-charcoal data-[state=on]:text-white";
+  "min-h-12 flex-1 shrink-0 border-r border-[rgba(34,42,53,0.15)] px-1 text-center text-sm font-medium text-charcoal transition-colors last:border-r-0 data-[state=on]:bg-charcoal data-[state=on]:text-white";
 
 /**
  * Esfuerzo / Actitud / Técnica (1-5) — OPCIONALES: `null` es un valor
@@ -51,12 +54,12 @@ function RubricRow({
         const val = field.value ?? null;
         return (
           <div className="space-y-1">
-            <label className="text-xs font-medium text-charcoal">
-              {label}
+            <div className="flex items-center gap-1.5">
+              <label className="text-xs font-medium text-charcoal">{label}</label>
               {val == null && (
-                <span className="ml-1.5 font-normal text-mid-gray">Sin registrar</span>
+                <span className="text-[10px] font-normal text-mid-gray">Sin registrar</span>
               )}
-            </label>
+            </div>
             <ToggleGroup
               type="single"
               value={val == null ? "" : String(val)}
@@ -105,7 +108,12 @@ export function RubricSliders({ control, disabled, feedbackLength, onClear }: Ru
     !!(feedback && feedback.trim());
 
   return (
-    <div className="max-w-4xl space-y-4">
+    // Ancho acotado a 1040px = 560 (RPE) + 40 (gap-x-10) + 440 (rúbricas) en
+    // `lg+`, pedido del coach 2026-09-11 tras ver la pantalla real (el
+    // contenido quedaba mucho más angosto que el panel gris, sin alinearse
+    // con nada). La cabecera y el comentario comparten ese mismo ancho, así
+    // que "Limpiar" alinea con el borde derecho del contenido, no del panel.
+    <div className="max-w-[1040px] space-y-4">
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-charcoal">Evaluación</p>
@@ -123,19 +131,25 @@ export function RubricSliders({ control, disabled, feedbackLength, onClear }: Ru
         )}
       </div>
 
-      {/* lg+: RPE + comentario a la izquierda, las 3 rúbricas apiladas a la
-          derecha (session-detail-redesign, feedback del coach 2026-09-11).
+      {/* lg+: RPE a la izquierda (560px), las 3 rúbricas apiladas a la
+          derecha (440px), comentario debajo de ambas a lo ancho completo.
           En móvil todo se apila en una sola columna. */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <div className="space-y-4">
-          <Controller
-            name="rpe_omni"
-            control={control}
-            render={({ field }) => (
-              <RpeScale value={field.value ?? null} onChange={field.onChange} disabled={disabled} />
-            )}
-          />
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,560px)_minmax(0,440px)] lg:gap-x-10 lg:gap-y-6">
+        <Controller
+          name="rpe_omni"
+          control={control}
+          render={({ field }) => (
+            <RpeScale value={field.value ?? null} onChange={field.onChange} disabled={disabled} />
+          )}
+        />
 
+        <div className="space-y-4">
+          <RubricRow label="Esfuerzo" name="rubric_effort" control={control} disabled={disabled} />
+          <RubricRow label="Actitud" name="rubric_attitude" control={control} disabled={disabled} />
+          <RubricRow label="Técnica" name="rubric_technique" control={control} disabled={disabled} />
+        </div>
+
+        <div className="lg:col-span-2">
           <Controller
             name="individual_feedback"
             control={control}
@@ -158,12 +172,6 @@ export function RubricSliders({ control, disabled, feedbackLength, onClear }: Ru
               </div>
             )}
           />
-        </div>
-
-        <div className="space-y-4">
-          <RubricRow label="Esfuerzo" name="rubric_effort" control={control} disabled={disabled} />
-          <RubricRow label="Actitud" name="rubric_attitude" control={control} disabled={disabled} />
-          <RubricRow label="Técnica" name="rubric_technique" control={control} disabled={disabled} />
         </div>
       </div>
     </div>

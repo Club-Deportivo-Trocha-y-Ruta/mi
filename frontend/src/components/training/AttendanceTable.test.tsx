@@ -272,7 +272,7 @@ describe("AttendanceTable", () => {
 
       const table = within(screen.getByRole("table"));
       const row = within(screen.getByTestId("attendance-row-1"));
-      fireEvent.click(row.getByRole("button", { name: /Evaluar/i }));
+      fireEvent.click(row.getByRole("button", { name: /Evaluar|Editar/i }));
 
       const rpeGroup = table.getByRole("group", { name: "RPE OMNI 0-10" });
       fireEvent.click(within(rpeGroup).getByRole("radio", { name: "RPE OMNI 0-10: 6 — Algo duro" }));
@@ -388,7 +388,7 @@ describe("AttendanceTable", () => {
       // defecto — hay que pulsar "Evaluar" antes de que aparezcan sus
       // opciones discretas (feature 028 T018: 11 opciones 0-10).
       const row = within(screen.getByTestId("attendance-row-1"));
-      fireEvent.click(row.getByRole("button", { name: /Evaluar/i }));
+      fireEvent.click(row.getByRole("button", { name: /Evaluar|Editar/i }));
       const options = screen.getAllByRole("radio", { name: /RPE OMNI/i });
       expect(options.length).toBeGreaterThanOrEqual(1);
     });
@@ -525,7 +525,7 @@ describe("AttendanceTable", () => {
       const row = within(screen.getByTestId("attendance-row-1"));
       expect(table.queryByRole("group", { name: "RPE OMNI 0-10" })).not.toBeInTheDocument();
 
-      fireEvent.click(row.getByRole("button", { name: /Evaluar/i }));
+      fireEvent.click(row.getByRole("button", { name: /Evaluar|Editar/i }));
       expect(table.getByRole("group", { name: "RPE OMNI 0-10" })).toBeInTheDocument();
 
       fireEvent.click(row.getByRole("button", { name: /Cerrar evaluación/i }));
@@ -535,7 +535,7 @@ describe("AttendanceTable", () => {
     it("no muestra el botón Evaluar cuando el estado no permite rúbrica", () => {
       renderTable([makeAttendance({ status: "ausente" })]);
       const row = within(screen.getByTestId("attendance-row-1"));
-      expect(row.queryByRole("button", { name: /Evaluar/i })).not.toBeInTheDocument();
+      expect(row.queryByRole("button", { name: /Evaluar|Editar/i })).not.toBeInTheDocument();
     });
 
     it("muestra el badge 'Sin evaluar' cuando no hay evaluación guardada y el formulario no fue tocado", () => {
@@ -565,9 +565,7 @@ describe("AttendanceTable", () => {
       ]);
       const row = within(screen.getByTestId("attendance-row-1"));
       expect(row.getByText(/RPE 7/)).toBeInTheDocument();
-      expect(row.getByText("E 4")).toBeInTheDocument();
-      expect(row.getByText("A 3")).toBeInTheDocument();
-      expect(row.getByText("T 5")).toBeInTheDocument();
+      expect(row.getByText("Esfuerzo 4 · Actitud 3 · Técnica 5")).toBeInTheDocument();
     });
 
     it("una evaluación parcial (solo Actitud + comentario) muestra únicamente ese chip, sin inventar los demás", () => {
@@ -582,10 +580,10 @@ describe("AttendanceTable", () => {
         }),
       ]);
       const row = within(screen.getByTestId("attendance-row-1"));
-      expect(row.getByText("A 4")).toBeInTheDocument();
+      expect(row.getByText("Actitud 4")).toBeInTheDocument();
       expect(row.queryByText(/RPE/)).not.toBeInTheDocument();
-      expect(row.queryByText(/^E \d/)).not.toBeInTheDocument();
-      expect(row.queryByText(/^T \d/)).not.toBeInTheDocument();
+      expect(row.queryByText(/Esfuerzo/)).not.toBeInTheDocument();
+      expect(row.queryByText(/Técnica/)).not.toBeInTheDocument();
       expect(row.queryByText("Sin evaluar")).not.toBeInTheDocument();
       expect(row.getByLabelText("Con comentario del coach")).toBeInTheDocument();
     });
@@ -596,15 +594,43 @@ describe("AttendanceTable", () => {
       ]);
       const table = within(screen.getByRole("table"));
       const row = within(screen.getByTestId("attendance-row-1"));
-      fireEvent.click(row.getByRole("button", { name: /Evaluar/i }));
+      fireEvent.click(row.getByRole("button", { name: /Evaluar|Editar/i }));
 
       const effortGroup = table.getByRole("group", { name: "Esfuerzo" });
       fireEvent.click(within(effortGroup).getByRole("radio", { name: "Esfuerzo: 5 — Excelente" }));
 
-      expect(row.getByText("E 5")).toBeInTheDocument();
+      expect(row.getByText(/Esfuerzo 5/)).toBeInTheDocument();
     });
 
-    it("el botón 'Limpiar evaluación' pone en null los 4 campos y vacía el comentario, y vuelve a 'Sin evaluar'", () => {
+    it("el botón cambia de 'Evaluar' a 'Editar' en cuanto el formulario tiene algún valor (sin esperar el autosave)", () => {
+      renderTable([
+        makeAttendance({
+          status: "presente",
+          rpe_omni: null,
+          rubric_effort: null,
+          rubric_attitude: null,
+          rubric_technique: null,
+          individual_feedback: null,
+        }),
+      ]);
+      const table = within(screen.getByRole("table"));
+      const row = within(screen.getByTestId("attendance-row-1"));
+      expect(row.getByRole("button", { name: /^Evaluar a /i })).toBeInTheDocument();
+
+      fireEvent.click(row.getByRole("button", { name: /^Evaluar a /i }));
+      const attitudeGroup = table.getByRole("group", { name: "Actitud" });
+      fireEvent.click(within(attitudeGroup).getByRole("radio", { name: "Actitud: 4 — Bueno" }));
+
+      // Mientras el panel sigue abierto el botón dice "Cerrar" (tiene
+      // prioridad sobre el estado de evaluación); al cerrarlo debe reflejar
+      // que ya hay una evaluación (aunque el autosave de 500ms no haya corrido).
+      expect(row.getByRole("button", { name: /^Cerrar evaluación de /i })).toBeInTheDocument();
+      fireEvent.click(row.getByRole("button", { name: /^Cerrar evaluación de /i }));
+
+      expect(row.getByRole("button", { name: /^Editar evaluación de /i })).toBeInTheDocument();
+    });
+
+    it("el botón 'Limpiar' pone en null los 4 campos y vacía el comentario, y vuelve a 'Sin evaluar'", () => {
       renderTable([
         makeAttendance({
           status: "presente",
@@ -617,9 +643,9 @@ describe("AttendanceTable", () => {
       ]);
       const table = within(screen.getByRole("table"));
       const row = within(screen.getByTestId("attendance-row-1"));
-      fireEvent.click(row.getByRole("button", { name: /Evaluar/i }));
+      fireEvent.click(row.getByRole("button", { name: /Evaluar|Editar/i }));
 
-      fireEvent.click(table.getByRole("button", { name: /Limpiar evaluación/i }));
+      fireEvent.click(table.getByRole("button", { name: /^Limpiar$/i }));
 
       expect(row.getByText("Sin evaluar")).toBeInTheDocument();
       expect(table.getAllByText("Sin registrar").length).toBeGreaterThanOrEqual(4);
@@ -663,15 +689,39 @@ describe("AttendanceTable", () => {
       ];
     }
 
-    it("muestra el resumen agregado de convocados/presentes/tarde/ausencias/sin evaluar/sin razón", () => {
+    it("no renderiza una línea de resumen de texto aparte (los conteos ya están en los chips de filtro)", () => {
       renderTable(manyAttendances());
-      const summary = screen.getByTestId("attendance-summary");
-      expect(summary).toHaveTextContent("9 convocados");
-      expect(summary).toHaveTextContent("5 presentes");
-      expect(summary).toHaveTextContent("1 tarde");
-      expect(summary).toHaveTextContent("3 ausencias");
-      expect(summary).toHaveTextContent("1 sin evaluar");
-      expect(summary).toHaveTextContent("1 sin razón");
+      expect(screen.queryByTestId("attendance-summary")).not.toBeInTheDocument();
+    });
+
+    it("los chips de filtro muestran el conteo correcto y 'Todos' siempre está visible", () => {
+      renderTable(manyAttendances());
+      const toolbar = within(screen.getByTestId("attendance-toolbar"));
+      expect(toolbar.getByRole("radio", { name: "Todos (9)" })).toBeInTheDocument();
+      expect(toolbar.getByRole("radio", { name: "Presentes (5)" })).toBeInTheDocument();
+      expect(toolbar.getByRole("radio", { name: "Ausencias (3)" })).toBeInTheDocument();
+      expect(toolbar.getByRole("radio", { name: "Sin evaluar (1)" })).toBeInTheDocument();
+      expect(toolbar.getByRole("radio", { name: "Falta razón (1)" })).toBeInTheDocument();
+    });
+
+    it("oculta los chips de filtro con conteo 0 (salvo 'Todos')", () => {
+      // Un solo atleta ya evaluado y con razón: "Sin evaluar", "Falta razón"
+      // y "Ausencias" quedan en 0 y no deberían listarse como opciones.
+      renderTable([
+        makeAttendance({
+          status: "presente",
+          rpe_omni: 5,
+          rubric_effort: 3,
+          rubric_attitude: 3,
+          rubric_technique: 3,
+        }),
+      ]);
+      const toolbar = within(screen.getByTestId("attendance-toolbar"));
+      expect(toolbar.getByRole("radio", { name: "Todos (1)" })).toBeInTheDocument();
+      expect(toolbar.getByRole("radio", { name: "Presentes (1)" })).toBeInTheDocument();
+      expect(toolbar.queryByRole("radio", { name: /Sin evaluar/i })).not.toBeInTheDocument();
+      expect(toolbar.queryByRole("radio", { name: /Falta razón/i })).not.toBeInTheDocument();
+      expect(toolbar.queryByRole("radio", { name: /Ausencias/i })).not.toBeInTheDocument();
     });
 
     it("filtro 'Sin evaluar' muestra solo presente/tarde sin evaluación guardada", () => {
@@ -692,12 +742,15 @@ describe("AttendanceTable", () => {
       expect(screen.queryByTestId("attendance-row-4")).not.toBeInTheDocument();
     });
 
-    it("muestra mensaje cuando el filtro no deja ninguna fila", () => {
-      renderTable([
-        makeAttendance({ status: "presente", rpe_omni: 5, rubric_effort: 3, rubric_attitude: 3, rubric_technique: 3 }),
-      ]);
+    it("muestra mensaje cuando el filtro + búsqueda no dejan ninguna fila", () => {
+      // "Presentes" tiene 5 convocados (conteo > 0, así que el chip es
+      // visible), pero ninguno se llama "zzz" — la búsqueda lo reduce a 0.
+      renderTable(manyAttendances());
       const toolbar = within(screen.getByTestId("attendance-toolbar"));
-      fireEvent.click(toolbar.getByRole("radio", { name: /Sin evaluar/i }));
+      fireEvent.click(toolbar.getByRole("radio", { name: /^Presentes/i }));
+
+      const search = screen.getByLabelText("Buscar atleta");
+      fireEvent.change(search, { target: { value: "zzz" } });
 
       expect(screen.getByText(/Ningún atleta coincide con el filtro/i)).toBeInTheDocument();
     });
@@ -716,26 +769,32 @@ describe("AttendanceTable", () => {
       expect(screen.queryByTestId("attendance-row-1")).not.toBeInTheDocument();
     });
 
-    it("'Evaluar todos' expande la rúbrica de las filas visibles con rúbrica aplicable", () => {
+    it("'Expandir todo' expande la rúbrica de las filas visibles con rúbrica aplicable y cambia a 'Contraer todo'", () => {
       renderTable(manyAttendances());
-      fireEvent.click(screen.getByTestId("evaluate-all-button"));
+      const toggleButton = screen.getByTestId("toggle-expand-all-button");
+      expect(toggleButton).toHaveTextContent("Expandir todo");
+
+      fireEvent.click(toggleButton);
 
       // presente (1,6,7,8,9) + tarde (3) = 6 filas con rúbrica aplicable.
       expect(screen.getAllByRole("group", { name: "RPE OMNI 0-10" }).length).toBeGreaterThanOrEqual(6);
+      expect(screen.getByTestId("toggle-expand-all-button")).toHaveTextContent("Contraer todo");
     });
 
-    it("'Cerrar todos' colapsa las rúbricas expandidas de las filas visibles", () => {
+    it("'Contraer todo' colapsa las rúbricas expandidas de las filas visibles y vuelve a 'Expandir todo'", () => {
       renderTable(manyAttendances());
-      fireEvent.click(screen.getByTestId("evaluate-all-button"));
-      fireEvent.click(screen.getByTestId("collapse-all-button"));
+      const toggleButton = screen.getByTestId("toggle-expand-all-button");
+
+      fireEvent.click(toggleButton);
+      fireEvent.click(screen.getByTestId("toggle-expand-all-button"));
 
       expect(screen.queryByRole("group", { name: "RPE OMNI 0-10" })).not.toBeInTheDocument();
+      expect(screen.getByTestId("toggle-expand-all-button")).toHaveTextContent("Expandir todo");
     });
 
-    it("no muestra los botones globales cuando la tabla está deshabilitada", () => {
+    it("no muestra el botón de expandir/contraer todo cuando la tabla está deshabilitada", () => {
       renderTable(manyAttendances(), { disabled: true });
-      expect(screen.queryByTestId("evaluate-all-button")).not.toBeInTheDocument();
-      expect(screen.queryByTestId("collapse-all-button")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("toggle-expand-all-button")).not.toBeInTheDocument();
     });
   });
 });

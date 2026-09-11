@@ -74,16 +74,21 @@ const STATUS_LABELS: Record<AttendanceStatus, string> = {
 const STATUS_ORDER: AttendanceStatus[] = ["presente", "ausente", "justificado", "tarde", "lesionado"];
 
 // Color por estado activo, ajustado al feedback del coach 2026-09-11
-// (revisión de la pantalla real): solo verde y ámbar, ambos parte del
-// vocabulario de estados de la constitución (`--color-success`/`-warning`);
-// ausente/justificado/lesionado comparten un neutro `charcoal` — no son un
-// semáforo de tres colores negativos, son variantes de "no presente".
+// (revisión de la pantalla real a 1920px, segunda ronda): un bloque sólido
+// de color dominaba toda la tabla — se cambia a un tinte suave (fondo claro
+// + texto y borde del mismo color), igual que un chip de filtro. Presente/
+// tarde siguen usando el vocabulario de estados de la constitución
+// (`--color-success`/`-warning`, mezclado 12% sobre blanco); ausente/
+// justificado/lesionado comparten un neutro `light-gray`/`charcoal` — no son
+// un semáforo de tres colores negativos, son variantes de "no presente".
 const STATUS_ITEM_ACTIVE_CLASS: Record<AttendanceStatus, string> = {
-  presente: "data-[state=on]:bg-[var(--color-success)] data-[state=on]:text-white",
-  tarde: "data-[state=on]:bg-[var(--color-warning)] data-[state=on]:text-charcoal",
-  ausente: "data-[state=on]:bg-charcoal data-[state=on]:text-white",
-  justificado: "data-[state=on]:bg-charcoal data-[state=on]:text-white",
-  lesionado: "data-[state=on]:bg-charcoal data-[state=on]:text-white",
+  presente:
+    "data-[state=on]:bg-[color-mix(in_oklch,var(--color-success)_12%,white)] data-[state=on]:text-green-800 data-[state=on]:border-green-700",
+  tarde:
+    "data-[state=on]:bg-[color-mix(in_oklch,var(--color-warning)_12%,white)] data-[state=on]:text-amber-900 data-[state=on]:border-amber-700",
+  ausente: "data-[state=on]:bg-light-gray data-[state=on]:text-charcoal data-[state=on]:border-charcoal",
+  justificado: "data-[state=on]:bg-light-gray data-[state=on]:text-charcoal data-[state=on]:border-charcoal",
+  lesionado: "data-[state=on]:bg-light-gray data-[state=on]:text-charcoal data-[state=on]:border-charcoal",
 };
 
 const STATUS_KEY_MAP: Record<string, AttendanceStatus> = {
@@ -165,12 +170,12 @@ function matchesFilter(a: AttendanceWithAttribution, filter: FilterKey): boolean
 
 // ─── Control segmentado de Estado ───────────────────────────────────────────
 
-// Continuo (sin huecos, redondeado solo en los extremos vía las clases
-// `data-[spacing=0]:first/last` del wrapper de `ToggleGroup`) con la PALABRA
-// completa visible — feedback del coach 2026-09-11: las letras P/A/J/T/L
-// resultaban crípticas.
+// Chips de ancho de contenido (ronda de pulido 2026-09-11: el control se
+// estiraba a ~600px con `flex-1 w-full`, dominando la fila) — cada opción es
+// un botón independiente con borde propio; solo el activo se tiñe (ver
+// `STATUS_ITEM_ACTIVE_CLASS`).
 const statusItemBaseClass =
-  "min-h-12 flex-1 shrink-0 border-r border-[rgba(34,42,53,0.15)] px-2 text-xs font-medium text-charcoal transition-colors last:border-r-0";
+  "min-h-12 shrink-0 rounded-lg border border-[rgba(34,42,53,0.15)] px-3 text-xs font-medium text-charcoal transition-colors";
 
 function StatusToggleGroup({
   control,
@@ -192,7 +197,7 @@ function StatusToggleGroup({
           }}
           disabled={disabled}
           aria-label="Estado de asistencia"
-          className="flex w-full overflow-hidden rounded-lg shadow-ring"
+          className="inline-flex w-auto flex-wrap gap-1.5"
         >
           {STATUS_ORDER.map((key) => (
             <ToggleGroupItem
@@ -251,7 +256,7 @@ function EvaluationSummary({
     <div className="flex flex-wrap items-center gap-1.5">
       {rpe != null && (
         <span
-          className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-xs font-medium text-white"
+          className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-xs font-medium text-charcoal"
           style={{ backgroundColor: rpeSegmentColor(rpe) }}
           title={`RPE OMNI: ${rpe} — ${RPE_LABELS[rpe]}`}
           aria-label={`RPE OMNI: ${rpe} — ${RPE_LABELS[rpe]}`}
@@ -405,8 +410,11 @@ function AttendanceRow({
         style={{ borderTop: "1px solid rgba(34, 42, 53, 0.06)" }}
         data-testid={`attendance-row-${attendance.athlete_id}`}
       >
-        {/* Atleta */}
-        <td className="px-3 py-2 align-top text-sm font-medium text-charcoal">
+        {/* Atleta — `align-middle` (ronda de pulido 2026-09-11): el bloque
+            nombre+subtítulo+evidencia centrado verticalmente como unidad,
+            en vez de pegado arriba mientras Estado/Evaluación/Acción se ven
+            centrados. */}
+        <td className="px-3 py-2 align-middle text-sm font-medium text-charcoal">
           <div className="flex items-center gap-2">
             {athleteName}
             <span role="status" aria-live="polite" aria-atomic="true">
@@ -469,7 +477,7 @@ function AttendanceRow({
         {/* Estado — la razón (cuando el estado la requiere) vive debajo del
             control en la misma celda; se eliminó la columna "Razón" propia
             (feedback del coach 2026-09-11: quedaba casi siempre vacía). */}
-        <td className="px-3 py-2 align-top">
+        <td className="px-3 py-2 align-middle">
           <div className="space-y-1.5">
             <StatusToggleGroup control={control} disabled={disabled} />
             {requiresReason && (
@@ -508,13 +516,15 @@ function AttendanceRow({
           </div>
         </td>
 
-        {/* Evaluación */}
-        <td className="px-3 py-2 align-top">
+        {/* Evaluación — toma el resto del ancho disponible (Acción es
+            `w-px`, así que el navegador la encoge a su contenido). */}
+        <td className="px-3 py-2 align-middle">
           <EvaluationSummary rubricEnabled={rubricEnabled} formValues={formValues} />
         </td>
 
-        {/* Acción */}
-        <td className="px-3 py-2 align-top">
+        {/* Acción — `w-px whitespace-nowrap` (ronda de pulido 2026-09-11):
+            columna angosta pegada al contenido, alineada a la derecha. */}
+        <td className="w-px whitespace-nowrap px-3 py-2 align-middle text-right">
           {rubricEnabled && (
             <EvaluateToggleButton
               expanded={expanded}
@@ -722,52 +732,43 @@ function AttendanceCard({
 // ─── Barra superior: resumen + filtro + búsqueda + acciones globales ───────
 
 interface AttendanceSummaryBarProps {
-  total: number;
-  presentesCount: number;
-  tardeCount: number;
-  ausenciasCount: number;
-  sinEvaluarCount: number;
-  sinRazonCount: number;
   filter: FilterKey;
   onFilterChange: (f: FilterKey) => void;
   filterCounts: Record<FilterKey, number>;
   search: string;
   onSearchChange: (v: string) => void;
   showSearch: boolean;
-  showBulkButtons: boolean;
-  onEvaluateAllVisible: () => void;
-  onCollapseAllVisible: () => void;
+  showExpandButton: boolean;
+  allVisibleExpanded: boolean;
+  onToggleExpandAll: () => void;
 }
 
 function AttendanceSummaryBar({
-  total,
-  presentesCount,
-  tardeCount,
-  ausenciasCount,
-  sinEvaluarCount,
-  sinRazonCount,
   filter,
   onFilterChange,
   filterCounts,
   search,
   onSearchChange,
   showSearch,
-  showBulkButtons,
-  onEvaluateAllVisible,
-  onCollapseAllVisible,
+  showExpandButton,
+  allVisibleExpanded,
+  onToggleExpandAll,
 }: AttendanceSummaryBarProps) {
+  // Los conteos ya viven en las etiquetas de los chips (feedback del coach
+  // 2026-09-11: la línea de resumen de texto repetía la misma información)
+  // — se oculta cualquier chip en 0, salvo "Todos", para no listar filtros
+  // vacíos sin sentido.
+  const visibleFilterKeys = (Object.keys(FILTER_LABELS) as FilterKey[]).filter(
+    (key) => key === "todos" || filterCounts[key] > 0,
+  );
+
   return (
     <div
       className="sticky top-0 z-10 flex flex-col gap-2 bg-white pb-2 pt-1"
       style={{ borderBottom: "1px solid rgba(34, 42, 53, 0.08)" }}
       data-testid="attendance-toolbar"
     >
-      <p className="text-xs text-mid-gray" aria-live="polite" data-testid="attendance-summary">
-        {total} convocados · {presentesCount} presentes · {tardeCount} tarde · {ausenciasCount} ausencias ·{" "}
-        {sinEvaluarCount} sin evaluar · {sinRazonCount} sin razón
-      </p>
-
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2" aria-live="polite">
         <ToggleGroup
           type="single"
           value={filter}
@@ -777,36 +778,26 @@ function AttendanceSummaryBar({
           aria-label="Filtrar asistencia"
           className="flex flex-wrap gap-1.5"
         >
-          {(Object.keys(FILTER_LABELS) as FilterKey[]).map((key) => (
+          {visibleFilterKeys.map((key) => (
             <ToggleGroupItem
               key={key}
               value={key}
-              className="min-h-11 rounded-full border border-[rgba(34,42,53,0.12)] px-3 text-xs font-medium text-charcoal data-[state=on]:border-charcoal data-[state=on]:bg-charcoal data-[state=on]:text-white"
+              className="min-h-12 rounded-full border border-[rgba(34,42,53,0.12)] px-3 text-xs font-medium text-charcoal data-[state=on]:border-charcoal data-[state=on]:bg-charcoal data-[state=on]:text-white"
             >
               {FILTER_LABELS[key]} ({filterCounts[key]})
             </ToggleGroupItem>
           ))}
         </ToggleGroup>
 
-        {showBulkButtons && (
-          <div className="ml-auto flex gap-2">
-            <button
-              type="button"
-              onClick={onEvaluateAllVisible}
-              className="min-h-11 rounded-lg px-3 text-xs font-medium text-charcoal shadow-ring transition-opacity hover:opacity-70"
-              data-testid="evaluate-all-button"
-            >
-              Evaluar todos
-            </button>
-            <button
-              type="button"
-              onClick={onCollapseAllVisible}
-              className="min-h-11 rounded-lg px-3 text-xs font-medium text-charcoal shadow-ring transition-opacity hover:opacity-70"
-              data-testid="collapse-all-button"
-            >
-              Cerrar todos
-            </button>
-          </div>
+        {showExpandButton && (
+          <button
+            type="button"
+            onClick={onToggleExpandAll}
+            className="ml-auto min-h-12 rounded-lg px-3 text-xs font-medium text-charcoal shadow-ring transition-opacity hover:opacity-70"
+            data-testid="toggle-expand-all-button"
+          >
+            {allVisibleExpanded ? "Contraer todo" : "Expandir todo"}
+          </button>
         )}
       </div>
 
@@ -862,10 +853,6 @@ export function AttendanceTable({
     () => attendances.filter((a) => a.status === "presente").length,
     [attendances],
   );
-  const tardeCount = useMemo(
-    () => attendances.filter((a) => a.status === "tarde").length,
-    [attendances],
-  );
   const ausenciasCount = useMemo(
     () => attendances.filter((a) => ABSENCE_STATUSES.includes(a.status)).length,
     [attendances],
@@ -884,30 +871,43 @@ export function AttendanceTable({
     ausencias: ausenciasCount,
   };
 
+  // Si el filtro activo se queda en 0 (p. ej. el coach ya evaluó a todos los
+  // "sin evaluar"), se vuelve a "Todos" — derivado en el render, sin efecto:
+  // evita listar/mantener seleccionado un filtro vacío (feedback del coach
+  // 2026-09-11).
+  const effectiveFilter: FilterKey =
+    filter !== "todos" && filterCounts[filter] === 0 ? "todos" : filter;
+
   const normalizedSearch = normalizeForSearch(search.trim());
   const filtered = useMemo(() => {
     return attendances
-      .filter((a) => matchesFilter(a, filter))
+      .filter((a) => matchesFilter(a, effectiveFilter))
       .filter((a) => {
         if (!normalizedSearch) return true;
         const name = a.athlete_name ?? `Atleta #${a.athlete_id}`;
         return normalizeForSearch(name).includes(normalizedSearch);
       });
-  }, [attendances, filter, normalizedSearch]);
+  }, [attendances, effectiveFilter, normalizedSearch]);
 
   const evaluableVisibleIds = useMemo(
     () => (disabled ? [] : filtered.filter((a) => ALLOWS_RUBRIC.includes(a.status)).map((a) => a.athlete_id)),
     [filtered, disabled],
   );
 
-  const expandAllVisible = useCallback(() => {
-    setExpandedIds((prev) => new Set([...prev, ...evaluableVisibleIds]));
-  }, [evaluableVisibleIds]);
+  const allVisibleExpanded =
+    evaluableVisibleIds.length > 0 && evaluableVisibleIds.every((id) => expandedIds.has(id));
 
-  const collapseAllVisible = useCallback(() => {
+  // Un solo botón que alterna Expandir/Contraer todo lo visible (feedback
+  // del coach 2026-09-11: dos botones separados "Evaluar todos"/"Cerrar
+  // todos" ocupaban espacio para un caso de uso simple).
+  const toggleExpandAllVisible = useCallback(() => {
     setExpandedIds((prev) => {
       const next = new Set(prev);
-      evaluableVisibleIds.forEach((id) => next.delete(id));
+      const allExpanded = evaluableVisibleIds.every((id) => next.has(id));
+      evaluableVisibleIds.forEach((id) => {
+        if (allExpanded) next.delete(id);
+        else next.add(id);
+      });
       return next;
     });
   }, [evaluableVisibleIds]);
@@ -923,21 +923,15 @@ export function AttendanceTable({
   return (
     <div className="flex flex-col gap-3">
       <AttendanceSummaryBar
-        total={total}
-        presentesCount={presentesCount}
-        tardeCount={tardeCount}
-        ausenciasCount={ausenciasCount}
-        sinEvaluarCount={sinEvaluarCount}
-        sinRazonCount={sinRazonCount}
-        filter={filter}
+        filter={effectiveFilter}
         onFilterChange={setFilter}
         filterCounts={filterCounts}
         search={search}
         onSearchChange={setSearch}
         showSearch={attendances.length > 8}
-        showBulkButtons={evaluableVisibleIds.length >= 1}
-        onEvaluateAllVisible={expandAllVisible}
-        onCollapseAllVisible={collapseAllVisible}
+        showExpandButton={evaluableVisibleIds.length >= 1}
+        allVisibleExpanded={allVisibleExpanded}
+        onToggleExpandAll={toggleExpandAllVisible}
       />
 
       {filtered.length === 0 ? (
@@ -975,9 +969,6 @@ export function AttendanceTable({
                   </th>
                   <th scope="col" className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
                     Estado
-                  </th>
-                  <th scope="col" className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
-                    Razón
                   </th>
                   <th scope="col" className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
                     Evaluación

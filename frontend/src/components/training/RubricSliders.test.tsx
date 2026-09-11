@@ -113,22 +113,22 @@ describe("RubricSliders", () => {
   describe("RPE_LABELS contract (G1–G3)", () => {
     it("G1 — muestra 'Moderado' en valor 5", () => {
       render(<Wrapper defaultValues={{ rpe_omni: 5 }} />);
-      expect(screen.getByText("5 — Moderado")).toBeInTheDocument();
+      expect(screen.getByText("5 · Moderado")).toBeInTheDocument();
     });
 
     it("G2 — valor 3 NO muestra 'Moderado' (defecto corregido)", () => {
       render(<Wrapper defaultValues={{ rpe_omni: 3 }} />);
-      expect(screen.queryByText("3 — Moderado")).not.toBeInTheDocument();
+      expect(screen.queryByText("3 · Moderado")).not.toBeInTheDocument();
     });
 
     it("G3 — extremo inferior es 'Reposo' (valor 0)", () => {
       render(<Wrapper defaultValues={{ rpe_omni: 0 }} />);
-      expect(screen.getByText("0 — Reposo")).toBeInTheDocument();
+      expect(screen.getByText("0 · Reposo")).toBeInTheDocument();
     });
 
     it("G3 — extremo superior es 'Máximo' (valor 10)", () => {
       render(<Wrapper defaultValues={{ rpe_omni: 10 }} />);
-      expect(screen.getByText("10 — Máximo")).toBeInTheDocument();
+      expect(screen.getByText("10 · Máximo")).toBeInTheDocument();
     });
   });
 
@@ -151,17 +151,15 @@ describe("RubricSliders", () => {
     it("clickear una opción de Esfuerzo actualiza el valor mostrado", async () => {
       const user = userEvent.setup();
       render(<Wrapper defaultValues={{ rubric_effort: 3 }} />);
-      // Esfuerzo/Actitud/Técnica comparten el valor por defecto (3 — Regular),
-      // así que el texto visible se acota a la sección de Esfuerzo.
-      const section = screen.getByText("Esfuerzo").closest("div.space-y-1") as HTMLElement;
-      expect(within(section).getByText("3 — Regular")).toBeInTheDocument();
-
       const group = screen.getByRole("group", { name: "Esfuerzo" });
+      expect(
+        within(group).getByRole("radio", { name: "Esfuerzo: 3 — Regular", checked: true }),
+      ).toBeInTheDocument();
+
       await user.click(
         within(group).getByRole("radio", { name: "Esfuerzo: 5 — Excelente" }),
       );
 
-      expect(within(section).getByText("5 — Excelente")).toBeInTheDocument();
       expect(
         within(group).getByRole("radio", { name: "Esfuerzo: 5 — Excelente" }),
       ).toHaveAttribute("aria-checked", "true");
@@ -173,14 +171,14 @@ describe("RubricSliders", () => {
     it("clickear una opción de RPE OMNI actualiza el valor mostrado", async () => {
       const user = userEvent.setup();
       render(<Wrapper defaultValues={{ rpe_omni: 5 }} />);
-      expect(screen.getByText("5 — Moderado")).toBeInTheDocument();
+      expect(screen.getByText("5 · Moderado")).toBeInTheDocument();
 
       const group = screen.getByRole("group", { name: "RPE OMNI 0-10" });
       await user.click(
         within(group).getByRole("radio", { name: "RPE OMNI 0-10: 8 — Muy duro" }),
       );
 
-      expect(screen.getByText("8 — Muy duro")).toBeInTheDocument();
+      expect(screen.getByText("8 · Muy duro")).toBeInTheDocument();
       expect(
         within(group).getByRole("radio", { name: "RPE OMNI 0-10: 8 — Muy duro" }),
       ).toHaveAttribute("aria-checked", "true");
@@ -229,24 +227,40 @@ describe("RubricSliders", () => {
       expect(within(section).getByText("Sin registrar")).toBeInTheDocument();
     });
 
-    it("no renderiza el botón 'Limpiar evaluación' sin la prop onClear", () => {
+    it("no renderiza el botón 'Limpiar' sin la prop onClear", () => {
       render(<Wrapper />);
-      expect(screen.queryByRole("button", { name: /Limpiar evaluación/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^Limpiar$/i })).not.toBeInTheDocument();
     });
 
-    it("el botón 'Limpiar evaluación' llama a onClear al pulsarlo", async () => {
+    it("no renderiza el botón 'Limpiar' cuando todos los campos ya están vacíos (aunque se pase onClear)", () => {
+      render(
+        <Wrapper
+          onClear={vi.fn()}
+          defaultValues={{
+            rpe_omni: null,
+            rubric_effort: null,
+            rubric_attitude: null,
+            rubric_technique: null,
+            individual_feedback: null,
+          }}
+        />,
+      );
+      expect(screen.queryByRole("button", { name: /^Limpiar$/i })).not.toBeInTheDocument();
+    });
+
+    it("el botón 'Limpiar' llama a onClear al pulsarlo", async () => {
       const user = userEvent.setup();
       const onClear = vi.fn();
       render(<Wrapper onClear={onClear} />);
 
-      await user.click(screen.getByRole("button", { name: /Limpiar evaluación/i }));
+      await user.click(screen.getByRole("button", { name: /^Limpiar$/i }));
 
       expect(onClear).toHaveBeenCalledTimes(1);
     });
 
-    it("el botón 'Limpiar evaluación' queda deshabilitado cuando disabled=true", () => {
+    it("el botón 'Limpiar' queda deshabilitado cuando disabled=true", () => {
       render(<Wrapper disabled onClear={vi.fn()} />);
-      expect(screen.getByRole("button", { name: /Limpiar evaluación/i })).toBeDisabled();
+      expect(screen.getByRole("button", { name: /^Limpiar$/i })).toBeDisabled();
     });
   });
 });

@@ -136,11 +136,11 @@ describe("RubricSliders — accesibilidad", () => {
       expect(results).toHaveNoViolations();
     });
 
-    it("sin violaciones axe con el botón 'Limpiar evaluación' visible", async () => {
+    it("sin violaciones axe con el botón 'Limpiar' visible", async () => {
       const { container } = render(<Wrapper onClear={vi.fn()} />);
       const results = await axe(container);
       expect(results).toHaveNoViolations();
-      expect(screen.getByRole("button", { name: /Limpiar evaluación/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /^Limpiar$/i })).toBeInTheDocument();
     });
   });
 });
