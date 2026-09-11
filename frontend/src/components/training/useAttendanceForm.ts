@@ -8,8 +8,6 @@ import type { AttendanceFormValues } from "./AttendanceTable";
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 export const ATTENDANCE_FORM_DEFAULTS = {
-  RPE_OMNI: 5,
-  RUBRIC_SCORE: 3,
   DEBOUNCE_MS: 500,
 } as const;
 
@@ -44,10 +42,16 @@ export function useAttendanceForm(
     defaultValues: {
       status: attendance.status,
       excuse_reason: attendance.excuse_reason ?? null,
-      rpe_omni: attendance.rpe_omni ?? ATTENDANCE_FORM_DEFAULTS.RPE_OMNI,
-      rubric_effort: attendance.rubric_effort ?? ATTENDANCE_FORM_DEFAULTS.RUBRIC_SCORE,
-      rubric_attitude: attendance.rubric_attitude ?? ATTENDANCE_FORM_DEFAULTS.RUBRIC_SCORE,
-      rubric_technique: attendance.rubric_technique ?? ATTENDANCE_FORM_DEFAULTS.RUBRIC_SCORE,
+      // RPE OMNI y las 3 rúbricas son OPCIONALES (pedido del coach: una
+      // sesión de recuperación con fisioterapia no tiene ni RPE ni técnica)
+      // — el default es `null`, nunca un valor "neutro" inventado. Antes se
+      // rellenaban con 5/3/3/3 y ese relleno se autoguardaba en cuanto se
+      // tocaba cualquier campo de la fila (p. ej. el estado), fabricando
+      // evaluaciones que el coach nunca registró.
+      rpe_omni: attendance.rpe_omni ?? null,
+      rubric_effort: attendance.rubric_effort ?? null,
+      rubric_attitude: attendance.rubric_attitude ?? null,
+      rubric_technique: attendance.rubric_technique ?? null,
       individual_feedback: attendance.individual_feedback ?? null,
     },
   });

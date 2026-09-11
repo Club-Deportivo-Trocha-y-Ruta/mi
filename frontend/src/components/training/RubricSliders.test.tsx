@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useForm } from "react-hook-form";
@@ -10,10 +10,12 @@ function Wrapper({
   defaultValues,
   feedbackLength = 0,
   disabled = false,
+  onClear,
 }: {
   defaultValues?: Partial<AttendanceFormValues>;
   feedbackLength?: number;
   disabled?: boolean;
+  onClear?: () => void;
 }) {
   const { control } = useForm<AttendanceFormValues>({
     defaultValues: {
@@ -32,6 +34,7 @@ function Wrapper({
       control={control}
       disabled={disabled}
       feedbackLength={feedbackLength}
+      onClear={onClear}
     />
   );
 }
@@ -194,6 +197,56 @@ describe("RubricSliders", () => {
       expect(
         within(group).getByRole("radio", { name: "Actitud: 3 — Regular" }),
       ).toHaveAttribute("aria-checked", "true");
+    });
+  });
+
+  describe("valores opcionales (null) — RPE y rúbricas no son obligatorios", () => {
+    it("con rpe_omni null ninguna opción está marcada y el texto es 'Sin registrar'", () => {
+      render(<Wrapper defaultValues={{ rpe_omni: null }} />);
+      const group = screen.getByRole("group", { name: "RPE OMNI 0-10" });
+      expect(within(group).queryAllByRole("radio", { checked: true })).toHaveLength(0);
+      expect(screen.getByText("Sin registrar")).toBeInTheDocument();
+    });
+
+    it("con rubric_effort null la fila de Esfuerzo muestra 'Sin registrar' sin ninguna opción marcada", () => {
+      render(<Wrapper defaultValues={{ rubric_effort: null }} />);
+      const group = screen.getByRole("group", { name: "Esfuerzo" });
+      expect(within(group).queryAllByRole("radio", { checked: true })).toHaveLength(0);
+      const section = screen.getByText("Esfuerzo").closest("div.space-y-1") as HTMLElement;
+      expect(within(section).getByText("Sin registrar")).toBeInTheDocument();
+    });
+
+    it("pulsar la opción ya seleccionada la deselecciona y guarda null", async () => {
+      const user = userEvent.setup();
+      render(<Wrapper defaultValues={{ rubric_technique: 3 }} />);
+      const group = screen.getByRole("group", { name: "Técnica" });
+      const selected = within(group).getByRole("radio", { name: "Técnica: 3 — Regular", checked: true });
+
+      await user.click(selected);
+
+      expect(within(group).queryAllByRole("radio", { checked: true })).toHaveLength(0);
+      const section = screen.getByText("Técnica").closest("div.space-y-1") as HTMLElement;
+      expect(within(section).getByText("Sin registrar")).toBeInTheDocument();
+    });
+
+    it("no renderiza el botón 'Limpiar evaluación' sin la prop onClear", () => {
+      render(<Wrapper />);
+      expect(screen.queryByRole("button", { name: /Limpiar evaluación/i })).not.toBeInTheDocument();
+    });
+
+    it("el botón 'Limpiar evaluación' llama a onClear al pulsarlo", async () => {
+      const user = userEvent.setup();
+      const onClear = vi.fn();
+      render(<Wrapper onClear={onClear} />);
+
+      await user.click(screen.getByRole("button", { name: /Limpiar evaluación/i }));
+
+      expect(onClear).toHaveBeenCalledTimes(1);
+    });
+
+    it("el botón 'Limpiar evaluación' queda deshabilitado cuando disabled=true", () => {
+      render(<Wrapper disabled onClear={vi.fn()} />);
+      expect(screen.getByRole("button", { name: /Limpiar evaluación/i })).toBeDisabled();
     });
   });
 });

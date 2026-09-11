@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { axe, toHaveNoViolations } from "jest-axe";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -101,28 +101,41 @@ describe("AttendanceTable — accesibilidad", () => {
     expect(document.activeElement).not.toBe(document.body);
   });
 
-  it("los grupos de rúbrica (RPE + 3 rúbrica) exponen opciones discretas accesibles (radio)", () => {
+  it("los grupos de rúbrica (RPE + 3 rúbrica) exponen opciones discretas accesibles (radio) al expandir la evaluación", () => {
     // feature 028 T018: los <input type="range"> nativos fueron reemplazados
     // por ToggleGroup/ToggleGroupItem (steppers discretos, target >=48px) —
     // Radix expone cada grupo como role="group" y cada opción como
     // role="radio" con aria-checked, no valuenow/valuemin/valuemax.
-    renderTable([makeAttendance({ status: "presente", rpe_omni: 7, rubric_effort: 4, rubric_attitude: 3, rubric_technique: 5 })]);
+    // Rediseño progressive disclosure: la rúbrica queda colapsada por
+    // defecto — hay que pulsar "Evaluar" antes de que existan sus grupos.
+    renderTable([
+      makeAttendance({ athlete_id: 1, status: "presente", rpe_omni: 7, rubric_effort: 4, rubric_attitude: 3, rubric_technique: 5 }),
+    ]);
+
+    const row = within(screen.getByTestId("attendance-row-1"));
+    fireEvent.click(row.getByRole("button", { name: /Evaluar/i }));
 
     const groups = screen.getAllByRole("group");
-    expect(groups.length).toBeGreaterThanOrEqual(4); // RPE OMNI + Esfuerzo/Actitud/Técnica
+    // Estado de asistencia + RPE OMNI + Esfuerzo/Actitud/Técnica = 5 grupos
+    // como mínimo (se duplican entre card móvil y fila de escritorio en jsdom).
+    expect(groups.length).toBeGreaterThanOrEqual(5);
 
     const options = screen.getAllByRole("radio");
-    expect(options.length).toBeGreaterThanOrEqual(4); // al menos una opción marcada por grupo
+    expect(options.length).toBeGreaterThanOrEqual(9); // 5 (Estado) + al menos 4 de rúbrica
 
     for (const option of options) {
       expect(option).toHaveAttribute("aria-checked");
     }
   });
 
-  it("el select de estado tiene aria-label", () => {
+  it("el control segmentado de estado expone un grupo con nombre accesible", () => {
     renderTable([makeAttendance()]);
-    const selects = screen.getAllByRole("combobox", { name: /Estado de asistencia/i });
-    expect(selects.length).toBeGreaterThanOrEqual(1);
+    const groups = screen.getAllByRole("group", { name: "Estado de asistencia" });
+    expect(groups.length).toBeGreaterThanOrEqual(1);
+    groups.forEach((g) => {
+      const radios = within(g).getAllByRole("radio");
+      expect(radios.length).toBe(5);
+    });
   });
 
   describe("evidencia de actividad Strava — axe por estado (session-detail-redesign.md §8)", () => {
@@ -221,8 +234,31 @@ describe("AttendanceTable — accesibilidad", () => {
       enlazarButton.dispatchEvent(
         new KeyboardEvent("keydown", { key: "p", bubbles: true }),
       );
-      const selects = row.querySelectorAll("select");
-      expect(selects[0]).toHaveValue("ausente");
+      expect(within(row).getByRole("radio", { name: "Ausente", checked: true })).toBeInTheDocument();
+    });
+  });
+
+  describe("rediseño progressive disclosure — barra superior y panel expandido", () => {
+    it("sin violaciones axe con el panel de evaluación expandido", async () => {
+      const { container } = renderTable([
+        makeAttendance({ id: 1, athlete_id: 1, athlete_name: "Sebastián García", status: "presente" }),
+      ]);
+      const row = within(screen.getByTestId("attendance-row-1"));
+      fireEvent.click(row.getByRole("button", { name: /Evaluar/i }));
+
+      const results = await axe(container);
+      expect(results).toHaveNoViolations();
+    });
+
+    it("sin violaciones axe con un filtro de la barra superior activo", async () => {
+      const { container } = renderTable([
+        makeAttendance({ id: 1, athlete_id: 1, athlete_name: "Sebastián García", status: "presente" }),
+        makeAttendance({ id: 2, athlete_id: 2, athlete_name: "Laura Pérez", status: "ausente" }),
+      ]);
+      fireEvent.click(screen.getByRole("radio", { name: /Ausencias/i }));
+
+      const results = await axe(container);
+      expect(results).toHaveNoViolations();
     });
   });
 });

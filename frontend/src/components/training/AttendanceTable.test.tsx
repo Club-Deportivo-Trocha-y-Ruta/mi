@@ -149,10 +149,11 @@ describe("AttendanceTable", () => {
       expect(screen.getAllByText("Sebastián García").length).toBeGreaterThanOrEqual(1);
     });
 
-    it("muestra el select de estado con valor inicial", () => {
+    it("muestra el control segmentado de estado con el valor inicial marcado", () => {
       renderTable([makeAttendance({ status: "presente" })]);
-      const selects = screen.getAllByRole("combobox", { name: /Estado de asistencia/i });
-      expect(selects[0]).toHaveValue("presente");
+      const groups = screen.getAllByRole("group", { name: "Estado de asistencia" });
+      const checked = within(groups[0]).getByRole("radio", { checked: true });
+      expect(checked).toHaveAccessibleName("Presente");
     });
   });
 
@@ -219,8 +220,8 @@ describe("AttendanceTable", () => {
       vi.useFakeTimers();
       renderTable([makeAttendance()]);
 
-      const selects = screen.getAllByRole("combobox", { name: /Estado de asistencia/i });
-      fireEvent.change(selects[0], { target: { value: "tarde" } });
+      const row = screen.getByTestId("attendance-row-1");
+      fireEvent.click(within(row).getByRole("radio", { name: "Tarde" }));
 
       expect(mutate).not.toHaveBeenCalled();
 
@@ -229,6 +230,61 @@ describe("AttendanceTable", () => {
       });
 
       expect(mutate).toHaveBeenCalled();
+      vi.useRealTimers();
+    });
+
+    it("RPE OMNI y las 3 rúbricas son opcionales: cambiar solo el estado a 'presente' no inventa valores (quedan en null)", async () => {
+      vi.useFakeTimers();
+      // Fixture típica de una sesión sin evaluación previa (p. ej. venía de
+      // "ausente" con fisioterapia): los 4 campos ya son null en el servidor.
+      renderTable([
+        makeAttendance({
+          status: "ausente",
+          rpe_omni: null,
+          rubric_effort: null,
+          rubric_attitude: null,
+          rubric_technique: null,
+          individual_feedback: null,
+        }),
+      ]);
+
+      const row = within(screen.getByTestId("attendance-row-1"));
+      fireEvent.click(row.getByRole("radio", { name: "Presente" }));
+
+      await act(async () => { vi.advanceTimersByTime(600); });
+
+      expect(mutate).toHaveBeenCalled();
+      const { payload } = mutate.mock.calls[mutate.mock.calls.length - 1][0];
+      expect(payload.status).toBe("presente");
+      expect(payload.rpe_omni).toBeNull();
+      expect(payload.rubric_effort).toBeNull();
+      expect(payload.rubric_attitude).toBeNull();
+      expect(payload.rubric_technique).toBeNull();
+
+      vi.useRealTimers();
+    });
+
+    it("deseleccionar un valor de rúbrica ya guardado lo envía como null (no lo deja en el valor anterior)", async () => {
+      vi.useFakeTimers();
+      renderTable([
+        makeAttendance({ status: "presente", rpe_omni: 6, rubric_effort: 4, rubric_attitude: 4, rubric_technique: 3 }),
+      ]);
+
+      const table = within(screen.getByRole("table"));
+      const row = within(screen.getByTestId("attendance-row-1"));
+      fireEvent.click(row.getByRole("button", { name: /Evaluar/i }));
+
+      const rpeGroup = table.getByRole("group", { name: "RPE OMNI 0-10" });
+      fireEvent.click(within(rpeGroup).getByRole("radio", { name: "RPE OMNI 0-10: 6 — Algo duro" }));
+
+      await act(async () => { vi.advanceTimersByTime(600); });
+
+      expect(mutate).toHaveBeenCalled();
+      const { payload } = mutate.mock.calls[mutate.mock.calls.length - 1][0];
+      expect(payload.rpe_omni).toBeNull();
+      // Las otras 3 rúbricas no se tocaron, deben conservar su valor.
+      expect(payload.rubric_effort).toBe(4);
+
       vi.useRealTimers();
     });
   });
@@ -241,9 +297,7 @@ describe("AttendanceTable", () => {
       const row = screen.getByTestId("attendance-row-1");
       fireEvent.keyDown(row, { key: "p" });
 
-      // El select en la fila desktop (puede estar hidden en CSS pero presente en DOM)
-      const selects = row.querySelectorAll("select");
-      expect(selects[0]).toHaveValue("presente");
+      expect(within(row).getByRole("radio", { name: "Presente", checked: true })).toBeInTheDocument();
 
       await act(async () => { vi.advanceTimersByTime(600); });
       vi.useRealTimers();
@@ -256,8 +310,7 @@ describe("AttendanceTable", () => {
       const row = screen.getByTestId("attendance-row-1");
       fireEvent.keyDown(row, { key: "a" });
 
-      const selects = row.querySelectorAll("select");
-      expect(selects[0]).toHaveValue("ausente");
+      expect(within(row).getByRole("radio", { name: "Ausente", checked: true })).toBeInTheDocument();
 
       await act(async () => { vi.advanceTimersByTime(600); });
       vi.useRealTimers();
@@ -270,8 +323,7 @@ describe("AttendanceTable", () => {
       const row = screen.getByTestId("attendance-row-1");
       fireEvent.keyDown(row, { key: "j" });
 
-      const selects = row.querySelectorAll("select");
-      expect(selects[0]).toHaveValue("justificado");
+      expect(within(row).getByRole("radio", { name: "Justificado", checked: true })).toBeInTheDocument();
 
       await act(async () => { vi.advanceTimersByTime(600); });
       vi.useRealTimers();
@@ -284,8 +336,7 @@ describe("AttendanceTable", () => {
       const row = screen.getByTestId("attendance-row-1");
       fireEvent.keyDown(row, { key: "t" });
 
-      const selects = row.querySelectorAll("select");
-      expect(selects[0]).toHaveValue("tarde");
+      expect(within(row).getByRole("radio", { name: "Tarde", checked: true })).toBeInTheDocument();
 
       await act(async () => { vi.advanceTimersByTime(600); });
       vi.useRealTimers();
@@ -298,8 +349,7 @@ describe("AttendanceTable", () => {
       const row = screen.getByTestId("attendance-row-1");
       fireEvent.keyDown(row, { key: "l" });
 
-      const selects = row.querySelectorAll("select");
-      expect(selects[0]).toHaveValue("lesionado");
+      expect(within(row).getByRole("radio", { name: "Lesionado", checked: true })).toBeInTheDocument();
 
       await act(async () => { vi.advanceTimersByTime(600); });
       vi.useRealTimers();
@@ -312,8 +362,7 @@ describe("AttendanceTable", () => {
       const input = row.querySelector("input[type='text']");
       if (input) {
         fireEvent.keyDown(input, { key: "p" });
-        const selects = row.querySelectorAll("select");
-        expect(selects[0]).toHaveValue("ausente");
+        expect(within(row).getByRole("radio", { name: "Ausente", checked: true })).toBeInTheDocument();
       }
     });
   });
@@ -333,9 +382,13 @@ describe("AttendanceTable", () => {
       expect(inputs.length).toBeGreaterThanOrEqual(1);
     });
 
-    it("muestra RubricSliders cuando status=presente", () => {
+    it("muestra RubricSliders cuando status=presente al pulsar Evaluar", () => {
       renderTable([makeAttendance({ status: "presente" })]);
-      // feature 028 T018: 11 opciones discretas (0-10) reemplazan el slider único.
+      // Rediseño progressive disclosure: la rúbrica queda colapsada por
+      // defecto — hay que pulsar "Evaluar" antes de que aparezcan sus
+      // opciones discretas (feature 028 T018: 11 opciones 0-10).
+      const row = within(screen.getByTestId("attendance-row-1"));
+      fireEvent.click(row.getByRole("button", { name: /Evaluar/i }));
       const options = screen.getAllByRole("radio", { name: /RPE OMNI/i });
       expect(options.length).toBeGreaterThanOrEqual(1);
     });
@@ -355,8 +408,7 @@ describe("AttendanceTable", () => {
       renderTable([makeAttendance()]);
 
       const row = screen.getByTestId("attendance-row-1");
-      const selects = row.querySelectorAll("select");
-      fireEvent.change(selects[0], { target: { value: "tarde" } });
+      fireEvent.click(within(row).getByRole("radio", { name: "Tarde" }));
 
       await act(async () => { vi.advanceTimersByTime(600); });
 
@@ -368,10 +420,10 @@ describe("AttendanceTable", () => {
   });
 
   describe("disabled cuando cancelled", () => {
-    it("los selects están deshabilitados cuando disabled=true", () => {
+    it("las opciones de estado están deshabilitadas cuando disabled=true", () => {
       renderTable([makeAttendance()], { sessionId: 10, disabled: true });
-      const selects = screen.getAllByRole("combobox", { name: /Estado de asistencia/i });
-      selects.forEach((s) => expect(s).toBeDisabled());
+      const groups = screen.getAllByRole("group", { name: "Estado de asistencia" });
+      groups.forEach((g) => within(g).getAllByRole("radio").forEach((r) => expect(r).toBeDisabled()));
     });
   });
 
@@ -459,6 +511,231 @@ describe("AttendanceTable", () => {
       expect(screen.queryByText(/Rodada matutina/i)).not.toBeInTheDocument();
       fireEvent.click(row.getByRole("button", { name: /ver detalle de actividad/i }));
       expect(row.getByText(/Rodada matutina/i)).toBeInTheDocument();
+    });
+  });
+
+  describe("rediseño progressive disclosure — rúbrica colapsada por defecto", () => {
+    it("la rúbrica está colapsada por defecto y aparece solo al pulsar Evaluar", () => {
+      renderTable([makeAttendance({ status: "presente" })]);
+      // AttendanceTable siempre renderiza card móvil + fila de escritorio en
+      // jsdom (responsividad solo CSS) y comparte el estado de expansión
+      // entre ambas — se acota a la tabla de escritorio para evitar
+      // "multiple elements found" con la card móvil duplicada.
+      const table = within(screen.getByRole("table"));
+      const row = within(screen.getByTestId("attendance-row-1"));
+      expect(table.queryByRole("group", { name: "RPE OMNI 0-10" })).not.toBeInTheDocument();
+
+      fireEvent.click(row.getByRole("button", { name: /Evaluar/i }));
+      expect(table.getByRole("group", { name: "RPE OMNI 0-10" })).toBeInTheDocument();
+
+      fireEvent.click(row.getByRole("button", { name: /Cerrar evaluación/i }));
+      expect(table.queryByRole("group", { name: "RPE OMNI 0-10" })).not.toBeInTheDocument();
+    });
+
+    it("no muestra el botón Evaluar cuando el estado no permite rúbrica", () => {
+      renderTable([makeAttendance({ status: "ausente" })]);
+      const row = within(screen.getByTestId("attendance-row-1"));
+      expect(row.queryByRole("button", { name: /Evaluar/i })).not.toBeInTheDocument();
+    });
+
+    it("muestra el badge 'Sin evaluar' cuando no hay evaluación guardada y el formulario no fue tocado", () => {
+      renderTable([
+        makeAttendance({
+          status: "presente",
+          rpe_omni: null,
+          rubric_effort: null,
+          rubric_attitude: null,
+          rubric_technique: null,
+          individual_feedback: null,
+        }),
+      ]);
+      const row = within(screen.getByTestId("attendance-row-1"));
+      expect(row.getByText("Sin evaluar")).toBeInTheDocument();
+    });
+
+    it("muestra 'No aplica' cuando el estado no permite rúbrica", () => {
+      renderTable([makeAttendance({ status: "ausente" })]);
+      const row = within(screen.getByTestId("attendance-row-1"));
+      expect(row.getByText("No aplica")).toBeInTheDocument();
+    });
+
+    it("el resumen de chips refleja los valores guardados (RPE/Esfuerzo/Actitud/Técnica)", () => {
+      renderTable([
+        makeAttendance({ status: "presente", rpe_omni: 7, rubric_effort: 4, rubric_attitude: 3, rubric_technique: 5 }),
+      ]);
+      const row = within(screen.getByTestId("attendance-row-1"));
+      expect(row.getByText(/RPE 7/)).toBeInTheDocument();
+      expect(row.getByText("E 4")).toBeInTheDocument();
+      expect(row.getByText("A 3")).toBeInTheDocument();
+      expect(row.getByText("T 5")).toBeInTheDocument();
+    });
+
+    it("una evaluación parcial (solo Actitud + comentario) muestra únicamente ese chip, sin inventar los demás", () => {
+      renderTable([
+        makeAttendance({
+          status: "presente",
+          rpe_omni: null,
+          rubric_effort: null,
+          rubric_attitude: 4,
+          rubric_technique: null,
+          individual_feedback: "Buena disposición hoy",
+        }),
+      ]);
+      const row = within(screen.getByTestId("attendance-row-1"));
+      expect(row.getByText("A 4")).toBeInTheDocument();
+      expect(row.queryByText(/RPE/)).not.toBeInTheDocument();
+      expect(row.queryByText(/^E \d/)).not.toBeInTheDocument();
+      expect(row.queryByText(/^T \d/)).not.toBeInTheDocument();
+      expect(row.queryByText("Sin evaluar")).not.toBeInTheDocument();
+      expect(row.getByLabelText("Con comentario del coach")).toBeInTheDocument();
+    });
+
+    it("el resumen de chips se actualiza en vivo al editar la rúbrica expandida", () => {
+      renderTable([
+        makeAttendance({ status: "presente", rpe_omni: 5, rubric_effort: 3, rubric_attitude: 3, rubric_technique: 3 }),
+      ]);
+      const table = within(screen.getByRole("table"));
+      const row = within(screen.getByTestId("attendance-row-1"));
+      fireEvent.click(row.getByRole("button", { name: /Evaluar/i }));
+
+      const effortGroup = table.getByRole("group", { name: "Esfuerzo" });
+      fireEvent.click(within(effortGroup).getByRole("radio", { name: "Esfuerzo: 5 — Excelente" }));
+
+      expect(row.getByText("E 5")).toBeInTheDocument();
+    });
+
+    it("el botón 'Limpiar evaluación' pone en null los 4 campos y vacía el comentario, y vuelve a 'Sin evaluar'", () => {
+      renderTable([
+        makeAttendance({
+          status: "presente",
+          rpe_omni: 6,
+          rubric_effort: 4,
+          rubric_attitude: 4,
+          rubric_technique: 3,
+          individual_feedback: "Buen trabajo",
+        }),
+      ]);
+      const table = within(screen.getByRole("table"));
+      const row = within(screen.getByTestId("attendance-row-1"));
+      fireEvent.click(row.getByRole("button", { name: /Evaluar/i }));
+
+      fireEvent.click(table.getByRole("button", { name: /Limpiar evaluación/i }));
+
+      expect(row.getByText("Sin evaluar")).toBeInTheDocument();
+      expect(table.getAllByText("Sin registrar").length).toBeGreaterThanOrEqual(4);
+    });
+  });
+
+  describe("barra superior — resumen, filtros, búsqueda y acciones globales", () => {
+    function manyAttendances(): AttendanceWithAttribution[] {
+      return [
+        makeAttendance({
+          athlete_id: 1,
+          athlete_name: "Sebastián García",
+          status: "presente",
+          rpe_omni: 5,
+          rubric_effort: 3,
+          rubric_attitude: 3,
+          rubric_technique: 3,
+        }),
+        makeAttendance({ athlete_id: 2, athlete_name: "Laura Pérez", status: "ausente", excuse_reason: null }),
+        makeAttendance({
+          athlete_id: 3,
+          athlete_name: "María José Ánimas",
+          status: "tarde",
+          rpe_omni: null,
+          rubric_effort: null,
+          rubric_attitude: null,
+          rubric_technique: null,
+          individual_feedback: null,
+        }),
+        makeAttendance({
+          athlete_id: 4,
+          athlete_name: "Andrés Ruiz",
+          status: "justificado",
+          excuse_reason: "Cita médica",
+        }),
+        makeAttendance({ athlete_id: 5, athlete_name: "Camilo Torres", status: "lesionado", excuse_reason: "Esguince" }),
+        makeAttendance({ athlete_id: 6, athlete_name: "Julián Soto", status: "presente" }),
+        makeAttendance({ athlete_id: 7, athlete_name: "Nicolás Vega", status: "presente" }),
+        makeAttendance({ athlete_id: 8, athlete_name: "Valentina Ríos", status: "presente" }),
+        makeAttendance({ athlete_id: 9, athlete_name: "Isabella Cano", status: "presente" }),
+      ];
+    }
+
+    it("muestra el resumen agregado de convocados/presentes/tarde/ausencias/sin evaluar/sin razón", () => {
+      renderTable(manyAttendances());
+      const summary = screen.getByTestId("attendance-summary");
+      expect(summary).toHaveTextContent("9 convocados");
+      expect(summary).toHaveTextContent("5 presentes");
+      expect(summary).toHaveTextContent("1 tarde");
+      expect(summary).toHaveTextContent("3 ausencias");
+      expect(summary).toHaveTextContent("1 sin evaluar");
+      expect(summary).toHaveTextContent("1 sin razón");
+    });
+
+    it("filtro 'Sin evaluar' muestra solo presente/tarde sin evaluación guardada", () => {
+      renderTable(manyAttendances());
+      const toolbar = within(screen.getByTestId("attendance-toolbar"));
+      fireEvent.click(toolbar.getByRole("radio", { name: /Sin evaluar/i }));
+
+      expect(screen.getByTestId("attendance-row-3")).toBeInTheDocument();
+      expect(screen.queryByTestId("attendance-row-1")).not.toBeInTheDocument();
+    });
+
+    it("filtro 'Falta razón' muestra solo estados que requieren razón y no la tienen", () => {
+      renderTable(manyAttendances());
+      const toolbar = within(screen.getByTestId("attendance-toolbar"));
+      fireEvent.click(toolbar.getByRole("radio", { name: /Falta razón/i }));
+
+      expect(screen.getByTestId("attendance-row-2")).toBeInTheDocument();
+      expect(screen.queryByTestId("attendance-row-4")).not.toBeInTheDocument();
+    });
+
+    it("muestra mensaje cuando el filtro no deja ninguna fila", () => {
+      renderTable([
+        makeAttendance({ status: "presente", rpe_omni: 5, rubric_effort: 3, rubric_attitude: 3, rubric_technique: 3 }),
+      ]);
+      const toolbar = within(screen.getByTestId("attendance-toolbar"));
+      fireEvent.click(toolbar.getByRole("radio", { name: /Sin evaluar/i }));
+
+      expect(screen.getByText(/Ningún atleta coincide con el filtro/i)).toBeInTheDocument();
+    });
+
+    it("la búsqueda solo aparece con más de 8 convocados", () => {
+      renderTable([makeAttendance()]);
+      expect(screen.queryByLabelText("Buscar atleta")).not.toBeInTheDocument();
+    });
+
+    it("la búsqueda filtra por nombre de forma insensible a acentos y mayúsculas", () => {
+      renderTable(manyAttendances());
+      const search = screen.getByLabelText("Buscar atleta");
+      fireEvent.change(search, { target: { value: "JOSE animas" } });
+
+      expect(screen.getByTestId("attendance-row-3")).toBeInTheDocument();
+      expect(screen.queryByTestId("attendance-row-1")).not.toBeInTheDocument();
+    });
+
+    it("'Evaluar todos' expande la rúbrica de las filas visibles con rúbrica aplicable", () => {
+      renderTable(manyAttendances());
+      fireEvent.click(screen.getByTestId("evaluate-all-button"));
+
+      // presente (1,6,7,8,9) + tarde (3) = 6 filas con rúbrica aplicable.
+      expect(screen.getAllByRole("group", { name: "RPE OMNI 0-10" }).length).toBeGreaterThanOrEqual(6);
+    });
+
+    it("'Cerrar todos' colapsa las rúbricas expandidas de las filas visibles", () => {
+      renderTable(manyAttendances());
+      fireEvent.click(screen.getByTestId("evaluate-all-button"));
+      fireEvent.click(screen.getByTestId("collapse-all-button"));
+
+      expect(screen.queryByRole("group", { name: "RPE OMNI 0-10" })).not.toBeInTheDocument();
+    });
+
+    it("no muestra los botones globales cuando la tabla está deshabilitada", () => {
+      renderTable(manyAttendances(), { disabled: true });
+      expect(screen.queryByTestId("evaluate-all-button")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("collapse-all-button")).not.toBeInTheDocument();
     });
   });
 });
