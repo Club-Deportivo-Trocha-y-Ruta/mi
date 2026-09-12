@@ -122,6 +122,29 @@ class Settings(BaseSettings):
     ai_log_prompts: bool = False
 
     # -----------------------------------------------------------------------
+    # Migración a transporte LangChain (feature 042)
+    # -----------------------------------------------------------------------
+    # True enruta los cinco casos de uso puenteados (clarify/draft de sesión,
+    # reporte mensual, bloques del reporte mensual, newsletter v2) a través
+    # del nuevo adaptador LangChainProvider. False (default) los deja en los
+    # proveedores SDK actuales sin cambios — interruptor de rollback para la
+    # ventana de migración, no un feature flag de largo plazo. NO afecta al
+    # pipeline de antropometría, que nunca usó los proveedores legacy (llama
+    # directo a la factoría compartida — ver llm-transport.md §3).
+    ai_use_langchain: bool = False
+    # Overrides de modelo por rol para el pipeline de antropometría
+    # (llm-transport.md §3). Vacío cae a AI_MODEL — un checkout nuevo no
+    # necesita configuración adicional. Deliberadamente NO se reutilizan
+    # RACE_AI_ANALYST_MODEL/RACE_AI_CRITIC_MODEL (misma razón por la que
+    # RACE_AI_* hereda de AI_* y no al revés, ver bloque de arriba).
+    ai_analyst_model: str = ""
+    ai_critic_model: str = ""
+    # Versión del prompt analyst/critic de antropometría — mismo propósito
+    # de rollback que RACE_AI_PROMPT_VERSION (cambiar esto, no un deploy,
+    # para volver a un prompt anterior si uno nuevo regresiona).
+    ai_anthro_prompt_version: str = "anthropometry_analyst_v1"
+
+    # -----------------------------------------------------------------------
     # Race AI — proveedor/modelo dedicado (specs/010-competitions-ai-insights y sig.)
     # -----------------------------------------------------------------------
     # El pipeline agéntico de race/agents/ (analyst, critic, chat) puede correr
@@ -167,6 +190,16 @@ class Settings(BaseSettings):
     # de este flag). Valor "race_analyst_v2" permite rollback inmediato sin
     # deploy de código si v3 muestra regresiones en producción.
     race_ai_prompt_version: str = "race_analyst_v3"
+
+    # Temperatura de muestreo propia del stack race (feature 042, W1). Antes
+    # de este campo, _build_google_llm/_build_openai_llm en _llm.py caían a
+    # settings.ai_temperature (el ajuste del stack app) por no existir un
+    # knob propio de race — bug corregido junto con la extracción de la
+    # factoría compartida. Default = default de ai_temperature, así que un
+    # despliegue con valores por defecto no ve cambio de comportamiento; uno
+    # que haya personalizado AI_TEMPERATURE dejaba de filtrar esa
+    # personalización a race y ahora debe fijar esto también, explícito.
+    race_ai_temperature: float = 0.4
 
     # -----------------------------------------------------------------------
     # Race AI — budget guard (F8A)
@@ -228,6 +261,14 @@ class Settings(BaseSettings):
     langfuse_base_url: str = "http://localhost:3001"
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
+    # Feature 042 (trace-metadata-allowlist.md): False (default) preserva el
+    # comportamiento actual de redactar siempre, byte a byte. True agrega
+    # ADEMÁS la lista blanca operacional auditada como metadata de traza —
+    # nunca sexo, edad, categoría, fase PHV, deltas ni fechas ni texto del
+    # coach. PROHIBIDO en producción sin importar el valor de
+    # LANGFUSE_ENABLED — cinturón y tirantes, por si un refactor futuro
+    # desacopla ambos flags.
+    langfuse_structural_metadata: bool = False
 
     # -----------------------------------------------------------------------
     # Media de sesiones (fotos/videos vía SFTP a Hostinger)
@@ -421,6 +462,28 @@ class Settings(BaseSettings):
             )
         return v
 
+    @field_validator("langfuse_structural_metadata")
+    @classmethod
+    def forbid_langfuse_structural_metadata_in_prod(cls, v: bool, info) -> bool:
+        env = info.data.get("app_env", "development")
+        if env == "production" and v:
+            raise ValueError(
+                "LANGFUSE_STRUCTURAL_METADATA=true PROHIBIDO en producción "
+                "(privacidad de menores)."
+            )
+        return v
+
+    @field_validator("ai_anthro_prompt_version")
+    @classmethod
+    def validate_ai_anthro_prompt_version(cls, v: str, info) -> str:
+        allowed = {"anthropometry_analyst_v1"}  # crece de a una entrada por revisión de prompt publicada
+        normalized = v.lower().strip()
+        if normalized not in allowed:
+            raise ValueError(
+                f"AI_ANTHRO_PROMPT_VERSION='{v}' inválido. Permitidos: {sorted(allowed)}."
+            )
+        return normalized
+
     @field_validator(
         "strava_client_id",
         "strava_client_secret",
@@ -463,6 +526,33 @@ class Settings(BaseSettings):
                 "(localhost) en producción. Debe apuntar al host del backend "
                 "en producción, p. ej. https://mi-2yzi.onrender.com/api/"
                 "integrations/strava/callback."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _forbid_claude_cli_in_prod(self) -> "Settings":
+        """FR-037 — cierra un hueco que detectó la auditoría: nada obligaba
+        el uso local-only de claude-cli, solo la convención más la ausencia
+        del paquete en requirements.txt. Cubre AMBOS stacks: un
+        AI_PROVIDER=claude-cli directo (stack app) y el proveedor efectivo
+        de race tras la herencia de AI_PROVIDER (RACE_AI_PROVIDER vacío cae
+        a AI_PROVIDER, así que el check debe resolver esa herencia, no solo
+        leer el campo crudo)."""
+        if self.app_env != "production":
+            return self
+        effective_race_provider = self.race_ai_provider or self.ai_provider
+        if self.ai_provider == "claude-cli":
+            raise ValueError(
+                "AI_PROVIDER='claude-cli' PROHIBIDO en producción (suscripción "
+                "personal del desarrollador; los términos de consumo de "
+                "Anthropic no permiten usarlo para servir a usuarios finales)."
+            )
+        if effective_race_provider == "claude-cli":
+            raise ValueError(
+                "RACE_AI_PROVIDER='claude-cli' PROHIBIDO en producción "
+                "(suscripción personal del desarrollador; los términos de "
+                "consumo de Anthropic no permiten usarlo para servir a "
+                "usuarios finales)."
             )
         return self
 

@@ -36,10 +36,10 @@ Web application (`plan.md` §Structure Decision): backend at `backend/app/…`, 
 
 **Purpose**: Confirm the ground the four waves stand on. No production code changes.
 
-- [ ] T001 Verify the Alembic chain has a single head and that it is `45cd705c6b54` by running `alembic heads` from `backend/` (venv active); record the actual value in `specs/042-traceable-growth-ai/tasks.md` notes if it differs, because `data-model.md` §5 pins `down_revision` to it.
-- [ ] T002 [P] Verify the pinned versions in `backend/requirements.txt` cover `langchain`, `langchain-core`, `langchain-google-genai`, `langchain-anthropic`, `langchain-openai` and `langfuse`, and confirm `langchain-claude-cli` is **absent** by design; no dependency is added by this feature.
-- [ ] T003 [P] Create the empty package skeletons `backend/app/services/llm/__init__.py` and `backend/app/services/ai/anthro/__init__.py` (plus `anthro/prompts/` and `anthro/eval/`) so the two waves have disjoint, importable roots.
-- [ ] T004 [P] Create the test package roots `backend/tests/anthro/__init__.py` and confirm `backend/tests/mysql/` and `backend/tests/evals/` exist; add `__init__.py` where the existing convention requires one.
+- [X] T001 Verify the Alembic chain has a single head and that it is `45cd705c6b54` by running `alembic heads` from `backend/` (venv active); record the actual value in `specs/042-traceable-growth-ai/tasks.md` notes if it differs, because `data-model.md` §5 pins `down_revision` to it.
+- [X] T002 [P] Verify the pinned versions in `backend/requirements.txt` cover `langchain`, `langchain-core`, `langchain-google-genai`, `langchain-anthropic`, `langchain-openai` and `langfuse`, and confirm `langchain-claude-cli` is **absent** by design; no dependency is added by this feature.
+- [X] T003 [P] Create the empty package skeletons `backend/app/services/llm/__init__.py` and `backend/app/services/ai/anthro/__init__.py` (plus `anthro/prompts/` and `anthro/eval/`) so the two waves have disjoint, importable roots.
+- [X] T004 [P] Create the test package roots `backend/tests/anthro/__init__.py` and confirm `backend/tests/mysql/` and `backend/tests/evals/` exist; add `__init__.py` where the existing convention requires one.
 
 ---
 
@@ -53,8 +53,8 @@ Web application (`plan.md` §Structure Decision): backend at `backend/app/…`, 
 
 ### Configuration
 
-- [ ] T005 [US2] Add the new settings to `backend/app/config.py` per `contracts/config-env.md`: `AI_USE_LANGCHAIN` (bool, default off), `AI_ANALYST_MODEL`, `AI_CRITIC_MODEL`, `AI_ANTHRO_PROMPT_VERSION` (default `anthropometry_analyst_v1`), `RACE_AI_TEMPERATURE` (default 0.4), `LANGFUSE_STRUCTURAL_METADATA` (bool, default off).
-- [ ] T006 [US6] Add the production startup validators to `backend/app/config.py`: `APP_ENV=production` must fail when `LANGFUSE_ENABLED` is true, when `LANGFUSE_STRUCTURAL_METADATA` is true, or when either `AI_PROVIDER` or `RACE_AI_PROVIDER` resolves to `claude-cli`; each message must name the offending variable (FR-021, FR-037, SC-009).
+- [X] T005 [US2] Add the new settings to `backend/app/config.py` per `contracts/config-env.md`: `AI_USE_LANGCHAIN` (bool, default off), `AI_ANALYST_MODEL`, `AI_CRITIC_MODEL`, `AI_ANTHRO_PROMPT_VERSION` (default `anthropometry_analyst_v1`), `RACE_AI_TEMPERATURE` (default 0.4), `LANGFUSE_STRUCTURAL_METADATA` (bool, default off).
+- [X] T006 [US6] Add the production startup validators to `backend/app/config.py`: `APP_ENV=production` must fail when `LANGFUSE_ENABLED` is true, when `LANGFUSE_STRUCTURAL_METADATA` is true, or when either `AI_PROVIDER` or `RACE_AI_PROVIDER` resolves to `claude-cli`; each message must name the offending variable (FR-021, FR-037, SC-009).
 - [ ] T007 [P] [US6] Write `backend/tests/test_ai_config.py` additions covering the three production-forbidden settings (three separate failures, each asserting the variable name appears in the message) and the defaults of the six new settings.
 
 ### Shared factory package (`app/services/llm/`)
