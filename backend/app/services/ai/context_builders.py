@@ -15,6 +15,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from app.services.category import compute_age_decimal, get_category
+from app.services.measurement_alerts import DEFAULT_INTERVAL, MEASUREMENT_INTERVALS
 
 if TYPE_CHECKING:
     from app.models.anthropometry import AnthropometricRecord
@@ -27,6 +28,20 @@ DELTA_HEIGHT_SIGNIFICANT_CM = 0.7
 DELTA_WEIGHT_SIGNIFICANT_KG = 1.5
 # Mínimo de semanas entre mediciones para calcular velocidad de crecimiento confiable.
 MIN_WEEKS_FOR_VELOCITY = 8
+
+# --- Feature 042 (traceable-growth-ai) ---------------------------------------
+# Umbral de semanas a partir del cual una velocidad ya computada (>= 8 semanas,
+# MIN_WEEKS_FOR_VELOCITY arriba, sin cambios) se etiqueta "reliable" en vez de
+# "early_signal". El piso de cómputo NO cambia — solo la etiqueta de confianza
+# que acompaña al mismo número (FR-004, contracts/analysis-context.md §1).
+# Precedente de monitoreo clínico documentado en docs/01-marco-teorico.md §1.
+VELOCITY_RELIABLE_WEEKS = 26
+
+# Por encima de este número de mediciones, las más antiguas se compactan en
+# checkpoints anuales en vez de descartarse (Edge Case spec.md:126). Es una
+# válvula de presupuesto de tokens, no un recorte de alcance: la historia
+# completa sigue representada, solo que agregada más allá de este punto.
+HISTORY_MAX_POINTS = 16
 
 # Máximo permitido para `training_implications` antes de inyectarlo al ctx.
 # Si excede, truncamos con elipsis para limitar superficie de PII libre escrita
@@ -198,6 +213,244 @@ def _build_trend(records: list["AnthropometricRecord"]) -> list[dict] | None:
 def _maturation_value(record: "AnthropometricRecord") -> str:
     status = record.maturation_status
     return status.value if hasattr(status, "value") else str(status)
+
+
+def age_group_for(age_decimal: float) -> str:
+    """Envoltorio público de :func:`_age_group` (feature 042, `anthro/context.py`).
+
+    Mismo cómputo que usa `AthleteAIContextBuilder`; se expone con nombre
+    público porque un módulo fuera de esta clase (el pipeline antropométrico)
+    también necesita el bucket de edad sin duplicar la regla de corte.
+    """
+    return _age_group(age_decimal)
+
+
+# ---------------------------------------------------------------------------
+# Feature 042 (traceable-growth-ai): helpers del pipeline antropométrico
+# ---------------------------------------------------------------------------
+#
+# Estas funciones alimentan `app/services/ai/anthro/context.py` (T028, paso 1
+# del pipeline). Viven aquí, junto a `ATHLETE_CONTEXT_ALLOWED_KEYS` y sus
+# umbrales hermanos, por la misma razón que el resto del archivo: son la
+# única vía aprobada por la que datos derivados del atleta llegan a un
+# prompt, así que su lógica de privacidad debe revisarse en un solo lugar.
+
+
+def velocity_confidence(weeks_between: int | None) -> str | None:
+    """Etiqueta de confianza para una velocidad de crecimiento ya computada.
+
+    FR-004: el PISO de cómputo (8 semanas, `MIN_WEEKS_FOR_VELOCITY`) no
+    cambia — por debajo de él no existe ninguna cifra de velocidad, y esta
+    función refleja eso devolviendo `None`. Entre 8 y 26 semanas la cifra
+    existe pero es apenas una señal temprana; a partir de 26 semanas
+    (`VELOCITY_RELIABLE_WEEKS`) se considera confiable.
+
+    `weeks_between=None` (sin medición previa) también retorna `None`.
+    """
+    if weeks_between is None or weeks_between < MIN_WEEKS_FOR_VELOCITY:
+        return None
+    if weeks_between >= VELOCITY_RELIABLE_WEEKS:
+        return "reliable"
+    return "early_signal"
+
+
+def phase_crossing_corroborated(
+    previous_status: str,
+    previous_evaluation_date: date,
+    older_status: str | None,
+    older_evaluation_date: date | None,
+) -> bool:
+    """FR-005: ¿el cruce de fase (target vs. `previous`) está corroborado?
+
+    Un cruce se considera confirmado solo cuando la lectura ANTERIOR a
+    `previous` ("older") muestra la misma fase que `previous` (es decir, la
+    fase previa era estable, no ruido de una sola lectura) Y el intervalo
+    entre `older` y `previous` cubre el intervalo de re-medición de esa
+    etapa (`MEASUREMENT_INTERVALS`, `app/services/measurement_alerts.py` —
+    90/30/120 días según Pre/Circa/Post-PHV).
+
+    Sin una lectura "older" disponible (menos de dos mediciones antes del
+    target), el cruce NUNCA se marca como corroborado — es un dato, no un
+    juicio del LLM (data-model.md §2.2).
+    """
+    if older_status is None or older_evaluation_date is None:
+        return False
+    if older_status != previous_status:
+        return False
+    interval_days = MEASUREMENT_INTERVALS.get(older_status, DEFAULT_INTERVAL)
+    span_days = (previous_evaluation_date - older_evaluation_date).days
+    return span_days >= interval_days
+
+
+def _compact_into_yearly_checkpoints(
+    records: list["AnthropometricRecord"], latest_date: date
+) -> list[dict]:
+    """Agrupa mediciones antiguas por año calendario en checkpoints sintéticos.
+
+    Cada checkpoint promedia talla/peso del año y toma el estado de
+    maduración más representado ese año (empate → el primero encontrado,
+    orden estable). Nunca lleva una fecha absoluta: solo
+    `weeks_offset_from_latest`, derivado de la fecha más reciente del grupo.
+    """
+    by_year: dict[int, list["AnthropometricRecord"]] = {}
+    for record in records:
+        by_year.setdefault(record.evaluation_date.year, []).append(record)
+
+    checkpoints: list[dict] = []
+    for year in sorted(by_year.keys(), reverse=True):
+        year_records = by_year[year]
+        avg_height = sum(float(r.standing_height_cm) for r in year_records) / len(year_records)
+        avg_weight = sum(float(r.weight_kg) for r in year_records) / len(year_records)
+        status_counts: dict[str, int] = {}
+        for r in year_records:
+            status = _maturation_value(r)
+            status_counts[status] = status_counts.get(status, 0) + 1
+        most_common_status = max(status_counts.items(), key=lambda kv: kv[1])[0]
+        representative_date = max(r.evaluation_date for r in year_records)
+        weeks_offset = max(int((latest_date - representative_date).days / 7), 0)
+        checkpoints.append(
+            {
+                "weeks_offset_from_latest": weeks_offset,
+                "height_cm": round(avg_height, 1),
+                "weight_kg": round(avg_weight, 1),
+                "maturation_status_at_point": most_common_status,
+            }
+        )
+    return checkpoints
+
+
+def build_longitudinal_series(
+    records: list["AnthropometricRecord"],
+    *,
+    reference_date: date | None = None,
+) -> list[dict]:
+    """Serie longitudinal compactada para el pipeline antropométrico (FR-003).
+
+    `records` es el historial completo del atleta (target incluido), en
+    cualquier orden. El resultado está ordenado del punto más reciente al
+    más antiguo:
+
+    - Cada punto lleva `weeks_offset_from_latest` (jamás una fecha absoluta).
+    - Nunca incluye `sitting_height_cm` ni `arm_span_cm` por punto — solo el
+      `arm_span_cm` de la medición más reciente se expone, como clave aparte
+      fuera de esta serie (mismo patrón de `AthleteAIContextBuilder.build`).
+    - Con más de `HISTORY_MAX_POINTS` (16) registros, los 15 más recientes
+      quedan punto a punto y el resto se compacta en checkpoints anuales
+      (`_compact_into_yearly_checkpoints`) — nunca se descarta historia.
+    - `delta_height_cm_from_prior_point` es `None` en el punto más antiguo de
+      la serie (compactada o no); en el resto, es la diferencia de talla
+      contra el punto cronológicamente anterior.
+    """
+    if not records:
+        return []
+
+    sorted_desc = sorted(records, key=lambda r: r.evaluation_date, reverse=True)
+    latest_date = reference_date or sorted_desc[0].evaluation_date
+
+    keep_per_point = HISTORY_MAX_POINTS - 1
+    if len(sorted_desc) > HISTORY_MAX_POINTS:
+        recent, older = sorted_desc[:keep_per_point], sorted_desc[keep_per_point:]
+    else:
+        recent, older = sorted_desc, []
+
+    points: list[dict] = []
+    for record in recent:
+        weeks_offset = max(int((latest_date - record.evaluation_date).days / 7), 0)
+        points.append(
+            {
+                "weeks_offset_from_latest": weeks_offset,
+                "height_cm": round(float(record.standing_height_cm), 1),
+                "weight_kg": round(float(record.weight_kg), 1),
+                "maturation_status_at_point": _maturation_value(record),
+            }
+        )
+
+    if older:
+        points.extend(_compact_into_yearly_checkpoints(older, latest_date))
+
+    for idx, point in enumerate(points):
+        if idx + 1 < len(points):
+            point["delta_height_cm_from_prior_point"] = round(
+                point["height_cm"] - points[idx + 1]["height_cm"], 1
+            )
+        else:
+            point["delta_height_cm_from_prior_point"] = None
+
+    return points
+
+
+# Claves permitidas en el `AnalysisContext` del pipeline antropométrico
+# (feature 042, `contracts/analysis-context.md` §2). Deliberadamente
+# independiente de `ATHLETE_CONTEXT_ALLOWED_KEYS`: es un frozenset CERRADO y
+# propio para que una futura poda de la allowlist legada nunca angoste, sin
+# querer, lo que puede ver este pipeline. Es plana (no anidada) porque valida
+# claves "hoja" — se aplica por separado a cada dict hoja del
+# `AnalysisContext` (identity, measurement_deltas, cada punto de
+# longitudinal_series, growth_summary, training_load_window,
+# previous_analysis) vía `sanitize_insight_context()`, nunca al contenedor
+# completo (cuyas claves — "identity", "measurement_deltas", etc. — son
+# estructurales, no datos).
+ANTHROPOMETRY_INSIGHT_CONTEXT_ALLOWED_KEYS: frozenset[str] = frozenset(
+    {
+        # 2.1 identidad
+        "age_decimal",
+        "age_group",
+        "sex",
+        "category",
+        "audience",
+        "arm_span_cm",
+        # 2.2 measurement_deltas
+        "weeks_since_prev_measurement",
+        "delta_height_cm",
+        "delta_weight_kg",
+        "delta_height_significant",
+        "delta_weight_significant",
+        "growth_velocity_cm_per_year",
+        "velocity_confidence",
+        "crossed_phv_phase",
+        "prev_maturation_status",
+        "phase_crossing_corroborated",
+        # 2.3 longitudinal_series (por punto)
+        "weeks_offset_from_latest",
+        "height_cm",
+        "weight_kg",
+        "maturation_status_at_point",
+        "delta_height_cm_from_prior_point",
+        # 2.4 growth_summary — códigos cualitativos únicamente, nunca z-score/
+        # percentil/valor crudo de banda (defensa en profundidad, §3 del
+        # contrato: eso se filtra aquí incluso si algo aguas arriba lo cuela).
+        "stage",
+        "maturity_offset",
+        "age_at_phv",
+        "months_from_phv",
+        "expected_velocity_range_cm_year",
+        "height_band",
+        "weight_band",
+        "nutritional_status",
+        "alerts",
+        "measurement_due_status",
+        # 2.5 training_load_window (28 días, tres campos solamente)
+        "sessions_count_28d",
+        "avg_rpe_28d",
+        "hours_28d",
+        # 2.6 previous_analysis (última estructurada propia, si existe)
+        "insight_schema_version",
+        "summary_line",
+        "confidence_level",
+        "weeks_since",
+    }
+)
+
+
+def sanitize_insight_context(ctx: dict) -> dict:
+    """Defensa en profundidad para el contexto del pipeline antropométrico.
+
+    Misma lógica de recorte silencioso que `AthleteAIContextBuilder._sanitize`
+    pero contra `ANTHROPOMETRY_INSIGHT_CONTEXT_ALLOWED_KEYS`. Se aplica a
+    cada dict "hoja" del `AnalysisContext` — nunca al contenedor completo,
+    ver la nota junto a la allowlist arriba.
+    """
+    return {key: value for key, value in ctx.items() if key in ANTHROPOMETRY_INSIGHT_CONTEXT_ALLOWED_KEYS}
 
 
 class AthleteAIContextBuilder:

@@ -1,0 +1,107 @@
+name: Anthropometry Analyst Golden Eval
+
+# Trigger: cualquier PR que toque el pipeline antropométrico estructurado
+# (feature 042), sus prompts, su eval o la factoría LLM compartida.
+# Eval bloqueante: composite debe ser >= ANTHRO_EVAL_THRESHOLD (0.75).
+# Fuente: specs/042-traceable-growth-ai/contracts/golden-eval-case.md §6
+# ("CI workflow .github/workflows/anthropometry-eval.yml, cloned from
+# race-eval.yml, kept independent in every dimension that could couple the
+# two gates").
+#
+# Independencia deliberada de race-eval.yml (mismo contrato §6): workflow
+# separado, secret separado (AI_API_KEY, nunca RACE_AI_API_KEY), variables
+# de entorno del stack app (AI_*, nunca RACE_AI_*) — una regresión del
+# prompt de carreras NUNCA puede poner en rojo esta puerta, y viceversa.
+
+on:
+  pull_request:
+    paths:
+      - "backend/app/services/ai/anthro/**"
+      - "backend/app/services/ai/guardrails.py"
+      - "backend/app/services/ai/context_builders.py"
+      - "backend/app/services/llm/**"
+      - "backend/evals/anthropometry_analyst/**"
+      - "backend/tests/anthro/**"
+      - "backend/tests/evals/test_anthropometry_analyst_eval.py"
+  workflow_dispatch:
+    inputs:
+      threshold:
+        description: "Threshold mínimo composite_score (default 0.75)"
+        required: false
+        default: "0.75"
+
+jobs:
+  golden-eval:
+    name: Run anthropometry analyst golden eval
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install backend deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install -e ".[dev]"
+
+      - name: Run golden eval (bloqueante)
+        env:
+          # specs/042-traceable-growth-ai — el pipeline de
+          # app/services/ai/anthro/ corre con stack="app": lee su config vía
+          # AI_PROVIDER/AI_MODEL/AI_API_KEY/AI_ANALYST_MODEL/AI_CRITIC_MODEL
+          # (app/services/llm/factory.py::resolve_app_config,
+          # Settings.ai_* en config.py) — NUNCA vía RACE_AI_*, que
+          # pertenecen al stack independiente app/services/race/ (regla de
+          # herencia de una sola vía, CLAUDE.md "Two separate AI stacks").
+          # Exportar aquí una variable RACE_AI_* por error dejaría a este
+          # job midiendo un proveedor/modelo distinto del que el pipeline de
+          # antropometría usa de verdad — mismo defecto que el fix
+          # documentado en race-eval.yml, ahora evitado desde el día uno.
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          AI_PROVIDER: google
+          AI_MODEL: gemini-3.1-flash-lite
+          # AI_ANALYST_MODEL/AI_CRITIC_MODEL vacíos → caen a AI_MODEL
+          # (mismo default vigente en producción hoy, config.py: ambos
+          # campos por defecto son "" — a diferencia del stack race, este
+          # stack no separa todavía un modelo más fuerte para el analista).
+          AI_ANALYST_MODEL: ""
+          AI_CRITIC_MODEL: ""
+          AI_ANTHRO_PROMPT_VERSION: anthropometry_analyst_v1
+          AI_USE_LANGCHAIN: "true"
+          AI_TEMPERATURE: "0.4"
+          AI_MAX_TOKENS: "1024"
+          AI_TIMEOUT_SECONDS: "30"
+          AI_LOG_PROMPTS: "false"
+          LANGFUSE_ENABLED: "false"
+          # Leído por el runner del eval (T048) para el gate de threshold —
+          # con el mismo default (0.75) que
+          # app/services/ai/anthro/eval/scorer.py::COMPOSITE_THRESHOLD si el
+          # runner no recibe la variable.
+          ANTHRO_EVAL_THRESHOLD: ${{ github.event.inputs.threshold || '0.75' }}
+        run: |
+          if [ -z "$AI_API_KEY" ]; then
+            echo "::error::AI_API_KEY no configurado en secrets de GitHub."
+            exit 1
+          fi
+          pytest tests/evals/test_anthropometry_analyst_eval.py -m golden -k anthropometry -v --tb=short
+
+      - name: Upload scoreboard
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: anthropometry-eval-scoreboard-${{ github.run_id }}
+          path: backend/evals/anthropometry_analyst/results/last_run.md
+          if-no-files-found: warn
+          retention-days: 30

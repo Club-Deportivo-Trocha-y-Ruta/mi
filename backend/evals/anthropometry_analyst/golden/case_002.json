@@ -1,0 +1,43 @@
+{
+  "case_id": "002",
+  "description": "Pre-PHV boy, 11 y, intervalo de 6 semanas entre mediciones — por debajo del piso de 8 semanas. No debe calcularse ni mencionarse ninguna cifra de velocidad.",
+  "audience": "family",
+  "input": {
+    "identity": { "age_decimal": 11.3, "age_group": "10-12", "sex": "M", "category": "Infantil B" },
+    "measurement_deltas": {
+      "weeks_since_prev_measurement": 6,
+      "delta_height_cm": 0.6,
+      "delta_weight_kg": 0.4,
+      "delta_height_significant": false,
+      "delta_weight_significant": false,
+      "growth_velocity_cm_per_year": null,
+      "velocity_confidence": null,
+      "crossed_phv_phase": false,
+      "prev_maturation_status": "Pre-PHV",
+      "phase_crossing_corroborated": false
+    },
+    "longitudinal_series": [
+      { "weeks_offset_from_latest": 0, "height_cm": 141.0, "weight_kg": 33.8, "maturation_status_at_point": "Pre-PHV", "delta_height_cm_from_prior_point": 0.6 },
+      { "weeks_offset_from_latest": 6, "height_cm": 140.4, "weight_kg": 33.4, "maturation_status_at_point": "Pre-PHV", "delta_height_cm_from_prior_point": null }
+    ],
+    "growth_summary": {
+      "stage": "Pre-PHV", "maturity_offset": -3.8, "age_at_phv": 15.1, "months_from_phv": -46,
+      "expected_velocity_range_cm_year": [5.0, 6.5],
+      "height_band": "p50_p75", "weight_band": "p50_p75", "nutritional_status": "eutrofico",
+      "alerts": [], "measurement_due_status": "on_time"
+    },
+    "training_load_window": { "sessions_count_28d": 9, "avg_rpe_28d": 3.2, "hours_28d": 8.0 },
+    "previous_analysis": {
+      "insight_schema_version": "v1",
+      "summary_line": "Sigue creciendo de forma estable, sin cambios que requieran ajustes.",
+      "confidence_level": "medium",
+      "weeks_since": 6
+    }
+  },
+  "expected_themes": ["intervalo muy corto", "no se calcula la velocidad", "muy pronto para comparar"],
+  "forbidden_terms": ["cm/año", "velocidad de crecimiento", "percentil", "z-score"],
+  "max_words": 180,
+  "min_confidence_level": null,
+  "max_confidence_level": "medium",
+  "ideal_output_excerpt": "Entre estas dos mediciones pasaron solo seis semanas, un plazo demasiado corto para calcular una velocidad de crecimiento confiable; toca esperar a la próxima cita."
+}

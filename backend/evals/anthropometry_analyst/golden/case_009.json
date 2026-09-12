@@ -1,0 +1,43 @@
+{
+  "case_id": "009",
+  "description": "Circa-PHV boy, 13 y, velocity 11.0 cm/año — por encima del límite superior esperado (8.0–10.0). Debe describirse como \"por encima de lo típico\", nunca con lenguaje alarmante (FR-007). Audiencia coach: puede citar cm/año y meses a PHV.",
+  "audience": "coach",
+  "input": {
+    "identity": { "age_decimal": 13.2, "age_group": "13-15", "sex": "M", "category": "Pre-juvenil A" },
+    "measurement_deltas": {
+      "weeks_since_prev_measurement": 27,
+      "delta_height_cm": 5.8,
+      "delta_weight_kg": 2.4,
+      "delta_height_significant": true,
+      "delta_weight_significant": true,
+      "growth_velocity_cm_per_year": 11.0,
+      "velocity_confidence": "reliable",
+      "crossed_phv_phase": false,
+      "prev_maturation_status": "Circa-PHV",
+      "phase_crossing_corroborated": false
+    },
+    "longitudinal_series": [
+      { "weeks_offset_from_latest": 0,  "height_cm": 162.4, "weight_kg": 51.2, "maturation_status_at_point": "Circa-PHV", "delta_height_cm_from_prior_point": 5.8 },
+      { "weeks_offset_from_latest": 27, "height_cm": 156.6, "weight_kg": 48.8, "maturation_status_at_point": "Circa-PHV", "delta_height_cm_from_prior_point": null }
+    ],
+    "growth_summary": {
+      "stage": "Circa-PHV", "maturity_offset": 0.1, "age_at_phv": 13.1, "months_from_phv": 1,
+      "expected_velocity_range_cm_year": [8.0, 10.0],
+      "height_band": "p75_p90", "weight_band": "p50_p75", "nutritional_status": "eutrofico",
+      "alerts": ["circa_phv"], "measurement_due_status": "on_time"
+    },
+    "training_load_window": { "sessions_count_28d": 13, "avg_rpe_28d": 4.4, "hours_28d": 16.0 },
+    "previous_analysis": {
+      "insight_schema_version": "v1",
+      "summary_line": "Mantiene una velocidad de crecimiento dentro del rango esperado para la fase Circa-PHV.",
+      "confidence_level": "high",
+      "weeks_since": 27
+    }
+  },
+  "expected_themes": ["por encima de lo típico", "11.0 cm/año", "seguimiento de carga"],
+  "forbidden_terms": ["alarma", "urgente", "anómalo", "preocupante", "riesgo", "peligroso"],
+  "max_words": 110,
+  "min_confidence_level": null,
+  "max_confidence_level": null,
+  "ideal_output_excerpt": "Tu deportista está creciendo a 11.0 cm/año, por encima de lo típico para su fase Circa-PHV; conviene seguir de cerca la carga técnica, sin que esto sea motivo de alarma."
+}

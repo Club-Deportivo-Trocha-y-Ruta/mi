@@ -1,11 +1,36 @@
-"""Schemas Pydantic para los endpoints `/api/ai/*`."""
+"""Schemas Pydantic para los endpoints `/api/ai/*`.
+
+Feature 042 (T042) — respuesta discriminada v1|v2
+==================================================
+Implementa `specs/042-traceable-growth-ai/contracts/measurement-analysis-api.md`
+§2: `PHVExplanationResponse` y `AnthropometricRecordExplanationResponse` ganan
+los mismos cinco campos nuevos (`schema_version`, `structured`,
+`critic_verdict`, `is_fallback`, `prompt_version`, `trace_id`) — seis en
+total, ver abajo — para exponer, sin romper compatibilidad, tanto una fila
+de prosa libre heredada (`schema_version="v1"`, `structured=None`) como una
+fila del análisis estructurado de esta feature (`schema_version="v2"`).
+
+Colisión de nombres (data-model.md §0 — LEER ANTES DE TOCAR ESTE ARCHIVO):
+`schema_version` aquí es el discriminador de *formato de fila* — el mismo
+eje que `AthleteAIExplanation.schema_version` (columna DB: `NULL` legado →
+API `"v1"`; `"v2"` estructurado). **No** es la versión del *payload* del
+insight (`AnthropometryInsightV1.schema_version`, siempre `Literal["v1"]`
+hoy, en `app/services/ai/anthro/schemas.py`) — un `AnthropometryInsightOut`
+de esta API puede convivir con cualquiera de los dos ejes sin que se
+confundan entre sí.
+
+`AnthropometryInsightOut` es un espejo deliberadamente independiente de
+`AnthropometryInsightV1` (no una re-exportación) para que el contrato de
+la API nunca cambie de forma silenciosamente si el schema interno del
+analista gana un campo propio de uso analista/crítico.
+"""
 
 from __future__ import annotations
 
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AIHealthResponse(BaseModel):
@@ -32,8 +57,47 @@ class AIStatusResponse(BaseModel):
     est_wait_seconds: int = Field(..., ge=0)
 
 
+class ConfidenceOut(BaseModel):
+    """Confianza declarada del análisis estructurado (v2) — nivel + razón breve.
+
+    Espejo de `app.services.ai.anthro.schemas.Confidence` para el cable de la
+    API (ver nota de independencia deliberada en el docstring del módulo).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    level: Literal["high", "medium", "low"]
+    reason: str
+
+
+class AnthropometryInsightOut(BaseModel):
+    """Espejo de `AnthropometryInsightV1` para el cable de la API (§2 del contrato).
+
+    Mantenido como clase Pydantic separada — nunca una re-exportación — para
+    que el contrato de la API no cambie de forma silenciosamente si el
+    schema interno del analista (`app/services/ai/anthro/schemas.py`) gana
+    un campo propio de uso analista/crítico. `None` (campo completo ausente,
+    no esta clase) en la respuesta cuando `schema_version="v1"`; siempre
+    poblado cuando `schema_version="v2"`, incluidas las filas
+    `critic_verdict="fallback"` (la plantilla determinista es, ella misma,
+    un `AnthropometryInsightV1` válido — data-model.md §3).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    summary_line: str
+    changes: list[str]
+    meaning: list[str]
+    next_weeks: list[str]
+    warning_signs: list[str]
+    confidence: ConfidenceOut
+    data_gaps: list[str]
+
+
 class PHVExplanationResponse(BaseModel):
-    """Texto generado por `PHVExplainerUseCase`."""
+    """Texto generado por el análisis PHV (feature 042: `anthro.pipeline.run_analysis`;
+    filas heredadas de `PHVExplainerUseCase` siguen renderizando como `schema_version="v1"`).
+    """
 
     text: str = Field(..., description="Explicación lista para enviar al padre.")
     model: str
@@ -42,9 +106,34 @@ class PHVExplanationResponse(BaseModel):
     age_group: str
     maturation_status: str
 
+    # --- Feature 042 (T042), contracts/measurement-analysis-api.md §2 -----
+    #: Discriminador de *formato de fila* — ver la nota de colisión del
+    #: docstring del módulo. Una fila heredada (`AthleteAIExplanation.
+    #: schema_version IS NULL`) SIEMPRE se expone aquí como `"v1"`, nunca
+    #: como `NULL`/`None` — invariante de compatibilidad (FR-026).
+    schema_version: Literal["v1", "v2"] = "v1"
+    #: `None` para `schema_version="v1"`; siempre poblado para `"v2"`.
+    structured: AnthropometryInsightOut | None = None
+    #: Los cinco valores persistidos del estado de revisión (data-model.md
+    #: §3). `None` para una fila `"v1"` (nunca pasó por el crítico).
+    critic_verdict: (
+        Literal["approved", "revised", "flagged", "fallback", "skipped"] | None
+    ) = None
+    #: Atajo de conveniencia — `True` exactamente cuando `critic_verdict ==
+    #: "fallback"`; nunca se deriva de forma independiente.
+    is_fallback: bool = False
+    #: `AI_ANTHRO_PROMPT_VERSION` vigente en la generación (`None` en `"v1"`).
+    prompt_version: str | None = None
+    #: Solo coach/admin (§4 del contrato); `None` para un padre, en
+    #: producción (Langfuse deshabilitado por diseño) o si la corrida no
+    #: llegó a abrir su span de traza (p. ej. un fallback temprano).
+    trace_id: str | None = None
+
 
 class AnthropometricRecordExplanationResponse(BaseModel):
-    """Texto generado por `AnthropometricRecordExplainerUseCase`.
+    """Análisis particular por medición (feature 042: `anthro.pipeline.run_analysis`;
+    filas heredadas de `AnthropometricRecordExplainerUseCase` siguen
+    renderizando como `schema_version="v1"`).
 
     Adiciona campos derivados del análisis particular para que el frontend
     pueda renderizar un resumen del delta antes del texto completo.
@@ -60,3 +149,16 @@ class AnthropometricRecordExplanationResponse(BaseModel):
     num_previous_measurements: int
     delta_height_cm: float | None = None
     delta_weight_kg: float | None = None
+
+    # --- Feature 042 (T042), contracts/measurement-analysis-api.md §2 -----
+    # Mismos seis campos y mismo significado que `PHVExplanationResponse`
+    # arriba — ver esa clase para el docstring completo de cada uno; no se
+    # reexplican aquí para no arriesgar que las dos copias diverjan.
+    schema_version: Literal["v1", "v2"] = "v1"
+    structured: AnthropometryInsightOut | None = None
+    critic_verdict: (
+        Literal["approved", "revised", "flagged", "fallback", "skipped"] | None
+    ) = None
+    is_fallback: bool = False
+    prompt_version: str | None = None
+    trace_id: str | None = None

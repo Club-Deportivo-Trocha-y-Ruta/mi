@@ -1,0 +1,44 @@
+{
+  "case_id": "006",
+  "description": "Transición corroborada Pre-PHV → Circa-PHV: la lectura anterior a la previa también fue Pre-PHV y el intervalo cubre el re-test de la etapa. Camino positivo — el cambio de fase SÍ puede nombrarse como confirmado.",
+  "audience": "family",
+  "input": {
+    "identity": { "age_decimal": 11.8, "age_group": "10-12", "sex": "M", "category": "Infantil B" },
+    "measurement_deltas": {
+      "weeks_since_prev_measurement": 32,
+      "delta_height_cm": 3.2,
+      "delta_weight_kg": 2.0,
+      "delta_height_significant": true,
+      "delta_weight_significant": true,
+      "growth_velocity_cm_per_year": 8.7,
+      "velocity_confidence": "reliable",
+      "crossed_phv_phase": true,
+      "prev_maturation_status": "Pre-PHV",
+      "phase_crossing_corroborated": true
+    },
+    "longitudinal_series": [
+      { "weeks_offset_from_latest": 0,  "height_cm": 148.3, "weight_kg": 39.8, "maturation_status_at_point": "Circa-PHV", "delta_height_cm_from_prior_point": 3.2 },
+      { "weeks_offset_from_latest": 32, "height_cm": 145.1, "weight_kg": 37.8, "maturation_status_at_point": "Pre-PHV", "delta_height_cm_from_prior_point": 1.4 },
+      { "weeks_offset_from_latest": 64, "height_cm": 143.7, "weight_kg": 36.5, "maturation_status_at_point": "Pre-PHV", "delta_height_cm_from_prior_point": null }
+    ],
+    "growth_summary": {
+      "stage": "Circa-PHV", "maturity_offset": -0.1, "age_at_phv": 11.9, "months_from_phv": -1,
+      "expected_velocity_range_cm_year": [7.5, 9.5],
+      "height_band": "p50_p75", "weight_band": "p50_p75", "nutritional_status": "eutrofico",
+      "alerts": ["circa_phv"], "measurement_due_status": "on_time"
+    },
+    "training_load_window": { "sessions_count_28d": 10, "avg_rpe_28d": 3.9, "hours_28d": 11.0 },
+    "previous_analysis": {
+      "insight_schema_version": "v1",
+      "summary_line": "Se mantiene en fase Pre-PHV, con crecimiento estable y sin cambios relevantes.",
+      "confidence_level": "medium",
+      "weeks_since": 32
+    }
+  },
+  "expected_themes": ["cambio de fase confirmado", "fase Circa-PHV", "mayor velocidad de crecimiento"],
+  "forbidden_terms": ["percentil", "z-score", "diagnóstico", "pendiente de confirmación"],
+  "max_words": 180,
+  "min_confidence_level": "medium",
+  "max_confidence_level": "high",
+  "ideal_output_excerpt": "Las últimas dos mediciones confirman que su hijo entró a la fase Circa-PHV, la de mayor velocidad de crecimiento; es un cambio esperado y positivo para su desarrollo."
+}

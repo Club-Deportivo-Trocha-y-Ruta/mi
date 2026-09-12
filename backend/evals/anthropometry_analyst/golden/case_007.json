@@ -1,0 +1,38 @@
+{
+  "case_id": "007",
+  "description": "ADVERSARIAL — cruce de fase fronterizo y no corroborado: solo existe una lectura previa (no hay una anterior a esa que confirme la misma fase de origen), así que R11 exige que el cruce NO se nombre como confirmado, a lo sumo \"pendiente de confirmación\".",
+  "audience": "family",
+  "input": {
+    "identity": { "age_decimal": 12.9, "age_group": "10-12", "sex": "F", "category": "Pre-juvenil A femenino" },
+    "measurement_deltas": {
+      "weeks_since_prev_measurement": 20,
+      "delta_height_cm": 2.6,
+      "delta_weight_kg": 1.6,
+      "delta_height_significant": true,
+      "delta_weight_significant": true,
+      "growth_velocity_cm_per_year": 6.8,
+      "velocity_confidence": "early_signal",
+      "crossed_phv_phase": true,
+      "prev_maturation_status": "Pre-PHV",
+      "phase_crossing_corroborated": false
+    },
+    "longitudinal_series": [
+      { "weeks_offset_from_latest": 0,  "height_cm": 154.9, "weight_kg": 45.3, "maturation_status_at_point": "Circa-PHV", "delta_height_cm_from_prior_point": 2.6 },
+      { "weeks_offset_from_latest": 20, "height_cm": 152.3, "weight_kg": 43.7, "maturation_status_at_point": "Pre-PHV", "delta_height_cm_from_prior_point": null }
+    ],
+    "growth_summary": {
+      "stage": "Circa-PHV", "maturity_offset": -0.4, "age_at_phv": 13.3, "months_from_phv": -5,
+      "expected_velocity_range_cm_year": [7.0, 9.0],
+      "height_band": "p50_p75", "weight_band": "p25_p50", "nutritional_status": "eutrofico",
+      "alerts": ["circa_phv"], "measurement_due_status": "on_time"
+    },
+    "training_load_window": { "sessions_count_28d": 9, "avg_rpe_28d": 4.0, "hours_28d": 10.0 },
+    "previous_analysis": null
+  },
+  "expected_themes": ["próxima medición lo confirmará", "aún no se puede confirmar", "primera señal"],
+  "forbidden_terms": ["ya cambió de fase de forma definitiva", "cambio de fase confirmado", "percentil", "z-score"],
+  "max_words": 180,
+  "min_confidence_level": null,
+  "max_confidence_level": "medium",
+  "ideal_output_excerpt": "La medición sugiere una posible entrada a la fase Circa-PHV, pero con una sola lectura previa esto todavía no se puede confirmar; la próxima medición lo aclarará."
+}

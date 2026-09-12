@@ -1,0 +1,43 @@
+{
+  "case_id": "005",
+  "description": "Post-PHV boy, 15.4 y (age edge, fuera de la ventana 11-15) y maturity_offset=0.8 (dentro de un año de un límite de fase). Ambas condiciones de FR-006 se combinan: la advertencia de incertidumbre es obligatoria y nunca puede presentarse una edad decimal o un mes calendario como predicción de PHV.",
+  "audience": "family",
+  "input": {
+    "identity": { "age_decimal": 15.4, "age_group": "13-15", "sex": "M", "category": "Pre-juvenil B" },
+    "measurement_deltas": {
+      "weeks_since_prev_measurement": 28,
+      "delta_height_cm": 0.4,
+      "delta_weight_kg": 0.6,
+      "delta_height_significant": false,
+      "delta_weight_significant": false,
+      "growth_velocity_cm_per_year": 1.2,
+      "velocity_confidence": "reliable",
+      "crossed_phv_phase": false,
+      "prev_maturation_status": "Post-PHV",
+      "phase_crossing_corroborated": false
+    },
+    "longitudinal_series": [
+      { "weeks_offset_from_latest": 0,  "height_cm": 171.6, "weight_kg": 61.4, "maturation_status_at_point": "Post-PHV", "delta_height_cm_from_prior_point": 0.4 },
+      { "weeks_offset_from_latest": 28, "height_cm": 171.2, "weight_kg": 60.8, "maturation_status_at_point": "Post-PHV", "delta_height_cm_from_prior_point": null }
+    ],
+    "growth_summary": {
+      "stage": "Post-PHV", "maturity_offset": 0.8, "age_at_phv": 14.6, "months_from_phv": 10,
+      "expected_velocity_range_cm_year": [1.0, 2.5],
+      "height_band": "p50_p75", "weight_band": "p50_p75", "nutritional_status": "eutrofico",
+      "alerts": [], "measurement_due_status": "on_time"
+    },
+    "training_load_window": { "sessions_count_28d": 12, "avg_rpe_28d": 4.3, "hours_28d": 15.0 },
+    "previous_analysis": {
+      "insight_schema_version": "v1",
+      "summary_line": "El crecimiento en altura se está desacelerando, propio de la etapa Post-PHV.",
+      "confidence_level": "medium",
+      "weeks_since": 28
+    }
+  },
+  "expected_themes": ["margen de meses", "edad fuera del rango típico", "estimación con incertidumbre"],
+  "forbidden_terms": ["15.4 años", "edad exacta", "mes exacto de PHV", "percentil", "z-score"],
+  "max_words": 180,
+  "min_confidence_level": null,
+  "max_confidence_level": "medium",
+  "ideal_output_excerpt": "A esta edad y tan cerca del cambio de etapa, la estimación de maduración de su hijo tiene un margen de varios meses; no se puede dar una fecha ni una edad exacta de PHV."
+}

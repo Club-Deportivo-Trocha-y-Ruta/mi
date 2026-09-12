@@ -1,0 +1,59 @@
+{
+  "case_id": "011",
+  "description": "ADVERSARIAL — previous_analysis.summary_line casi idéntico a lo que el nuevo borrador produciría naturalmente (FR-010): la nueva summary_line debe diferir; la continuidad se expresa como tal, no como repetición literal. También carga una historia longitudinal de 18 puntos para ejercitar la compactación por encima de HISTORY_MAX_POINTS=16 (15 puntos recientes uno a uno más 3 checkpoints anuales agregados, nunca con fecha absoluta).",
+  "audience": "coach",
+  "input": {
+    "identity": { "age_decimal": 13.6, "age_group": "13-15", "sex": "M", "category": "Pre-juvenil A" },
+    "measurement_deltas": {
+      "weeks_since_prev_measurement": 26,
+      "delta_height_cm": 2.0,
+      "delta_weight_kg": 1.1,
+      "delta_height_significant": true,
+      "delta_weight_significant": false,
+      "growth_velocity_cm_per_year": 4.0,
+      "velocity_confidence": "reliable",
+      "crossed_phv_phase": false,
+      "prev_maturation_status": "Post-PHV",
+      "phase_crossing_corroborated": false
+    },
+    "longitudinal_series": [
+      { "weeks_offset_from_latest": 0,   "height_cm": 168.4, "weight_kg": 57.9, "maturation_status_at_point": "Post-PHV", "delta_height_cm_from_prior_point": 2.0 },
+      { "weeks_offset_from_latest": 26,  "height_cm": 166.4, "weight_kg": 56.8, "maturation_status_at_point": "Post-PHV", "delta_height_cm_from_prior_point": 2.3 },
+      { "weeks_offset_from_latest": 52,  "height_cm": 164.1, "weight_kg": 55.0, "maturation_status_at_point": "Post-PHV", "delta_height_cm_from_prior_point": 3.1 },
+      { "weeks_offset_from_latest": 78,  "height_cm": 161.0, "weight_kg": 52.6, "maturation_status_at_point": "Circa-PHV", "delta_height_cm_from_prior_point": 4.4 },
+      { "weeks_offset_from_latest": 104, "height_cm": 156.6, "weight_kg": 48.9, "maturation_status_at_point": "Circa-PHV", "delta_height_cm_from_prior_point": 4.9 },
+      { "weeks_offset_from_latest": 130, "height_cm": 151.7, "weight_kg": 45.1, "maturation_status_at_point": "Circa-PHV", "delta_height_cm_from_prior_point": 3.6 },
+      { "weeks_offset_from_latest": 156, "height_cm": 148.1, "weight_kg": 42.4, "maturation_status_at_point": "Pre-PHV", "delta_height_cm_from_prior_point": 3.0 },
+      { "weeks_offset_from_latest": 182, "height_cm": 145.1, "weight_kg": 40.3, "maturation_status_at_point": "Pre-PHV", "delta_height_cm_from_prior_point": 2.6 },
+      { "weeks_offset_from_latest": 208, "height_cm": 142.5, "weight_kg": 38.5, "maturation_status_at_point": "Pre-PHV", "delta_height_cm_from_prior_point": 2.4 },
+      { "weeks_offset_from_latest": 234, "height_cm": 140.1, "weight_kg": 36.9, "maturation_status_at_point": "Pre-PHV", "delta_height_cm_from_prior_point": 2.1 },
+      { "weeks_offset_from_latest": 260, "height_cm": 138.0, "weight_kg": 35.5, "maturation_status_at_point": "Pre-PHV", "delta_height_cm_from_prior_point": 1.9 },
+      { "weeks_offset_from_latest": 286, "height_cm": 136.1, "weight_kg": 34.3, "maturation_status_at_point": "Pre-PHV", "delta_height_cm_from_prior_point": 1.7 },
+      { "weeks_offset_from_latest": 312, "height_cm": 134.4, "weight_kg": 33.2, "maturation_status_at_point": "Pre-PHV", "delta_height_cm_from_prior_point": 1.6 },
+      { "weeks_offset_from_latest": 338, "height_cm": 132.8, "weight_kg": 32.2, "maturation_status_at_point": "Pre-PHV", "delta_height_cm_from_prior_point": 1.5 },
+      { "weeks_offset_from_latest": 364, "height_cm": 131.3, "weight_kg": 31.3, "maturation_status_at_point": "Pre-PHV", "delta_height_cm_from_prior_point": 1.4 },
+      { "weeks_offset_from_latest": 416, "height_cm": 122.6, "weight_kg": 25.8, "maturation_status_at_point": "Pre-PHV", "delta_height_cm_from_prior_point": null },
+      { "weeks_offset_from_latest": 468, "height_cm": 114.9, "weight_kg": 21.4, "maturation_status_at_point": "Pre-PHV", "delta_height_cm_from_prior_point": null },
+      { "weeks_offset_from_latest": 520, "height_cm": 107.8, "weight_kg": 18.1, "maturation_status_at_point": "Pre-PHV", "delta_height_cm_from_prior_point": null }
+    ],
+    "growth_summary": {
+      "stage": "Post-PHV", "maturity_offset": 1.6, "age_at_phv": 12.0, "months_from_phv": 19,
+      "expected_velocity_range_cm_year": [3.0, 5.0],
+      "height_band": "p50_p75", "weight_band": "p50_p75", "nutritional_status": "eutrofico",
+      "alerts": [], "measurement_due_status": "on_time"
+    },
+    "training_load_window": { "sessions_count_28d": 11, "avg_rpe_28d": 4.1, "hours_28d": 13.0 },
+    "previous_analysis": {
+      "insight_schema_version": "v1",
+      "summary_line": "Mantiene un crecimiento estable en la fase Post-PHV, dentro del rango esperado para tu deportista.",
+      "confidence_level": "high",
+      "weeks_since": 26
+    }
+  },
+  "expected_themes": ["continúa la misma tendencia", "fase Post-PHV", "historial de varios años"],
+  "forbidden_terms": ["Mantiene un crecimiento estable en la fase Post-PHV, dentro del rango esperado para tu deportista"],
+  "max_words": 110,
+  "min_confidence_level": null,
+  "max_confidence_level": null,
+  "ideal_output_excerpt": "La tendencia de la fase Post-PHV se sostiene igual que en la revisión anterior; no hay un cambio nuevo que reportar más allá de la continuidad ya conocida."
+}

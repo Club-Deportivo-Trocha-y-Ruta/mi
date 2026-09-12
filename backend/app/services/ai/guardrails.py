@@ -453,8 +453,8 @@ def build_race_v2_forbidden_names_rules(names: list[str]) -> tuple[_Rule, ...]:
                 pattern=re.compile(rf"\b{escaped}\b", re.IGNORECASE),
                 replacement="la deportista",
                 description=(
-                    f"v2: nombre real prohibido detectado en output LLM. "
-                    f"Privacidad Ley 1581 Art. 3 (Colombia)."
+                    "v2: nombre real prohibido detectado en output LLM. "
+                    "Privacidad Ley 1581 Art. 3 (Colombia)."
                 ),
             )
         )
@@ -499,6 +499,105 @@ def check_conditions_fabrication(text: str) -> list[str]:
         conforme (no inventa condiciones).
     """
     return [m.group(0) for m in _RACE_CONDITIONS_TERMS_PATTERN.finditer(text)]
+
+
+# ---------------------------------------------------------------------------
+# Reglas anthropometry_insight_v1 (feature 042, T037) — última defensa sobre
+# el TEXTO RENDERIZADO (`AthleteAIExplanation.text`), cubriendo R04/R05/R11/R12
+# del catálogo R01-R12 (`specs/042-traceable-growth-ai/contracts/
+# golden-eval-case.md` §3, `data-model.md` §2.3). R01/R02/R06/R09 ya quedan
+# cubiertos por las reglas globales/`_RECORD_ANALYSIS_RULES` de más arriba —
+# de ahí que este bloque solo agregue las cuatro que faltan.
+#
+# FR-015: las prechecks deterministas (`app/services/ai/anthro/prechecks.py`,
+# T029) ya corrieron sobre el `AnthropometryInsightV1` estructurado ANTES de
+# esto. Este guardrail es la red de seguridad final sobre la prosa final que
+# llegará a frontend, PDF o email — debe seguir bloqueando aunque algo se
+# haya colado antes.
+#
+# Los patrones de R04/R05/R11/R12 están DUPLICADOS de
+# `app/services/ai/anthro/prechecks.py` a propósito: ese módulo IMPORTA de
+# este archivo (`_COMPARATIVE_NORM_PATTERN`, `_RECORD_ANALYSIS_RULES`,
+# `_SUPPLEMENT_KEYWORDS`) para R01/R02/R09, así que la dependencia inversa
+# (este archivo importando de `anthro/prechecks.py`) crearía un import
+# circular. Mismo patrón de duplicación documentada que ya usa
+# `context_builders.py` (comentario junto a `_TRAINING_IMPLICATIONS_
+# DIAGNOSTIC_PATTERNS`): si cambian los patrones en `anthro/prechecks.py`,
+# actualizar también los de aquí.
+
+_ANTHRO_V1_MONTHS_ES = (
+    r"enero|febrero|marzo|abril|mayo|junio|julio|agosto|"
+    r"septiembre|setiembre|octubre|noviembre|diciembre"
+)
+
+# R04 (parte 1): fecha calendario exacta — se elimina directamente del texto.
+_ANTHRO_V1_CALENDAR_DATE_PATTERN = re.compile(
+    rf"\b\d{{1,2}}\s+de\s+(?:{_ANTHRO_V1_MONTHS_ES})(?:\s+de\s+\d{{4}})?\b"
+    rf"|\b(?:{_ANTHRO_V1_MONTHS_ES})\s+de\s+\d{{4}}\b"
+    r"|\b\d{4}-\d{2}-\d{2}\b"
+    r"|\b\d{1,2}/\d{1,2}/\d{2,4}\b",
+    re.IGNORECASE,
+)
+
+# R04 (parte 2): edad de un decimal presentada como predicción de PHV. Solo
+# dispara cuando ambos patrones co-ocurren (edad decimal cerca de la palabra
+# clave PHV) — una edad decimal sola es identidad legítima (edad actual).
+_ANTHRO_V1_PHV_KEYWORD_PATTERN = re.compile(
+    r"\bPHV\b|pico\s+de\s+velocidad(?:\s+de\s+crecimiento)?|pico\s+de\s+crecimiento",
+    re.IGNORECASE,
+)
+_ANTHRO_V1_DECIMAL_AGE_PATTERN = re.compile(r"\b\d{1,2}[.,]\d\s*años?\b", re.IGNORECASE)
+
+# R05: velocidad de crecimiento presentada como confiable/definitiva.
+_ANTHRO_V1_VELOCITY_RELIABLE_CLAIM_PATTERN = re.compile(
+    r"velocidad[^.]{0,40}(?:confiable|consistente|establecida|s[óo]lida)"
+    r"|dato\s+confiable\s+de\s+crecimiento"
+    r"|ritmo\s+de\s+crecimiento\s+confiable",
+    re.IGNORECASE,
+)
+
+# R11: cruce de fase de maduración presentado como confirmado.
+_ANTHRO_V1_PHASE_CONFIRMED_CLAIM_PATTERN = re.compile(
+    r"(?:cambio|cruce)\s+de\s+fase[^.]{0,60}confirmad\w+"
+    r"|confirmad\w+[^.]{0,60}(?:cambio|cruce)\s+de\s+fase"
+    r"|ya\s+(?:entr[óo]|cruz[óo])\s+(?:a|en)\s+la\s+fase"
+    r"|entr[óo]\s+de\s+forma\s+confirmada\s+en\s+la\s+fase",
+    re.IGNORECASE,
+)
+
+# R12: cifra o dato exclusivo del entrenador (velocidad en cm/año, meses
+# restantes hasta el PHV) filtrada a un texto de audiencia familiar.
+_ANTHRO_V1_COACH_ONLY_PATTERN = re.compile(
+    r"\d+(?:[.,]\d+)?\s*cm\s*/\s*a[ñn]o"
+    r"|\d+(?:[.,]\d+)?\s*mes(?:es)?\s+(?:para|hasta)\s+(?:el\s+)?(?:PHV|pico)",
+    re.IGNORECASE,
+)
+
+
+def check_anthro_v1_exact_phv_age(text: str) -> bool:
+    """R04 (parte 2): ``True`` si una edad decimal aparece junto a la palabra clave PHV."""
+    return bool(
+        _ANTHRO_V1_PHV_KEYWORD_PATTERN.search(text)
+        and _ANTHRO_V1_DECIMAL_AGE_PATTERN.search(text)
+    )
+
+
+def check_anthro_v1_velocity_overclaim(text: str) -> bool:
+    """R05: ``True`` si el texto afirma que la velocidad de crecimiento es confiable.
+
+    Solo debe llamarse cuando el contexto NO respalda esa confiabilidad
+    (``Guardrails(velocity_reliable=False, ...)``).
+    """
+    return bool(_ANTHRO_V1_VELOCITY_RELIABLE_CLAIM_PATTERN.search(text))
+
+
+def check_anthro_v1_phase_crossing_overclaim(text: str) -> bool:
+    """R11: ``True`` si el texto presenta el cruce de fase como confirmado.
+
+    Solo debe llamarse cuando el contexto NO lo corrobora
+    (``Guardrails(phase_crossing_corroborated=False, ...)``).
+    """
+    return bool(_ANTHRO_V1_PHASE_CONFIRMED_CLAIM_PATTERN.search(text))
 
 
 def check_v2_veto_duro(text: str) -> list[str]:
@@ -609,6 +708,24 @@ class Guardrails:
             ``use_case="race_analyst_v2"``. Si el LLM menciona una edad numérica
             con `|mencionada - athlete_age| > 0.6`, se registra violation
             ``age_mismatch`` y el output se rechaza (force reject).
+        audience: ``"family" | "coach" | None``. Solo aplica en
+            ``use_case="anthropometry_insight_v1"`` (feature 042, T037):
+            cuando vale ``"family"`` activa la regla R12 (cifra o dato
+            exclusivo del entrenador filtrado a la familia). Default ``None``
+            → R12 no escanea (no-op para cualquier otro use case).
+        velocity_reliable: Solo aplica en
+            ``use_case="anthropometry_insight_v1"``. Debe reflejar
+            ``AnalysisContext.measurement_deltas["velocity_confidence"] ==
+            "reliable"`` (regla R05). Default ``True`` → no-op; el caller
+            (``app/services/ai/anthro/guardrails_step.py``, T036) lo pone en
+            ``False`` cuando el contexto NO respalda una velocidad confiable,
+            activando el escaneo de afirmaciones de confiabilidad.
+        phase_crossing_corroborated: Solo aplica en
+            ``use_case="anthropometry_insight_v1"``. Debe reflejar
+            ``AnalysisContext.measurement_deltas["phase_crossing_corroborated"]``
+            (regla R11). Default ``True`` → no-op; el caller lo pone en
+            ``False`` cuando hubo un cruce de fase sin corroborar, activando
+            el escaneo de afirmaciones de cruce "confirmado".
     """
 
     def __init__(
@@ -620,6 +737,9 @@ class Guardrails:
         is_first_in_season: bool = False,
         athlete_age: int | None = None,
         has_recorded_conditions: bool = True,
+        audience: str | None = None,
+        velocity_reliable: bool = True,
+        phase_crossing_corroborated: bool = True,
     ) -> None:
         self._age_group = age_group
         self._use_case = use_case
@@ -630,6 +750,11 @@ class Guardrails:
         # activamos el veto determinista anti-fabricación de clima/pista. Default
         # True → no escanea (retrocompat con season_summary y otros use cases).
         self._has_recorded_conditions = has_recorded_conditions
+        # Feature 042 (anthropometry_insight_v1, T037): defaults "no-op" para
+        # que ningún otro use_case cambie de comportamiento.
+        self._audience = audience
+        self._velocity_reliable = velocity_reliable
+        self._phase_crossing_corroborated = phase_crossing_corroborated
 
     def scrub(self, text: str) -> str:
         """Devuelve `text` saneado. Si hubo demasiadas violaciones, lanza."""
@@ -724,11 +849,66 @@ class Guardrails:
                             self._athlete_age,
                         )
 
+        # --- Verificaciones extra para anthropometry_insight_v1 (feature 042, T037) ---
+        # Última defensa sobre el texto renderizado: R04/R05/R11/R12 del
+        # catálogo (R01/R02/R06/R09 ya cubiertos por las reglas globales de
+        # más arriba). R04/R11/R12 son privacidad/seguridad de desarrollo
+        # (`must_block=True` en las prechecks, data-model.md §3) — si algo
+        # se coló hasta aquí, forzamos el rechazo total sin esperar a
+        # `MAX_VIOLATIONS_BEFORE_REJECT`. R05 solo degrada (no fuerza reject
+        # por sí sola), igual que en las prechecks.
+        has_anthro_v1_privacy_violation = False
+        if self._use_case == "anthropometry_insight_v1":
+            # R04 (parte 1): fecha calendario exacta — se elimina directamente.
+            new_text, count = _ANTHRO_V1_CALENDAR_DATE_PATTERN.subn("", sanitized)
+            if count:
+                violations.extend(["anthro_v1_exact_date"] * count)
+                has_anthro_v1_privacy_violation = True
+                logger.warning("ai.guardrail.anthro_v1_exact_date count=%d", count)
+                sanitized = new_text
+
+            # R04 (parte 2): edad decimal presentada como predicción de PHV.
+            if check_anthro_v1_exact_phv_age(sanitized):
+                violations.append("anthro_v1_exact_phv_age")
+                has_anthro_v1_privacy_violation = True
+                logger.warning("ai.guardrail.anthro_v1_exact_phv_age")
+                sanitized = _ANTHRO_V1_DECIMAL_AGE_PATTERN.sub("una edad aproximada", sanitized)
+
+            # R05: velocidad presentada como confiable cuando el contexto no
+            # lo respalda (degrada, no fuerza rechazo por sí sola).
+            if not self._velocity_reliable and check_anthro_v1_velocity_overclaim(sanitized):
+                violations.append("anthro_v1_velocity_overclaim")
+                logger.warning("ai.guardrail.anthro_v1_velocity_overclaim")
+                sanitized = _ANTHRO_V1_VELOCITY_RELIABLE_CLAIM_PATTERN.sub(
+                    "una señal aún temprana", sanitized
+                )
+
+            # R11: cruce de fase presentado como confirmado sin corroborar.
+            if not self._phase_crossing_corroborated and check_anthro_v1_phase_crossing_overclaim(
+                sanitized
+            ):
+                violations.append("anthro_v1_phase_crossing_overclaim")
+                has_anthro_v1_privacy_violation = True
+                logger.warning("ai.guardrail.anthro_v1_phase_crossing_overclaim")
+                sanitized = _ANTHRO_V1_PHASE_CONFIRMED_CLAIM_PATTERN.sub(
+                    "un cambio de fase aún sin confirmar", sanitized
+                )
+
+            # R12: cifra/dato exclusivo del entrenador filtrado a una familia.
+            if self._audience == "family":
+                new_text, count = _ANTHRO_V1_COACH_ONLY_PATTERN.subn("", sanitized)
+                if count:
+                    violations.extend(["anthro_v1_coach_only_leak"] * count)
+                    has_anthro_v1_privacy_violation = True
+                    logger.warning("ai.guardrail.anthro_v1_coach_only_leak count=%d", count)
+                    sanitized = new_text
+
         has_n1_veto = any(v.startswith("veto_n1_") for v in violations)
         rejected = (
             len(violations) >= MAX_VIOLATIONS_BEFORE_REJECT
             or has_n1_veto
             or has_age_mismatch
+            or has_anthro_v1_privacy_violation
         )
         return GuardrailReport(
             text=sanitized.strip(),

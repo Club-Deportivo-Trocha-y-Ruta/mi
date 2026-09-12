@@ -10,7 +10,15 @@ Convenciones:
     contenido previamente generado: el coach debe poder ver lo que se
     generó ayer aunque hoy el LLM esté caído.
   - Errores de la capa se mapean: `LLMTimeoutError`/`LLMUnavailableError`
-    → 503; `LLMSchemaError` → 502; `LLMConfigError` → 500.
+    → 503; `LLMSchemaError` → 502; `LLMConfigError` → 500. **Excepción
+    (feature 042, T043)**: en `phv-explanation` y
+    `measurements/{record_id}/explanation`, `anthro.pipeline.run_analysis`
+    absorbe internamente cualquier timeout/indisponibilidad del analista o
+    del crítico y resuelve al camino determinista de fallback
+    (`critic_verdict="fallback"`, `200`) — esos dos endpoints YA NO pueden
+    devolver `503` por esa causa; solo `LLMSchemaError`(→502)/
+    `LLMConfigError`(→500) siguen propagando, más el `503` de
+    `AI_ENABLED=false` (`contracts/measurement-analysis-api.md` §5).
   - Caché: `(athlete_id, anthropometric_record_id, use_case)`. Una
     medición nueva cambia el `record_id` y por tanto invalida el caché
     implícitamente sin DELETE explícito.
@@ -18,13 +26,51 @@ Convenciones:
     se verifica que el atleta tenga consentimiento vigente con
     `third_party_sharing=True`. Si no, se devuelve **451** (Unavailable
     For Legal Reasons).
-  - **Audiencia de la explicación PHV (feature 040, R-12)**: `?audience=
-    family|coach` en los endpoints de `phv-explanation`. `family` es el
-    default (lo que ya consumían padres/coach). `coach` agrega números
-    (velocidad cm/año, meses hasta/desde el PHV) que la versión familiar
-    omite a propósito — solo coach/admin pueden pedirla; un padre que
-    intente `?audience=coach` recibe 403 aunque tenga acceso al atleta.
-    Cada audiencia cachea por separado (`use_case` distinto).
+  - **Audiencia de la explicación PHV (feature 040, R-12) y del análisis por
+    medición (feature 042, T043)**: `?audience=family|coach` en AMBOS pares
+    de endpoints (`phv-explanation` y `measurements/{record_id}/explanation`
+    — este último gana el parámetro en esta feature,
+    `contracts/measurement-analysis-api.md` §0.1). `family` es el default
+    (lo que ya consumían padres/coach). `coach` agrega números (velocidad
+    cm/año, meses hasta/desde el PHV) que la versión familiar omite a
+    propósito — solo coach/admin pueden pedirla; un padre que intente
+    `?audience=coach` recibe 403 aunque tenga acceso al atleta. Cada
+    audiencia cachea por separado (`use_case` distinto).
+  - **Feature 042 (T043) — pipeline estructurado**: ambos pares de
+    endpoints generan ahora vía `app.services.ai.anthro.pipeline.
+    run_analysis` (reemplaza a `PHVExplainerUseCase`/
+    `AnthropometricRecordExplainerUseCase`, que solo siguen vivas para sus
+    propios tests unitarios — `contracts/measurement-analysis-api.md`,
+    encabezado). El pipeline persiste y audita por su cuenta
+    (`app/services/ai/anthro/persist.py`) — este router NUNCA vuelve a
+    escribir `AthleteAIExplanation` ni la fila de auditoría directamente
+    para estas dos rutas (data-model.md §6, invariante 5: las nueve
+    columnas nuevas son de escritura exclusiva de `persist.py`); tras
+    `run_analysis()` el router solo relee la fila ya persistida para
+    construir la respuesta `v1|v2` (`schemas/ai.py`, T042).
+  - **Compuerta familiar por rol, no por `audience` (FR-016)**: en las
+    lecturas `GET` de ambos endpoints, un padre (`UserRole.parent`) nunca
+    ve una fila cuyo `critic_verdict` sea `flagged`/`fallback`/`skipped`
+    (recibe `204`, idéntico a "sin análisis todavía") — un coach que pida
+    `?audience=family` para previsualizar SÍ ve el contenido real, marcado,
+    porque el coach es el humano en el bucle (`measurement-analysis-api.md`
+    §3). `critic_verdict IS NULL` (fila `"v1"` heredada) siempre se trata
+    como entregable — esta feature no censura retroactivamente contenido
+    anterior al crítico (data-model.md §6, invariante 3).
+  - **Excepción de presupuesto de latencia (dos llamadas LLM secuenciales,
+    plan.md §Complexity Tracking)**: cada `POST` de este archivo puede
+    invocar al LLM hasta CUATRO veces en el peor caso (analista → crítico →
+    reanálisis del analista → crítico del reanálisis; normalmente dos) vía
+    `run_analysis()`. Esto excede a propósito el presupuesto general de
+    escritura (p95 ≤ 1500 ms) — un único LLM call sin crítico fue
+    rechazado por el owner (seguridad del contenido antes que latencia).
+    Objetivo local: **p95 ≤ 45 s**. Si ese objetivo se excede en
+    producción, la salida documentada es migrar este par de endpoints a un
+    patrón submit-and-poll (como ya usa el stack de carreras,
+    `routers/race_imports.py`) en vez de seguir bloqueando la respuesta
+    HTTP — decisión del owner, no de este módulo; `latency_ms`
+    (persistido por `persist.py`) es la métrica que permitiría detectar
+    ese cruce.
 """
 
 from __future__ import annotations
@@ -36,15 +82,12 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select, text
-from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.dependencies import (
-    get_anthropometric_record_explainer_use_case,
     get_current_user,
     get_db,
-    get_phv_explainer_use_case,
     require_role,
     verify_athlete_access,
 )
@@ -56,20 +99,15 @@ from app.schemas.ai import (
     AIHealthResponse,
     AIStatusResponse,
     AnthropometricRecordExplanationResponse,
+    AnthropometryInsightOut,
     PHVExplanationResponse,
 )
-from app.services.ai.errors import (
-    LLMConfigError,
-    LLMSchemaError,
-    LLMTimeoutError,
-    LLMUnavailableError,
-)
+from app.services.ai.anthro.guardrails_step import FAMILY_DELIVERABLE_VERDICTS
+from app.services.ai.anthro.pipeline import run_analysis
+from app.services.ai.errors import LLMConfigError, LLMSchemaError
 from app.services.ai.use_cases.anthropometric_record_explainer import (
     USE_CASE_KEY as RECORD_USE_CASE,
-    AnthropometricRecordExplainerUseCase,
 )
-from app.services.ai.use_cases.phv_explainer import PHVExplainerUseCase
-from app.services.audit import AuditAction, AuditEntityType, record_audit
 from app.services.privacy import athlete_has_ai_processing_consent
 from app.services.race.ai.budget_guard import _sum_cost_last_30d
 from app.services.race.ai.runner import has_capacity
@@ -84,9 +122,21 @@ _PHV_USE_CASE = "phv_explainer"
 # clave única `(athlete_id, anthropometric_record_id, use_case)`.
 _PHV_COACH_USE_CASE = "phv_explanation_coach"
 
+# Feature 042 (T043), contracts/measurement-analysis-api.md §0.1: el análisis
+# por medición gana la misma partición por audiencia que el PHV. La clave
+# familiar (`RECORD_USE_CASE`) NO cambia — así una fila "v1" existente se
+# upgradea en el mismo lugar (mismo `id`) la primera vez que un coach pide
+# "Regenerar" tras esta feature, sin dejar una fila v1 huérfana. La clave de
+# coach es nueva — no existían filas de coach para este endpoint antes de 042.
+_RECORD_COACH_USE_CASE = "anthropometric_record_explainer_coach"
+
 
 def _use_case_for_audience(audience: Literal["family", "coach"]) -> str:
     return _PHV_COACH_USE_CASE if audience == "coach" else _PHV_USE_CASE
+
+
+def _record_use_case_for_audience(audience: Literal["family", "coach"]) -> str:
+    return _RECORD_COACH_USE_CASE if audience == "coach" else RECORD_USE_CASE
 
 
 def _ensure_audience_allowed(
@@ -149,114 +199,92 @@ async def _ensure_ai_consent(athlete_id: int, db: AsyncSession) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Auditoría de las explicaciones de IA
-# (T030, contracts/audit-recording.md §4.3 — fila `athlete_ai_explanation`)
+# Feature 042 (T043) — persistencia y auditoría de las explicaciones de IA
 #
-# Privacidad (Ley 1581, menores): estas dos rutas son justo donde es fácil
-# filtrar un dato del menor. La fila de auditoría registra **el hecho y los
-# identificadores** — quién generó una explicación, para qué atleta y sobre
-# qué medición — y NUNCA el contenido: ni el texto narrativo, ni el
-# `age_group`, ni el `maturation_status`, ni ninguna medida antropométrica.
-# La garantía es doble:
-#   1. `AuditEntityType.athlete_ai_explanation` no tiene entrada en
-#      `VALUE_ALLOWLIST`, así que `record_audit` deja `diff_json` en `None`
-#      aunque alguien pase un `diff` por error (§1.2 paso 6, R4).
-#   2. Acá jamás se construye un `diff`: solo viajan NOMBRES de columna en
-#      `changed_fields`, igual que `coach_answer_text` en §4.9.
-# `meta.related_entity_id` lleva el id de la medición: es un identificador,
-# no una medida.
+# Desde esta feature, `anthro.pipeline.run_analysis()` (llamado por ambos
+# `POST` de este archivo) hace su PROPIA persistencia (upsert de las nueve
+# columnas nuevas + prosa en `text`) y su PROPIA fila de auditoría
+# (`app/services/ai/anthro/persist.py`, T038 — mismo criterio §4.3 del
+# proyecto: solo el hecho `create`/`update` y los identificadores, nunca el
+# texto ni ningún dato del menor). Este router YA NO escribe
+# `AthleteAIExplanation` ni `audit_log` directamente para estas dos rutas —
+# hacerlo sería un doble-write que violaría data-model.md §6, invariante 5
+# ("las nueve columnas nuevas son de escritura exclusiva de persist.py").
+# Tras `run_analysis()`, el router solo RELEE la fila ya persistida
+# (`_explanation_row_or_404`) para construir la respuesta `v1|v2`.
 # ---------------------------------------------------------------------------
 
 
-#: Columnas que el `on_duplicate_key_update` reescribe SIEMPRE en una
-#: regeneración. Se emiten como lista fija (no como diff calculado) a
-#: propósito: comparar el texto anterior con el nuevo exigiría cargar la
-#: narrativa del menor solo para decidir si hubo cambio, y una regeneración
-#: que devolviera texto idéntico caería en la regla R7 (`update` sin cambios
-#: no escribe fila) y perdería el rastro de que el entrenador la pidió.
-_EXPLANATION_REWRITTEN_FIELDS = (
-    "age_group",
-    "generated_at",
-    "generated_by_user_id",
-    "maturation_status",
-    "model",
-    "provider",
-    "text",
-)
+async def _explanation_row_or_404(db: AsyncSession, explanation_id: int) -> AthleteAIExplanation:
+    """Relee la fila que `persist.py` (dentro de `run_analysis`) acaba de escribir.
 
-
-async def _cached_explanation_id(
-    db: AsyncSession,
-    *,
-    athlete_id: int,
-    anthropometric_record_id: int,
-    use_case: str,
-) -> int | None:
-    """Id de la fila de caché `(athlete_id, record_id, use_case)`, o `None`.
-
-    Pre-SELECT del upsert: decide si la fila de auditoría es `create` o
-    `update` (§4.3) y, cuando ya existía, aporta el `entity_id` sin depender
-    del `lastrowid` de un `INSERT ... ON DUPLICATE KEY UPDATE`.
+    `404` aquí sería un bug de orquestación (el id viene de
+    `persisted_explanation_id`, devuelto por la MISMA transacción que hizo el
+    upsert), nunca una condición de negocio esperada — se usa `scalar_one()`
+    a propósito para que ese bug falle ruidoso en vez de silenciarse como un
+    `None`.
     """
     result = await db.execute(
-        select(AthleteAIExplanation.id).where(
-            AthleteAIExplanation.athlete_id == athlete_id,
-            AthleteAIExplanation.anthropometric_record_id == anthropometric_record_id,
-            AthleteAIExplanation.use_case == use_case,
-        )
+        select(AthleteAIExplanation).where(AthleteAIExplanation.id == explanation_id)
     )
-    return result.scalar_one_or_none()
+    return result.scalar_one()
 
 
-async def _record_explanation_audit(
-    db: AsyncSession,
-    *,
-    athlete: Athlete,
-    anthropometric_record_id: int,
-    use_case: str,
-    actor: User,
-    previous_id: int | None,
-) -> None:
-    """Encola la fila de auditoría de una explicación de IA recién generada.
+def _map_structured_fields(
+    cached: AthleteAIExplanation, *, current_user: User
+) -> dict[str, object]:
+    """Deriva los seis campos `v1|v2` (`schemas/ai.py`, T042) desde una fila cacheada.
 
-    Debe llamarse DESPUÉS del upsert y ANTES de retornar: comparte la
-    transacción del write de negocio, que comitea `get_db`
-    (`app/dependencies.py:21`) al terminar el handler — la regla
-    transaccional de §1.3 se cumple por construcción en estas dos rutas
-    porque el router no comitea por su cuenta.
+    Compartido por los cuatro handlers (`GET`/`POST` × PHV/medición) — una
+    sola función que sabe leer `AthleteAIExplanation` evita que la lectura
+    de caché y la respuesta recién generada puedan divergir en cómo
+    interpretan `schema_version`/`critic_verdict` (`contracts/measurement-
+    analysis-api.md` §2).
 
-    Args:
-        db: sesión async activa, la misma del upsert.
-        athlete: atleta ya resuelto por `verify_athlete_access`; aporta
-            `club_id` (paso 2 de la escalera de §1.6) y `athlete_id`.
-        anthropometric_record_id: medición a la que se ancla la explicación.
-        use_case: clave de caché (`phv_explainer` / `phv_explanation_coach` /
-            el `use_case` por medición).
-        actor: usuario coach/admin autenticado.
-        previous_id: id devuelto por el pre-SELECT; `None` cuando la fila no
-            existía y por tanto la acción es `create`.
+    Colisión de nombres (data-model.md §0): `cached.schema_version` es el
+    discriminador de FORMATO DE FILA (`NULL` | `"v2"`) — nunca lo confundas
+    con `AnthropometryInsightV1.schema_version` (versión del payload,
+    siempre `"v1"` hoy), que vive DENTRO de `cached.structured_json` y ni
+    siquiera se lee aquí (el propio `AnthropometryInsightOut` no tiene ese
+    campo — T042, deliberado).
     """
-    entity_id = previous_id
-    if entity_id is None:
-        entity_id = await _cached_explanation_id(
-            db,
-            athlete_id=athlete.id,
-            anthropometric_record_id=anthropometric_record_id,
-            use_case=use_case,
-        )
-    await record_audit(
-        db,
-        action=AuditAction.create if previous_id is None else AuditAction.update,
-        entity_type=AuditEntityType.athlete_ai_explanation,
-        entity_id=entity_id,
-        actor=actor,
-        club_id=athlete.club_id,
-        athlete_id=athlete.id,
-        changed_fields=(
-            None if previous_id is None else list(_EXPLANATION_REWRITTEN_FIELDS)
-        ),
-        meta={"related_entity_id": anthropometric_record_id},
-    )
+    is_row_v2 = cached.schema_version == "v2"
+    structured = None
+    if is_row_v2 and cached.structured_json:
+        structured = AnthropometryInsightOut.model_validate(cached.structured_json)
+
+    # §4 del contrato: `trace_id` solo para coach/admin. `cached.
+    # langfuse_trace_id` ya es `None` cuando `LANGFUSE_ENABLED=false` (el
+    # caso siempre-verdadero en producción) o cuando la corrida no llegó a
+    # abrir su span — este router no vuelve a chequear ese flag, solo el rol.
+    is_coach_viewer = current_user.role in (UserRole.coach, UserRole.admin)
+    trace_id = cached.langfuse_trace_id if is_coach_viewer else None
+
+    return {
+        "schema_version": "v2" if is_row_v2 else "v1",
+        "structured": structured,
+        "critic_verdict": cached.critic_verdict,
+        "is_fallback": cached.critic_verdict == "fallback",
+        "prompt_version": cached.prompt_version,
+        "trace_id": trace_id,
+    }
+
+
+def _family_gate_blocks(cached: AthleteAIExplanation, *, current_user: User) -> bool:
+    """`True` si esta fila NUNCA debe llegar a un padre (FR-016, data-model.md §3).
+
+    Compuerta keyed en el ROL del solicitante, no en `?audience=` —
+    `contracts/measurement-analysis-api.md` §3: un coach que pida
+    `audience=family` para previsualizar SIGUE viendo el contenido real
+    (marcado), porque el coach es el humano en el bucle. `critic_verdict
+    IS NULL` (fila `"v1"` heredada, nunca pasó por el crítico) siempre se
+    trata como entregable — invariante 3 de `data-model.md` §6: esta
+    feature no censura retroactivamente contenido anterior al crítico.
+    """
+    if current_user.role != UserRole.parent:
+        return False
+    verdict = cached.critic_verdict
+    return verdict is not None and verdict not in FAMILY_DELIVERABLE_VERDICTS
 
 
 async def _latest_record(
@@ -434,6 +462,12 @@ async def get_phv_explanation_cached(
     (barrera real) ya valida el vínculo padre↔atleta. No se expone
     `generated_by_user_id` en el schema, así que no hay fuga de identidad
     del coach. `audience="coach"` está vedado a padres (`_ensure_audience_allowed`).
+
+    Feature 042 (T043): la compuerta familiar de FR-016 se aplica AQUÍ,
+    después de leer la fila — un padre cuya última fila esté
+    `flagged`/`fallback`/`skipped` recibe el mismo `204` que "sin análisis
+    todavía" (`_family_gate_blocks`, `contracts/measurement-analysis-api.md`
+    §3), nunca el contenido marcado.
     """
     _ensure_audience_allowed(audience, current_user)
 
@@ -449,7 +483,7 @@ async def get_phv_explanation_cached(
         )
     )
     cached = result.scalar_one_or_none()
-    if cached is None:
+    if cached is None or _family_gate_blocks(cached, current_user=current_user):
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     payload = PHVExplanationResponse(
@@ -459,6 +493,7 @@ async def get_phv_explanation_cached(
         generated_at=_aware_utc(cached.generated_at),
         age_group=cached.age_group,
         maturation_status=cached.maturation_status,
+        **_map_structured_fields(cached, current_user=current_user),
     )
     return Response(
         content=payload.model_dump_json(),
@@ -483,8 +518,14 @@ async def phv_explanation(
     db: AsyncSession = Depends(get_db),
     athlete: Athlete = Depends(verify_athlete_access),
     current_user: User = Depends(get_current_user),
-    use_case: PHVExplainerUseCase = Depends(get_phv_explainer_use_case),
 ) -> PHVExplanationResponse:
+    """Genera (o regenera) el análisis PHV vía `anthro.pipeline.run_analysis`.
+
+    Feature 042 (T043): reemplaza a `PHVExplainerUseCase.run()`. Ver el
+    docstring del módulo para la compuerta familiar (keyed en rol, no en
+    `audience`) y la excepción de presupuesto de latencia (dos llamadas LLM
+    secuenciales, p95 ≤ 45 s local).
+    """
     _forbid_parents(current_user)
     _ensure_audience_allowed(audience, current_user)
 
@@ -496,12 +537,16 @@ async def phv_explanation(
 
     await _ensure_ai_consent(athlete.id, db)
 
-    # Última medición + hasta 3 anteriores para construir tendencia.
+    # Historial COMPLETO del atleta (no solo las últimas 4 mediciones,
+    # como antes de esta feature) — el pipeline necesita la serie
+    # longitudinal completa para su grounding (FR-003); la compactación en
+    # checkpoints anuales más allá de 16 puntos (`context_builders.py::
+    # HISTORY_MAX_POINTS`) es la válvula de presupuesto de tokens, no un
+    # límite de cuántas mediciones puede leer este endpoint.
     result = await db.execute(
         select(AnthropometricRecord)
         .where(AnthropometricRecord.athlete_id == athlete.id)
         .order_by(AnthropometricRecord.evaluation_date.desc())
-        .limit(4)
     )
     history = list(result.scalars().all())
     if not history:
@@ -509,21 +554,26 @@ async def phv_explanation(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="El atleta no tiene mediciones antropométricas registradas.",
         )
+    target_record = history[0]
+
+    resolved_use_case = _use_case_for_audience(audience)
+    pipeline_state = {
+        "athlete": athlete,
+        "target_record": target_record,
+        "history_records": history,
+        "audience": audience,
+        "use_case": resolved_use_case,
+        "club_id": athlete.club_id,
+        "db": db,
+        "actor": current_user,
+    }
 
     try:
-        explanation = await use_case.run(
-            athlete=athlete,
-            latest_record=history[0],
-            history=history,
-            audience=audience,
-        )
-    except (LLMTimeoutError, LLMUnavailableError) as exc:
-        logger.warning("ai.unavailable type=%s", type(exc).__name__)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Servicio de IA no disponible",
-        )
+        pipeline_result = await run_analysis(pipeline_state)
     except LLMSchemaError as exc:
+        # measurement-analysis-api.md §5: "502 — Unchanged mapping; now can
+        # also fire from guardrails_step.py" — la defensa final rechazó el
+        # texto renderizado; nada se persistió.
         logger.warning("ai.schema_error type=%s", type(exc).__name__)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -535,60 +585,23 @@ async def phv_explanation(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Configuración de IA inválida.",
         )
+    # Nota deliberada (contracts/measurement-analysis-api.md §5, "Behaviour
+    # change to flag explicitly"): un timeout del analista/crítico YA NO
+    # propaga como excepción — `run_analysis()` lo resuelve internamente al
+    # camino determinista de fallback (`critic_verdict="fallback"`) y
+    # retorna `200`. Este `except` de `LLMTimeoutError`/`LLMUnavailableError`
+    # deliberadamente NO existe más en esta ruta.
 
-    resolved_use_case = _use_case_for_audience(audience)
-    previous_id = await _cached_explanation_id(
-        db,
-        athlete_id=athlete.id,
-        anthropometric_record_id=history[0].id,
-        use_case=resolved_use_case,
-    )
-
-    now = datetime.now(timezone.utc)
-    stmt = mysql_insert(AthleteAIExplanation).values(
-        athlete_id=athlete.id,
-        anthropometric_record_id=history[0].id,
-        use_case=resolved_use_case,
-        text=explanation.text,
-        model=explanation.model,
-        provider=explanation.provider,
-        generated_at=explanation.generated_at,
-        age_group=explanation.age_group,
-        maturation_status=explanation.maturation_status,
-        generated_by_user_id=current_user.id,
-        created_at=now,
-        updated_at=now,
-    )
-    stmt = stmt.on_duplicate_key_update(
-        text=stmt.inserted.text,
-        model=stmt.inserted.model,
-        provider=stmt.inserted.provider,
-        generated_at=stmt.inserted.generated_at,
-        age_group=stmt.inserted.age_group,
-        maturation_status=stmt.inserted.maturation_status,
-        generated_by_user_id=stmt.inserted.generated_by_user_id,
-        updated_at=now,
-    )
-    await db.execute(stmt)
-
-    # §4.3: `athlete_ai_explanation`·`create` cuando el pre-SELECT no encontró
-    # nada, `update` cuando sí. Solo el hecho y los identificadores.
-    await _record_explanation_audit(
-        db,
-        athlete=athlete,
-        anthropometric_record_id=history[0].id,
-        use_case=resolved_use_case,
-        actor=current_user,
-        previous_id=previous_id,
-    )
+    cached = await _explanation_row_or_404(db, pipeline_result["persisted_explanation_id"])
 
     return PHVExplanationResponse(
-        text=explanation.text,
-        model=explanation.model,
-        provider=explanation.provider,
-        generated_at=explanation.generated_at,
-        age_group=explanation.age_group,
-        maturation_status=explanation.maturation_status,
+        text=cached.text,
+        model=cached.model,
+        provider=cached.provider,
+        generated_at=_aware_utc(cached.generated_at),
+        age_group=cached.age_group,
+        maturation_status=cached.maturation_status,
+        **_map_structured_fields(cached, current_user=current_user),
     )
 
 
@@ -606,25 +619,41 @@ async def phv_explanation(
 )
 async def get_measurement_explanation_cached(
     record_id: int,
+    audience: Literal["family", "coach"] = Query(
+        "family",
+        description=(
+            "'family' (default) es el análisis para padres. 'coach' agrega "
+            "lo que la versión familiar omite a propósito — solo "
+            "coach/admin (feature 042, contracts/measurement-analysis-api.md §0.1)."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
     athlete: Athlete = Depends(verify_athlete_access),
+    current_user: User = Depends(get_current_user),
 ) -> Response:
     """Devuelve el análisis cacheado para una medición concreta del atleta.
 
     No verifica `ai_enabled`: análisis previos siguen accesibles aunque el
-    LLM esté caído. Padres pueden leer el caché de sus atletas vinculados.
+    LLM esté caído. Padres pueden leer el caché de sus atletas vinculados;
+    `audience="coach"` está vedado a padres (`_ensure_audience_allowed`).
+
+    Feature 042 (T043): mismo endpoint, ahora con `?audience=` (antes solo
+    lo tenía `phv-explanation`) y con la misma compuerta familiar por rol
+    (`_family_gate_blocks`, FR-016) que el endpoint PHV.
     """
+    _ensure_audience_allowed(audience, current_user)
+
     record = await _get_record_or_404(db, athlete.id, record_id)
 
     result = await db.execute(
         select(AthleteAIExplanation).where(
             AthleteAIExplanation.athlete_id == athlete.id,
             AthleteAIExplanation.anthropometric_record_id == record.id,
-            AthleteAIExplanation.use_case == RECORD_USE_CASE,
+            AthleteAIExplanation.use_case == _record_use_case_for_audience(audience),
         )
     )
     cached = result.scalar_one_or_none()
-    if cached is None:
+    if cached is None or _family_gate_blocks(cached, current_user=current_user):
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     # El cache no almacena los campos derivados (deltas) — los recalculamos
@@ -642,6 +671,7 @@ async def get_measurement_explanation_cached(
         num_previous_measurements=num_prev,
         delta_height_cm=delta_h,
         delta_weight_kg=delta_w,
+        **_map_structured_fields(cached, current_user=current_user),
     )
     return Response(
         content=payload.model_dump_json(),
@@ -656,14 +686,26 @@ async def get_measurement_explanation_cached(
 )
 async def measurement_explanation(
     record_id: int,
+    audience: Literal["family", "coach"] = Query(
+        "family",
+        description=(
+            "'family' (default) es el análisis para padres. 'coach' agrega "
+            "lo que la versión familiar omite a propósito — solo "
+            "coach/admin (feature 042, contracts/measurement-analysis-api.md §0.1)."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
     athlete: Athlete = Depends(verify_athlete_access),
     current_user: User = Depends(get_current_user),
-    use_case: AnthropometricRecordExplainerUseCase = Depends(
-        get_anthropometric_record_explainer_use_case
-    ),
 ) -> AnthropometricRecordExplanationResponse:
+    """Genera (o regenera) el análisis por medición vía `anthro.pipeline.run_analysis`.
+
+    Feature 042 (T043): reemplaza a `AnthropometricRecordExplainerUseCase.run()`.
+    Ver el docstring del módulo para la compuerta familiar y la excepción de
+    presupuesto de latencia (dos llamadas LLM secuenciales, p95 ≤ 45 s local).
+    """
     _forbid_parents(current_user)
+    _ensure_audience_allowed(audience, current_user)
 
     if not settings.ai_enabled:
         raise HTTPException(
@@ -675,7 +717,12 @@ async def measurement_explanation(
 
     target = await _get_record_or_404(db, athlete.id, record_id)
 
-    # Todas las mediciones previas a target (estrictamente anteriores).
+    # Todas las mediciones ESTRICTAMENTE anteriores a target — nunca
+    # mediciones posteriores, aunque ya existan: analizar una medición
+    # pasada no debe apoyarse en datos que todavía no existían en ese
+    # momento (mismo criterio que `AnthropometricRecordExplainerUseCase`
+    # antes de esta feature). `context.build_context` (paso 1 del
+    # pipeline) agrega `target` a esta lista por su cuenta.
     result = await db.execute(
         select(AnthropometricRecord)
         .where(
@@ -686,18 +733,20 @@ async def measurement_explanation(
     )
     priors = list(result.scalars().all())
 
+    resolved_use_case = _record_use_case_for_audience(audience)
+    pipeline_state = {
+        "athlete": athlete,
+        "target_record": target,
+        "history_records": priors,
+        "audience": audience,
+        "use_case": resolved_use_case,
+        "club_id": athlete.club_id,
+        "db": db,
+        "actor": current_user,
+    }
+
     try:
-        explanation = await use_case.run(
-            athlete=athlete,
-            target_record=target,
-            prior_records=priors,
-        )
-    except (LLMTimeoutError, LLMUnavailableError) as exc:
-        logger.warning("ai.unavailable type=%s", type(exc).__name__)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Servicio de IA no disponible",
-        )
+        pipeline_result = await run_analysis(pipeline_state)
     except LLMSchemaError as exc:
         logger.warning("ai.schema_error type=%s", type(exc).__name__)
         raise HTTPException(
@@ -710,63 +759,27 @@ async def measurement_explanation(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Configuración de IA inválida.",
         )
+    # Ver la misma nota deliberada en `phv_explanation` — un timeout ya no
+    # propaga como excepción, resuelve a `200` con `critic_verdict="fallback"`.
 
-    previous_id = await _cached_explanation_id(
-        db,
-        athlete_id=athlete.id,
-        anthropometric_record_id=target.id,
-        use_case=RECORD_USE_CASE,
-    )
+    cached = await _explanation_row_or_404(db, pipeline_result["persisted_explanation_id"])
 
-    now = datetime.now(timezone.utc)
-    stmt = mysql_insert(AthleteAIExplanation).values(
-        athlete_id=athlete.id,
-        anthropometric_record_id=target.id,
-        use_case=RECORD_USE_CASE,
-        text=explanation.text,
-        model=explanation.model,
-        provider=explanation.provider,
-        generated_at=explanation.generated_at,
-        age_group=explanation.age_group,
-        maturation_status=explanation.maturation_status,
-        generated_by_user_id=current_user.id,
-        created_at=now,
-        updated_at=now,
-    )
-    stmt = stmt.on_duplicate_key_update(
-        text=stmt.inserted.text,
-        model=stmt.inserted.model,
-        provider=stmt.inserted.provider,
-        generated_at=stmt.inserted.generated_at,
-        age_group=stmt.inserted.age_group,
-        maturation_status=stmt.inserted.maturation_status,
-        generated_by_user_id=stmt.inserted.generated_by_user_id,
-        updated_at=now,
-    )
-    await db.execute(stmt)
-
-    # §4.3: mismo criterio create/update que la explicación PHV. Los deltas de
-    # talla y peso que van en el response NUNCA entran a la fila.
-    await _record_explanation_audit(
-        db,
-        athlete=athlete,
-        anthropometric_record_id=target.id,
-        use_case=RECORD_USE_CASE,
-        actor=current_user,
-        previous_id=previous_id,
-    )
+    # El cache no almacena los campos derivados (deltas) — los recalculamos
+    # baratos desde la medición previa, igual que el `GET`.
+    delta_h, delta_w, num_prev = await _delta_summary(db, athlete.id, target)
 
     return AnthropometricRecordExplanationResponse(
-        text=explanation.text,
-        model=explanation.model,
-        provider=explanation.provider,
-        generated_at=explanation.generated_at,
-        age_group=explanation.age_group,
-        maturation_status=explanation.maturation_status,
+        text=cached.text,
+        model=cached.model,
+        provider=cached.provider,
+        generated_at=_aware_utc(cached.generated_at),
+        age_group=cached.age_group,
+        maturation_status=cached.maturation_status,
         record_id=target.id,
-        num_previous_measurements=explanation.num_previous_measurements,
-        delta_height_cm=explanation.delta_height_cm,
-        delta_weight_kg=explanation.delta_weight_kg,
+        num_previous_measurements=num_prev,
+        delta_height_cm=delta_h,
+        delta_weight_kg=delta_w,
+        **_map_structured_fields(cached, current_user=current_user),
     )
 
 

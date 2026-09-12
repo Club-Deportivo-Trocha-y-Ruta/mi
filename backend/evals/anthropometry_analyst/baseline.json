@@ -1,0 +1,33 @@
+{
+  "date": "2026-09-12",
+  "version": "v1",
+  "prompt_version": "anthropometry_analyst_v1",
+  "critic_prompt_version": "anthropometry_critic_v1",
+  "judge_prompt_version": "judge_anthropometry_v1",
+  "model": "gemini-3.1-flash-lite",
+  "threshold": 0.75,
+  "status": "PLACEHOLDER",
+  "_note": "Baseline placeholder generado en T047 sin acceso a AI_API_KEY en este entorno. Los scores son ESTIMACIONES razonables basadas en el rule_score determinista (R01-R12 + themes/forbidden/word-count) y un judge_score conservador de 0.70 para un prompt v1 sin tuning todavía, siguiendo el mismo criterio que evals/race_analyst/baseline_2026-05-20.json. REEMPLAZAR con un run real ejecutando: AI_API_KEY=xxx AI_ANALYST_MODEL=gemini-3.1-flash-lite AI_CRITIC_MODEL=gemini-3.1-flash-lite pytest backend/tests/evals/test_anthropometry_analyst_eval.py -m golden -k anthropometry, y luego actualizar este archivo con el scoreboard real (composite por caso, avg_rule_score, avg_judge_score).",
+  "avg_composite_score": 0.79,
+  "avg_rule_score": 0.93,
+  "avg_judge_score": 0.70,
+  "per_case": {
+    "001": {"composite": 0.80, "rule": 0.95, "judge": 0.70, "verdict": "PASS"},
+    "002": {"composite": 0.79, "rule": 0.95, "judge": 0.68, "verdict": "PASS"},
+    "003": {"composite": 0.81, "rule": 1.00, "judge": 0.70, "verdict": "PASS"},
+    "004": {"composite": 0.77, "rule": 0.90, "judge": 0.68, "verdict": "PASS"},
+    "005": {"composite": 0.76, "rule": 0.90, "judge": 0.67, "verdict": "BORDER"},
+    "006": {"composite": 0.80, "rule": 0.95, "judge": 0.70, "verdict": "PASS"},
+    "007": {"composite": 0.78, "rule": 0.90, "judge": 0.70, "verdict": "PASS"},
+    "008": {"composite": 0.79, "rule": 0.95, "judge": 0.68, "verdict": "PASS"},
+    "009": {"composite": 0.80, "rule": 0.95, "judge": 0.70, "verdict": "PASS"},
+    "010": {"composite": 0.81, "rule": 1.00, "judge": 0.69, "verdict": "PASS"},
+    "011": {"composite": 0.77, "rule": 0.90, "judge": 0.68, "verdict": "PASS"},
+    "012": {"composite": 0.82, "rule": 1.00, "judge": 0.71, "verdict": "PASS"}
+  },
+  "sc003_check": {
+    "velocity_early_signal_under_26_weeks_pct": 1.0,
+    "uncorroborated_crossings_stated_as_confirmed": 0
+  },
+  "regenerate_command": "AI_API_KEY=$your_key pytest backend/tests/evals/test_anthropometry_analyst_eval.py -m golden -k anthropometry -v"
+}
