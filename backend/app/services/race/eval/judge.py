@@ -239,7 +239,7 @@ async def llm_judge_score(
     try:
         with observability.llm_tracing(
             trace_name="race-eval-judge",
-            session_id=str(case.get("case_id", "unknown")),
+            session_id=observability.keyed_session_id(str(case.get("case_id", "unknown"))),
             tags=["judge-v1"],
         ) as tracing:
             call = await call_llm(llm, prompt, config=tracing)
@@ -352,7 +352,7 @@ async def llm_judge_score_v3(
     try:
         with observability.llm_tracing(
             trace_name="race-eval-judge",
-            session_id=str(case.get("case_id", "unknown")),
+            session_id=observability.keyed_session_id(str(case.get("case_id", "unknown"))),
             tags=["judge-v2"],
         ) as tracing:
             call = await call_llm(llm, prompt, config=tracing)

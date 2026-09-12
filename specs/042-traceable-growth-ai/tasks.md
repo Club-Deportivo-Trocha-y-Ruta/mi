@@ -53,9 +53,9 @@ Web application (`plan.md` §Structure Decision): backend at `backend/app/…`, 
 
 ### Configuration
 
-- [X] T005 [US2] Add the new settings to `backend/app/config.py` per `contracts/config-env.md`: `AI_USE_LANGCHAIN` (bool, default off), `AI_ANALYST_MODEL`, `AI_CRITIC_MODEL`, `AI_ANTHRO_PROMPT_VERSION` (default `anthropometry_analyst_v1`), `RACE_AI_TEMPERATURE` (default 0.4), `LANGFUSE_STRUCTURAL_METADATA` (bool, default off).
+- [X] T005 [US2] Add the new settings to `backend/app/config.py` per `contracts/config-env.md`: `AI_USE_LANGCHAIN` (bool, **default on** — the switch exists to roll back to the previous transport, per `contracts/config-env.md` §1 and `quickstart.md` §1.2), `AI_ANALYST_MODEL`, `AI_CRITIC_MODEL`, `AI_ANTHRO_PROMPT_VERSION` (default `anthropometry_analyst_v1`), `RACE_AI_TEMPERATURE` (default 0.4), `LANGFUSE_STRUCTURAL_METADATA` (bool, default off).
 - [X] T006 [US6] Add the production startup validators to `backend/app/config.py`: `APP_ENV=production` must fail when `LANGFUSE_ENABLED` is true, when `LANGFUSE_STRUCTURAL_METADATA` is true, or when either `AI_PROVIDER` or `RACE_AI_PROVIDER` resolves to `claude-cli`; each message must name the offending variable (FR-021, FR-037, SC-009).
-- [ ] T007 [P] [US6] Write `backend/tests/test_ai_config.py` additions covering the three production-forbidden settings (three separate failures, each asserting the variable name appears in the message) and the defaults of the six new settings.
+- [X] T007 [P] [US6] Write `backend/tests/test_ai_config.py` additions covering the three production-forbidden settings (three separate failures, each asserting the variable name appears in the message) and the defaults of the six new settings.
 
 ### Shared factory package (`app/services/llm/`)
 
@@ -68,24 +68,24 @@ Web application (`plan.md` §Structure Decision): backend at `backend/app/…`, 
 
 ### Race shims (monkeypatch targets preserved)
 
-- [ ] T014 [US2] Reduce `backend/app/services/race/agents/_llm.py` to a shim re-exporting `build_chat_llm` and friends from `app.services.llm.factory`, keeping every symbol the ~30 race tests monkeypatch.
+- [X] T014 [US2] Reduce `backend/app/services/race/agents/_llm.py` to a shim re-exporting `build_chat_llm` and friends from `app.services.llm.factory`, keeping every symbol the ~30 race tests monkeypatch.
 - [X] T015 [P] [US2] Reduce `backend/app/services/race/agents/pricing.py` to a shim re-exporting from `app.services.llm.pricing`.
 - [X] T016 [P] [US2] Reduce `backend/app/services/race/observability.py` to a shim re-exporting from `app.services.llm.observability`.
 - [X] T017 [US2] Stop the race Google and OpenAI builders from reading `AI_TEMPERATURE`; they now read the new `RACE_AI_TEMPERATURE` (default 0.4, today's effective value) inside `backend/app/services/llm/factory.py`.
-- [ ] T018 [US2] Replace the truncated session hash in `backend/app/services/race/agents/chat.py` with the keyed hash from T012 (FR-024), and apply the same helper to the race eval judge trace (`plan.md` open decision 2).
+- [X] T018 [US2] Replace the truncated session hash in `backend/app/services/race/agents/chat.py` with the keyed hash from T012 (FR-024), and apply the same helper to the race eval judge trace (`plan.md` open decision 2).
 
 ### LangChain transport adapter
 
-- [ ] T019 [US2] Create `backend/app/services/ai/providers/langchain_provider.py`: a `LangChainProvider` implementing the existing `LLMProvider` Protocol (and its structured-output method) over a `BaseChatModel` from the shared factory, mapping LangChain exceptions onto the stack's `app/services/ai/errors.py` types and exposing the same usage/latency data as the native providers.
-- [ ] T020 [US2] Wire the `"langchain"` branch into `backend/app/services/ai/factory.py` behind `AI_USE_LANGCHAIN`, keeping the `FakeLLMProvider` short-circuit **first** so `AI_ENABLED=false` and the ~40 `fake.last_request` privacy assertions are untouched (FR-025, FR-038).
+- [X] T019 [US2] Create `backend/app/services/ai/providers/langchain_provider.py`: a `LangChainProvider` implementing the existing `LLMProvider` Protocol (and its structured-output method) over a `BaseChatModel` from the shared factory, mapping LangChain exceptions onto the stack's `app/services/ai/errors.py` types and exposing the same usage/latency data as the native providers.
+- [X] T020 [US2] Wire the `"langchain"` branch into `backend/app/services/ai/factory.py` behind `AI_USE_LANGCHAIN`, keeping the `FakeLLMProvider` short-circuit **first** so `AI_ENABLED=false` and the ~40 `fake.last_request` privacy assertions are untouched (FR-025, FR-038).
 
 ### Wave 1 tests
 
-- [ ] T021 [P] [US2] Write `backend/tests/test_llm_factory.py`: the provider-inheritance matrix (empty `RACE_AI_PROVIDER` inherits `AI_PROVIDER`; the app stack never reads `RACE_AI_*`; empty `RACE_AI_MODEL` resolves to the per-provider default, not `AI_MODEL`; `RACE_AI_API_KEY` falls back to `AI_API_KEY` only on a matching effective provider), the Anthropic-no-temperature regression, and the `claude-cli` lazy-import behaviour.
-- [ ] T022 [P] [US2] Write `backend/tests/test_llm_observability.py`: mask sentinel redacts every content field, the allow-list snapshot test over `ALLOWED_METADATA_KEYS`, the keyed session id (stable, non-enumerable, domain-separated), and degrade-to-no-op with exactly one warning per process when Langfuse is unreachable.
-- [ ] T023 [P] [US2] Write `backend/tests/test_langchain_provider.py`: adapter translation and exception mapping using `GenericFakeChatModel`, including usage extraction and the structured-output path.
-- [ ] T024 [US2] Fix the red `test_factory_openai_not_implemented` in `backend/tests/test_ai_factory.py` and add the `AI_USE_LANGCHAIN` switch test (off → native provider, on → `LangChainProvider`, `AI_ENABLED=false` → `FakeLLMProvider` under both).
-- [ ] T025 [US2] Run the Wave 1 exit gate from `backend/`: `ruff check`, default `pytest`, `pytest -m golden -k race`, and the full default lane once with `AI_USE_LANGCHAIN=true` — record any behavioural diff in the race golden as a blocker.
+- [X] T021 [P] [US2] Write `backend/tests/test_llm_factory.py`: the provider-inheritance matrix (empty `RACE_AI_PROVIDER` inherits `AI_PROVIDER`; the app stack never reads `RACE_AI_*`; empty `RACE_AI_MODEL` resolves to the per-provider default, not `AI_MODEL`; `RACE_AI_API_KEY` falls back to `AI_API_KEY` only on a matching effective provider), the Anthropic-no-temperature regression, and the `claude-cli` lazy-import behaviour.
+- [X] T022 [P] [US2] Write `backend/tests/test_llm_observability.py`: mask sentinel redacts every content field, the allow-list snapshot test over `ALLOWED_METADATA_KEYS`, the keyed session id (stable, non-enumerable, domain-separated), and degrade-to-no-op with exactly one warning per process when Langfuse is unreachable.
+- [X] T023 [P] [US2] Write `backend/tests/test_langchain_provider.py`: adapter translation and exception mapping using `GenericFakeChatModel`, including usage extraction and the structured-output path.
+- [X] T024 [US2] Fix the red `test_factory_openai_not_implemented` in `backend/tests/test_ai_factory.py` and add the `AI_USE_LANGCHAIN` switch test (on → `LangChainProvider`, off → native provider, `AI_ENABLED=false` → `FakeLLMProvider` under both).
+- [ ] T025 [US2] Run the Wave 1 exit gate from `backend/`: `ruff check`, default `pytest`, `pytest -m golden -k race`, and the full default lane under both values of `AI_USE_LANGCHAIN` — record any behavioural diff in the race golden as a blocker.
 
 **Checkpoint**: the shared transport exists, traces redacted, race behaviour unchanged. W2 and W3 may start.
 

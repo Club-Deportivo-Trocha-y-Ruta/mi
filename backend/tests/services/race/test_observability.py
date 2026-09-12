@@ -330,7 +330,7 @@ async def test_concurrent_scopes_each_redacted_with_own_usage(langfuse_otel):
     assert NAME_SENTINEL not in _exported_text(spans)
 
 
-async def test_chat_trace_is_redacted_and_uses_anonymous_session(langfuse_otel):
+async def test_chat_trace_is_redacted_and_uses_keyed_session(langfuse_otel):
     @tool
     def stub_tool() -> str:
         """Herramienta de prueba."""
@@ -348,7 +348,14 @@ async def test_chat_trace_is_redacted_and_uses_anonymous_session(langfuse_otel):
     (generation,) = _generations(spans)
     _assert_redacted_with_usage(generation)
     assert generation.attributes["langfuse.trace.name"] == "race-chat"
-    assert generation.attributes["session.id"] == observability.anonymous_session_id(
+    # FR-024 (feature 042): el chat de race pasó del sha256 plano —enumerable
+    # por fuerza bruta sobre un espacio de preimagen de unos miles— al HMAC
+    # con clave del servidor. Se afirma además que NO coincide con el hash
+    # viejo, para que un rollback accidental de keyed_session_id rompa aquí.
+    assert generation.attributes["session.id"] == observability.keyed_session_id(
+        "chat-session-1"
+    )
+    assert generation.attributes["session.id"] != observability.anonymous_session_id(
         "chat-session-1"
     )
     assert NAME_SENTINEL not in _exported_text(spans)

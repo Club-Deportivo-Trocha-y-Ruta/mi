@@ -131,7 +131,10 @@ class Settings(BaseSettings):
     # ventana de migración, no un feature flag de largo plazo. NO afecta al
     # pipeline de antropometría, que nunca usó los proveedores legacy (llama
     # directo a la factoría compartida — ver llm-transport.md §3).
-    ai_use_langchain: bool = False
+    # Encendido por default: la migración es el camino nuevo normal y el
+    # interruptor existe para VOLVER atrás durante la ventana de transición,
+    # no para activarla (contracts/config-env.md §1, quickstart.md §1.2).
+    ai_use_langchain: bool = True
     # Overrides de modelo por rol para el pipeline de antropometría
     # (llm-transport.md §3). Vacío cae a AI_MODEL — un checkout nuevo no
     # necesita configuración adicional. Deliberadamente NO se reutilizan

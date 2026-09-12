@@ -858,7 +858,7 @@ class RaceChatAgent:
         # config, así que no generan spans.
         with observability.llm_tracing(
             trace_name="race-chat",
-            session_id=observability.anonymous_session_id(session_id),
+            session_id=observability.keyed_session_id(session_id),
             tags=[f"provider:{settings.race_ai_provider or settings.ai_provider}", PROMPT_VERSION_CHAT],
         ) as tracing:
             for _ in range(MAX_TOOL_ITERATIONS):

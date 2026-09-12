@@ -50,6 +50,7 @@ _KEYED_SESSION_ID_DOMAIN = b"042-langfuse-session"
 
 _client: Any = None
 _warned_missing_keys = False
+_warned_construction_failed = False
 
 # Mask por defecto del cliente Langfuse: redact-always sobre el sentinela
 # actual, expuesto también como fábrica (``build_mask``) para que
@@ -74,7 +75,7 @@ def _create_client(**overrides: Any) -> Any:
 
 
 def _get_client() -> Any:
-    global _client, _warned_missing_keys
+    global _client, _warned_missing_keys, _warned_construction_failed
     if not settings.langfuse_enabled:
         return None
     if _client is not None:
@@ -90,7 +91,17 @@ def _get_client() -> Any:
     try:
         _client = _create_client()
     except Exception:  # noqa: BLE001 — tracing nunca rompe la app.
-        logger.exception("langfuse: no se pudo crear el cliente — trazas deshabilitadas")
+        # FR-021: "como máximo UNA advertencia por proceso". Sin este flag la
+        # rama se dispara en cada llamada — y una sola corrida de
+        # ``llm_tracing`` ya invoca ``_get_client`` dos veces (directo y vía
+        # ``get_callbacks``), así que un Langfuse local caído inundaba el log
+        # con un stacktrace por llamada LLM. Mismo criterio que
+        # ``_warned_missing_keys``, la rama hermana de arriba.
+        if not _warned_construction_failed:
+            logger.exception(
+                "langfuse: no se pudo crear el cliente — trazas deshabilitadas"
+            )
+            _warned_construction_failed = True
         return None
     return _client
 
