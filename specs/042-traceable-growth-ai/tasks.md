@@ -101,14 +101,14 @@ Web application (`plan.md` §Structure Decision): backend at `backend/app/…`, 
 
 ### Schemas and context
 
-- [ ] T026 [US1] Create `backend/app/services/ai/anthro/schemas.py` per `contracts/insight-schema.md` and `data-model.md` §2.1: `AnthropometryInsightV1` (summary ≤140 chars; `que_cambio` 1–4, `que_significa` 1–4, `proximas_semanas` 1–3, `senales_aviso` 0–2, `data_gaps` 0–3; plain prose, no Markdown), `Confidence`, `CriticIssue`, `CriticVerdict` — with the word budgets (family ≤180, coach ≤110) validated by the model itself (FR-001, FR-002).
+- [X] T026 [US1] Create `backend/app/services/ai/anthro/schemas.py` per `contracts/insight-schema.md` and `data-model.md` §2.1: `AnthropometryInsightV1` (summary ≤140 chars; `que_cambio` 1–4, `que_significa` 1–4, `proximas_semanas` 1–3, `senales_aviso` 0–2, `data_gaps` 0–3; plain prose, no Markdown), `Confidence`, `CriticIssue`, `CriticVerdict` — with the word budgets (family ≤180, coach ≤110) validated by the model itself (FR-001, FR-002).
 - [ ] T027 [US1] Add the longitudinal helpers to `backend/app/services/ai/context_builders.py`: `VELOCITY_RELIABLE_WEEKS = 26`, `velocity_confidence()` (8-week computation floor unchanged, `reliable` only at ≥26 weeks), `phase_crossing_corroborated()`, the compacted series builder (offsets in weeks, yearly checkpoints beyond 16 points, no sitting height or arm span per point) and `ANTHROPOMETRY_INSIGHT_CONTEXT_ALLOWED_KEYS` (FR-003, FR-004, FR-005).
 - [ ] T028 [US1] Create `backend/app/services/ai/anthro/context.py` (pipeline step 1) per `contracts/analysis-context.md`: assemble `AnalysisContext` from the measurement deltas with significance flags, the compacted history, the 040 growth summary (stage, maturity offset, qualitative bands, expected velocity range, alert codes, next-measurement status), the 28-day training-load aggregates and the previous structured insight. Z-scores, percentiles, raw band values and absolute dates must never enter (FR-003).
 
 ### Deterministic rules and prompts
 
 - [ ] T029 [P] [US1] Create `backend/app/services/ai/anthro/prechecks.py`: rules R01–R12 per `contracts/insight-schema.md` and `data-model.md` §2.3, reusing the existing regexes in `backend/app/services/ai/guardrails.py`; privacy and developmental-safety rules block delivery, the rest lower confidence; word budget carries a 10 % tolerance (FR-011).
-- [ ] T030 [P] [US1] Create `backend/app/services/ai/anthro/prompts/loader.py` — a Jinja `StrictUndefined` loader mirroring the race `agents` prompt loader.
+- [X] T030 [P] [US1] Create `backend/app/services/ai/anthro/prompts/loader.py` — a Jinja `StrictUndefined` loader mirroring the race `agents` prompt loader.
 - [ ] T031 [US1] Write `backend/app/services/ai/anthro/prompts/anthropometry_analyst_v1.md` from `contracts/prompts/anthropometry_analyst_v1.md`: audience switch (family "su hijo"/"su hija", coach "tu deportista"), JSON-only output contract, velocity anchors taken **only** from the growth summary's expected range, mandatory uncertainty wording near a phase boundary or outside ages 11–15, warning signs routed to the coach, no population comparison, no clinical label, no exact PHV date (FR-002, FR-006, FR-007, FR-008, FR-036).
 - [ ] T032 [P] [US1] Write `backend/app/services/ai/anthro/prompts/anthropometry_critic_v1.md` from `contracts/prompts/anthropometry_critic_v1.md`: judge only contradiction with the growth summary, honesty of the confidence reason and tone; return `approve | revise | reject` with rule-coded violations (FR-012).
 
@@ -124,8 +124,8 @@ Web application (`plan.md` §Structure Decision): backend at `backend/app/…`, 
 
 ### Persistence and API
 
-- [ ] T040 [US1] Add the nine nullable columns to `backend/app/models/ai_explanation.py` exactly as `data-model.md` §1 specifies: `schema_version`, `structured_json`, `critic_verdict`, `prompt_version`, `tokens_in`, `tokens_out`, `cost_usd`, `latency_ms`, `langfuse_trace_id`. No `server_default`, no new index.
-- [ ] T041 [US1] Create the Alembic revision `backend/alembic/versions/<rev>_ai_explanations_traceability.py` with `down_revision="45cd705c6b54"` adding the nine columns and a working `downgrade()`; confirm `alembic heads` still shows a single head.
+- [X] T040 [US1] Add the nine nullable columns to `backend/app/models/ai_explanation.py` exactly as `data-model.md` §1 specifies: `schema_version`, `structured_json`, `critic_verdict`, `prompt_version`, `tokens_in`, `tokens_out`, `cost_usd`, `latency_ms`, `langfuse_trace_id`. No `server_default`, no new index.
+- [X] T041 [US1] Create the Alembic revision `backend/alembic/versions/<rev>_ai_explanations_traceability.py` with `down_revision="45cd705c6b54"` adding the nine columns and a working `downgrade()`; confirm `alembic heads` still shows a single head.
 - [ ] T042 [US1] Extend `backend/app/schemas/ai.py` with the `v1 | v2` discriminated response (discriminator `schema_version`, legacy `NULL` rows surfacing as `"v1"`), the structured payload and the coach-only technical fields (model, prompt version, trace reference).
 - [ ] T043 [US1] Rewire the per-measurement and PHV endpoints in `backend/app/routers/ai.py` to `anthro.pipeline.run_analysis`, add the `?audience=family|coach` parameter (default `family`, separate coach cache row) per `plan.md` open decision 0, map the response, and keep family gating keyed on the caller's role (FR-016). Document the two-call latency budget exception in the route docstring (`plan.md` Complexity Tracking).
 
