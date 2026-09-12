@@ -59,19 +59,19 @@ Web application (`plan.md` §Structure Decision): backend at `backend/app/…`, 
 
 ### Shared factory package (`app/services/llm/`)
 
-- [ ] T008 [US2] Create `backend/app/services/llm/factory.py` per `contracts/llm-transport.md`: `build_chat_llm(provider, model, role, temperature=None, **kw)`, `resolve_configured_model`, `DEFAULT_MODEL_BY_PROVIDER`, and the two per-stack config resolvers enforcing the one-way inheritance (race may read `AI_*`; the app stack never reads `RACE_AI_*`). Anthropic must never receive `temperature`; the `claude-cli` import stays lazy.
-- [ ] T009 [P] [US2] Create `backend/app/services/llm/calls.py`: `call_llm`, `extract_text`, `extract_usage`, `LLMCallResult` (text, tokens in/out, model, provider, latency), lifted from the race call path.
-- [ ] T010 [P] [US2] Move `backend/app/services/race/agents/pricing.py` to `backend/app/services/llm/pricing.py` (keep `compute_cost_usd`'s six-decimal rounding and the price table intact).
-- [ ] T011 [US2] Move `backend/app/services/race/observability.py` to `backend/app/services/llm/observability.py`: Langfuse client singleton, `llm_tracing` context manager, `trace_id_for`, degrade-to-no-op when the instance is unreachable (one warning per process), and `build_mask(sentinel)` implementing redact-always (FR-018, FR-021).
-- [ ] T012 [US2] Add the keyed session identifier to `backend/app/services/llm/observability.py`: HMAC derived from `JWT_SECRET_KEY` with a domain separator distinct from the race anonymiser, stable across restarts, never enumerable from the trace store (FR-019).
-- [ ] T013 [US2] Create `backend/app/services/llm/observability_metadata.py` per `contracts/trace-metadata-allowlist.md`: `ALLOWED_METADATA_KEYS`, the `StructuralMetadata` model and `build_structural_metadata()` returning `{}` unless `LANGFUSE_STRUCTURAL_METADATA` is on; no demographic or biological field may ever be emitted (FR-020).
+- [X] T008 [US2] Create `backend/app/services/llm/factory.py` per `contracts/llm-transport.md`: `build_chat_llm(provider, model, role, temperature=None, **kw)`, `resolve_configured_model`, `DEFAULT_MODEL_BY_PROVIDER`, and the two per-stack config resolvers enforcing the one-way inheritance (race may read `AI_*`; the app stack never reads `RACE_AI_*`). Anthropic must never receive `temperature`; the `claude-cli` import stays lazy.
+- [X] T009 [P] [US2] Create `backend/app/services/llm/calls.py`: `call_llm`, `extract_text`, `extract_usage`, `LLMCallResult` (text, tokens in/out, model, provider, latency), lifted from the race call path.
+- [X] T010 [P] [US2] Move `backend/app/services/race/agents/pricing.py` to `backend/app/services/llm/pricing.py` (keep `compute_cost_usd`'s six-decimal rounding and the price table intact).
+- [X] T011 [US2] Move `backend/app/services/race/observability.py` to `backend/app/services/llm/observability.py`: Langfuse client singleton, `llm_tracing` context manager, `trace_id_for`, degrade-to-no-op when the instance is unreachable (one warning per process), and `build_mask(sentinel)` implementing redact-always (FR-018, FR-021).
+- [X] T012 [US2] Add the keyed session identifier to `backend/app/services/llm/observability.py`: HMAC derived from `JWT_SECRET_KEY` with a domain separator distinct from the race anonymiser, stable across restarts, never enumerable from the trace store (FR-019).
+- [X] T013 [US2] Create `backend/app/services/llm/observability_metadata.py` per `contracts/trace-metadata-allowlist.md`: `ALLOWED_METADATA_KEYS`, the `StructuralMetadata` model and `build_structural_metadata()` returning `{}` unless `LANGFUSE_STRUCTURAL_METADATA` is on; no demographic or biological field may ever be emitted (FR-020).
 
 ### Race shims (monkeypatch targets preserved)
 
 - [ ] T014 [US2] Reduce `backend/app/services/race/agents/_llm.py` to a shim re-exporting `build_chat_llm` and friends from `app.services.llm.factory`, keeping every symbol the ~30 race tests monkeypatch.
-- [ ] T015 [P] [US2] Reduce `backend/app/services/race/agents/pricing.py` to a shim re-exporting from `app.services.llm.pricing`.
-- [ ] T016 [P] [US2] Reduce `backend/app/services/race/observability.py` to a shim re-exporting from `app.services.llm.observability`.
-- [ ] T017 [US2] Stop the race Google and OpenAI builders from reading `AI_TEMPERATURE`; they now read the new `RACE_AI_TEMPERATURE` (default 0.4, today's effective value) inside `backend/app/services/llm/factory.py`.
+- [X] T015 [P] [US2] Reduce `backend/app/services/race/agents/pricing.py` to a shim re-exporting from `app.services.llm.pricing`.
+- [X] T016 [P] [US2] Reduce `backend/app/services/race/observability.py` to a shim re-exporting from `app.services.llm.observability`.
+- [X] T017 [US2] Stop the race Google and OpenAI builders from reading `AI_TEMPERATURE`; they now read the new `RACE_AI_TEMPERATURE` (default 0.4, today's effective value) inside `backend/app/services/llm/factory.py`.
 - [ ] T018 [US2] Replace the truncated session hash in `backend/app/services/race/agents/chat.py` with the keyed hash from T012 (FR-024), and apply the same helper to the race eval judge trace (`plan.md` open decision 2).
 
 ### LangChain transport adapter
