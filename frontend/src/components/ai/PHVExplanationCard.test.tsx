@@ -1,8 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { AxiosError, AxiosHeaders } from "axios";
+import { axe, toHaveNoViolations } from "jest-axe";
 import { createElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+expect.extend(toHaveNoViolations);
 
 vi.mock("@/api/ai", async () => {
   const actual = await vi.importActual<typeof import("@/api/ai")>("@/api/ai");
@@ -13,9 +16,28 @@ vi.mock("@/api/ai", async () => {
   };
 });
 
+// useAIStatus (FR-032) — sin datos por defecto: degradación reactiva-only,
+// ningún hint visible, control habilitado. Cada test de la sección
+// "presupuesto de IA" sobreescribe `mockAIStatusData`.
+let mockAIStatusData: AIStatusResponse | undefined = undefined;
+vi.mock("@/hooks/ai/useAIStatus", () => ({
+  useAIStatus: () => ({ data: mockAIStatusData, isError: false }),
+}));
+
+// Rol de la sesión — gatilla el disclosure "Detalles técnicos" solo-coach
+// de `AIGeneratedContent` (FR-029). `undefined` (default) equivale a
+// ningún usuario autenticado — el disclosure nunca aparece, igual que para
+// un padre. Solo la suite de accesibilidad lo pone en "coach" para poder
+// probar el estado expandido de ese disclosure.
+let mockAuthRole: string | undefined = undefined;
+vi.mock("@/store/auth.store", () => ({
+  useAuthStore: (selector: (state: { user: { role: string } | null }) => unknown) =>
+    selector({ user: mockAuthRole ? { role: mockAuthRole } : null }),
+}));
+
 import * as aiApi from "@/api/ai";
-import { MaturationStatus } from "@/types/enums";
-import type { PHVExplanationResponse } from "@/types/ai.types";
+import { MaturationStatus, UserRole } from "@/types/enums";
+import type { AIStatusResponse, PHVExplanationResponse } from "@/types/ai.types";
 
 import { PHVExplanationCard } from "./PHVExplanationCard";
 
@@ -31,6 +53,7 @@ function withQuery() {
 }
 
 const mockResponse: PHVExplanationResponse = {
+  schema_version: "v1",
   text: "Su hijo está en Pre-PHV. Recomendamos juego, técnica y descanso.",
   model: "fake-model",
   provider: "fake",
@@ -40,6 +63,7 @@ const mockResponse: PHVExplanationResponse = {
 };
 
 const cachedResponse: PHVExplanationResponse = {
+  schema_version: "v1",
   text: "Texto cacheado de la última generación.",
   model: "cached-model",
   provider: "google",
@@ -75,6 +99,8 @@ describe("PHVExplanationCard", () => {
     vi.clearAllMocks();
     // Default: cache vacío (204 → null). Cada test puede sobreescribir.
     vi.mocked(aiApi.getPHVExplanationCached).mockResolvedValue(null);
+    mockAIStatusData = undefined;
+    mockAuthRole = undefined;
   });
 
   // -------------------------------------------------------------------------
@@ -391,7 +417,7 @@ describe("PHVExplanationCard", () => {
 
       // Mensaje pasivo para el padre
       expect(
-        await screen.findByText(/El entrenador la generará pronto/i),
+        await screen.findByText(/Todavía no hay un análisis disponible/i),
       ).toBeInTheDocument();
 
       // NO debe haber botón Generar
@@ -427,7 +453,7 @@ describe("PHVExplanationCard", () => {
       // El idle de readOnly debe aparecer (la query no corre pero el estado
       // es el mismo: sin contenido → mensaje pasivo)
       expect(
-        await screen.findByText(/El entrenador la generará pronto/i),
+        await screen.findByText(/Todavía no hay un análisis disponible/i),
       ).toBeInTheDocument();
       expect(
         screen.queryByRole("button", { name: /Generar explicación/i }),
@@ -494,6 +520,140 @@ describe("PHVExplanationCard", () => {
           audience: "family",
         }),
       );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Presupuesto de IA (FR-032) — hint sobre el control + deshabilitado
+  // mientras el presupuesto está agotado.
+  // -------------------------------------------------------------------------
+
+  describe("presupuesto de IA", () => {
+    it("sin caché: muestra el hint de presupuesto agotado y deshabilita Generar", async () => {
+      mockAIStatusData = {
+        budget_status: "exhausted",
+        budget_remaining_pct: 0,
+        concurrency_available: true,
+        est_wait_seconds: 0,
+      };
+
+      render(<PHVExplanationCard athleteId={1} hasRecords={true} />, {
+        wrapper: withQuery(),
+      });
+
+      expect(
+        await screen.findByTestId("ai-budget-hint-exhausted"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /Generar explicación/i }),
+      ).toBeDisabled();
+    });
+
+    it("con caché: muestra el hint sobre 'Regenerar análisis' y lo deshabilita si el presupuesto está agotado", async () => {
+      mockAIStatusData = {
+        budget_status: "exhausted",
+        budget_remaining_pct: 0,
+        concurrency_available: true,
+        est_wait_seconds: 0,
+      };
+      vi.mocked(aiApi.getPHVExplanationCached).mockResolvedValue(cachedResponse);
+
+      render(<PHVExplanationCard athleteId={42} hasRecords={true} />, {
+        wrapper: withQuery(),
+      });
+
+      expect(
+        await screen.findByTestId("ai-budget-hint-exhausted"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /Regenerar análisis/i }),
+      ).toBeDisabled();
+    });
+
+    it("sin presupuesto agotado, el botón 'Regenerar análisis' está habilitado y tiene la copia exacta", async () => {
+      vi.mocked(aiApi.getPHVExplanationCached).mockResolvedValue(cachedResponse);
+
+      render(<PHVExplanationCard athleteId={42} hasRecords={true} />, {
+        wrapper: withQuery(),
+      });
+
+      const regenBtn = await screen.findByRole("button", {
+        name: "Regenerar análisis",
+      });
+      expect(regenBtn).toBeEnabled();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Accesibilidad (FR-034) — jest-axe sin violaciones, colapsado y expandido.
+  //
+  // Esta tarjeta no monta `StructuredInsight` (eso es exclusivo de
+  // `AnthropometricRecordExplanationCard`, T062); su único par
+  // colapsado/expandido es el `<details>/<summary>` "Detalles técnicos"
+  // solo-coach de `AIGeneratedContent` (FR-029), así que la suite fija el
+  // rol de sesión a coach para poder abrirlo.
+  // -------------------------------------------------------------------------
+
+  describe("accesibilidad", () => {
+    it("sin violaciones en el estado idle", async () => {
+      const { container } = render(
+        <PHVExplanationCard athleteId={1} hasRecords={true} />,
+        { wrapper: withQuery() },
+      );
+      await screen.findByRole("button", { name: /Generar explicación/i });
+      expect(await axe(container)).toHaveNoViolations();
+    });
+
+    it("sin violaciones en éxito con el disclosure 'Detalles técnicos' colapsado (coach)", async () => {
+      mockAuthRole = UserRole.coach;
+      vi.mocked(aiApi.getPHVExplanationCached).mockResolvedValue(cachedResponse);
+
+      const { container } = render(
+        <PHVExplanationCard athleteId={42} hasRecords={true} />,
+        { wrapper: withQuery() },
+      );
+      const details = await screen.findByTestId("ai-technical-details");
+      expect(details).not.toHaveAttribute("open");
+      expect(await axe(container)).toHaveNoViolations();
+    });
+
+    it("sin violaciones con el disclosure 'Detalles técnicos' expandido (coach)", async () => {
+      mockAuthRole = UserRole.coach;
+      vi.mocked(aiApi.getPHVExplanationCached).mockResolvedValue(cachedResponse);
+
+      const { container } = render(
+        <PHVExplanationCard athleteId={42} hasRecords={true} />,
+        { wrapper: withQuery() },
+      );
+      const summary = await screen.findByText("Detalles técnicos");
+      fireEvent.click(summary);
+      await waitFor(() => {
+        expect(screen.getByTestId("ai-technical-details")).toHaveAttribute("open");
+      });
+      expect(await axe(container)).toHaveNoViolations();
+    });
+
+    it("sin violaciones en modo padre con el mensaje pasivo (sin caché)", async () => {
+      vi.mocked(aiApi.getPHVExplanationCached).mockResolvedValue(null);
+
+      const { container } = render(
+        <PHVExplanationCard athleteId={1} hasRecords={true} readOnly />,
+        { wrapper: withQuery() },
+      );
+      await screen.findByTestId("phv-explanation-idle");
+      expect(await axe(container)).toHaveNoViolations();
+    });
+
+    it("sin violaciones en modo padre con contenido cacheado (sin disclosure técnico)", async () => {
+      vi.mocked(aiApi.getPHVExplanationCached).mockResolvedValue(cachedResponse);
+
+      const { container } = render(
+        <PHVExplanationCard athleteId={42} hasRecords={true} readOnly />,
+        { wrapper: withQuery() },
+      );
+      await screen.findByTestId("phv-explanation-readonly");
+      expect(screen.queryByTestId("ai-technical-details")).not.toBeInTheDocument();
+      expect(await axe(container)).toHaveNoViolations();
     });
   });
 });

@@ -4,8 +4,9 @@ import ReactMarkdown from "react-markdown";
 import { PHVBadge } from "@/components/athletes/PHVBadge";
 import { formatDateTime } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/store/auth.store";
 import type { PHVExplanationResponse } from "@/types/ai.types";
-import { MaturationStatus } from "@/types/enums";
+import { MaturationStatus, UserRole } from "@/types/enums";
 
 interface AIGeneratedContentProps {
   data: PHVExplanationResponse;
@@ -25,9 +26,22 @@ function statusOrNull(value: string): MaturationStatus | null {
 
 /** Contenedor reutilizable para texto generado por IA.
  *
- * Renderiza: badge PHV, modelo, fecha relativa, disclaimer obligatorio,
- * texto y botón "Copiar". El disclaimer NO es ocultable (responsabilidad
- * del componente, no del consumidor).
+ * Renderiza: badge PHV, procedencia, fecha de generación, disclaimer
+ * obligatorio, texto y botón "Copiar". El disclaimer NO es ocultable
+ * (responsabilidad del componente, no del consumidor).
+ *
+ * Procedencia por audiencia (FR-029): toda persona ve la línea fija
+ * "Generado por el asistente de IA del club" con la fecha, nunca el
+ * proveedor ni el modelo. Solo un coach/admin (según el rol de la sesión
+ * actual, `useAuthStore` — el mismo gating por rol que
+ * `GrowthCurveSection`/`PercentileCurves`) obtiene además un disclosure
+ * real `<details>/<summary>` (accesible por teclado de forma nativa) con
+ * el modelo, la versión del prompt y la referencia de traza. Se decide por
+ * el ROL de quien mira, no por el `audience` de contenido pedido al
+ * backend (measurement-analysis-api.md §4: un coach previsualizando el
+ * texto en modo familia sigue siendo el humano en el ciclo y nunca debe
+ * quedar ciego a la procedencia técnica). Una familia jamás llega a este
+ * bloque: no se oculta con CSS, no se renderiza.
  *
  * Privacidad:
  *  - Nunca pasamos `data.text` a `title`, `aria-label` o `data-*` para
@@ -41,6 +55,8 @@ export function AIGeneratedContent({
 }: AIGeneratedContentProps) {
   const [copied, setCopied] = useState(false);
   const status = statusOrNull(data.maturation_status);
+  const role = useAuthStore((state) => state.user?.role);
+  const isCoachViewer = role === UserRole.coach || role === UserRole.admin;
 
   async function handleCopy() {
     try {
@@ -62,20 +78,51 @@ export function AIGeneratedContent({
     >
       <header className="flex flex-wrap items-center gap-2 text-xs text-mid-gray">
         <PHVBadge status={status} />
-        <span
-          className="rounded-full bg-purple-100 px-2.5 py-1 font-medium text-purple-700"
-          aria-label="Generado por IA"
-        >
-          IA · {data.provider}/{data.model}
-        </span>
-        <span className="ml-auto" aria-label="Fecha de generación">
-          {formatDateTime(data.generated_at)}
-        </span>
       </header>
+
+      <div className="space-y-1">
+        <p className="text-xs text-mid-gray" data-testid="ai-provenance">
+          Generado por el asistente de IA del club ·{" "}
+          <span aria-label="Fecha de generación">
+            {formatDateTime(data.generated_at)}
+          </span>
+        </p>
+
+        {isCoachViewer && (
+          <details
+            className="text-xs text-mid-gray"
+            data-testid="ai-technical-details"
+          >
+            <summary className="inline-flex min-h-8 w-fit cursor-pointer select-none items-center rounded-md font-medium text-charcoal hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+              Detalles técnicos
+            </summary>
+            <dl className="mt-1.5 space-y-1 pl-3">
+              <div className="flex flex-wrap gap-x-1">
+                <dt className="font-medium text-charcoal">Modelo:</dt>
+                <dd>
+                  {data.provider}/{data.model}
+                </dd>
+              </div>
+              <div className="flex flex-wrap gap-x-1">
+                <dt className="font-medium text-charcoal">
+                  Versión del prompt:
+                </dt>
+                <dd>{data.prompt_version ?? "No disponible"}</dd>
+              </div>
+              <div className="flex flex-wrap gap-x-1">
+                <dt className="font-medium text-charcoal">
+                  Referencia de traza:
+                </dt>
+                <dd>{data.trace_id ?? "No disponible"}</dd>
+              </div>
+            </dl>
+          </details>
+        )}
+      </div>
 
       <div
         role="alert"
-        className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+        className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900"
       >
         Generado por IA basándose en datos del atleta. Revisa con el
         entrenador antes de tomar decisiones.
@@ -124,7 +171,7 @@ export function AIGeneratedContent({
         <button
           type="button"
           onClick={handleCopy}
-          className="rounded-lg border border-light-gray px-3 py-1.5 text-xs font-medium text-charcoal hover:bg-light-gray/40 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="min-h-12 rounded-lg border border-light-gray px-4 text-sm font-medium text-charcoal hover:bg-light-gray/40 focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           {copied ? "Copiado" : "Copiar"}
         </button>

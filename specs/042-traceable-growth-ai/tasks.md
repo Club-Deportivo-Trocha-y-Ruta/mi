@@ -151,13 +151,13 @@ Web application (`plan.md` §Structure Decision): backend at `backend/app/…`, 
 
 ### Wave 2 frontend
 
-- [ ] T058 [P] [US1] Extend `frontend/src/schemas/ai.schemas.ts` with the Zod discriminated union on `schema_version` (default `"v1"`) mirroring `AnthropometryInsightV1`, and update `frontend/src/types/ai.types.ts`.
-- [ ] T059 [P] [US1] Create `frontend/src/lib/ai/pendingMessage.ts` — the shared escalating cold-start copy used by both AI cards, in español neutro with diacritics.
-- [ ] T060 [US1] Create `frontend/src/components/ai/StructuredInsight.tsx`: summary line and warning signs visible; "qué significa" and "próximas 2–4 semanas" behind a "Ver análisis completo" expander with `aria-expanded`/`aria-controls`; confidence with its reason and the data-gaps list (FR-026).
-- [ ] T061 [US1] Update `frontend/src/components/ai/AIGeneratedContent.tsx`: family provenance "Generado por el asistente de IA del club" with the generation date and no model slug, coach technical-details disclosure (model, prompt version, trace reference), disclaimer on the neutral informational token, and a ≥48 px "Copiar" control (FR-029, FR-030, FR-031).
-- [ ] T062 [US1] Update `frontend/src/components/ai/AnthropometricRecordExplanationCard.tsx`: render v2 collapsed via `StructuredInsight`, keep v1 prose rows rendering exactly as before, add the "Con observaciones" marker, the stale chip, `AIBudgetHint` above the generate control, and the shared passive empty message (FR-026, FR-032, FR-033).
-- [ ] T063 [P] [US1] Update `frontend/src/components/ai/PHVExplanationCard.tsx`: heading in the success state (G-16), ≥48 px "Regenerar análisis", `AIBudgetHint`, and the same shared empty message.
-- [ ] T064 [P] [US1] Write vitest suites for `StructuredInsight`, the v1/v2/corrupt-JSON branches of `AnthropometricRecordExplanationCard` and the discriminated union in `ai.schemas.ts`, with MSW fixtures; add jest-axe zero-violation assertions on both cards.
+- [X] T058 [P] [US1] Extend `frontend/src/schemas/ai.schemas.ts` with the Zod discriminated union on `schema_version` (default `"v1"`) mirroring `AnthropometryInsightV1`, and update `frontend/src/types/ai.types.ts`.
+- [X] T059 [P] [US1] Create `frontend/src/lib/ai/pendingMessage.ts` — the shared escalating cold-start copy used by both AI cards, in español neutro with diacritics.
+- [X] T060 [US1] Create `frontend/src/components/ai/StructuredInsight.tsx`: summary line and warning signs visible; "qué significa" and "próximas 2–4 semanas" behind a "Ver análisis completo" expander with `aria-expanded`/`aria-controls`; confidence with its reason and the data-gaps list (FR-026).
+- [X] T061 [US1] Update `frontend/src/components/ai/AIGeneratedContent.tsx`: family provenance "Generado por el asistente de IA del club" with the generation date and no model slug, coach technical-details disclosure (model, prompt version, trace reference), disclaimer on the neutral informational token, and a ≥48 px "Copiar" control (FR-029, FR-030, FR-031).
+- [X] T062 [US1] Update `frontend/src/components/ai/AnthropometricRecordExplanationCard.tsx`: render v2 collapsed via `StructuredInsight`, keep v1 prose rows rendering exactly as before, add the "Con observaciones" marker, the stale chip, `AIBudgetHint` above the generate control, and the shared passive empty message (FR-026, FR-032, FR-033).
+- [X] T063 [P] [US1] Update `frontend/src/components/ai/PHVExplanationCard.tsx`: heading in the success state (G-16), ≥48 px "Regenerar análisis", `AIBudgetHint`, and the same shared empty message.
+- [X] T064 [P] [US1] Write vitest suites for `StructuredInsight`, the v1/v2/corrupt-JSON branches of `AnthropometricRecordExplanationCard` and the discriminated union in `ai.schemas.ts`, with MSW fixtures; add jest-axe zero-violation assertions on both cards.
 - [ ] T065 [US1] Run the Wave 2 exit gate: `pytest -m golden -k anthropometry` ≥ 0.75, `pytest -m mysql`, default `pytest`, `ruff check`, `npm run build`, `npm test`.
 
 **Checkpoint**: the structured analysis is generated, reviewed, persisted with accounting and rendered; families are safe. W3 may start.

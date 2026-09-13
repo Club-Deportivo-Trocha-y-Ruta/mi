@@ -1,8 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { AxiosError, AxiosHeaders } from "axios";
+import { axe, toHaveNoViolations } from "jest-axe";
 import { createElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+expect.extend(toHaveNoViolations);
 
 vi.mock("@/api/ai", async () => {
   const actual = await vi.importActual<typeof import("@/api/ai")>("@/api/ai");
@@ -13,9 +16,20 @@ vi.mock("@/api/ai", async () => {
   };
 });
 
+// useAIStatus (FR-032) — sin datos por defecto: degradación reactiva-only,
+// ningún hint visible, control habilitado. La sección "presupuesto de IA"
+// sobreescribe `mockAIStatusData`. Mismo patrón que `PHVExplanationCard.test.tsx`.
+let mockAIStatusData: AIStatusResponse | undefined = undefined;
+vi.mock("@/hooks/ai/useAIStatus", () => ({
+  useAIStatus: () => ({ data: mockAIStatusData, isError: false }),
+}));
+
 import * as aiApi from "@/api/ai";
 import { MaturationStatus } from "@/types/enums";
-import type { AnthropometricRecordExplanationResponse } from "@/types/ai.types";
+import type {
+  AIStatusResponse,
+  AnthropometricRecordExplanationResponse,
+} from "@/types/ai.types";
 
 import { AnthropometricRecordExplanationCard } from "./AnthropometricRecordExplanationCard";
 
@@ -31,6 +45,7 @@ function withQuery() {
 }
 
 const baseResponse: AnthropometricRecordExplanationResponse = {
+  schema_version: "v1",
   text: "Su hijo creció desde la última medición.",
   model: "fake-model",
   provider: "fake",
@@ -49,6 +64,27 @@ const firstMeasurement: AnthropometricRecordExplanationResponse = {
   num_previous_measurements: 0,
   delta_height_cm: null,
   delta_weight_kg: null,
+};
+
+const structuredInsight = {
+  summary_line: "Talla +1.0 cm en 14 semanas, dentro del rango esperado.",
+  changes: ["El cambio de talla supera el ruido instrumental."],
+  meaning: ["La velocidad estimada está por encima de lo típico."],
+  next_weeks: ["Compatible con fuerza progresiva."],
+  warning_signs: [],
+  confidence: { level: "high" as const, reason: "Intervalo de 14 semanas consistente." },
+  data_gaps: [],
+};
+
+const v2Response: AnthropometricRecordExplanationResponse = {
+  ...baseResponse,
+  schema_version: "v2",
+  text: "Talla +1.0 cm en 14 semanas, dentro del rango esperado.",
+  structured: structuredInsight,
+  critic_verdict: "approved",
+  is_fallback: false,
+  prompt_version: "anthropometry_analyst_v1",
+  trace_id: "a1b2c3d4e5f60718",
 };
 
 function axiosErrorWith(status: number): AxiosError {
@@ -70,6 +106,7 @@ function axiosErrorWith(status: number): AxiosError {
 describe("AnthropometricRecordExplanationCard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockAIStatusData = undefined;
     vi.mocked(aiApi.getMeasurementExplanationCached).mockResolvedValue(null);
   });
 
@@ -205,6 +242,219 @@ describe("AnthropometricRecordExplanationCard", () => {
   });
 
   // -------------------------------------------------------------------------
+  // Análisis estructurado v2 (FR-026) — colapsado por defecto, degradación
+  // ante `structured` corrupto, avisos de veredicto solo-coach (FR-016).
+  // -------------------------------------------------------------------------
+
+  describe("análisis estructurado v2", () => {
+    it("renderiza el análisis v2 colapsado vía StructuredInsight, antes del texto plano", async () => {
+      vi.mocked(aiApi.getMeasurementExplanationCached).mockResolvedValue(
+        v2Response,
+      );
+
+      render(
+        <AnthropometricRecordExplanationCard athleteId={1} recordId={42} />,
+        { wrapper: withQuery() },
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId("structured-insight")).toBeInTheDocument();
+      });
+      // Colapsado por defecto: "qué significa"/"próximas semanas" ocultos.
+      expect(
+        screen.queryByTestId("structured-insight-details"),
+      ).not.toBeInTheDocument();
+      const toggle = screen.getByTestId("structured-insight-toggle");
+      expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+      // El texto plano (AIGeneratedContent) sigue disponible debajo.
+      expect(
+        screen.getAllByText(
+          "Talla +1.0 cm en 14 semanas, dentro del rango esperado.",
+        ).length,
+      ).toBeGreaterThan(0);
+
+      fireEvent.click(toggle);
+      expect(
+        await screen.findByTestId("structured-insight-details"),
+      ).toBeInTheDocument();
+    });
+
+    it("una fila v1 (legacy) no muestra StructuredInsight — solo el texto plano de siempre", async () => {
+      vi.mocked(aiApi.getMeasurementExplanationCached).mockResolvedValue(
+        baseResponse,
+      );
+
+      render(
+        <AnthropometricRecordExplanationCard athleteId={1} recordId={42} />,
+        { wrapper: withQuery() },
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId("record-explanation-success")).toBeInTheDocument();
+      });
+      expect(
+        screen.queryByTestId("structured-insight"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("un `structured` corrupto degrada al texto plano en vez de reventar el modal", async () => {
+      const corrupt: AnthropometricRecordExplanationResponse = {
+        ...v2Response,
+        // `structured` corrupto: falta casi todo lo que StructuredInsight
+        // necesita para iterar (`.map`) sin lanzar.
+        structured: { summary_line: "x" } as unknown as typeof structuredInsight,
+      };
+      vi.mocked(aiApi.getMeasurementExplanationCached).mockResolvedValue(corrupt);
+
+      render(
+        <AnthropometricRecordExplanationCard athleteId={1} recordId={42} />,
+        { wrapper: withQuery() },
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId("record-explanation-success")).toBeInTheDocument();
+      });
+      expect(screen.queryByTestId("structured-insight")).not.toBeInTheDocument();
+      // El texto (`text`, siempre poblado por el backend) sigue visible.
+      expect(
+        screen.getByText(
+          "Talla +1.0 cm en 14 semanas, dentro del rango esperado.",
+        ),
+      ).toBeInTheDocument();
+    });
+
+    it.each([
+      ["flagged", /Con observaciones/i],
+      ["fallback", /Análisis de respaldo/i],
+      ["skipped", /Sin revisión/i],
+    ] as const)(
+      "coach ve el aviso de veredicto '%s'",
+      async (verdict, expectedText) => {
+        vi.mocked(aiApi.getMeasurementExplanationCached).mockResolvedValue({
+          ...v2Response,
+          critic_verdict: verdict,
+        });
+
+        render(
+          <AnthropometricRecordExplanationCard athleteId={1} recordId={42} />,
+          { wrapper: withQuery() },
+        );
+
+        expect(
+          await screen.findByTestId("record-explanation-verdict-marker"),
+        ).toHaveTextContent(expectedText);
+      },
+    );
+
+    it("una fila v2 aprobada no muestra ningún aviso de veredicto", async () => {
+      vi.mocked(aiApi.getMeasurementExplanationCached).mockResolvedValue(
+        v2Response,
+      );
+
+      render(
+        <AnthropometricRecordExplanationCard athleteId={1} recordId={42} />,
+        { wrapper: withQuery() },
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId("record-explanation-success")).toBeInTheDocument();
+      });
+      expect(
+        screen.queryByTestId("record-explanation-verdict-marker"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("muestra el chip 'Desactualizado' cuando isStale=true", async () => {
+      vi.mocked(aiApi.getMeasurementExplanationCached).mockResolvedValue(
+        baseResponse,
+      );
+
+      render(
+        <AnthropometricRecordExplanationCard
+          athleteId={1}
+          recordId={42}
+          isStale
+        />,
+        { wrapper: withQuery() },
+      );
+
+      expect(
+        await screen.findByTestId("record-explanation-stale-chip"),
+      ).toBeInTheDocument();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Presupuesto de IA (FR-032) — hint sobre el control + deshabilitado
+  // mientras el presupuesto está agotado.
+  // -------------------------------------------------------------------------
+
+  describe("presupuesto de IA", () => {
+    it("sin caché: muestra el hint de presupuesto agotado y deshabilita 'Analizar esta medición'", async () => {
+      mockAIStatusData = {
+        budget_status: "exhausted",
+        budget_remaining_pct: 0,
+        concurrency_available: true,
+        est_wait_seconds: 0,
+      };
+
+      render(
+        <AnthropometricRecordExplanationCard athleteId={1} recordId={42} />,
+        { wrapper: withQuery() },
+      );
+
+      expect(
+        await screen.findByTestId("ai-budget-hint-exhausted"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /Analizar esta medición/i }),
+      ).toBeDisabled();
+    });
+
+    it("con caché: muestra el hint sobre 'Regenerar análisis' y lo deshabilita si el presupuesto está agotado", async () => {
+      mockAIStatusData = {
+        budget_status: "exhausted",
+        budget_remaining_pct: 0,
+        concurrency_available: true,
+        est_wait_seconds: 0,
+      };
+      vi.mocked(aiApi.getMeasurementExplanationCached).mockResolvedValue(
+        baseResponse,
+      );
+
+      render(
+        <AnthropometricRecordExplanationCard athleteId={1} recordId={42} />,
+        { wrapper: withQuery() },
+      );
+
+      expect(
+        await screen.findByTestId("ai-budget-hint-exhausted"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /Regenerar análisis/i }),
+      ).toBeDisabled();
+    });
+
+    it("sin presupuesto agotado, 'Regenerar análisis' mide al menos 48 px y está habilitado", async () => {
+      vi.mocked(aiApi.getMeasurementExplanationCached).mockResolvedValue(
+        baseResponse,
+      );
+
+      render(
+        <AnthropometricRecordExplanationCard athleteId={1} recordId={42} />,
+        { wrapper: withQuery() },
+      );
+
+      const btn = await screen.findByRole("button", {
+        name: /Regenerar análisis/i,
+      });
+      expect(btn).not.toBeDisabled();
+      expect(btn.className).toMatch(/min-h-\[48px\]/);
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Parent mode — read-only with disclaimer
   // -------------------------------------------------------------------------
 
@@ -260,10 +510,12 @@ describe("AnthropometricRecordExplanationCard", () => {
       ).not.toBeInTheDocument();
     });
 
-    it("sin caché en modo padre → no renderiza la sección", async () => {
-      vi.mocked(aiApi.getMeasurementExplanationCached).mockResolvedValue(null);
+    it("un padre ve el análisis v2 colapsado vía StructuredInsight igual que el coach", async () => {
+      vi.mocked(aiApi.getMeasurementExplanationCached).mockResolvedValue(
+        v2Response,
+      );
 
-      const { container } = render(
+      render(
         <AnthropometricRecordExplanationCard
           athleteId={1}
           recordId={42}
@@ -272,20 +524,38 @@ describe("AnthropometricRecordExplanationCard", () => {
         { wrapper: withQuery() },
       );
 
-      // Esperar a que el fetch resuelva — query queda en success con null
-      await waitFor(() => {
-        // El componente con null retorna null; no debería haber readonly ni idle
-        expect(
-          screen.queryByTestId("record-explanation-readonly"),
-        ).not.toBeInTheDocument();
-        expect(
-          screen.queryByTestId("record-explanation-idle"),
-        ).not.toBeInTheDocument();
-      });
-      // El container puede tener loading-cache mientras carga, pero al final no tiene contenido
-      // Garantizamos al menos que no haya botones generables
       expect(
-        container.querySelector('[data-testid="record-explanation-idle"]'),
+        await screen.findByTestId("structured-insight"),
+      ).toBeInTheDocument();
+      // Nunca un aviso de veredicto (solo-coach, FR-016) en modo padre.
+      expect(
+        screen.queryByTestId("record-explanation-verdict-marker"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("sin caché en modo padre → muestra el mensaje pasivo compartido (FR-033), nunca la sección vacía", async () => {
+      vi.mocked(aiApi.getMeasurementExplanationCached).mockResolvedValue(null);
+
+      render(
+        <AnthropometricRecordExplanationCard
+          athleteId={1}
+          recordId={42}
+          readOnly={true}
+        />,
+        { wrapper: withQuery() },
+      );
+
+      expect(
+        await screen.findByTestId("record-explanation-empty"),
+      ).toHaveTextContent(
+        /Todavía no hay un análisis disponible\. El entrenador lo generará pronto\./,
+      );
+      expect(
+        screen.queryByTestId("record-explanation-readonly"),
+      ).not.toBeInTheDocument();
+      // Nunca insinúa que el generar botón existe para un padre.
+      expect(
+        screen.queryByRole("button", { name: /Analizar|Regenerar/i }),
       ).not.toBeInTheDocument();
     });
 
@@ -329,6 +599,97 @@ describe("AnthropometricRecordExplanationCard", () => {
         1,
         99,
       );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Accesibilidad (FR-034) — jest-axe sin violaciones, colapsado y expandido.
+  // -------------------------------------------------------------------------
+
+  describe("accesibilidad", () => {
+    it("sin violaciones en el estado idle (coach, sin caché)", async () => {
+      const { container } = render(
+        <AnthropometricRecordExplanationCard athleteId={1} recordId={42} />,
+        { wrapper: withQuery() },
+      );
+      await screen.findByTestId("record-explanation-idle");
+      expect(await axe(container)).toHaveNoViolations();
+    });
+
+    it("sin violaciones en éxito v1 (texto plano, sin StructuredInsight)", async () => {
+      vi.mocked(aiApi.getMeasurementExplanationCached).mockResolvedValue(
+        baseResponse,
+      );
+
+      const { container } = render(
+        <AnthropometricRecordExplanationCard athleteId={1} recordId={42} />,
+        { wrapper: withQuery() },
+      );
+      await screen.findByTestId("record-explanation-success");
+      expect(await axe(container)).toHaveNoViolations();
+    });
+
+    it("sin violaciones en éxito v2 con StructuredInsight colapsado", async () => {
+      vi.mocked(aiApi.getMeasurementExplanationCached).mockResolvedValue(
+        v2Response,
+      );
+
+      const { container } = render(
+        <AnthropometricRecordExplanationCard athleteId={1} recordId={42} />,
+        { wrapper: withQuery() },
+      );
+      await screen.findByTestId("structured-insight");
+      expect(
+        screen.queryByTestId("structured-insight-details"),
+      ).not.toBeInTheDocument();
+      expect(await axe(container)).toHaveNoViolations();
+    });
+
+    it("sin violaciones en éxito v2 con StructuredInsight expandido", async () => {
+      vi.mocked(aiApi.getMeasurementExplanationCached).mockResolvedValue(
+        v2Response,
+      );
+
+      const { container } = render(
+        <AnthropometricRecordExplanationCard athleteId={1} recordId={42} />,
+        { wrapper: withQuery() },
+      );
+      const toggle = await screen.findByTestId("structured-insight-toggle");
+      fireEvent.click(toggle);
+      await screen.findByTestId("structured-insight-details");
+      expect(await axe(container)).toHaveNoViolations();
+    });
+
+    it("sin violaciones en modo padre con el mensaje pasivo (sin caché)", async () => {
+      vi.mocked(aiApi.getMeasurementExplanationCached).mockResolvedValue(null);
+
+      const { container } = render(
+        <AnthropometricRecordExplanationCard
+          athleteId={1}
+          recordId={42}
+          readOnly
+        />,
+        { wrapper: withQuery() },
+      );
+      await screen.findByTestId("record-explanation-empty");
+      expect(await axe(container)).toHaveNoViolations();
+    });
+
+    it("sin violaciones en modo padre con contenido v2 (StructuredInsight + disclaimer)", async () => {
+      vi.mocked(aiApi.getMeasurementExplanationCached).mockResolvedValue(
+        v2Response,
+      );
+
+      const { container } = render(
+        <AnthropometricRecordExplanationCard
+          athleteId={1}
+          recordId={42}
+          readOnly
+        />,
+        { wrapper: withQuery() },
+      );
+      await screen.findByTestId("structured-insight");
+      expect(await axe(container)).toHaveNoViolations();
     });
   });
 });

@@ -34,6 +34,10 @@ function createWrapper() {
 }
 
 const mockResponse: AnthropometricRecordExplanationResponse = {
+  // Fila heredada (pre-042): el discriminante es obligatorio en el tipo, pero
+  // el esquema Zod lo inyecta cuando el backend no lo manda, así que una fila
+  // de prosa antigua sigue parseando y renderizando igual (FR-026).
+  schema_version: "v1",
   text: "Su hijo creció en este periodo.",
   model: "fake-model",
   provider: "fake",

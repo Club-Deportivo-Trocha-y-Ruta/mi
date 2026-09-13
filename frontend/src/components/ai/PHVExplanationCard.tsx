@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 
 import { mapAIError, type PHVAudience } from "@/api/ai";
+import { AIBudgetHint, isBudgetExhausted } from "@/components/ai/AIBudgetHint";
 import { AIGeneratedContent } from "@/components/ai/AIGeneratedContent";
+import { useAIStatus } from "@/hooks/ai/useAIStatus";
 import {
   usePHVExplanation,
   usePHVExplanationCached,
 } from "@/hooks/ai/usePHVExplanation";
+import { AI_ANALYSIS_NOT_YET_AVAILABLE_MESSAGE } from "@/lib/ai/notYetAvailableMessage";
 import { cn } from "@/lib/utils";
 
 interface PHVExplanationCardProps {
@@ -114,7 +117,7 @@ function PHVExplanationReadOnly({
         Explicación PHV
       </h4>
       <p className="text-xs text-mid-gray">
-        Aún no hay explicación disponible. El entrenador la generará pronto.
+        {AI_ANALYSIS_NOT_YET_AVAILABLE_MESSAGE}
       </p>
     </section>
   );
@@ -201,6 +204,14 @@ function PHVExplanationCoach({
   const mutation = usePHVExplanation(athleteId, audience);
   const abortRef = useRef<AbortController | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  // Pista pre-lanzamiento de presupuesto/concurrencia (FR-032) — igual que
+  // en los demás puntos de lanzamiento de IA (`AnalyzeAthleteButton`,
+  // `GroupAnalysisPanel`). Degrada con gracia: si el fetch falla, `data`
+  // queda `undefined`, `AIBudgetHint` no renderiza nada y el control sigue
+  // habilitado (comportamiento reactivo de hoy).
+  const aiStatus = useAIStatus();
+  const budgetExhausted = isBudgetExhausted(aiStatus.data);
 
   // Preferir el resultado más reciente de la mutación; si no hay,
   // caer a la caché del backend. Importante: un error en mutation NO
@@ -307,6 +318,12 @@ function PHVExplanationCoach({
       : null;
     return (
       <div className={className}>
+        <h4
+          className="font-display text-sm text-charcoal"
+          style={{ letterSpacing: "0.2px" }}
+        >
+          Explicación PHV
+        </h4>
         <AIGeneratedContent data={displayed} />
         {mutationErrorInfo && (
           <div
@@ -326,13 +343,15 @@ function PHVExplanationCoach({
             )}
           </div>
         )}
-        <div className="mt-2 flex justify-end">
+        <div className="mt-3 flex flex-col items-end gap-1.5">
+          <AIBudgetHint status={aiStatus.data} />
           <button
             type="button"
             onClick={handleGenerate}
-            className="text-xs font-medium text-blue-600 underline-offset-2 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={budgetExhausted}
+            className="inline-flex min-h-[48px] items-center justify-center rounded-lg border border-light-gray px-4 text-sm font-medium text-charcoal hover:bg-light-gray/40 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            Regenerar
+            Regenerar análisis
           </button>
         </div>
       </div>
@@ -354,6 +373,7 @@ function PHVExplanationCoach({
           Explicación PHV
         </h4>
         <p className="text-sm text-red-700">{info.message}</p>
+        {info.retryable && <AIBudgetHint status={aiStatus.data} />}
         <div className="flex flex-wrap gap-2">
           {info.kind === "no_records" && onMeasurementCTA && (
             <button
@@ -368,7 +388,8 @@ function PHVExplanationCoach({
             <button
               type="button"
               onClick={handleGenerate}
-              className="rounded-lg border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100"
+              disabled={budgetExhausted}
+              className="rounded-lg border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Reintentar
             </button>
@@ -400,11 +421,12 @@ function PHVExplanationCoach({
             : "Genera con IA una explicación clara del estado PHV del atleta. Revísala antes de compartirla con la familia."}
         </p>
       </div>
+      <AIBudgetHint status={aiStatus.data} />
       <button
         type="button"
         onClick={handleGenerate}
-        disabled={!hasRecords}
-        className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        disabled={!hasRecords || budgetExhausted}
+        className="min-h-[48px] rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
       >
         Generar explicación
       </button>
