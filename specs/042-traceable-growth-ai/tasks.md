@@ -207,7 +207,7 @@ Web application (`plan.md` §Structure Decision): backend at `backend/app/…`, 
 - [X] T084 [P] Update `docs/implementation-status.md` (per-module step table for 042) and `docs/technical-notes.md` (dated changelog entry).
 - [X] T085 Update `CLAUDE.md`: correct the Alembic head to the new 042 revision, document the six new env vars, and add the anthro-pipeline paragraph.
 - [X] T086 [P] Add the new variable **names only** (never values) to `backend/.env.example`.
-- [ ] T087 Final verification pass: `ruff check`, default `pytest`, `pytest -m mysql`, `pytest -m golden`, `npm run build`, `npm test`, `npm run test:e2e`, and confirm `alembic heads` shows one head.
+- [X] T087 Final verification pass — **executed, minus the lanes that need the local stack** (excluded by the owner). Green: `ruff check` (361 findings before and after the feature — zero net change), default `pytest` under **both** `AI_USE_LANGCHAIN` values (4798 passed / 211 failed / 9 errors, failure sets byte-identical between the two and **zero new failures** against the pre-042 baseline of 4498/212/9), `pytest -m golden` (35 skipped, each with an explicit no-model-key reason), `alembic heads` → a single head `686ce1d873f3`, `npm run typecheck`, `npm run build`, `npm test` (4280/4281; the single failure is pre-existing in `SessionWizardRouteNotify.test.tsx` and unrelated). **Not run here**: `pytest -m mysql` (no MySQL, no docker daemon in the container) and `npm run test:e2e` (needs a live stack).
 
 ---
 
