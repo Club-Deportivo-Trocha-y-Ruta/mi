@@ -251,7 +251,7 @@ def _map_structured_fields(
     is_row_v2 = cached.schema_version == "v2"
     structured = None
     if is_row_v2 and cached.structured_json:
-        structured = AnthropometryInsightOut.model_validate(cached.structured_json)
+        structured = AnthropometryInsightOut.from_stored(cached.structured_json)
 
     # §4 del contrato: `trace_id` solo para coach/admin. `cached.
     # langfuse_trace_id` ya es `None` cuando `LANGFUSE_ENABLED=false` (el

@@ -140,10 +140,10 @@ Web application (`plan.md` §Structure Decision): backend at `backend/app/…`, 
 
 ### Wave 2 backend tests
 
-- [ ] T050 [P] [US1] Write `backend/tests/anthro/test_context.py`: allow-list enforcement, the 26-week/8-week velocity rules, the 16-point compaction to yearly checkpoints, corroboration logic, and the first-measurement/no-previous-analysis edge cases.
-- [ ] T051 [P] [US1] Write `backend/tests/anthro/test_prechecks.py`: one test per rule R01–R12, asserting blocking vs confidence-lowering behaviour and the 10 % word-budget tolerance.
-- [ ] T052 [P] [US1] Write `backend/tests/anthro/test_analyst.py` and `backend/tests/anthro/test_critic.py` using `GenericFakeChatModel`: tolerant JSON extraction, one retry, verdict parsing, the single bounded revision, and critic timeout → `skipped` with confidence lowered.
-- [ ] T053 [US1] Write `backend/tests/anthro/test_pipeline.py`: happy path, analyst failure → fallback, critic timeout → `skipped`, precheck block → fallback, and family blocked; assert `schema_version="v2"` and `structured_json` always populated including for fallback rows.
+- [X] T050 [P] [US1] Write `backend/tests/anthro/test_context.py`: allow-list enforcement, the 26-week/8-week velocity rules, the 16-point compaction to yearly checkpoints, corroboration logic, and the first-measurement/no-previous-analysis edge cases.
+- [X] T051 [P] [US1] Write `backend/tests/anthro/test_prechecks.py`: one test per rule R01–R12, asserting blocking vs confidence-lowering behaviour and the 10 % word-budget tolerance.
+- [X] T052 [P] [US1] Write `backend/tests/anthro/test_analyst.py` and `backend/tests/anthro/test_critic.py` using `GenericFakeChatModel`: tolerant JSON extraction, one retry, verdict parsing, the single bounded revision, and critic timeout → `skipped` with confidence lowered.
+- [X] T053 [US1] Write `backend/tests/anthro/test_pipeline.py`: happy path, analyst failure → fallback, critic timeout → `skipped`, precheck block → fallback, and family blocked; assert `schema_version="v2"` and `structured_json` always populated including for fallback rows.
 - [ ] T054 [P] [US1] Write `backend/tests/anthro/test_privacy_seam.py` with `hypothesis`: forbidden names from the club list never appear in the rendered prompt; the context never carries z-scores, percentiles, raw band values or absolute dates.
 - [ ] T055 [US3] Extend `backend/tests/test_ai_record_router.py` and `backend/tests/test_ai_router.py`: denied paths on the new path (parent → 403, no consent → 451, `AI_ENABLED=false` → 503), the `audience` parameter, v1/v2/corrupt-JSON response shapes, and a parent whose child has only flagged analyses seeing the shared "not yet available" state (FR-016, SC-004).
 - [ ] T056 [P] [US1] Write `backend/tests/mysql/test_ai_explanation_columns.py` marked `mysql`: the nine columns round-trip and the `on_duplicate_key_update` upsert overwrites all nine.

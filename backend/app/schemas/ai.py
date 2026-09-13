@@ -93,6 +93,28 @@ class AnthropometryInsightOut(BaseModel):
     confidence: ConfidenceOut
     data_gaps: list[str]
 
+    @classmethod
+    def from_stored(cls, payload: dict) -> "AnthropometryInsightOut":
+        """Proyecta una fila `structured_json` sobre los campos del cable.
+
+        `structured_json` guarda el `AnthropometryInsightV1` COMPLETO
+        (`data-model.md` §1), que incluye tres campos que este espejo excluye
+        a propósito: `schema_version` (versión del payload, distinta del
+        discriminador de fila — §0), `audience` (ya implícito en quién pide) y
+        `word_count` (telemetría del modelo, nunca confiable). Con
+        `extra="forbid"`, validar el dict crudo reventaría en TODA fila v2.
+
+        La proyección es explícita, campo por campo, a propósito: si el schema
+        interno del analista gana un campo nuevo, este cable NO lo expone solo
+        por existir — hay que agregarlo aquí a mano. Ese era el motivo de
+        `extra="forbid"`, y se conserva; lo que cambia es que el desajuste
+        esperado deja de ser un error y el inesperado (un campo del cable que
+        falta en lo guardado) sigue reventando.
+        """
+        return cls.model_validate(
+            {name: payload[name] for name in cls.model_fields if name in payload}
+        )
+
 
 class PHVExplanationResponse(BaseModel):
     """Texto generado por el análisis PHV (feature 042: `anthro.pipeline.run_analysis`;

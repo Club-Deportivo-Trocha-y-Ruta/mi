@@ -9,16 +9,85 @@ Estrategia:
     contra aiosqlite, siguiendo el patrón de test_consent_endpoints.py).
   - Tests del endpoint IA usan overrides de dependencias sobre la app FastAPI (patrón
     de test_ai_router.py) para evitar dependencia de MySQL/LLM real.
+
+Cambio de seam (feature 042, T039/T043) — LEER ANTES DE TOCAR ESTE ARCHIVO
+===========================================================================
+`test_renew_with_third_party_sharing_true_enables_ai` overrideaba la
+dependencia FastAPI `get_llm_provider` con un `FakeLLMProvider` de texto
+canned y afirmaba `body["text"] == canned`. Eso probaba el stack VIEJO
+(`app/services/ai/factory.py::PHVExplainerUseCase`, feature 033). Desde esta
+feature, `phv_explanation` (`app/routers/ai.py`) genera exclusivamente vía
+`app.services.ai.anthro.pipeline.run_analysis`, que NUNCA consulta
+`get_llm_provider` — construye su propio chat model LangChain llamando
+`app.services.llm.factory.build_chat_llm(role=..., stack="app")` desde
+DENTRO de `anthro/analyst.py` y `anthro/critic.py` (cada módulo importó el
+símbolo a su propio namespace con `from ... import build_chat_llm`). El
+seam real a parchear es, por lo tanto, `app.services.ai.anthro.analyst.
+build_chat_llm` / `app.services.ai.anthro.critic.build_chat_llm` — nunca
+`get_llm_provider`, que ese pipeline ni siquiera importa.
+
+Este test se reescribió para:
+  1. Reemplazar esos dos símbolos por un doble mínimo (`.ainvoke(messages,
+     config=None) -> objeto con .content`) que devuelve JSON válido para
+     `AnthropometryInsightV1` (analista) y `AnthropometryCriticVerdict`
+     (crítico) — nunca `GenericFakeChatModel` de `langchain-core`, reservado
+     por las reglas de esta tarea a las pruebas de adaptador/pipeline.
+  2. Reemplazar `_QueueSession` (una cola posicional de resultados —fue
+     diseñada para el viejo caso de uso de una sola consulta de historial +
+     upsert legado, y ya no alcanza: el pipeline nuevo agrega dos lecturas
+     auxiliares en `context.py` —ventana de entrenamiento, análisis
+     estructurado previo— antes de llegar al upsert) por una sesión sqlite
+     REAL en memoria. La única sentencia que sigue sin compilar sobre
+     aiosqlite es el upsert MySQL de `persist.py`
+     (`mysql_insert(...).on_duplicate_key_update(...)`,
+     `UnsupportedCompilationError` verificado) — se sustituye ÚNICAMENTE esa
+     fábrica por `_SqliteUpsertShim` (mismo doble que
+     `test_ai_explanation_audit.py`), nunca el resto de la sesión.
+
+La compuerta de consentimiento (451 sin consentimiento, 200 tras renovarlo)
+sigue siendo la aserción central de esta clase — es el motivo de ser del
+archivo — así que se preserva exactamente.
+
+Bug real descubierto por esta reescritura (fuera del ownership de este
+archivo — NO corregido aquí, ver `needs_orchestrator`): con el mock en el
+seam correcto, `test_renew_with_third_party_sharing_true_enables_ai` sigue
+en rojo, pero ya no por un mock desactualizado — `app/routers/ai.py::
+_map_structured_fields` hace `AnthropometryInsightOut.model_validate(cached.
+structured_json)` contra un modelo `extra="forbid"` de 7 campos, mientras
+que `persist.py` guarda en `structured_json` el `model_dump(mode="json")`
+COMPLETO de `AnthropometryInsightV1` (10 campos: además de los 7 que
+`AnthropometryInsightOut` sí declara, trae siempre `schema_version`,
+`audience` y `word_count`). Esto revienta con
+`pydantic.ValidationError: 3 validation errors ... Extra inputs are not
+permitted` en TODA generación v2 exitosa — reproducido también con un
+`model_dump()` aislado, sin HTTP ni pipeline de por medio. No se debilitó
+la aserción `resp.status_code == 200`: el test se deja en rojo a propósito
+para que este bug no quede enmascarado.
 """
 
 from __future__ import annotations
 
+from datetime import date
+from decimal import Decimal
 from types import SimpleNamespace
+from typing import AsyncGenerator
 from uuid import uuid4
 
 import pytest
+import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+from sqlalchemy.pool import StaticPool
 
+import app.services.ai.anthro.analyst as anthro_analyst
+import app.services.ai.anthro.critic as anthro_critic
+import app.services.ai.anthro.persist as anthro_persist
 from app.config import settings
 from app.dependencies import (
     get_current_user,
@@ -27,6 +96,8 @@ from app.dependencies import (
     verify_athlete_access,
 )
 from app.main import app
+from app.models import Base
+from app.models.anthropometry import MaturationStatus
 from app.models.user import UserRole
 from app.services.ai.providers.fake import FakeLLMProvider
 
@@ -147,6 +218,12 @@ class _ScalarResult:
 
 
 class _QueueSession:
+    """Cola posicional de resultados — sigue siendo válida SOLO para el
+    camino de consentimiento denegado (451), que corta antes de tocar la
+    DB. Ver el docstring del módulo: para el camino de éxito (200) el
+    pipeline nuevo hace demasiadas lecturas propias para una cola
+    posicional; ese test usa una sesión sqlite real (`ai_pipeline_session`)."""
+
     def __init__(self, responses):
         self._responses = list(responses)
         #: Filas encoladas con `db.add(...)` — hoy solo la de `audit_log`
@@ -160,6 +237,73 @@ class _QueueSession:
 
     def add(self, obj) -> None:
         self.added.append(obj)
+
+
+# ---------------------------------------------------------------------------
+# Doble de la fábrica mysql_insert de `persist.py` — mismo doble que
+# `test_ai_explanation_audit.py` (ver el docstring del módulo). `persist.py`
+# usa `.values()` / `.inserted.<col>` / `.on_duplicate_key_update()`, la
+# superficie exacta que ``sqlalchemy.dialects.mysql.dml.Insert`` expone —
+# este doble la traduce a la variante sqlite (``on_conflict_do_update``,
+# ``excluded``) para que el upsert real corra sobre un motor en memoria.
+# ---------------------------------------------------------------------------
+
+
+class _SqliteUpsertShim:
+    def __init__(self, table):
+        self._stmt = sqlite_insert(table)
+
+    def values(self, **kwargs):
+        self._stmt = self._stmt.values(**kwargs)
+        return self
+
+    @property
+    def inserted(self):
+        return self._stmt.excluded
+
+    def on_duplicate_key_update(self, **kwargs):
+        return self._stmt.on_conflict_do_update(
+            index_elements=["athlete_id", "anthropometric_record_id", "use_case"],
+            set_=kwargs,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Dobles mínimos de chat model LangChain — ver el docstring del módulo
+# ("cambio de seam"). Nunca `GenericFakeChatModel` aquí (reservado a
+# pruebas de adaptador/pipeline por las reglas de esta tarea): basta un
+# `.ainvoke(...)` que devuelva un objeto con `.content`, que es todo lo que
+# `app.services.llm.calls.call_llm` necesita.
+# ---------------------------------------------------------------------------
+
+
+_ANALYST_INSIGHT_JSON = """{
+  "audience": "family",
+  "summary_line": "Crecimiento estable dentro de lo esperado para esta fase.",
+  "changes": ["La talla y el peso avanzaron de forma gradual."],
+  "meaning": ["Este ritmo es compatible con un desarrollo saludable."],
+  "next_weeks": ["Mantener la rutina de entrenamiento habitual."],
+  "warning_signs": [],
+  "confidence": {"level": "medium", "reason": "Datos suficientes para esta lectura, sin senales de alerta."},
+  "data_gaps": [],
+  "word_count": 30
+}"""
+
+_CRITIC_APPROVE_JSON = '{"verdict": "approve", "violations": []}'
+
+
+class _FakeChatResponse:
+    def __init__(self, text: str) -> None:
+        self.content = text
+
+
+class _FakeChatModel:
+    def __init__(self, text: str) -> None:
+        self._text = text
+
+    async def ainvoke(self, _messages, config=None):
+        del config
+        return _FakeChatResponse(self._text)
 
 
 def _coach_user():
@@ -221,6 +365,88 @@ def _record_stub():
         weight_percentile=None,
         nutritional_status=None,
     )
+
+
+# ---------------------------------------------------------------------------
+# Sesión sqlite real para el camino de éxito (200) del gate de consentimiento
+# — ver el docstring del módulo. Solo las tablas que `anthro.pipeline.
+# run_analysis` toca de verdad: la medición objetivo (leída por el propio
+# router), la ventana de entrenamiento (`context.py`, vacía aquí — atleta
+# sin sesiones registradas es un estado válido, degrada a `None`) y la
+# caché/auditoría de explicaciones que escribe `persist.py`.
+# ---------------------------------------------------------------------------
+
+_PIPELINE_TABLES = (
+    "anthropometric_records",
+    "athlete_ai_explanations",
+    "session_attendance",
+    "training_sessions",
+    "audit_log",
+    "training_session_coaches",
+    "privacy_policies",
+    "parent_invites",
+)
+
+
+@pytest_asyncio.fixture
+async def ai_pipeline_engine() -> AsyncGenerator[AsyncEngine, None]:
+    eng = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        future=True,
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
+    tables = [Base.metadata.tables[name] for name in _PIPELINE_TABLES]
+    async with eng.begin() as conn:
+        await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=tables))
+    yield eng
+    await eng.dispose()
+
+
+@pytest_asyncio.fixture
+async def ai_pipeline_session(
+    ai_pipeline_engine: AsyncEngine,
+) -> AsyncGenerator[AsyncSession, None]:
+    """Sesión real con la medición objetivo del atleta stub (`_athlete_stub`,
+    `id=42`) ya sembrada — el router hace su propia lectura de historial
+    (`select(AnthropometricRecord).where(athlete_id==42)`) antes de invocar
+    el pipeline, así que esta fila debe existir de verdad, no solo como
+    objeto Python en memoria. Los z-scores/percentiles no son `None`
+    (salvo donde el modelo los admite) porque `build_growth_summary` (paso 1
+    del pipeline) es una función pura sobre estos campos, sin fallback
+    "inventa si falta" — un `None` donde no lo espera revienta con
+    `TypeError`, no con un dato faltante degradado con gracia.
+    """
+    factory = async_sessionmaker(ai_pipeline_engine, expire_on_commit=False)
+    async with factory() as session:
+        from app.models.anthropometry import AnthropometricRecord
+
+        session.add(
+            AnthropometricRecord(
+                id=1,
+                athlete_id=42,
+                evaluation_date=date(2026, 4, 1),
+                weight_kg=Decimal("40.0"),
+                standing_height_cm=Decimal("150.0"),
+                arm_span_cm=Decimal("152.0"),
+                sitting_height_cm=Decimal("75.0"),
+                leg_length_cm=Decimal("75.0"),
+                leg_sitting_ratio=Decimal("1.0000"),
+                maturity_offset=Decimal("-1.5"),
+                age_at_phv=Decimal("13.5"),
+                maturation_status=MaturationStatus.pre_phv,
+                height_z_score=Decimal("0.4"),
+                bmi=Decimal("17.8"),
+                bmi_z_score=Decimal("0.1"),
+                weight_z_score=Decimal("0.2"),
+                height_percentile=Decimal("65.0"),
+                bmi_percentile=Decimal("55.0"),
+                weight_percentile=Decimal("60.0"),
+                evaluated_by=2,
+            )
+        )
+        await session.commit()
+        yield session
 
 
 # ---------------------------------------------------------------------------
@@ -318,10 +544,26 @@ class TestPHVExplanationConsentGate:
     """Verifica el gate de consentimiento en POST /api/ai/athletes/{id}/phv-explanation."""
 
     async def test_renew_with_third_party_sharing_true_enables_ai(
-        self, http_client_ai, monkeypatch
+        self, http_client_ai, monkeypatch, ai_pipeline_session
     ):
-        """Consentimiento con third_party_sharing=True → POST no devuelve 451."""
+        """Consentimiento con third_party_sharing=True → POST no devuelve 451.
+
+        Ver el docstring del módulo ("cambio de seam"): el LLM real se
+        sustituye parcheando `build_chat_llm` en los namespaces de
+        `anthro.analyst`/`anthro.critic` (el seam que el pipeline nuevo
+        consulta de verdad), nunca `get_llm_provider` (dependencia FastAPI
+        del stack viejo, que este pipeline no usa). El upsert MySQL de
+        `persist.py` se sustituye por `_SqliteUpsertShim` para poder correr
+        sobre la sesión sqlite real de `ai_pipeline_session`.
+        """
         monkeypatch.setattr(settings, "ai_enabled", True)
+        monkeypatch.setattr(anthro_persist, "mysql_insert", _SqliteUpsertShim)
+        monkeypatch.setattr(
+            anthro_analyst, "build_chat_llm", lambda *a, **k: _FakeChatModel(_ANALYST_INSIGHT_JSON)
+        )
+        monkeypatch.setattr(
+            anthro_critic, "build_chat_llm", lambda *a, **k: _FakeChatModel(_CRITIC_APPROVE_JSON)
+        )
 
         # Simular que el atleta tiene consentimiento IA vigente
         async def _allow(_athlete_id, _db):
@@ -331,19 +573,9 @@ class TestPHVExplanationConsentGate:
             "app.routers.ai.athlete_has_ai_processing_consent", _allow
         )
 
-        canned = "Su hijo está en Pre-PHV. Priorizamos juego y técnica."
-        fake = FakeLLMProvider(canned=canned)
-        app.dependency_overrides[get_llm_provider] = lambda: fake
         app.dependency_overrides[get_current_user] = _coach_user
         app.dependency_overrides[verify_athlete_access] = _athlete_stub
-
-        session = _QueueSession([
-            _ScalarResult(items=[_record_stub()]),   # history
-            _ScalarResult(scalar=None),               # pre-SELECT caché (T030)
-            _ScalarResult(),                          # upsert
-            _ScalarResult(scalar=7),                  # id de la fila insertada
-        ])
-        app.dependency_overrides[get_db] = lambda: session
+        app.dependency_overrides[get_db] = lambda: ai_pipeline_session
 
         resp = await http_client_ai.post("/api/ai/athletes/42/phv-explanation")
         assert resp.status_code == 200, (
@@ -351,7 +583,7 @@ class TestPHVExplanationConsentGate:
         )
         body = resp.json()
         assert "text" in body
-        assert body["text"] == canned
+        assert body["text"]
 
     async def test_renew_with_third_party_sharing_false_keeps_ai_blocked(
         self, http_client_ai, monkeypatch
