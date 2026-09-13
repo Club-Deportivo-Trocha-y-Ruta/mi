@@ -244,3 +244,91 @@ async def test_adapter_satisfies_llm_provider_protocol_and_exposes_identity():
     assert isinstance(provider, LLMProvider)
     assert provider.name == "google"
     assert provider.model == "gemini-3.1-flash-lite"
+
+
+# ---------------------------------------------------------------------------
+# FR-017 / SC-001 — una traza por generación, también en los casos puenteados
+# ---------------------------------------------------------------------------
+#
+# El pipeline de antropometría abre su propio scope de Langfuse en cada paso;
+# los cinco casos de uso puenteados (clarify y draft del asistente de sesión,
+# reporte mensual, bloques del reporte, newsletter v2) NO lo hacen. Si el
+# adaptador no abre uno, esas cinco generaciones quedan sin traza y FR-017 se
+# incumple en silencio: todo sigue verde, el interruptor sigue encendido, y la
+# feature simplemente no hace lo que promete para 5 de sus 7 entradas.
+
+
+async def test_el_adaptador_abre_una_traza_por_generacion(monkeypatch):
+    """El adaptador enhebra `config` con los callbacks del scope de traza."""
+    from app.services.ai.providers import langchain_provider as lp
+
+    visto: dict = {}
+
+    class _Scope:
+        def __enter__(self):
+            return {"callbacks": ["centinela"]}
+
+        def __exit__(self, *exc):
+            return False
+
+    def _fake_tracing(**kwargs):
+        visto.update(kwargs)
+        return _Scope()
+
+    monkeypatch.setattr(lp, "llm_tracing", _fake_tracing)
+
+    class _Chat:
+        async def ainvoke(self, messages, config=None):
+            visto["config"] = config
+            return AIMessage(content="texto")
+
+    provider = lp.LangChainProvider(_Chat(), name="google", model="gemini-3.8-flash")
+    await provider.complete(
+        LLMRequest(
+            system="s",
+            messages=(LLMMessage(role="user", content="u"),),
+            use_case="monthly_report",
+        )
+    )
+
+    assert visto["config"] == {"callbacks": ["centinela"]}, (
+        "el adaptador debe pasar los callbacks del scope a ainvoke, o la "
+        "generación no produce traza alguna"
+    )
+    assert visto["trace_name"] == "ai-monthly_report"
+    assert "use_case:monthly_report" in visto["tags"]
+
+
+async def test_la_traza_no_lleva_identidad_del_atleta(monkeypatch):
+    """El session id agrupa por caso de uso, nunca por un id de menor."""
+    from app.services.ai.providers import langchain_provider as lp
+
+    visto: dict = {}
+
+    class _Scope:
+        def __enter__(self):
+            return {}
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(
+        lp, "llm_tracing", lambda **kw: (visto.update(kw), _Scope())[1]
+    )
+
+    class _Chat:
+        async def ainvoke(self, messages, config=None):
+            return AIMessage(content="texto")
+
+    provider = lp.LangChainProvider(_Chat(), name="google", model="m")
+    await provider.complete(
+        LLMRequest(
+            system="s",
+            messages=(LLMMessage(role="user", content="u"),),
+            use_case="phv_explainer",
+        )
+    )
+
+    # El id derivado es el hash con clave del caso de uso — nunca el crudo.
+    assert visto["session_id"] != "phv_explainer"
+    assert all("athlete" not in t for t in visto["tags"])

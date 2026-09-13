@@ -49,6 +49,9 @@ class BaseUseCase:
         request = LLMRequest(
             system=self._registry.system_prompt(),
             messages=(LLMMessage(role="user", content=user_msg),),
+            # FR-017: le da nombre a la traza sin que el use case sepa nada
+            # de Langfuse. `template_id` ya es la clave del caso de uso.
+            use_case=self.template_id,
         )
         return await self._provider.complete(request)
 

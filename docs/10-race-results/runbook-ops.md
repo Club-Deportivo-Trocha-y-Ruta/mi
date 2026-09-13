@@ -318,12 +318,34 @@ For full `--help`: `python -m scripts.smoke_test_prod --help`.
 
 ## 8. Local LLM tracing (Langfuse)
 
-> Optional, dev-only observer for per-call token/latency detail on race-AI
-> LLM calls (`app/services/race/observability.py`). It never runs in
-> production — `Settings.forbid_langfuse_in_prod` raises at startup if
-> `LANGFUSE_ENABLED=true` and `APP_ENV=production`. It does not replace the
-> audit trail of record (§2); it only adds a drill-down view for local
-> debugging.
+> Optional, dev-only observer for per-call token/latency detail on LLM
+> calls from **both** AI stacks of the monorepo (feature 042). It never
+> runs in production — `Settings.forbid_langfuse_in_prod` raises at
+> startup if `LANGFUSE_ENABLED=true` and `APP_ENV=production`. It does not
+> replace the audit trail of record (§2 for race, `athlete_ai_explanations`
+> for the app stack); it only adds a drill-down view for local debugging.
+
+**Module moved (feature 042, T011)**: the Langfuse client, the
+redact-always mask and the no-op degradation used to live entirely in
+`app/services/race/observability.py`. They now live in
+`app/services/llm/observability.py` — a shared, stack-neutral module so
+`app/services/ai/` can trace without depending on the `race` package.
+`app/services/race/observability.py` is kept only as a **thin
+compatibility shim** that re-exports the same public functions
+(`get_callbacks`, `llm_tracing`, `trace_id_for`, `shutdown`,
+`keyed_session_id`, `anonymous_session_id`) and proxies the module's
+mutable process state (`_client`, `_warned_missing_keys`, …) to the real
+module. The shim exists because roughly 30 tests across the three W1
+shims (`race/agents/_llm.py`, `race/agents/pricing.py`,
+`race/observability.py`) `monkeypatch` those exact module paths
+(`plan.md` Complexity Tracking) — deleting them in the same wave that
+introduced the shared factory was rejected as unnecessary risk to the
+blocking race golden eval. **It is scheduled for removal in a later
+feature**, once those tests are moved to import from
+`app.services.llm.observability` directly — not in feature 042. Import
+from `app.services.race.observability` still works today and behaves
+identically to importing from `app.services.llm.observability`, but new
+code should prefer the real module.
 
 ### 8.1 Prerequisites
 
@@ -367,18 +389,43 @@ There is no content-capture toggle — see §8.6.
 
 ### 8.5 What is traced
 
-Traced via `observability.llm_tracing(...)` — grep the codebase for
-`llm_tracing(` to get the current, authoritative list of entry points:
+Traced via `llm_tracing(...)` (imported from either
+`app.services.llm.observability` directly, or the
+`app.services.race.observability` shim — same function, see the module
+note above) — grep the codebase for `llm_tracing(` to get the current,
+authoritative list of call sites. As of feature 042 there are **five**,
+spanning both stacks:
 
-| Trace name | Entry point | Content |
-|---|---|---|
-| `race-analysis` | `app/services/race/ai/runner.py` — graph start and HITL resume share one trace (deterministic trace id derived from the external run id) | always redacted |
-| `race-chat` | `app/services/race/agents/chat.py` | always redacted — the chat prompt carries real athlete names |
-| `race-eval-judge` | `app/services/race/eval/judge.py` (both v1 and v2 judges) | always redacted |
+| Trace name | Entry point | Stack | Content |
+|---|---|---|---|
+| `race-analysis` | `app/services/race/ai/runner.py` — graph start and HITL resume share one trace (deterministic trace id derived from the external run id) | race | always redacted |
+| `race-chat` | `app/services/race/agents/chat.py` | race | always redacted — the chat prompt carries real athlete names |
+| `race-eval-judge` | `app/services/race/eval/judge.py` (both v1 and v2 judges) | race | always redacted |
+| `anthro-{use_case}` | `app/services/ai/anthro/pipeline.py::run_analysis` — the single orchestrator behind **both** `POST /athletes/{id}/phv-explanation` (PHV explanation, `use_case` = `phv_explainer`/`phv_explanation_coach` per audience) and `POST` per-measurement analysis (`use_case` = `anthropometric_record_analysis`/`anthropometric_record_explainer_coach`) — see `app/routers/ai.py`. One trace covers the whole pipeline run (context → analyst → critic → optional revision) via a single `config` threaded through every step. | app | always redacted |
+| `anthro-eval-judge` | `app/services/ai/anthro/eval/judge.py` (golden eval judge) | app | always redacted |
 
-Not traced: the monthly-report and newsletter AI paths run on the separate
-`app/services/ai/` stack, which has no `llm_tracing` call — they have no
-Langfuse visibility.
+**Not traced, on purpose — read this before assuming coverage**: the
+plan's design intent was for all seven `app/services/ai/` generation
+paths to gain Langfuse visibility once they moved onto the LangChain
+transport. What actually shipped is narrower. Five of those seven —
+session assistant clarify, session assistant draft, monthly report,
+monthly report blocks, and family newsletter v2 — are bridged onto the
+shared LangChain transport via `LangChainProvider`
+(`app/services/ai/providers/langchain_provider.py`) behind
+`AI_USE_LANGCHAIN`, but `LangChainProvider.complete()` calls
+`self._chat_model.ainvoke(messages)` **without a `config=`** — by design,
+per that module's own docstring: "the five bridged use cases have no
+per-request Langfuse scope to thread today" (contrast the anthro
+pipeline above, which does thread `config` through every step). No
+Langfuse callback is attached, so **these five entry points produce no
+trace today, in any configuration, including `AI_USE_LANGCHAIN=true` and
+`LANGFUSE_ENABLED=true`.** The migration bridged their *transport*
+(FR-025 — same prompts, same outputs, same tests, rollback switch), not
+their *observability*; adding tracing to them is not something this
+runbook can point at a shipped code path for. If you need per-call
+token/latency detail on one of these five, it is not available via
+Langfuse yet — use `AI_LOG_PROMPTS` (never in production) or the
+`TokenUsage` already returned in `LLMResponse` and logged by the caller.
 
 Only Langfuse-SDK spans are exported to the collector — a `should_export_span`
 filter drops any third-party OpenTelemetry span (e.g. MCP/`gen_ai` spans
@@ -388,25 +435,73 @@ whatever the LLM SDK instruments on its own.
 
 ### 8.6 Privacy / redaction semantics
 
-There is no content-capture toggle. Inputs, outputs and metadata of every
-observation are **always** sent as `"[redacted]"` — this is not
-configurable, on any trace, at any time.
+Inputs and outputs of every observation are **always** sent as
+`"[redacted]"` — this is not configurable, on any trace, at any time,
+regardless of `LANGFUSE_STRUCTURAL_METADATA` (see below). What changed in
+feature 042 is the session-id derivation and the (still off-by-default)
+metadata channel.
 
-- **Why**: even the pseudonymized analyst/critic prompt still carries
-  quasi-identifiers of a minor (event date, category, race position,
-  times, age, maturity/PHV data) that could re-identify the athlete when
-  crossed with public official results; and the analyst's recalled memory
-  (rehydrated summaries) can contain real names. Redact-always removes the judgment call of which
-  fields are "safe enough" to send.
-- **What is still stored locally**: run UUIDs (`race-analysis` session id),
-  a SHA-256-truncated hash of the chat session id
-  (`observability.anonymous_session_id`), trace tags (provider, prompt
-  version, analysis kind), and token counts (`usageDetails`: input/output/
-  total). None of this is athlete-identifying on its own.
+- **Why redact-always**: even the pseudonymized analyst/critic prompt
+  still carries quasi-identifiers of a minor (event date, category, race
+  position, times, age, maturity/PHV data) that could re-identify the
+  athlete when crossed with public official results; and the analyst's
+  recalled memory (rehydrated summaries) can contain real names.
+  Redact-always removes the judgment call of which fields are "safe
+  enough" to send.
+- **Session ids are now an HMAC, not a bare hash (feature 042, FR-024)**:
+  `observability.anonymous_session_id` (plain SHA-256, truncated to 16
+  hex chars) is **enumerable** — a club this size has on the order of a
+  few hundred athlete/record combinations, well under 10,000 hashes, so
+  anyone with the Langfuse volume and the DB could brute-force it back to
+  an athlete. It is kept, unchanged, only for backward compatibility;
+  every call site that previously used it now uses
+  `observability.keyed_session_id` instead, which derives an HMAC-SHA256
+  keyed on `settings.jwt_secret_key` (domain-separated from both the race
+  pseudonym anonymizer and from `anonymous_session_id` itself, so leaking
+  one derivation doesn't weaken the others) — not invertible without that
+  server secret. This covers **`race-chat`** as well (FR-024 explicitly
+  required the race chat trace to move onto the same keyed helper as the
+  new app-stack traces), plus `race-eval-judge` and every `anthro-*`
+  trace. `race-analysis` is unaffected — its session id is the run's own
+  external UUID, not a derived hash of anything athlete-identifying.
+  `keyed_session_id` is stable across process restarts by explicit owner
+  decision (a per-process salt would be stronger but would break grouping
+  of one athlete's traces across a backend redeploy).
+- **`LANGFUSE_STRUCTURAL_METADATA` (default `false`, feature 042)**: with
+  the flag off — the only legal value in production — behaviour is
+  byte-for-byte identical to before this feature: the `metadata` argument
+  on every observation is omitted entirely. Turning it on locally lets a
+  narrow, **closed allow-list** of operational fields survive the mask —
+  see `app/services/llm/observability_metadata.py::ALLOWED_METADATA_KEYS`
+  for the exact key names (model/provider/prompt_version/role, token
+  counts, latency, cost, guardrail/precheck rule ids and counts, critic
+  verdict, cache outcome, and a small set of *keyed-hash-only*
+  identifiers such as `athlete_id_hash`). It is a strict allow-list
+  enforced at construction time (`StructuralMetadata.__init__` raises on
+  any key outside it, and rejects two or more quasi-identifiers —
+  `sex`/`age_group`/`maturation_status`/`category` — combined in the same
+  call, since that combination alone can shrink an equivalence class
+  below a safe size for a club this size). **Turning it on does NOT
+  change the no-retention story below in any way** — it only ever adds a
+  few extra key/value pairs to the same local, unmanaged trace volumes;
+  it never touches `input`/`output`, which stay `"[redacted]"`
+  unconditionally, and it does not add any new retention policy, export
+  path, or off-machine destination for that data.
+  `Settings.forbid_langfuse_structural_metadata_in_prod` makes
+  `LANGFUSE_STRUCTURAL_METADATA=true` a hard startup failure under
+  `APP_ENV=production`, exactly like `LANGFUSE_ENABLED=true` itself —
+  never set it on Render.
+- **What is still stored locally**: run UUIDs (`race-analysis` session
+  id), the keyed-HMAC session id described above for every other trace,
+  trace tags (provider, prompt version, analysis kind), token counts
+  (`usageDetails`: input/output/total), and — only with
+  `LANGFUSE_STRUCTURAL_METADATA=true` — the allow-listed operational
+  metadata above. None of this is athlete-identifying on its own.
 - **Where it lives / retention**: traces persist in the local Docker
-  volumes (`langfuse_postgres_data`, `langfuse_clickhouse_data`, …) with no
-  retention policy configured — they accumulate until purged. Purge with
-  `docker compose -f docker-compose.langfuse.yml down -v` (§8.10).
+  volumes (`langfuse_postgres_data`, `langfuse_clickhouse_data`, …) with
+  no retention policy configured, before or after feature 042 — they
+  accumulate until purged. See §8.10 for the purge command and the
+  recommended cadence.
 - `LANGFUSE_ENABLED=true` in production is a hard startup failure — never
   set it on Render.
 
@@ -414,11 +509,13 @@ configurable, on any trace, at any time.
 
 In the UI, open a trace and expand a `generation` node — it shows tokens
 in/out, total, model, and latency per LLM call, alongside the `[redacted]`
-input/output. Sessions correspond to the run id (`race-analysis`/
-`race-chat`) or the eval `case_id` (`race-eval-judge`). Verified live on
-2026-09-10 against a local Langfuse v4 instance: a traced call showed
-`usageDetails` (input/output/total tokens) populated while `input`/`output`
-read `[redacted]`, as expected.
+input/output. Sessions correspond to the run id (`race-analysis`), the
+keyed-hash chat session id (`race-chat`), the keyed-hash eval `case_id`
+(`race-eval-judge`, `anthro-eval-judge`), or the keyed hash of
+`{use_case}:{athlete_id}:{record_id}` (every `anthro-*` trace — see
+§8.5). Verified live on 2026-09-10 against a local Langfuse v4 instance: a
+traced call showed `usageDetails` (input/output/total tokens) populated
+while `input`/`output` read `[redacted]`, as expected.
 
 As an API alternative to the UI, the Langfuse v2 observations API requires
 the query param `fields=core,basic,usage,io,model` to return the usage and
@@ -427,8 +524,14 @@ model fields at all — without it, a bare request omits them.
 ### 8.8 Drill-down from a DB run
 
 `agent_runs.langfuse_trace_id` is populated by
-`routers/race_analysis.py::_finalize_run` whenever tracing is enabled.
-Given a trace id, open:
+`routers/race_analysis.py::_finalize_run` whenever tracing is enabled —
+this covers `race-analysis`. Since feature 042, the same pattern applies
+to the app stack's traced entry points: `athlete_ai_explanations`
+carries its own nullable `langfuse_trace_id` column, populated by
+`app/services/ai/anthro/pipeline.py::run_analysis` (via
+`persist.py`) for `anthro-{use_case}` runs — one of the nine new columns
+added by this feature (`docs/20-traceable-growth-ai/` covers the full
+column list). Given a trace id from either table, open:
 
 ```text
 http://localhost:3001/project/<LANGFUSE_INIT_PROJECT_ID>/traces/<trace_id>
@@ -442,16 +545,33 @@ http://localhost:3001/project/<LANGFUSE_INIT_PROJECT_ID>/traces/<trace_id>
 Langfuse infers USD cost from its own model price list and may not
 recognize project-specific model ids (`gemini-3.8-flash`,
 `claude-cli` at $0 local-subscription cost) — treat any cost figure shown
-in its UI as approximate. The source of truth for cost and for the 30-day
-budget guard remains `agents/pricing.py` +
-`athlete_ai_insights.metrics_snapshot_json` (§2).
+in its UI as approximate. The source of truth for cost is the shared
+`app/services/llm/pricing.py` (feature 042; `agents/pricing.py` is now a
+thin shim over it, same reasoning as `observability.py` in §8 intro) +
+`athlete_ai_insights.metrics_snapshot_json` for race (§2) or
+`athlete_ai_explanations.cost_usd` for the app stack (§9). Neither of
+those DB columns is ever populated *from* Langfuse — Langfuse's own cost
+figure is display-only, local to its UI/API.
 
-### 8.10 Stop / reset
+### 8.10 Stop / reset / purge cadence
 
 ```bash
 docker compose -f docker-compose.langfuse.yml down       # stop, keep data
 docker compose -f docker-compose.langfuse.yml down -v     # reset, wipes volumes
 ```
+
+There is no automatic retention or expiry job — feature 042 did not add
+one, and none existed before it (§8.6). Traces accumulate in the local
+Docker volumes indefinitely until someone runs the `down -v` above.
+Recommended cadence for a local dev machine: purge whenever you start a
+fresh round of debugging (so old traces from a stale prompt version don't
+get mixed into a search), and at minimum whenever `docker volume ls`
+shows `langfuse_clickhouse_data`/`langfuse_postgres_data` growing large
+enough to matter for local disk space — there is no compliance reason to
+purge on any fixed schedule, since every trace is already redact-always
+and never leaves the local machine. If you need a specific past trace
+for a post-mortem, extract what you need from the UI/API first — `down
+-v` is not reversible.
 
 ### 8.11 Troubleshooting
 
@@ -473,6 +593,12 @@ docker compose -f docker-compose.langfuse.yml down -v     # reset, wipes volumes
   `host.docker.internal`, not `localhost`) and that
   `docker compose -f docker-compose.langfuse.yml ps` shows every service
   healthy.
+- **No trace for a session-assistant / monthly-report / newsletter-v2
+  call, even with `LANGFUSE_ENABLED=true` and `AI_USE_LANGCHAIN=true`**:
+  not a bug — see §8.5. Those five entry points run on the shared
+  LangChain transport but are not wired to a Langfuse scope; only
+  `anthro-{use_case}` (PHV explanation, per-measurement analysis) and the
+  three `race-*`/`anthro-eval-judge` traces produce anything to look at.
 
 ---
 
@@ -483,8 +609,31 @@ docker compose -f docker-compose.langfuse.yml down -v     # reset, wipes volumes
 - **Local Langfuse tracing**: optional dev-only observer, see §8. Never
   runs in production.
 - **Budget guard**: module `app/services/race/ai/budget_guard.py` that
-  blocks new runs if 30d spending >= `RACE_AI_BUDGET_USD_30D`.
+  blocks new runs if 30d spending >= `RACE_AI_BUDGET_USD_30D`. **Scoped to
+  the race stack only** — see the app-stack spend note directly below.
 - **HITL**: Human-In-The-Loop — `hitl_gate_review` node that pauses the
   graph waiting for coach approval.
 - **Hung run**: status=`running` or `awaiting_hitl` for >30 min without
   new event in `agent_run_events`.
+- **App-stack spend, and why it's a separate series from the budget
+  guard (feature 042, FR-022/FR-023)**: `GET
+  /api/race-analysis/admin/ai-usage` — the same endpoint documented in
+  §2.1 — now returns `by_coach` rows for **two** stacks side by side,
+  each tagged with a `stack` field: `stack="race"` (the pre-existing
+  series, sourced from `athlete_ai_insights`/`agent_runs`) and
+  `stack="app"` (feature 042; every generation from
+  `app/services/ai/` — PHV explainer, per-measurement analysis, session
+  assistant, monthly report + blocks, newsletter v2 — sourced from
+  `athlete_ai_explanations`). **If you're paged for a budget alert,
+  check which series it's about before reacting**: only `stack="race"`
+  ever counts toward `RACE_AI_BUDGET_USD_30D`, and only `stack="race"`
+  spend can ever trigger the §3.4 "budget guard active" 503. The
+  `stack="app"` series has **no spending cap at all** — by explicit owner
+  decision, it is never refused and never blocks a request, no matter
+  how high its `cost_usd_total` climbs. Raising
+  `RACE_AI_BUDGET_USD_30D` (§3.4) has zero effect on `stack="app"` spend,
+  and a spike in `stack="app"` spend can never be the cause of a
+  `race_ai_budget_exceeded` log line. Note also that the top-level
+  `run_count`/`cost_usd_total` fields of the same response stay
+  race-only (unchanged by this feature) — only the `by_coach` list
+  gained the second stack.

@@ -842,3 +842,67 @@ date, and triggering the consent-renewal flow are explicitly out of scope for th
 > Branch `feat/041-multi-coach-governance`. No deploy yet — Render/Cloudflare Pages deploy
 > and T097's post-deploy smoke are pending the owner's merge, same pattern as the two
 > features before it in this table.
+
+## Implementation status — Traceable Growth AI (specs/042-traceable-growth-ai)
+
+> Moves every AI text generation of `app/services/ai/` (PHV explainer family/coach,
+> per-measurement analysis, session assistant clarify/draft, monthly report + blocks,
+> newsletter v2) onto one shared, stack-neutral LangChain transport (`app/services/llm/`)
+> behind `AI_USE_LANGCHAIN` — default **true**, the switch exists to roll back, not to opt
+> in. Rebuilds the anthropometric per-measurement analysis as a plain async five-step
+> pipeline (`app/services/ai/anthro/`: context → analyst → critic → guardrails → persist,
+> LangGraph-compatible signatures, no graph/checkpointer/HITL) producing a structured
+> `AnthropometryInsightV1` with five persisted verdicts (`approved | revised | flagged |
+> fallback | skipped`) instead of free prose, family-gated to `approved|revised` only. Nine
+> new nullable columns on `athlete_ai_explanations`, redact-always Langfuse tracing across
+> seven entry points with a keyed (non-enumerable) session id shared with the race stack,
+> and an `AI_ANTHRO_PROMPT_VERSION` rollback lever mirroring `RACE_AI_PROMPT_VERSION`.
+> Delivered in four waves; requirements in `specs/042-traceable-growth-ai/spec.md`
+> (FR-001..FR-036, SC-001..SC-006). Cross-cutting technical facts in
+> `docs/technical-notes.md`'s 2026-09-13 entry.
+
+| Wave | Scope | Status |
+|---|---|---|
+| Setup | Harness check, prompt drafts, contract review | ✅ Complete |
+| Wave 1 — Foundational (US2, traceability) | Six new settings (`AI_USE_LANGCHAIN`, `AI_ANALYST_MODEL`, `AI_CRITIC_MODEL`, `AI_ANTHRO_PROMPT_VERSION`, `RACE_AI_TEMPERATURE`, `LANGFUSE_STRUCTURAL_METADATA`) with three production startup failures (`LANGFUSE_ENABLED`, `LANGFUSE_STRUCTURAL_METADATA`, and `claude-cli` as the effective provider of either stack); stack-neutral `build_chat_llm(..., role=, stack="app"\|"race")` in `app/services/llm/factory.py` with one-way inheritance (the app stack never reads `RACE_AI_*`); `calls.py`/`pricing.py`/`observability.py`/`observability_metadata.py` lifted into `app/services/llm/` (keyed session/athlete-id hashing, redact-always mask, 24-key closed metadata allow-list); `race/agents/_llm.py`, `race/agents/pricing.py`, `race/observability.py` kept as thin shims (~30 race tests monkeypatch those exact module paths, `plan.md` Complexity Tracking); `LangChainProvider` adapter (`app/services/ai/providers/langchain_provider.py`) + `AI_USE_LANGCHAIN` branch in `app/services/ai/factory.py`, `FakeLLMProvider` short-circuit untouched (~40 privacy-invariant tests depend on it) | ✅ Complete |
+| Wave 2 — US1/US3/US5 (structured pipeline) | `AnthropometryInsightV1` + critic-verdict schemas (Pydantic v2, `extra="forbid"`); `app/services/ai/anthro/` five-step async pipeline; twelve deterministic prechecks R01–R12 (privacy and developmental-safety categories block delivery, the rest only lower confidence); cheap critic with one bounded revision + deterministic fallback (itself a valid `AnthropometryInsightV1`); family gate (only `approved\|revised` reach a family, the other three verdicts render coach-only exactly like "no analysis yet"); nine nullable columns on `athlete_ai_explanations` + migration `686ce1d873f3` (down-revision `45cd705c6b54`, single head); `audience=family\|coach` endpoints with a discriminated v1/v2 response; synthetic golden-eval scaffold (12 cases, composite ≥ 0.75 threshold) | ✅ Complete |
+| Wave 3 — US4/US6/US2 bridge (UI) | `latest_ai_analysis` embedded in `GET /athletes/{id}/growth-summary` (server-side `is_stale`, never client-derived); `LatestAnalysisLine` (7 states) in the Crecimiento tab — family gate holds, no "Desactualizado", no generate action, no trace of a blocked verdict; measurement dialog moved to the shared `Dialog` primitive with structured collapsed render + "Con señal para revisar" marker; app-stack spend surfaced in `GET /admin/ai-usage`'s `by_coach`, `stack="app"` label, listed but never folded into the race totals (no cap, never counts against `RACE_AI_BUDGET_USD_30D`, explicit owner decision) | ✅ Complete |
+| Wave 4 — Polish & docs | `docs/01-marco-teorico.md` maturity-offset subsection, `docs/20-traceable-growth-ai/{design,qa,runbook}.md`, `docs/10-race-results/runbook-ops.md` §8/§9 update — tracked separately, owned by other agents/passes of this same feature; `CLAUDE.md` Alembic-head correction to `686ce1d873f3` — done; this table + the `docs/technical-notes.md` entry and the six env-var names (no values) in `.env.example` — this pass; final verification pass (all quality gates + `alembic heads` single-head confirmation) — tracked separately | 🚧 Partial — this pass covers the docs/env-var slice only |
+
+**Measured** (offline lane — no Docker/MySQL in this environment):
+
+- Backend: pre-042 baseline 4498 passed / 212 failed / 9 errors → after Wave 3, **4796 passed
+  / 211 failed / 9 errors, identical under both `AI_USE_LANGCHAIN` values**. Zero regressions
+  at every wave (failing-test-id set-diff empty each time). All 211 remaining failures and 9
+  errors require a real MySQL (none available in this container); identical before and after
+  the feature. One baseline failure fixed in passing: `test_factory_openai_not_implemented`
+  reflected an obsolete expectation (the OpenAI provider has been implemented since an earlier
+  feature) — renamed and rewritten.
+- `ruff check`: 361 findings before and after — zero net change.
+- `pytest -m golden`: 35 skipped with an explicit no-model-key reason (never a silent pass).
+- Frontend: 4280/4281 vitest passed (the one failure, `SessionWizardRouteNotify.test.tsx`,
+  pre-existing and unrelated to this feature); `tsc --noEmit` clean; `npm run build` clean.
+
+**Written but not executed** (owner explicitly excluded the local-stack lanes from this run):
+
+- `backend/tests/test_ai_explanation_columns_mysql.py` — the `-m mysql` test for the nine new
+  columns.
+- `frontend/e2e/growth-analysis.spec.ts` (Playwright) — statically valid, never run.
+- The golden eval against a real model — `backend/evals/anthropometry_analyst/baseline.json`
+  holds `status: "PLACEHOLDER"` scores (rule-score-derived estimates, not a real model run);
+  the file embeds its own `regenerate_command`.
+
+**Blocked, needs a repo admin**: `.github/workflows/anthropometry-eval.yml` requires a new
+GitHub Actions secret, `AI_API_KEY` — deliberately separate from the existing
+`RACE_AI_API_KEY` so a regression in one prompt gate can never flip the other red. Nobody has
+added it yet; the job hard-fails with an explicit `::error::` naming the missing secret rather
+than skipping silently.
+
+**Not automatable, logged for the owner**: SC-005's "without opening any dialog" clause has no
+fully automatable assertion — it needs a short moderated check recorded the way feature 041's
+SC-002 was (tracked in `docs/20-traceable-growth-ai/qa.md`, owned by another pass).
+
+> No deploy yet. Alembic head is `686ce1d873f3` (single head, on top of feature 041's
+> `45cd705c6b54`) — `CLAUDE.md`'s active-work summary is corrected to this value in the same
+> pass that added this table; do not rely on any earlier draft naming `2a8baa967cc6` as the
+> current head, that value is stale (feature 040, superseded by 041 and now by 042).

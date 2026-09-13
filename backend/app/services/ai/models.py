@@ -40,6 +40,13 @@ class LLMRequest:
     messages: tuple[LLMMessage, ...]
     max_tokens: int | None = None
     temperature: float | None = None
+    # Clave del caso de uso que originó la petición (feature 042, FR-017).
+    # Los proveedores nativos la ignoran; `LangChainProvider` la usa para
+    # nombrar la traza, de modo que los cinco casos puenteados produzcan UNA
+    # traza por generación igual que el pipeline de antropometría. Opcional y
+    # con default para no romper a ningún caller ni a los ~40 tests de
+    # privacidad que leen `FakeLLMProvider.last_request`.
+    use_case: str | None = None
 
     def __post_init__(self) -> None:
         if not self.system or not self.system.strip():

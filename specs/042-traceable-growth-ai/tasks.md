@@ -199,14 +199,14 @@ Web application (`plan.md` §Structure Decision): backend at `backend/app/…`, 
 
 **Purpose**: Make the shipped behaviour findable and operable. Docs only — no code.
 
-- [ ] T079 [P] Add the subsection "Interpreting maturity-offset estimates" (uncertainty and safeguards) plus a references list with author, year and source to `docs/01-marco-teorico.md` §1 (FR-036).
-- [ ] T080 [P] Write `docs/20-traceable-growth-ai/design.md`: the five-step pipeline, the state machine, the nine columns, the transport adapter and the shared factory.
-- [ ] T081 [P] Write `docs/20-traceable-growth-ai/qa.md`: the eleven quickstart scenarios as executed, the golden-eval results, and the moderated SC-005 check recorded the way feature 041's SC-002 was.
-- [ ] T082 [P] Write `docs/20-traceable-growth-ai/runbook.md`: enabling local Langfuse, reading a trace, the fallback and `skipped` signals, and how to roll the prompt version back.
-- [ ] T083 Update `docs/10-race-results/runbook-ops.md` §8/§9: the seven traced entry points, the `LANGFUSE_STRUCTURAL_METADATA` switch (restating that it does not change the no-retention-policy story for local trace data), and the purge cadence.
-- [ ] T084 [P] Update `docs/implementation-status.md` (per-module step table for 042) and `docs/technical-notes.md` (dated changelog entry).
+- [X] T079 [P] Add the subsection "Interpreting maturity-offset estimates" (uncertainty and safeguards) plus a references list with author, year and source to `docs/01-marco-teorico.md` §1 (FR-036).
+- [X] T080 [P] Write `docs/20-traceable-growth-ai/design.md`: the five-step pipeline, the state machine, the nine columns, the transport adapter and the shared factory.
+- [X] T081 [P] Write `docs/20-traceable-growth-ai/qa.md`: the eleven quickstart scenarios as executed, the golden-eval results, and the moderated SC-005 check recorded the way feature 041's SC-002 was.
+- [X] T082 [P] Write `docs/20-traceable-growth-ai/runbook.md`: enabling local Langfuse, reading a trace, the fallback and `skipped` signals, and how to roll the prompt version back.
+- [X] T083 Update `docs/10-race-results/runbook-ops.md` §8/§9: the seven traced entry points, the `LANGFUSE_STRUCTURAL_METADATA` switch (restating that it does not change the no-retention-policy story for local trace data), and the purge cadence.
+- [X] T084 [P] Update `docs/implementation-status.md` (per-module step table for 042) and `docs/technical-notes.md` (dated changelog entry).
 - [X] T085 Update `CLAUDE.md`: correct the Alembic head to the new 042 revision, document the six new env vars, and add the anthro-pipeline paragraph.
-- [ ] T086 [P] Add the new variable **names only** (never values) to `backend/.env.example`.
+- [X] T086 [P] Add the new variable **names only** (never values) to `backend/.env.example`.
 - [ ] T087 Final verification pass: `ruff check`, default `pytest`, `pytest -m mysql`, `pytest -m golden`, `npm run build`, `npm test`, `npm run test:e2e`, and confirm `alembic heads` shows one head.
 
 ---

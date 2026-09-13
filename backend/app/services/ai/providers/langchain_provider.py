@@ -22,6 +22,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from app.services.ai.errors import LLMSchemaError, LLMTimeoutError, LLMUnavailableError
+from app.services.llm.observability import keyed_session_id, llm_tracing
 from app.services.ai.models import LLMRequest, LLMResponse, TokenUsage
 from app.services.ai.providers.base import _BaseProvider
 from app.services.llm.calls import extract_text, extract_usage
@@ -71,11 +72,29 @@ class LangChainProvider(_BaseProvider):
         messages = self._to_messages(req)
         t0 = time.perf_counter()
         try:
-            # Sin `config=`: los cinco casos de uso puenteados no tienen un
-            # scope de Langfuse por-request que enhebrar hoy (a diferencia
-            # del pipeline de antropometría, que sí pasa `config` explícito
-            # en cada paso — ver `contracts/llm-transport.md` §3).
-            response = await self._chat_model.ainvoke(messages)
+            # FR-017 / SC-001: los cinco casos de uso puenteados NO abren su
+            # propio scope de Langfuse (a diferencia del pipeline de
+            # antropometría, que pasa `config` explícito en cada paso), así
+            # que lo abre el adaptador: una traza por generación, que es
+            # justamente lo que esta feature existe para dar. El nombre sale
+            # de `req.use_case`, que `BaseUseCase._ask` rellena.
+            #
+            # El session id agrupa por caso de uso, no por atleta: la petición
+            # no trae identidad y NO vamos a inventarla — un identificador de
+            # menor jamás debe entrar a una traza salvo con hash y clave.
+            # Contenido: redactado siempre, como en cualquier otra traza.
+            with llm_tracing(
+                trace_name=f"ai-{req.use_case or 'generation'}",
+                session_id=keyed_session_id(req.use_case or "generation"),
+                tags=[
+                    f"use_case:{req.use_case or 'generation'}",
+                    f"provider:{self.name}",
+                    f"model:{self.model}",
+                ],
+            ) as tracing:
+                response = await self._chat_model.ainvoke(
+                    messages, config=tracing or None
+                )
         except ModelTimeoutError as exc:
             # Subclase de ModelError — debe capturarse antes que el genérico.
             raise LLMTimeoutError(str(exc)) from exc
