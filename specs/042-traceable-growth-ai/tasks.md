@@ -85,7 +85,7 @@ Web application (`plan.md` §Structure Decision): backend at `backend/app/…`, 
 - [X] T022 [P] [US2] Write `backend/tests/test_llm_observability.py`: mask sentinel redacts every content field, the allow-list snapshot test over `ALLOWED_METADATA_KEYS`, the keyed session id (stable, non-enumerable, domain-separated), and degrade-to-no-op with exactly one warning per process when Langfuse is unreachable.
 - [X] T023 [P] [US2] Write `backend/tests/test_langchain_provider.py`: adapter translation and exception mapping using `GenericFakeChatModel`, including usage extraction and the structured-output path.
 - [X] T024 [US2] Fix the red `test_factory_openai_not_implemented` in `backend/tests/test_ai_factory.py` and add the `AI_USE_LANGCHAIN` switch test (on → `LangChainProvider`, off → native provider, `AI_ENABLED=false` → `FakeLLMProvider` under both).
-- [ ] T025 [US2] Run the Wave 1 exit gate from `backend/`: `ruff check`, default `pytest`, `pytest -m golden -k race`, and the full default lane under both values of `AI_USE_LANGCHAIN` — record any behavioural diff in the race golden as a blocker.
+- [X] T025 [US2] Run the Wave 1 exit gate from `backend/`: `ruff check`, default `pytest`, `pytest -m golden -k race`, and the full default lane under both values of `AI_USE_LANGCHAIN` — record any behavioural diff in the race golden as a blocker.
 
 **Checkpoint**: the shared transport exists, traces redacted, race behaviour unchanged. W2 and W3 may start.
 
@@ -158,7 +158,7 @@ Web application (`plan.md` §Structure Decision): backend at `backend/app/…`, 
 - [X] T062 [US1] Update `frontend/src/components/ai/AnthropometricRecordExplanationCard.tsx`: render v2 collapsed via `StructuredInsight`, keep v1 prose rows rendering exactly as before, add the "Con observaciones" marker, the stale chip, `AIBudgetHint` above the generate control, and the shared passive empty message (FR-026, FR-032, FR-033).
 - [X] T063 [P] [US1] Update `frontend/src/components/ai/PHVExplanationCard.tsx`: heading in the success state (G-16), ≥48 px "Regenerar análisis", `AIBudgetHint`, and the same shared empty message.
 - [X] T064 [P] [US1] Write vitest suites for `StructuredInsight`, the v1/v2/corrupt-JSON branches of `AnthropometricRecordExplanationCard` and the discriminated union in `ai.schemas.ts`, with MSW fixtures; add jest-axe zero-violation assertions on both cards.
-- [ ] T065 [US1] Run the Wave 2 exit gate: `pytest -m golden -k anthropometry` ≥ 0.75, `pytest -m mysql`, default `pytest`, `ruff check`, `npm run build`, `npm test`.
+- [X] T065 [US1] Run the Wave 2 exit gate: `pytest -m golden -k anthropometry` ≥ 0.75, `pytest -m mysql`, default `pytest`, `ruff check`, `npm run build`, `npm test`.
 
 **Checkpoint**: the structured analysis is generated, reviewed, persisted with accounting and rendered; families are safe. W3 may start.
 
