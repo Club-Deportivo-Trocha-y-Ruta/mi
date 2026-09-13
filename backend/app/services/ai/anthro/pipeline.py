@@ -287,15 +287,24 @@ async def run_analysis(state: dict, config: Optional[dict] = None) -> dict[str, 
         llm_config = tracing or None
 
         # --- Paso 1: contexto -----------------------------------------
-        context_update = await build_context(state, llm_config)
-        step_state = {**state, **context_update}
+        # La lista prohibida se carga ANTES del contexto, no después: el único
+        # texto libre que el allow-list admite en el prompt es
+        # `previous_analysis.summary_line` (contracts/analysis-context.md §2.6),
+        # y hay que tacharlo antes de renderizar. R06 solo revisa el borrador
+        # NUEVO después de generarlo, así que un nombre que quedó dentro de un
+        # insight ya persistido —o que pasó a ser prohibido después— volvería a
+        # salir hacia el proveedor externo en el siguiente prompt. Hallazgo
+        # CRÍTICO de la auditoría data-privacy-guard (T057).
+        forbidden_names = await _resolve_forbidden_names(state)
+        context_update = await build_context(
+            {**state, "forbidden_names": forbidden_names}, llm_config
+        )
+        step_state = {**state, **context_update, "forbidden_names": forbidden_names}
         analysis_context = step_state["analysis_context"]
 
         total_tokens_in = 0
         total_tokens_out = 0
         total_cost_usd = 0.0
-
-        forbidden_names = await _resolve_forbidden_names(step_state)
 
         # --- Paso 2: analista -------------------------------------------
         analyst_update = await _translating_config_errors(run_analyst(step_state, llm_config))

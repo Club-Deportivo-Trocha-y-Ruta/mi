@@ -55,6 +55,11 @@ pytestmark = pytest.mark.mysql
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 REVISION = "45cd705c6b54"
 DOWN_REVISION = "2a8baa967cc6"
+# Head actual de la cadena, distinto de REVISION: esta suite prueba la
+# migración de auditoría (041), pero `test_single_head` vigila la cadena
+# ENTERA, así que hay que subir esta constante con cada migración nueva.
+# Hoy: 686ce1d873f3 (042, nueve columnas de trazabilidad) sobre 45cd705c6b54.
+CURRENT_HEAD = "686ce1d873f3"
 
 
 def _require_test_url() -> URL:
@@ -167,13 +172,14 @@ def _seed_pre041_fixtures(engine) -> dict[str, int]:
 
 
 def test_single_head():
-    """`alembic heads` resolves to exactly one head — this revision."""
+    """`alembic heads` resuelve a exactamente un head — el actual de la cadena."""
     cfg = Config(str(BACKEND_DIR / "alembic.ini"))
     cfg.set_main_option("script_location", str(BACKEND_DIR / "alembic"))
     heads = ScriptDirectory.from_config(cfg).get_heads()
-    assert heads == [REVISION], (
-        f"Expected a single head {REVISION!r}, got {heads!r} — an unresolved "
-        "Alembic fork exists."
+    assert heads == [CURRENT_HEAD], (
+        f"Expected a single head {CURRENT_HEAD!r}, got {heads!r} — either an "
+        "unresolved Alembic fork exists, or a new migration landed and "
+        "CURRENT_HEAD was not bumped with it."
     )
 
 

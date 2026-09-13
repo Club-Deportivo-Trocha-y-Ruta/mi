@@ -46,7 +46,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, timedelta
-from typing import TYPE_CHECKING, Any
+import re
+from typing import TYPE_CHECKING, Any, Sequence
 
 from sqlalchemy import select
 
@@ -54,6 +55,7 @@ from app.models.ai_explanation import AthleteAIExplanation
 from app.services.ai.context_builders import (
     DELTA_HEIGHT_SIGNIFICANT_CM,
     DELTA_WEIGHT_SIGNIFICANT_KG,
+    _NAME_LIKE_PATTERN,
     age_group_for,
     build_longitudinal_series,
     phase_crossing_corroborated,
@@ -232,13 +234,52 @@ async def _load_previous_structured_insight(
     return result.scalar_one_or_none()
 
 
+def _scrub_previous_summary(text: str, forbidden_names: Sequence[str]) -> str:
+    """Tacha nombres del resumen previo antes de que vuelva al prompt.
+
+    ``previous_analysis.summary_line`` es el ÚNICO texto libre que el
+    allow-list admite en el prompt (``contracts/analysis-context.md`` §2.6), y
+    §3 del mismo contrato prohíbe que viaje cualquier nombre. Las dos capas:
+
+    1. Coincidencia exacta contra la lista prohibida del club, que es la única
+       defensa que funciona con un nombre de forma arbitraria (una regex de
+       "Nombre Apellido" no atrapa mayúsculas completas ni grafías raras).
+    2. ``_NAME_LIKE_PATTERN``, el mismo saneador que ya se aplica al texto
+       libre del coach, como defensa en profundidad para un nombre que todavía
+       no esté en la lista.
+
+    Por qué hace falta: R06 solo revisa el borrador NUEVO ya generado. Un
+    nombre que quedó dentro de un insight persistido —o que pasó a ser
+    prohibido después de generarlo— volvería a salir hacia el proveedor
+    externo en el siguiente prompt sin que ningún guardrail lo viera. Hallazgo
+    CRÍTICO de la auditoría data-privacy-guard (T057).
+    """
+    cleaned = text
+    for name in sorted(forbidden_names, key=len, reverse=True):
+        candidate = name.strip()
+        if not candidate:
+            continue
+        cleaned = re.sub(rf"\b{re.escape(candidate)}\b", "", cleaned, flags=re.IGNORECASE)
+    cleaned = _NAME_LIKE_PATTERN.sub("", cleaned)
+    return re.sub(r"\s{2,}", " ", cleaned).strip()
+
+
 def _build_previous_analysis_dict(
-    row: AthleteAIExplanation, reference_date: date
+    row: AthleteAIExplanation,
+    reference_date: date,
+    forbidden_names: Sequence[str] = (),
 ) -> dict | None:
     """``None`` si la fila no trae un ``structured_json`` legible (FR-009:
-    nunca inventar contenido — mejor sin continuidad previa que corrupta)."""
+    nunca inventar contenido — mejor sin continuidad previa que corrupta).
+
+    ``forbidden_names`` llega desde ``pipeline.py`` (lista del club cargada
+    antes del contexto) y tacha el resumen previo — ver
+    :func:`_scrub_previous_summary`.
+    """
     structured = row.structured_json or {}
     summary_line = structured.get("summary_line")
+    if summary_line:
+        summary_line = _scrub_previous_summary(summary_line, forbidden_names)
     confidence_level = (structured.get("confidence") or {}).get("level")
     if not summary_line or not confidence_level:
         return None
@@ -427,7 +468,9 @@ async def build_context(state: dict, config: dict | None = None) -> dict[str, An
     if db is not None:
         previous_row = await _load_previous_structured_insight(db, athlete.id, use_case)
         if previous_row is not None:
-            raw_previous = _build_previous_analysis_dict(previous_row, reference_date)
+            raw_previous = _build_previous_analysis_dict(
+                previous_row, reference_date, state.get("forbidden_names") or ()
+            )
             if raw_previous is not None:
                 previous_analysis = sanitize_insight_context(raw_previous)
 

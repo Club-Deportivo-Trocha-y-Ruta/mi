@@ -81,6 +81,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from pydantic import ValidationError
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -251,7 +252,21 @@ def _map_structured_fields(
     is_row_v2 = cached.schema_version == "v2"
     structured = None
     if is_row_v2 and cached.structured_json:
-        structured = AnthropometryInsightOut.from_stored(cached.structured_json)
+        try:
+            structured = AnthropometryInsightOut.from_stored(cached.structured_json)
+        except ValidationError:
+            # `structured_json` corrupto o de una forma que ya no valida (p. ej.
+            # escrito por una versión anterior del schema): se cae a prosa en vez
+            # de reventar — `quickstart.md` §3 escenario 11. La columna `text`
+            # siempre está poblada, incluso en filas v2, justamente para que
+            # esta degradación sea posible sin backfill (data-model.md §1).
+            logger.warning(
+                "ai_structured_json_invalido explanation_id=%s use_case=%s — "
+                "se responde como v1 (prosa)",
+                cached.id,
+                cached.use_case,
+            )
+            is_row_v2 = False
 
     # §4 del contrato: `trace_id` solo para coach/admin. `cached.
     # langfuse_trace_id` ya es `None` cuando `LANGFUSE_ENABLED=false` (el
