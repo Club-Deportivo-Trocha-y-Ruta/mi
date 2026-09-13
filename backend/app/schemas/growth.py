@@ -16,7 +16,8 @@ See `specs/040-growth-module-redesign/data-model.md` §3 and
 from __future__ import annotations
 
 import enum
-from datetime import date
+from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -79,6 +80,29 @@ class LatestBands(BaseModel):
     weight: BandReading | None = None
 
 
+class LatestAiAnalysis(BaseModel):
+    """Resumen del análisis de IA (feature 042) más reciente, para la pestaña
+    de crecimiento — coach y familia comparten la misma línea (FR-027).
+
+    Siempre proyectado desde la fila **familiar** (`RECORD_USE_CASE`),
+    nunca de la variante `coach`, precisamente porque su `summary_line` está
+    libre de cifras (cm/año, meses a PHV) por construcción del prompt — lo
+    que la hace segura de mostrar también en modo entrenador. `critic_verdict`
+    solo se puebla para el visor coach/admin (compuerta familiar, FR-016) —
+    ver `contracts/growth-summary-latest-analysis.md` §0/§2.
+    """
+
+    record_id: int
+    generated_at: datetime
+    schema_version: Literal["v2"] = "v2"
+    summary_line: str
+    has_warning_signs: bool
+    critic_verdict: (
+        Literal["approved", "revised", "flagged", "fallback", "skipped"] | None
+    ) = None
+    is_stale: bool
+
+
 class GrowthSummaryOut(BaseModel):
     """Decision-first growth summary for one athlete (coach tab, US2)."""
 
@@ -94,3 +118,4 @@ class GrowthSummaryOut(BaseModel):
     measurement: MeasurementDue
     alerts: list[GrowthSummaryAlert] = []
     latest: LatestBands | None = None
+    latest_ai_analysis: LatestAiAnalysis | None = None  # feature 042 (T066) — null conditions §4

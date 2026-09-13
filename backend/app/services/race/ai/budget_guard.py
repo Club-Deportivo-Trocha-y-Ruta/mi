@@ -27,6 +27,18 @@ Diseño
   cuando el budget ya se excedió. Multi-worker (gunicorn -w 4) podría
   generar hasta N notificaciones; aceptable para MVP.
 
+Módulo compartido de gasto por entrenador (feature 042)
+--------------------------------------------------------
+Este archivo es también el "módulo de gasto de la feature 041" que
+``plan.md``/``tasks.md`` de la feature 042 (T069) extiende con una segunda
+serie, totalmente separada: :func:`app_stack_spend_by_user_last_30d` lee
+``athlete_ai_explanations.cost_usd`` (el stack ``app/services/ai``,
+FR-022) en vez de ``athlete_ai_insights`` (el stack "race" de arriba).
+Ambas series comparten forma (:class:`UserSpend`, ahora con un campo
+``stack``) y la misma política de repliegue por club (hallazgo H3), pero
+NUNCA se suman entre sí ni comparten query: el stack "app" no tiene tope
+de gasto y jamás debe alimentar :func:`check_budget` (FR-023).
+
 Notas operativas
 ----------------
 - Cambiar el threshold: setear ``RACE_AI_BUDGET_USD_30D`` en Render.
@@ -184,12 +196,21 @@ class UserSpend:
 
     Privacidad (Ley 1581): ``display_name`` es SIEMPRE staff adulto
     (entrenador o administrador). Ningún menor aparece en esta superficie.
+
+    ``stack`` (feature 042, FR-022) distingue de qué stack de IA viene la
+    fila: ``"race"`` (default, comportamiento histórico de
+    :func:`spend_by_user_last_30d`) o ``"app"``
+    (:func:`app_stack_spend_by_user_last_30d`, sobre
+    ``athlete_ai_explanations``). Es un campo puramente informativo para
+    quien componga ambas series — no participa en ninguna query ni en la
+    lógica de repliegue.
     """
 
     user_id: Optional[int]  # None = cubo sin atribuir
     display_name: str
     cost_usd_total: float
     run_count: int
+    stack: str = "race"
 
 
 # Misma ventana y misma extracción JSON que ``_QUERY_SUM_COST_30D``; si esa
@@ -326,6 +347,134 @@ async def spend_by_user_last_30d(
     return out
 
 
+# ---------------------------------------------------------------------------
+# Gasto por entrenador — stack "app" (feature 042, FR-022/FR-023)
+# ---------------------------------------------------------------------------
+
+# A diferencia de ``_QUERY_SPEND_BY_USER`` (que lee ``athlete_ai_insights``
+# vía ``JSON_EXTRACT`` — el stack "race"), este stack ya tiene columnas
+# dedicadas (data-model.md §1) y no necesita JOIN: ``generated_by_user_id``
+# es NOT NULL en ``athlete_ai_explanations`` (quien pide la generación queda
+# siempre registrado), así que este stack nunca produce el cubo
+# ``UNATTRIBUTED_LABEL`` — se deja el mecanismo por si el modelo cambia,
+# pero hoy es inalcanzable.
+#
+# ``schema_version IS NOT NULL`` es, por diseño (ver el comentario de
+# ``ai_explanation.py`` junto a la columna), la única comprobación de una
+# sola columna para "esta fila es de la feature 042" — filas legado (033,
+# ``phv_explainer`` y otros use cases previos a esta feature) nunca
+# poblaron las nueve columnas de trazabilidad y `cost_usd` queda NULL en
+# ellas; excluirlas evita contar como "gasto" generaciones que nunca
+# tuvieron costo trazado.
+_QUERY_APP_STACK_SPEND_BY_USER = """
+SELECT generated_by_user_id                AS uid,
+       COUNT(*)                            AS run_count,
+       COALESCE(SUM(cost_usd), 0)          AS cost
+  FROM athlete_ai_explanations
+ WHERE generated_at >= :cutoff
+   AND schema_version IS NOT NULL
+ GROUP BY uid
+ ORDER BY cost DESC
+"""
+
+
+async def app_stack_spend_by_user_last_30d(
+    db: AsyncSession,
+    *,
+    days: int = 30,
+    visible_user_ids: set[int] | None = None,
+) -> list[UserSpend]:
+    """Gasto del stack ``app/services/ai`` (feature 042), por entrenador.
+
+    Hermana de :func:`spend_by_user_last_30d`, pero lee
+    ``athlete_ai_explanations.cost_usd`` — la fuente de verdad de ESTE
+    stack — en vez de ``athlete_ai_insights`` (stack "race"). Cada fila
+    devuelta trae ``stack="app"`` (FR-022) para que quien componga ambas
+    series nunca las confunda ni las sume entre sí.
+
+    Mismo repliegue por club que la hermana race (``visible_user_ids``):
+    ``None`` conserva el comportamiento histórico (todo el staff visible,
+    pensado para el admin); un ``set`` repliega cualquier ``uid`` fuera de
+    él en una única fila ``OTHER_CLUBS_LABEL`` sin nombre — misma
+    invariante de privacidad (hallazgo H3, feature 041) aplicada aquí para
+    que un coach jamás vea la identidad ni el gasto individual de staff de
+    otro club en NINGÚN stack.
+
+    CRÍTICO (FR-023): esta función NUNCA se le pasa el resultado a
+    :func:`check_budget` ni a :func:`_sum_cost_last_30d` — esos dos leen
+    exclusivamente ``athlete_ai_insights`` (tabla distinta) y son la ÚNICA
+    fuente que cuenta contra ``RACE_AI_BUDGET_USD_30D``. Este stack no
+    tiene tope de gasto (decisión explícita del owner, `plan.md` de la
+    feature 042) — añadir aquí cualquier llamada a ``check_budget`` sería
+    un error de diseño, no una mejora.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    result = await db.execute(text(_QUERY_APP_STACK_SPEND_BY_USER), {"cutoff": cutoff})
+    rows = result.fetchall() if hasattr(result, "fetchall") else []
+
+    buckets: list[tuple[Optional[int], int, float]] = []
+    for row in rows:
+        raw_uid = _row_get(row, "uid", 0)
+        try:
+            uid = int(raw_uid) if raw_uid is not None else None
+        except (TypeError, ValueError):
+            uid = None
+        try:
+            run_count = int(_row_get(row, "run_count", 1) or 0)
+        except (TypeError, ValueError):
+            run_count = 0
+        try:
+            cost = float(_row_get(row, "cost", 2) or 0.0)
+        except (TypeError, ValueError):
+            cost = 0.0
+        buckets.append((uid, run_count, cost))
+
+    if visible_user_ids is None:
+        visible_buckets = buckets
+        folded_run_count = 0
+        folded_cost = 0.0
+    else:
+        visible_buckets = []
+        folded_run_count = 0
+        folded_cost = 0.0
+        for uid, run_count, cost in buckets:
+            if uid is None or uid in visible_user_ids:
+                visible_buckets.append((uid, run_count, cost))
+            else:
+                folded_run_count += run_count
+                folded_cost += cost
+
+    names = await _resolve_staff_names(
+        db, {uid for uid, _, _ in visible_buckets if uid is not None}
+    )
+
+    out = [
+        UserSpend(
+            user_id=uid,
+            display_name=(
+                UNATTRIBUTED_LABEL if uid is None else names.get(uid, "Usuario no disponible")
+            ),
+            cost_usd_total=cost,
+            run_count=run_count,
+            stack="app",
+        )
+        for uid, run_count, cost in visible_buckets
+    ]
+
+    if visible_user_ids is not None and folded_run_count > 0:
+        out.append(
+            UserSpend(
+                user_id=None,
+                display_name=OTHER_CLUBS_LABEL,
+                cost_usd_total=folded_cost,
+                run_count=folded_run_count,
+                stack="app",
+            )
+        )
+
+    return out
+
+
 async def _resolve_staff_names(db: AsyncSession, ids: set[int]) -> dict[int, str]:
     """``{user_id: "Nombre Apellido"}`` en una sola query por lote (§4.1).
 
@@ -454,6 +603,7 @@ __all__ = [
     "UNATTRIBUTED_LABEL",
     "BudgetExceededError",
     "UserSpend",
+    "app_stack_spend_by_user_last_30d",
     "check_budget",
     "spend_by_user_last_30d",
 ]

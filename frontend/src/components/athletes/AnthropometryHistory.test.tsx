@@ -1,9 +1,63 @@
-import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { axe } from "jest-axe";
+import type { UseQueryResult } from "@tanstack/react-query";
+
 import { AnthropometryHistory } from "./AnthropometryHistory";
 import { MaturationStatus } from "@/types/enums";
 import type { AnthropometricRecord } from "@/types/anthropometry.types";
+import type { AnthropometricRecordExplanationResponse } from "@/types/ai.types";
+
+// ---------------------------------------------------------------------------
+// Mocks — feature 042 (T076)
+// ---------------------------------------------------------------------------
+
+// La marca "Con señal para revisar" (`HistoryRowWarningMarker`) lee
+// directamente `useMeasurementExplanationCached`; se mockea a nivel de hook
+// (no de API/red) para poder controlar el dato cacheado por `recordId` sin
+// necesitar un `QueryClientProvider` — la mayoría de los tests de este
+// archivo no pasa `athleteId`, así que el hook nunca se invoca ahí.
+vi.mock("@/hooks/ai/useMeasurementExplanation", () => ({
+  useMeasurementExplanationCached: vi.fn(),
+}));
+
+// El modal migrado monta `AnthropometricRecordExplanationCard` cuando se le
+// pasa `athleteId` — se mockea igual que en `LatestAnalysisLine.test.tsx`
+// para las suites que sí pasan `athleteId` (marca de aviso), evitando
+// llamadas HTTP reales. Las suites de foco/teclado NO pasan `athleteId`
+// (mismo criterio que el resto de este archivo), así que ese bloque nunca
+// se monta ahí y el mock es irrelevante para esas.
+vi.mock("@/components/ai/AnthropometricRecordExplanationCard", () => ({
+  AnthropometricRecordExplanationCard: ({
+    athleteId,
+    recordId,
+  }: {
+    athleteId: number;
+    recordId: number;
+  }) => (
+    <div
+      data-testid="mock-record-explanation-card"
+      data-athlete-id={athleteId}
+      data-record-id={recordId}
+    >
+      mock explanation
+    </div>
+  ),
+}));
+
+import { useMeasurementExplanationCached } from "@/hooks/ai/useMeasurementExplanation";
+
+function mockCachedQuery(
+  data: AnthropometricRecordExplanationResponse | null,
+): UseQueryResult<AnthropometricRecordExplanationResponse | null, Error> {
+  return {
+    data,
+    isLoading: false,
+    isError: false,
+    error: null,
+  } as UseQueryResult<AnthropometricRecordExplanationResponse | null, Error>;
+}
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -66,6 +120,11 @@ const record3 = makeRecord({
 // ---------------------------------------------------------------------------
 
 describe("AnthropometryHistory", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(useMeasurementExplanationCached).mockReturnValue(mockCachedQuery(null));
+  });
+
   // -------------------------------------------------------------------------
   // Estado de carga
   // -------------------------------------------------------------------------
@@ -262,14 +321,14 @@ describe("AnthropometryHistory", () => {
 
     it("debería cerrar el modal al hacer clic en el backdrop", async () => {
       const user = userEvent.setup();
-      const { container } = render(
-        <AnthropometryHistory records={[record1]} isLoading={false} />
-      );
+      render(<AnthropometryHistory records={[record1]} isLoading={false} />);
       const rows = screen.getAllByRole("row");
       await user.click(rows[1]);
       expect(screen.getByText(/Medición del/i)).toBeInTheDocument();
-      // El backdrop es el div fixed con bg-black/40
-      const backdrop = container.querySelector(".fixed.inset-0");
+      // Feature 042 (T075): el modal migró a la primitiva `Dialog` (Radix),
+      // que renderiza el overlay en un portal fuera del `container` de RTL
+      // — por eso se busca en `document`, no en `container`.
+      const backdrop = document.querySelector(".fixed.inset-0");
       expect(backdrop).not.toBeNull();
       await user.click(backdrop!);
       expect(screen.queryByText(/Medición del/i)).not.toBeInTheDocument();
@@ -282,6 +341,208 @@ describe("AnthropometryHistory", () => {
       await user.click(rows[1]);
       // record3.arm_span_cm = 162.0 — aparece en la columna de la tabla y dentro del modal
       expect(screen.getByText(/Envergadura: 162/)).toBeInTheDocument();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Modal de detalle — foco y teclado (feature 042, T075/T076): el modal
+  // migró a la primitiva `Dialog` compartida (Radix). Se prueba como
+  // COMPORTAMIENTO (eventos de teclado / foco real), nunca leyendo props.
+  // -------------------------------------------------------------------------
+  describe("modal de detalle — foco y teclado", () => {
+    it("Escape cierra el modal", async () => {
+      const user = userEvent.setup();
+      render(<AnthropometryHistory records={[record1]} isLoading={false} />);
+      await user.click(
+        screen.getByRole("button", {
+          name: /Ver detalle de medición del 01\/06\/2025/i,
+        }),
+      );
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+      await user.keyboard("{Escape}");
+
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(screen.queryByText(/Medición del/i)).not.toBeInTheDocument();
+    });
+
+    it("el foco queda ATRAPADO dentro del diálogo: Tab repetido nunca sale de su contenido", async () => {
+      const user = userEvent.setup();
+      render(<AnthropometryHistory records={[record1]} isLoading={false} />);
+      await user.click(
+        screen.getByRole("button", {
+          name: /Ver detalle de medición del 01\/06\/2025/i,
+        }),
+      );
+      const dialog = screen.getByRole("dialog");
+
+      // Más vueltas que elementos enfocables dentro del modal — si el foco
+      // se escapara, alguna de estas aserciones fallaría.
+      for (let i = 0; i < 12; i += 1) {
+        await user.tab();
+        expect(dialog.contains(document.activeElement)).toBe(true);
+      }
+    });
+
+    it("Shift+Tab desde el primer elemento enfocable tampoco saca el foco del diálogo", async () => {
+      const user = userEvent.setup();
+      render(<AnthropometryHistory records={[record1]} isLoading={false} />);
+      await user.click(
+        screen.getByRole("button", {
+          name: /Ver detalle de medición del 01\/06\/2025/i,
+        }),
+      );
+      const dialog = screen.getByRole("dialog");
+
+      await user.tab({ shift: true });
+      expect(dialog.contains(document.activeElement)).toBe(true);
+    });
+
+    it("el foco vuelve al botón disparador al cerrar con Escape", async () => {
+      const user = userEvent.setup();
+      render(<AnthropometryHistory records={[record1]} isLoading={false} />);
+      const trigger = screen.getByRole("button", {
+        name: /Ver detalle de medición del 01\/06\/2025/i,
+      });
+
+      await user.click(trigger);
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+      await user.keyboard("{Escape}");
+
+      await waitFor(() => {
+        expect(trigger).toHaveFocus();
+      });
+    });
+
+    it("el foco vuelve al botón disparador al cerrar con el control 'Cerrar' (≥48 px, FR-031)", async () => {
+      const user = userEvent.setup();
+      render(<AnthropometryHistory records={[record1]} isLoading={false} />);
+      const trigger = screen.getByRole("button", {
+        name: /Ver detalle de medición del 01\/06\/2025/i,
+      });
+
+      await user.click(trigger);
+      await user.click(screen.getByRole("button", { name: "Cerrar" }));
+
+      await waitFor(() => {
+        expect(trigger).toHaveFocus();
+      });
+    });
+
+    it("sin violaciones jest-axe con el diálogo abierto (Radix lo renderiza en un portal fuera de `container`)", async () => {
+      const user = userEvent.setup();
+      render(<AnthropometryHistory records={[record1]} isLoading={false} />);
+      await user.click(
+        screen.getByRole("button", {
+          name: /Ver detalle de medición del 01\/06\/2025/i,
+        }),
+      );
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+      expect(await axe(document.body)).toHaveNoViolations();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Marca "Con señal para revisar" (feature 042, FR-028/T076)
+  // -------------------------------------------------------------------------
+  describe("marca 'Con señal para revisar'", () => {
+    const withWarning: AnthropometricRecordExplanationResponse = {
+      schema_version: "v2",
+      text: "Resumen sintético con una señal de aviso.",
+      model: "fake-model",
+      provider: "fake",
+      generated_at: "2026-01-15T10:00:00Z",
+      age_group: "10-12",
+      maturation_status: MaturationStatus.CircaPHV,
+      record_id: record2.id,
+      num_previous_measurements: 1,
+      delta_height_cm: 1.0,
+      delta_weight_kg: 0.5,
+      structured: {
+        summary_line: "Cambio de talla dentro de lo esperado.",
+        changes: [],
+        meaning: [],
+        next_weeks: [],
+        warning_signs: ["Señal sintética de ejemplo — sin dato real de un menor."],
+        confidence: { level: "medium", reason: "Motivo sintético." },
+        data_gaps: [],
+      },
+      critic_verdict: "approved",
+      is_fallback: false,
+      prompt_version: "anthropometry_analyst_v1",
+      trace_id: "deadbeefcafef00d",
+    };
+
+    const withoutWarning: AnthropometricRecordExplanationResponse = {
+      ...withWarning,
+      record_id: record3.id,
+      structured: { ...withWarning.structured, warning_signs: [] },
+    };
+
+    beforeEach(() => {
+      vi.mocked(useMeasurementExplanationCached).mockImplementation(
+        (_athleteId: number, recordId: number) => {
+          if (recordId === record2.id) return mockCachedQuery(withWarning);
+          if (recordId === record3.id) return mockCachedQuery(withoutWarning);
+          return mockCachedQuery(null);
+        },
+      );
+    });
+
+    it("aparece SOLO en la fila cuyo análisis trae señales de aviso, en la tabla de escritorio", () => {
+      render(
+        <AnthropometryHistory
+          records={[record2, record3]}
+          isLoading={false}
+          athleteId={7}
+        />,
+      );
+      const desktop = screen.getByTestId("anthropometry-history-desktop");
+      expect(within(desktop).getAllByTestId("history-warning-marker")).toHaveLength(1);
+
+      const rows = within(desktop).getAllByRole("row");
+      // Fila 1 = record3 (más reciente, "01/04/2026", sin señales);
+      // fila 2 = record2 ("15/01/2026", con señales).
+      expect(within(rows[1]).queryByTestId("history-warning-marker")).not.toBeInTheDocument();
+      expect(within(rows[2]).getByTestId("history-warning-marker")).toBeInTheDocument();
+    });
+
+    it("aparece SOLO en la tarjeta correspondiente de la vista móvil", () => {
+      render(
+        <AnthropometryHistory
+          records={[record2, record3]}
+          isLoading={false}
+          athleteId={7}
+        />,
+      );
+      const mobile = screen.getByTestId("anthropometry-history");
+      expect(within(mobile).getAllByTestId("history-warning-marker")).toHaveLength(1);
+    });
+
+    it("NO aparece cuando la fila no es entregable a la familia (verdict bloqueado → 204/null en caché)", () => {
+      // El backend nunca deja pasar un veredicto flagged/fallback/skipped a
+      // un padre — llega como `204`, indistinguible de "sin análisis
+      // todavía" (`hasWarningSigns(null) === false`). Se simula aquí
+      // devolviendo `null` para el registro que en el fondo SÍ tiene
+      // señales (record2), como haría el gate familiar del backend.
+      vi.mocked(useMeasurementExplanationCached).mockReturnValue(mockCachedQuery(null));
+      render(
+        <AnthropometryHistory
+          records={[record2]}
+          isLoading={false}
+          athleteId={7}
+          mode="parent"
+        />,
+      );
+      expect(screen.queryByTestId("history-warning-marker")).not.toBeInTheDocument();
+    });
+
+    it("no se monta (ni invoca el hook) cuando no se pasa athleteId", () => {
+      render(<AnthropometryHistory records={[record2]} isLoading={false} />);
+      expect(screen.queryByTestId("history-warning-marker")).not.toBeInTheDocument();
+      expect(useMeasurementExplanationCached).not.toHaveBeenCalled();
     });
   });
 

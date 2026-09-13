@@ -595,9 +595,13 @@ describe("AnthropometricRecordExplanationCard", () => {
     );
 
     await waitFor(() => {
+      // La audiencia viaja explícita desde la feature 042 (T072): el mismo
+      // endpoint sirve la variante familiar y la de entrenador, con filas de
+      // caché distintas. "family" es el default y es lo que pide esta tarjeta.
       expect(aiApi.getMeasurementExplanationCached).toHaveBeenCalledWith(
         1,
         99,
+        { audience: "family" },
       );
     });
   });

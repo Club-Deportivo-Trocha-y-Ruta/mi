@@ -310,6 +310,13 @@ class AIUsageByCoach(BaseModel):
     display_name: str
     run_count: int = Field(..., ge=0)
     cost_usd_total: float = Field(..., ge=0.0)
+    # Feature 042 (FR-022): de qué stack de IA viene la fila — "race"
+    # (athlete_ai_insights, comportamiento histórico) o "app"
+    # (athlete_ai_explanations, el pipeline antropométrico). Las dos series
+    # se listan juntas pero NUNCA se suman: el stack "app" no tiene tope y
+    # no cuenta contra RACE_AI_BUDGET_USD_30D (FR-023). Default "race" para
+    # que un cliente viejo que ignore el campo siga leyendo lo de siempre.
+    stack: str = "race"
 
 
 class AIUsageResponse(BaseModel):

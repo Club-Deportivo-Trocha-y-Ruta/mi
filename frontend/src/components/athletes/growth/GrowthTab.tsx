@@ -8,11 +8,13 @@
  * entregaron `GrowthStatusRow`/`NextMeasurementCard`/`GrowthAlerts` y el
  * `TrainingReadiness` refactorizado; T052 reemplaza el slot temporal de
  * `GrowthCharts` por `GrowthCurveSection`; T068 inserta `MaturationTimeline`
- * justo después de la curva):
+ * justo después de la curva; T074 (feature 042) inserta `LatestAnalysisLine`
+ * justo antes del historial):
  *
  *   GrowthAlerts → GrowthStatusRow → NextMeasurementCard → TrainingReadiness
  *   → GrowthCurveSection → MaturationTimeline → MorphologyCard →
- *   PHVExplanationCard → AnthropometryHistory (compacto) → ResearchReferences.
+ *   PHVExplanationCard → LatestAnalysisLine → AnthropometryHistory
+ *   (compacto) → ResearchReferences.
  *
  * `NutritionalClassification` deja de usarse en modo coach: sus dos
  * clasificaciones (talla/IMC) ahora las muestra `GrowthStatusRow` con datos
@@ -20,14 +22,24 @@
  * cálculo LMS en el cliente.
  *
  * Composición modo padre (feature 040, US4, T062 — reemplaza la paridad
- * provisional con `MyAthleteDetailPage.tsx` de las fases previas): tarjetas
- * familiares (`FamilyStageCard` → `FamilyBandCards`, sin numerales) →
+ * provisional con `MyAthleteDetailPage.tsx` de las fases previas; T074
+ * (feature 042) inserta `LatestAnalysisLine`): tarjetas familiares
+ * (`FamilyStageCard` → `FamilyBandCards`, sin numerales) →
  * `GrowthCurveSection` (preset familiar) → `PHVExplanationCard` (solo
- * lectura, `audience="family"`) → `AnthropometryHistory` (modo padre). Nada
- * más: sin `GrowthAlerts`/`GrowthStatusRow`/`NextMeasurementCard` (esos
- * tres son el bloque resumen del coach), ni `TrainingReadiness`,
- * `MorphologyCard`, `MaturationTimeline` o `ResearchReferences` (exclusivos
- * del coach per `contracts/growth-tab-ui.md` §Component tree).
+ * lectura, `audience="family"`) → `LatestAnalysisLine` (modo `"parent"`) →
+ * `AnthropometryHistory` (modo padre). Nada más: sin `GrowthAlerts`/
+ * `GrowthStatusRow`/`NextMeasurementCard` (esos tres son el bloque resumen
+ * del coach), ni `TrainingReadiness`, `MorphologyCard`, `MaturationTimeline`
+ * o `ResearchReferences` (exclusivos del coach per
+ * `contracts/growth-tab-ui.md` §Component tree).
+ *
+ * `LatestAnalysisLine` (feature 042, `contracts/growth-summary-latest-
+ * analysis.md`, FR-027) reutiliza la MISMA `summaryQuery` ya pedida por el
+ * bloque resumen/las tarjetas familiares — no dispara un fetch adicional
+ * (SC-008). Se renderiza en ambos modos aunque `summary.records_count===0`
+ * porque el propio componente decide no pintar nada en ese caso (evita un
+ * segundo "sin datos" debajo del bloque resumen/las tarjetas familiares,
+ * que ya cubren ese estado).
  *
  * Datos: `useAnthropometry(athlete.id)` (existente, ya cacheada por la
  * página contenedora — misma query key, sin refetch adicional) +
@@ -55,6 +67,7 @@ import { FamilyStageCard } from "@/components/athletes/growth/FamilyStageCard";
 import { GrowthAlerts } from "@/components/athletes/growth/GrowthAlerts";
 import { GrowthCurveSection } from "@/components/athletes/growth/GrowthCurveSection";
 import { GrowthStatusRow } from "@/components/athletes/growth/GrowthStatusRow";
+import { LatestAnalysisLine } from "@/components/athletes/growth/LatestAnalysisLine";
 import { MaturationTimeline } from "@/components/athletes/growth/MaturationTimeline";
 import { NextMeasurementCard } from "@/components/athletes/growth/NextMeasurementCard";
 import { MorphologyCard } from "@/components/athletes/MorphologyCard";
@@ -215,6 +228,13 @@ function CoachGrowthTab({
         audience="coach"
       />
 
+      <LatestAnalysisLine
+        summaryQuery={summaryQuery}
+        records={records}
+        athleteId={athlete.id}
+        mode="coach"
+      />
+
       <div className="rounded-xl bg-white p-5 shadow-card">
         <AnthropometryHistory
           records={records}
@@ -315,6 +335,13 @@ function ParentGrowthTab({ athlete, records, anthropometryQuery }: ModeProps) {
         hasRecords={records.length > 0}
         readOnly
         audience="family"
+      />
+
+      <LatestAnalysisLine
+        summaryQuery={summaryQuery}
+        records={records}
+        athleteId={athlete.id}
+        mode="parent"
       />
 
       <div className="rounded-xl bg-white p-5 shadow-card">

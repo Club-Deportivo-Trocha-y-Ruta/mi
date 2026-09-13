@@ -579,11 +579,19 @@ class TestAdminMetrics:
             assert {"prompt_version", "run_count", "cost_usd_total"} == set(entry.keys())
         # Gasto por entrenador (§7.2): mismos nombres de campo que el
         # hermano ``by_prompt_version``, más el ``user_id`` que puede ser
-        # ``null`` en el cubo "Sin atribuir".
+        # ``null`` en el cubo "Sin atribuir", más ``stack`` (feature 042,
+        # FR-022) que distingue la serie "race" de la "app" — se listan
+        # juntas y nunca se suman, porque el stack "app" no cuenta contra
+        # RACE_AI_BUDGET_USD_30D (FR-023).
         for entry in body["by_coach"]:
-            assert {"user_id", "display_name", "run_count", "cost_usd_total"} == set(
-                entry.keys()
-            )
+            assert {
+                "user_id",
+                "display_name",
+                "run_count",
+                "cost_usd_total",
+                "stack",
+            } == set(entry.keys())
+            assert entry["stack"] in ("race", "app")
 
     async def test_admin_zero_insights(self, admin_client):
         """Sin insights, los totales son 0 y fail_rate=0 (no division by zero)."""

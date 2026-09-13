@@ -31,6 +31,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { axe } from "jest-axe";
 
@@ -153,6 +154,32 @@ vi.mock("@/components/ai/PHVExplanationCard", () => ({
       {!readOnly && (
         <button type="button">Generar explicación</button>
       )}
+    </div>
+  ),
+}));
+
+// `LatestAnalysisLine` (feature 042, T074/T076) queda SIN mockear — se
+// prueba a fondo en `LatestAnalysisLine.test.tsx`; aquí solo interesa su
+// posición y que el enlace abre el diálogo de solo lectura de la medición
+// correcta. Su diálogo interno monta `AnthropometricRecordExplanationCard`,
+// que sí se mockea (sin llamadas HTTP reales).
+vi.mock("@/components/ai/AnthropometricRecordExplanationCard", () => ({
+  AnthropometricRecordExplanationCard: ({
+    athleteId,
+    recordId,
+    readOnly,
+  }: {
+    athleteId: number;
+    recordId: number;
+    readOnly?: boolean;
+  }) => (
+    <div
+      data-testid="mock-record-explanation-card"
+      data-athlete-id={athleteId}
+      data-record-id={recordId}
+      data-readonly={readOnly ?? false}
+    >
+      mock explanation
     </div>
   ),
 }));
@@ -316,6 +343,7 @@ describe("GrowthTab modo padre — tarjetas familiares", () => {
       "family-band-cards",
       "growth-curve",
       "phv-explanation-card",
+      "latest-analysis-line",
       "anthropometry-history",
     ];
     const all = Array.from(container.querySelectorAll("[data-testid]"));
@@ -449,6 +477,60 @@ describe("GrowthTab modo padre — tarjeta de IA de solo lectura", () => {
     renderParentTab();
     const history = await screen.findByTestId("anthropometry-history");
     expect(history).toHaveAttribute("data-mode", "parent");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 5b. LatestAnalysisLine (feature 042, T074/T076) — arriba del historial,
+//     enlace hacia la medición correcta y solo lectura en modo padre.
+// ---------------------------------------------------------------------------
+
+describe("GrowthTab modo padre — LatestAnalysisLine", () => {
+  it("se renderiza ARRIBA del historial (AnthropometryHistory)", async () => {
+    const { container } = renderParentTab();
+    await screen.findByTestId("growth-curve");
+
+    const all = Array.from(container.querySelectorAll("[data-testid]"));
+    const linePos = all.indexOf(
+      container.querySelector('[data-testid="latest-analysis-line"]') as Element,
+    );
+    const historyPos = all.indexOf(
+      container.querySelector('[data-testid="anthropometry-history"]') as Element,
+    );
+    expect(linePos).toBeGreaterThan(-1);
+    expect(linePos).toBeLessThan(historyPos);
+  });
+
+  it("el enlace abre el diálogo de SOLO LECTURA de la medición correcta (mismo record_id)", async () => {
+    const user = userEvent.setup();
+    vi.mocked(growthApi.getGrowthSummary).mockResolvedValue(
+      makeParentSummary({
+        latest_ai_analysis: {
+          record_id: 41,
+          generated_at: "2026-08-14T12:00:00Z",
+          schema_version: "v2",
+          summary_line: "Talla estable, sin cambios relevantes.",
+          has_warning_signs: false,
+          is_stale: false,
+          // El backend nunca envía critic_verdict a un padre (§0 del
+          // contrato) — se omite igual que la fixture real haría.
+        },
+      }),
+    );
+    renderParentTab();
+
+    const link = await screen.findByTestId("latest-analysis-line-link");
+    expect(link).toHaveTextContent("Ver análisis completo");
+    await user.click(link);
+
+    expect(
+      await screen.findByRole("heading", { name: "Medición del 14 ago 2026" }),
+    ).toBeInTheDocument();
+    const card = await screen.findByTestId("mock-record-explanation-card");
+    // `latestRecord` (fixture del archivo) tiene id 41 — el mismo record_id
+    // del análisis mockeado arriba.
+    expect(card).toHaveAttribute("data-record-id", "41");
+    expect(card).toHaveAttribute("data-readonly", "true");
   });
 });
 

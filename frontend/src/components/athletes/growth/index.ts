@@ -30,3 +30,5 @@ export type {
 } from "@/components/athletes/growth/PercentileToolbar";
 export { MaturationTimeline } from "@/components/athletes/growth/MaturationTimeline";
 export type { MaturationTimelineProps } from "@/components/athletes/growth/MaturationTimeline";
+export { LatestAnalysisLine } from "@/components/athletes/growth/LatestAnalysisLine";
+export type { LatestAnalysisLineProps } from "@/components/athletes/growth/LatestAnalysisLine";

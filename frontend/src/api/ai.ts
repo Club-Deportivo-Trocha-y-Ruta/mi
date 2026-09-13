@@ -14,12 +14,16 @@ import type {
   PHVExplanationResponse,
 } from "@/types/ai.types";
 
-/** Audiencia de la explicación PHV (feature 040, US4, R-12).
+/** Audiencia de una explicación de IA generada por `app/services/ai/anthro`
+ * (feature 040 US4 R-12 para PHV; feature 042 T043 extiende el mismo
+ * parámetro al análisis por medición).
  *
  * `"family"` (default) es la variante para padres — sin números de
- * velocidad/meses. `"coach"` agrega velocidad cm/año y meses hasta/desde
- * el PHV; el backend la restringe a coach/admin (`_ensure_audience_allowed`
- * en `routers/ai.py`) devolviendo 403 si un padre la pide igual.
+ * velocidad/meses ni el resto de detalle que la variante coach agrega. El
+ * backend restringe `"coach"` a coach/admin (`_ensure_audience_allowed` en
+ * `routers/ai.py`) devolviendo 403 si un padre la pide igual. El nombre del
+ * tipo queda como `PHVAudience` por compatibilidad con los imports
+ * existentes, pero cubre ambos endpoints (PHV y por-medición).
  */
 export type PHVAudience = "family" | "coach";
 
@@ -88,16 +92,25 @@ export async function getAIStatus(): Promise<AIStatusResponse> {
 
 /** POST /api/ai/athletes/{id}/measurements/{recordId}/explanation
  *  Genera (o regenera) la explicación particular de una medición vs el
- *  historial. Solo coach/admin. */
+ *  historial. Solo coach/admin.
+ *
+ * `audience` (default `"family"`, feature 042, T043): igual criterio que
+ * `getPHVExplanation` — `"coach"` agrega lo que la variante familiar omite
+ * a propósito y el backend la rechaza con 403 para roles distintos de
+ * coach/admin (`_ensure_audience_allowed` en `routers/ai.py`).
+ */
 export async function postMeasurementExplanation(
   athleteId: number,
   recordId: number,
-  options?: { signal?: AbortSignal },
+  options?: { signal?: AbortSignal; audience?: PHVAudience },
 ): Promise<AnthropometricRecordExplanationResponse> {
   const response = await apiClient.post<unknown>(
     `/api/ai/athletes/${athleteId}/measurements/${recordId}/explanation`,
     undefined,
-    { signal: options?.signal },
+    {
+      signal: options?.signal,
+      params: { audience: options?.audience ?? "family" },
+    },
   );
   return anthropometricRecordExplanationResponseSchema.parse(response.data);
 }
@@ -105,16 +118,20 @@ export async function postMeasurementExplanation(
 /** GET /api/ai/athletes/{id}/measurements/{recordId}/explanation
  *  Lee la explicación cacheada para una medición específica. Devuelve
  *  `null` si el backend responde 204 (sin caché). Sobrevive a outages
- *  del LLM porque no chequea `ai_enabled`. */
+ *  del LLM porque no chequea `ai_enabled`.
+ *
+ * `audience` (default `"family"`, feature 042, T043): ver
+ * `postMeasurementExplanation`. */
 export async function getMeasurementExplanationCached(
   athleteId: number,
   recordId: number,
-  options?: { signal?: AbortSignal },
+  options?: { signal?: AbortSignal; audience?: PHVAudience },
 ): Promise<AnthropometricRecordExplanationResponse | null> {
   const response = await apiClient.get<unknown>(
     `/api/ai/athletes/${athleteId}/measurements/${recordId}/explanation`,
     {
       signal: options?.signal,
+      params: { audience: options?.audience ?? "family" },
       validateStatus: (status) => status === 200 || status === 204,
     },
   );

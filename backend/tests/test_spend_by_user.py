@@ -96,6 +96,11 @@ _TABLES = (
     "athletes",
     "agent_runs",
     "athlete_ai_insights",
+    # Feature 042: el endpoint de gasto compone dos series, y la del stack
+    # "app" lee esta tabla (FR-022). Las dos se listan juntas pero nunca se
+    # suman — el stack "app" no cuenta contra RACE_AI_BUDGET_USD_30D (FR-023).
+    "athlete_ai_explanations",
+    "anthropometric_records",
 )
 
 _next_id = {"run": 0, "insight": 0}

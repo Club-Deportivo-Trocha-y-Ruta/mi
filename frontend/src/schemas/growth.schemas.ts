@@ -20,6 +20,7 @@ import { z } from "zod";
 
 import { MaturationStatus } from "@/types/enums";
 import { growthSourceSchema } from "@/schemas/anthropometry.schema";
+import { criticVerdictSchema } from "@/schemas/ai.schemas";
 import type { NutritionalStatus } from "@/lib/growth/bands";
 
 // ---------------------------------------------------------------------------
@@ -108,6 +109,30 @@ export const measurementDueSchema = z
   })
   .strip();
 
+/**
+ * Resumen del último análisis de IA por medición (feature 042, T066/T072),
+ * mirror de `backend/app/schemas/growth.py::LatestAiAnalysis` y
+ * `contracts/growth-summary-latest-analysis.md` §2.
+ *
+ * Siempre proyectado desde la fila de audiencia FAMILIAR — `summary_line`
+ * está libre de cm/año y meses-a-PHV por construcción del prompt, lo que la
+ * hace segura de renderizar también en modo coach (FR-027). `critic_verdict`
+ * solo viene poblado para el visor coach/admin; el backend lo pone en
+ * `null` para un padre en vez de omitir la clave (§2 del contrato) — aquí
+ * se acepta también ausente por tolerancia defensiva del lado cliente.
+ */
+export const latestAiAnalysisSchema = z
+  .object({
+    record_id: z.number(),
+    generated_at: z.string(),
+    schema_version: z.literal("v2"),
+    summary_line: z.string(),
+    has_warning_signs: z.boolean(),
+    critic_verdict: criticVerdictSchema.nullable().optional(),
+    is_stale: z.boolean(),
+  })
+  .strip();
+
 // ---------------------------------------------------------------------------
 // GrowthSummary — respuesta completa
 // ---------------------------------------------------------------------------
@@ -128,6 +153,16 @@ export const growthSummarySchema = z
     measurement: measurementDueSchema,
     alerts: z.array(growthSummaryAlertSchema),
     latest: latestBandsSchema.nullable(),
+    /**
+     * `null` en cualquiera de las condiciones de `contracts/growth-summary-latest-analysis.md`
+     * §4 (sin análisis aún, sin consentimiento, IA deshabilitada, o padre
+     * viendo una fila no aprobada/revisada). `.optional()` además de
+     * `.nullable()` es tolerancia defensiva del lado cliente para fixtures
+     * o respuestas anteriores a esta feature que no incluyan la clave —
+     * nunca lo hace el backend a propósito (siempre manda la clave, con
+     * `null` quieto cuando no aplica).
+     */
+    latest_ai_analysis: latestAiAnalysisSchema.nullable().optional(),
   })
   .strip();
 

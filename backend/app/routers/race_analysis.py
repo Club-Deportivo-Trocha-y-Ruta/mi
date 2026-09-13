@@ -74,6 +74,7 @@ from app.services.race import observability
 from app.services.race.ai.budget_guard import (
     BudgetExceededError,
     check_budget,
+    app_stack_spend_by_user_last_30d,
     spend_by_user_last_30d,
 )
 from app.services.race.ai.runner import (
@@ -1785,16 +1786,27 @@ async def admin_ai_usage(
         if current_user.role == UserRole.admin
         else await _coach_visible_staff_ids(db, current_user)
     )
+    # Feature 042 (FR-022): a la serie "race" se le suma —en la LISTA, no en
+    # los totales— la del stack app/services/ai, etiquetada. Los totales de
+    # arriba (``run_count``/``cost_usd_total``) siguen siendo solo de race:
+    # este stack no tiene tope y jamás cuenta contra RACE_AI_BUDGET_USD_30D
+    # (FR-023, decisión explícita del owner).
+    spend_rows = list(
+        await spend_by_user_last_30d(db, days=days, visible_user_ids=visible_user_ids)
+    ) + list(
+        await app_stack_spend_by_user_last_30d(
+            db, days=days, visible_user_ids=visible_user_ids
+        )
+    )
     by_coach = [
         AIUsageByCoach(
             user_id=s.user_id,
             display_name=s.display_name,
             run_count=s.run_count,
             cost_usd_total=s.cost_usd_total,
+            stack=s.stack,
         )
-        for s in await spend_by_user_last_30d(
-            db, days=days, visible_user_ids=visible_user_ids
-        )
+        for s in spend_rows
     ]
 
     return AIUsageResponse(

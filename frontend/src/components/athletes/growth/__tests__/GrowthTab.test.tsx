@@ -95,6 +95,30 @@ vi.mock("@/components/ai/PHVExplanationCard", () => ({
   ),
 }));
 
+// `LatestAnalysisLine` (feature 042, T074) queda SIN mockear — se prueba a
+// fondo en `LatestAnalysisLine.test.tsx` (T073/T076); aquí solo interesa su
+// posición en el árbol y que abre el diálogo de la medición correcta. Su
+// diálogo interno monta `AnthropometricRecordExplanationCard`, que sí se
+// mockea (evita llamadas HTTP reales — misma técnica que
+// `LatestAnalysisLine.test.tsx`).
+vi.mock("@/components/ai/AnthropometricRecordExplanationCard", () => ({
+  AnthropometricRecordExplanationCard: ({
+    athleteId,
+    recordId,
+  }: {
+    athleteId: number;
+    recordId: number;
+  }) => (
+    <div
+      data-testid="mock-record-explanation-card"
+      data-athlete-id={athleteId}
+      data-record-id={recordId}
+    >
+      mock explanation
+    </div>
+  ),
+}));
+
 // ---------------------------------------------------------------------------
 // Imports de producción (después de mocks)
 // ---------------------------------------------------------------------------
@@ -194,6 +218,7 @@ describe("GrowthTab", () => {
         "growth-curve",
         "morphology-card",
         "phv-explanation-card",
+        "latest-analysis-line",
         "anthropometry-history",
         "research-references",
       ];
@@ -246,6 +271,61 @@ describe("GrowthTab", () => {
       renderGrowthTab();
       await screen.findByTestId("growth-status-row");
       expect(screen.queryByTestId("growth-alerts")).not.toBeInTheDocument();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // LatestAnalysisLine (feature 042, T074/T076) — posición y enlace
+  // -------------------------------------------------------------------------
+
+  describe("LatestAnalysisLine", () => {
+    it("se renderiza ARRIBA de AnthropometryHistory en modo coach", async () => {
+      const { container } = renderGrowthTab();
+      await screen.findByTestId("growth-status-row");
+
+      const all = Array.from(container.querySelectorAll("[data-testid]"));
+      const linePos = all.indexOf(
+        container.querySelector('[data-testid="latest-analysis-line"]') as Element,
+      );
+      const historyPos = all.indexOf(
+        container.querySelector('[data-testid="anthropometry-history"]') as Element,
+      );
+      expect(linePos).toBeGreaterThan(-1);
+      expect(linePos).toBeLessThan(historyPos);
+    });
+
+    it("el enlace de la fila abre el diálogo de LA MEDICIÓN correspondiente (mismo record_id)", async () => {
+      const user = userEvent.setup();
+      vi.mocked(growthApi.getGrowthSummary).mockResolvedValue(
+        makeGrowthSummary({
+          latest_ai_analysis: {
+            record_id: 41,
+            generated_at: "2026-08-14T12:00:00Z",
+            schema_version: "v2",
+            summary_line: "Talla estable, sin cambios relevantes.",
+            has_warning_signs: false,
+            critic_verdict: "approved",
+            is_stale: false,
+          },
+        }),
+      );
+      renderGrowthTab();
+
+      const link = await screen.findByTestId("latest-analysis-line-link");
+      expect(link).toHaveTextContent("Ver análisis completo");
+      await user.click(link);
+
+      // El título del diálogo repite el mismo texto que la fecha ya visible
+      // en la línea resumen — se identifica por el encabezado del diálogo,
+      // no por texto suelto, para no ambigüar con esa otra ocurrencia.
+      expect(
+        await screen.findByRole("heading", { name: "Medición del 14 ago 2026" }),
+      ).toBeInTheDocument();
+      const card = await screen.findByTestId("mock-record-explanation-card");
+      expect(card).toHaveAttribute("data-athlete-id", "2");
+      // makeRecord() (fixture del archivo) tiene id 41 — el mismo record_id
+      // del análisis mockeado arriba.
+      expect(card).toHaveAttribute("data-record-id", "41");
     });
   });
 

@@ -1,20 +1,30 @@
 from __future__ import annotations
 
-from datetime import date
+import logging
+from datetime import date, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db, require_role, verify_athlete_access
+from app.config import settings
+from app.dependencies import get_current_user, get_db, require_role, verify_athlete_access
+from app.models.ai_explanation import AthleteAIExplanation
 from app.models.anthropometry import AnthropometricRecord
 from app.models.athlete import Athlete
 from app.models.growth import GrowthIndicator, GrowthSource
-from app.models.user import UserRole
-from app.schemas.growth import GrowthSummaryOut
+from app.models.user import User, UserRole
+from app.schemas.growth import GrowthSummaryOut, LatestAiAnalysis
+from app.services.ai.anthro.guardrails_step import FAMILY_DELIVERABLE_VERDICTS
+from app.services.ai.use_cases.anthropometric_record_explainer import (
+    USE_CASE_KEY as RECORD_USE_CASE,
+)
 from app.services.growth import get_reference_curve
 from app.services.growth_summary import build_growth_summary
+from app.services.privacy import athlete_has_ai_processing_consent
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -101,10 +111,82 @@ async def get_growth_reference(
     )
 
 
+async def _compute_latest_ai_analysis(
+    db: AsyncSession,
+    athlete: Athlete,
+    latest_record: AnthropometricRecord | None,
+    current_user: User,
+) -> LatestAiAnalysis | None:
+    """Proyecta la fila de análisis de IA (feature 042) más reciente sobre la
+    pestaña de crecimiento — `contracts/growth-summary-latest-analysis.md`.
+
+    Siempre la fila **familiar** (`RECORD_USE_CASE`), nunca la de coach (§1
+    del contrato) — así la misma línea es segura de mostrar en ambos modos.
+    Una sola consulta indexada adicional (`(athlete_id, use_case)`, más el
+    filtro por `schema_version`), dentro de la misma petición que ya trae
+    las dos mediciones — sin round trip extra (SC-008). Nunca lanza: el
+    llamador (`get_growth_summary`) la envuelve en `try/except` (§5 del
+    contrato) para que un fallo de esta lectura jamás tumbe la pestaña.
+    """
+    if latest_record is None or not settings.ai_enabled:
+        return None
+    if not await athlete_has_ai_processing_consent(athlete.id, db):
+        return None
+
+    result = await db.execute(
+        select(AthleteAIExplanation)
+        .where(
+            AthleteAIExplanation.athlete_id == athlete.id,
+            AthleteAIExplanation.use_case == RECORD_USE_CASE,
+            AthleteAIExplanation.schema_version == "v2",
+        )
+        .order_by(AthleteAIExplanation.generated_at.desc())
+        .limit(1)
+    )
+    row = result.scalar_one_or_none()
+    if row is None or not row.structured_json:
+        return None
+
+    summary_line = row.structured_json.get("summary_line")
+    if not summary_line:
+        return None
+
+    # Compuerta familiar por rol (FR-016) — idéntica a
+    # `routers/ai.py::_family_gate_blocks`: un padre nunca ve una fila
+    # `flagged`/`fallback`/`skipped`; `critic_verdict IS NULL` (fila legado,
+    # no debería darse aquí porque ya filtramos `schema_version="v2"`, pero
+    # se trata igual que en `ai.py` por si acaso) siempre es entregable.
+    verdict = row.critic_verdict
+    is_parent = current_user.role == UserRole.parent
+    if is_parent and verdict is not None and verdict not in FAMILY_DELIVERABLE_VERDICTS:
+        return None
+
+    generated_at = row.generated_at
+    if generated_at.tzinfo is None:
+        generated_at = generated_at.replace(tzinfo=timezone.utc)
+
+    # data-model.md §4: hay una medición más nueva que la analizada, o la
+    # medición analizada fue corregida después de generarse el análisis.
+    updated_at = latest_record.updated_at
+    is_stale = latest_record.id != row.anthropometric_record_id or (
+        updated_at is not None and updated_at.replace(tzinfo=timezone.utc) > generated_at
+    )
+
+    return LatestAiAnalysis(
+        record_id=row.anthropometric_record_id,
+        generated_at=generated_at,
+        summary_line=summary_line,
+        has_warning_signs=bool(row.structured_json.get("warning_signs")),
+        critic_verdict=None if is_parent else verdict,
+        is_stale=is_stale,
+    )
+
+
 @router.get("/athletes/{athlete_id}/growth-summary", response_model=GrowthSummaryOut)
 async def get_growth_summary(
     db: AsyncSession = Depends(get_db),
     athlete: Athlete = Depends(verify_athlete_access),
+    current_user: User = Depends(get_current_user),
 ) -> GrowthSummaryOut:
     """
     Resumen de crecimiento decisión-primero para la pestaña del entrenador
@@ -115,6 +197,11 @@ async def get_growth_summary(
     atletas de sus clubes; parent: solo atletas vinculados). No se
     recalculan Z-scores/percentiles/bandas: se leen tal como fueron
     guardados por ``POST /athletes/{id}/anthropometry`` (OMS 2007).
+
+    Feature 042 (T067): además incorpora ``latest_ai_analysis`` — la línea
+    de resumen del análisis de IA más reciente, consentimiento-gated y
+    tolerante a fallos (nunca puede provocar un 500 de este endpoint; ver
+    ``contracts/growth-summary-latest-analysis.md`` §5).
     """
     result = await db.execute(
         select(AnthropometricRecord)
@@ -126,9 +213,22 @@ async def get_growth_summary(
     latest = records[0] if records else None
     previous = records[1] if len(records) > 1 else None
 
-    return build_growth_summary(
+    summary = build_growth_summary(
         athlete=athlete,
         latest=latest,
         previous=previous,
         today=date.today(),
     )
+
+    try:
+        summary.latest_ai_analysis = await _compute_latest_ai_analysis(
+            db, athlete, latest, current_user
+        )
+    except Exception:
+        logger.warning(
+            "growth_summary.latest_ai_analysis_failed",
+            extra={"athlete_id": athlete.id},
+        )
+        summary.latest_ai_analysis = None
+
+    return summary

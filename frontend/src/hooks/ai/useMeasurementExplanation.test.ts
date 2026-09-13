@@ -83,7 +83,9 @@ describe("useMeasurementExplanationCached", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual(mockResponse);
-    expect(aiApi.getMeasurementExplanationCached).toHaveBeenCalledWith(7, 42);
+    expect(aiApi.getMeasurementExplanationCached).toHaveBeenCalledWith(7, 42, {
+      audience: "family",
+    });
   });
 
   it("devuelve null cuando no hay caché (204)", async () => {
@@ -124,6 +126,41 @@ describe("useMeasurementExplanationCached", () => {
     await new Promise((r) => setTimeout(r, 10));
     expect(aiApi.getMeasurementExplanationCached).not.toHaveBeenCalled();
   });
+
+  // Feature 042 (T072): "family" y "coach" son análisis distintos en
+  // backend (use_case distinto) — deben vivir en slots de caché
+  // independientes para no pisarse entre sí.
+  it("particiona la caché por audience: coach no reusa el slot de family", async () => {
+    vi.mocked(aiApi.getMeasurementExplanationCached).mockResolvedValue(
+      mockResponse,
+    );
+
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const wrapper = ({ children }: { children: React.ReactNode }) =>
+      createElement(QueryClientProvider, { client: queryClient }, children);
+
+    const { result: familyResult } = renderHook(
+      () => useMeasurementExplanationCached(7, 42, true, "family"),
+      { wrapper },
+    );
+    await waitFor(() => expect(familyResult.current.isSuccess).toBe(true));
+
+    const { result: coachResult } = renderHook(
+      () => useMeasurementExplanationCached(7, 42, true, "coach"),
+      { wrapper },
+    );
+    await waitFor(() => expect(coachResult.current.isSuccess).toBe(true));
+
+    expect(aiApi.getMeasurementExplanationCached).toHaveBeenCalledWith(7, 42, {
+      audience: "family",
+    });
+    expect(aiApi.getMeasurementExplanationCached).toHaveBeenCalledWith(7, 42, {
+      audience: "coach",
+    });
+    expect(aiApi.getMeasurementExplanationCached).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("useMeasurementExplanation (mutation)", () => {
@@ -141,6 +178,22 @@ describe("useMeasurementExplanation (mutation)", () => {
     result.current.mutate();
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual(mockResponse);
+  });
+
+  it("reenvía audience='coach' a postMeasurementExplanation y sincroniza el slot correspondiente", async () => {
+    vi.mocked(aiApi.postMeasurementExplanation).mockResolvedValue(mockResponse);
+
+    const { result } = renderHook(
+      () => useMeasurementExplanation(7, 42, "coach"),
+      { wrapper: createWrapper() },
+    );
+
+    result.current.mutate();
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(aiApi.postMeasurementExplanation).toHaveBeenCalledWith(7, 42, {
+      signal: undefined,
+      audience: "coach",
+    });
   });
 
   it("no reintenta 422 (sin historial)", async () => {
