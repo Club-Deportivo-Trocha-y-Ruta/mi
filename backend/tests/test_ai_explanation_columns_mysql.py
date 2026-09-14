@@ -126,7 +126,7 @@ def _record(record_id: int, *, evaluated_by: int = _COACH_ID) -> AnthropometricR
     )
 
 
-@pytest_asyncio.fixture(scope="module")
+@pytest_asyncio.fixture(scope="module", loop_scope="session")
 async def scenario(mysql_session: AsyncSession) -> dict[str, int]:
     """Un club + un entrenador + un atleta, sembrados una sola vez.
 
@@ -176,15 +176,19 @@ async def _fetch(db: AsyncSession, *, record_id: int) -> AthleteAIExplanation:
     """SELECT fresco (no el objeto Python que se acaba de insertar) — lo que
     de verdad viajó a MySQL y volvió, columna por columna."""
     result = await db.execute(
-        select(AthleteAIExplanation).where(
+        select(AthleteAIExplanation)
+        .where(
             AthleteAIExplanation.athlete_id == _ATHLETE_ID,
             AthleteAIExplanation.anthropometric_record_id == record_id,
             AthleteAIExplanation.use_case == _USE_CASE,
         )
+        # Fuerza a releer del motor en vez de devolver el objeto cacheado en
+        # la identity map: un `db.expire(row)` posterior dispararía un
+        # refresh perezoso síncrono en el primer `row.<attr>` del test, lo
+        # que revienta con MissingGreenlet bajo AsyncSession.
+        .execution_options(populate_existing=True)
     )
-    row = result.scalar_one()
-    db.expire(row)  # fuerza a releer del motor, no de la identity map local
-    return row
+    return result.scalar_one()
 
 
 # ---------------------------------------------------------------------------

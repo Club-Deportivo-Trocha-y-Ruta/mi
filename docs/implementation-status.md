@@ -883,14 +883,28 @@ date, and triggering the consent-renewal flow are explicitly out of scope for th
 - Frontend: 4280/4281 vitest passed (the one failure, `SessionWizardRouteNotify.test.tsx`,
   pre-existing and unrelated to this feature); `tsc --noEmit` clean; `npm run build` clean.
 
-**Written but not executed** (owner explicitly excluded the local-stack lanes from this run):
+**Local-stack lanes, executed 2026-09-14** (see `docs/technical-notes.md` for full detail):
 
 - `backend/tests/test_ai_explanation_columns_mysql.py` — the `-m mysql` test for the nine new
-  columns.
-- `frontend/e2e/growth-analysis.spec.ts` (Playwright) — statically valid, never run.
-- The golden eval against a real model — `backend/evals/anthropometry_analyst/baseline.json`
-  holds `status: "PLACEHOLDER"` scores (rule-score-derived estimates, not a real model run);
-  the file embeds its own `regenerate_command`.
+  columns. **21/21 `-m mysql` tests pass** (whole lane, not just this file). Two test-infra bugs
+  found and fixed along the way: `tests/conftest.py` forced `AI_PROVIDER=google` for the suite
+  but not `AI_MODEL`, and this file's `scenario` fixture had a loop-scope mismatch plus a
+  post-hoc `db.expire()` that broke under `AsyncSession` — neither is a feature-042 product bug.
+- The golden eval against a real model — **ran for real**, `avg_composite_score=0.781` (≥ 0.75
+  gate), SC-003 clean. `backend/evals/anthropometry_analyst/baseline.json` now holds
+  `status: "REAL"` scores; tasks.md T047 marked done.
+- `frontend/e2e/growth-analysis.spec.ts` (Playwright) — **still fails**, root-caused: the spec
+  requires the main `docker compose up` stack with a real AI provider (the isolated Playwright
+  stack is deliberately `AI_PROVIDER=fake`), and even there the seeded demo measurement resolves
+  in ~4s instead of the assumed 20-40s because the analyst trips a `must_block` precheck and
+  falls back on the first attempt — not an infra or frontend bug, but the same fallback-heavy
+  behavior the golden eval run above shows in 10/12 cases. Left failing per the spec's own
+  comment that a suspiciously-fast completion is a real signal, not something to weaken.
+
+**Quality follow-up, not yet actioned**: both the golden eval and the one real demo measurement
+above show the analyst's first-attempt draft tripping a `must_block` precheck often enough that
+the deterministic fallback — not a model-authored insight — is the typical outcome today. Needs
+prompt-iteration judgment on `anthropometry_analyst_v1.md`, not a bug fix.
 
 **Blocked, needs a repo admin**: `.github/workflows/anthropometry-eval.yml` requires a new
 GitHub Actions secret, `AI_API_KEY` — deliberately separate from the existing

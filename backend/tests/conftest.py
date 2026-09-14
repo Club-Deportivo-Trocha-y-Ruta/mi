@@ -9,6 +9,13 @@ os.environ["LANGFUSE_ENABLED"] = "false"
 # `cost_usd > 0` en tests que no fijan el proveedor explícitamente.
 os.environ["AI_PROVIDER"] = "google"
 os.environ["RACE_AI_PROVIDER"] = ""
+# AI_MODEL es el fallback "legacy" que resolve_app_config() consulta ANTES
+# de DEFAULT_MODEL_BY_PROVIDER (app/services/llm/factory.py) — un .env local
+# con AI_MODEL="claude-sonnet-5" (para uso diario con AI_PROVIDER=claude-cli)
+# se cuela igual bajo el AI_PROVIDER=google forzado arriba y produce un 404
+# real contra la API de Google, no un fallback silencioso. Mismo motivo que
+# el bloque de arriba, para el modelo en vez del proveedor.
+os.environ["AI_MODEL"] = "gemini-3.1-flash-lite"
 
 import pytest
 import pytest_asyncio
@@ -37,7 +44,7 @@ async def client():
 # ---------------------------------------------------------------------------
 
 
-@pytest_asyncio.fixture(scope="session")
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def mysql_engine():
     """Session-scoped async engine for the real MySQL 8.4 test database.
 
@@ -81,7 +88,7 @@ async def mysql_engine():
     await engine.dispose()
 
 
-@pytest_asyncio.fixture(scope="session")
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def mysql_session(mysql_engine):
     """Session-scoped AsyncSession backed by the real MySQL engine.
 
