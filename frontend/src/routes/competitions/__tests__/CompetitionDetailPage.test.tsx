@@ -265,6 +265,28 @@ describe("CompetitionDetailPage — a11y", () => {
   });
 });
 
+describe("CompetitionDetailPage — tab Circuito (feature 043, T029)", () => {
+  it("?tab=circuito renderiza el panel CourseTab; 0 violaciones jest-axe", async () => {
+    mockAuthAs("coach");
+    const { container } = renderDetail(1, "?tab=circuito");
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { level: 1 })).toBeInTheDocument(),
+    );
+
+    const trigger = screen.getByRole("tab", { name: "Circuito" });
+    expect(trigger).toHaveAttribute("data-state", "active");
+
+    // Fixture feliz por defecto (`raceCourseHandlers`, registrado global).
+    expect(await screen.findByTestId("course-tab")).toBeInTheDocument();
+    expect(
+      await screen.findByTestId("course-variants-card"),
+    ).toBeInTheDocument();
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  }, 15_000);
+});
+
 describe("CompetitionDetailPage — Insights tab label (T054, lock-in regression)", () => {
   // contracts/ai-identity.md §1 rename table: this label is already correct
   // ("Insights IA" — the noun standard, ~line 110) and MUST NOT drift, e.g.

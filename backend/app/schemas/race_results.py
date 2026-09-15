@@ -66,6 +66,28 @@ class ResultRow(BaseModel):
         None,
         description="UTC timestamp of the last coach note update. None if no note set.",
     )
+    distance_km: Optional[float] = Field(
+        None,
+        description=(
+            "Distancia recorrida derivada del setup de recorrido de la "
+            "categoría (feature 043). None si la categoría no tiene "
+            "recorrido configurado, si la dinámica de la carrera no permite "
+            "calcularla (DNF/DNS/DSQ o minus_laps sin laps_behind), o si el "
+            "resultado quedó en cero/negativo vueltas completadas."
+        ),
+    )
+    avg_speed_kmh: Optional[float] = Field(
+        None,
+        description="Velocidad promedio derivada. Ver distance_km para las condiciones de None.",
+    )
+    lap_distance_km: Optional[float] = Field(
+        None,
+        description="Distancia de una vuelta del recorrido asignado. None sin setup de recorrido.",
+    )
+    elevation_gain_m: Optional[int] = Field(
+        None,
+        description="Desnivel positivo acumulado de la variante de recorrido. None sin dato de altitud.",
+    )
 
     model_config = {"from_attributes": True}
 
@@ -102,6 +124,14 @@ class CategoryResults(BaseModel):
     category_id: int
     code: str = Field(..., description="Category code, e.g. 'INF_M'.")
     label: str = Field(..., description="Human-readable category label.")
+    laps: Optional[int] = Field(
+        None,
+        description="Vueltas configuradas para esta categoría en la válida (feature 043). None sin setup.",
+    )
+    variant_label: Optional[str] = Field(
+        None,
+        description="Nombre de la variante de recorrido asignada. None sin setup de recorrido.",
+    )
     rows: list[ResultRow]
 
 
@@ -120,6 +150,15 @@ class EventResultsRead(BaseModel):
     event_date: date = Field(..., description="Date the race was held.")
     location: Optional[str] = Field(None, description="Municipality / venue of the race.")
     status: str = Field(..., description="RaceEventStatus value (scheduled/completed/cancelled).")
+    has_course_data: bool = Field(
+        default=False,
+        description=(
+            "True si la válida tiene al menos un setup de recorrido por "
+            "categoría o al menos una variante de recorrido registrada "
+            "(feature 043), sin importar cuántas filas de resultados "
+            "existan para el parent que consulta."
+        ),
+    )
     categories: list[CategoryResults]
 
 

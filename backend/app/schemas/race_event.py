@@ -241,6 +241,9 @@ class RaceEventListItem(BaseModel):
     has_results: bool = False
     has_calendar_event: bool = False
     conditions_completeness: ConditionsCompleteness = "empty"
+    # Perfil de circuito (feature 043) — true si hay alguna variante de
+    # recorrido o algún campo de descripción capturado.
+    has_course_data: bool = False
 
 
 class RaceEventListResponse(BaseModel):

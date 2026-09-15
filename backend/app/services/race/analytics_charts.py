@@ -27,9 +27,11 @@ import logging
 import math
 from typing import Any, Optional
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
+from app.models.race_course_category_setup import RaceCourseCategorySetup
 from app.models.race_series import RaceSeriesKind, RaceSeriesLevel
 from app.schemas.athlete_race_analysis import (
     AnalysisConfidence,
@@ -44,6 +46,7 @@ from app.schemas.athlete_race_analysis import (
     RaceParticipationResponse,
 )
 from app.services.race.comparison_groups import build_comparison_group, group_label
+from app.services.race.course.derived import derive_figures
 from app.services.race.race_labels import build_race_label
 
 logger = logging.getLogger(__name__)
@@ -216,6 +219,13 @@ async def build_evolution(
         - Una sola query: el filtro ``series_id`` se aplica en Python
           DESPUÉS de calcular ``groups`` sobre el resultado completo — no
           hay un segundo roundtrip a la base de datos (research D4).
+        - ``category_id``/``laps_behind`` viajan en esta misma query
+          (feature 043, R-11) porque ``derive_figures`` los necesita junto a
+          ``status``/``race_time_ms`` (ya seleccionados) para
+          ``avg_speed_kmh`` — evita un segundo roundtrip por fila. La única
+          query adicional de esta función es la de setups de recorrido
+          (``RaceCourseCategorySetup``), UNA sola vez para todos los
+          ``event_id`` presentes en el resultado, nunca por punto.
     """
     unit = {
         EvolutionMetric.PODIUM_GAP_MS: "ms",
@@ -239,6 +249,7 @@ async def build_evolution(
                 rr.position,
                 rr.status,
                 rr.race_time_ms,
+                rr.laps_behind,
                 e.sequence_number AS valida_num,
                 e.event_date,
                 s.id             AS series_id,
@@ -274,6 +285,8 @@ async def build_evolution(
             ar.status,
             ar.position,
             ar.race_time_ms,
+            ar.category_id,
+            ar.laps_behind,
             cs.time_min_ms AS winner_time_ms,
             cs.time_max_ms,
             cs.cat_size,
@@ -294,6 +307,38 @@ async def build_evolution(
     result = await db.execute(sql, {"athlete_id": athlete_id, "season": season})
     rows = result.fetchall() if hasattr(result, "fetchall") else list(result)
 
+    # Course setups (feature 043, R-11): ONE extra query for the whole call
+    # (never per point) — keyed by (event_id, category_id) because a
+    # category's course setup is válida-specific, not season-wide. Skipped
+    # entirely when there are no rows. ``avg_speed_kmh`` stays None for any
+    # (event, category) pair without a matching setup — expected for most
+    # events for a long while; no aggregate of speed is computed anywhere.
+    event_ids: set[int] = set()
+    for row in rows:
+        rm = row._mapping if hasattr(row, "_mapping") else None
+        raw_event_id = rm.get("event_id") if rm else (row[0] if len(row) > 0 else None)
+        if raw_event_id is not None:
+            event_ids.add(int(raw_event_id))
+
+    setup_by_event_category: dict[tuple[int, int], Any] = {}
+    if event_ids:
+        setup_result = await db.execute(
+            select(RaceCourseCategorySetup)
+            .options(selectinload(RaceCourseCategorySetup.variant))
+            .where(RaceCourseCategorySetup.race_event_id.in_(event_ids))
+        )
+        # Defensive hasattr: unit tests exercise build_evolution against a
+        # bare-bones fake AsyncSession (see _FakeDbNullSeriesName below) that
+        # only implements the raw-SQL ``execute`` contract used by the main
+        # query above, not the ORM ``select(...)`` one — degrade to "no
+        # course data" rather than raise for that fake.
+        setup_rows = (
+            setup_result.scalars().all() if hasattr(setup_result, "scalars") else []
+        )
+        setup_by_event_category = {
+            (s.race_event_id, s.category_id): s for s in setup_rows
+        }
+
     series: list[EvolutionPoint] = []
     group_rows: list[dict[str, Any]] = []
     for row in rows:
@@ -313,15 +358,17 @@ async def build_evolution(
         status = _get("status", 3)
         position = _get("position", 4)
         race_time_ms = _get("race_time_ms", 5)
-        winner_time_ms = _get("winner_time_ms", 6)
-        time_max_ms = _get("time_max_ms", 7)
-        cat_size = _get("cat_size", 8)
-        cat_size_with_time = _get("cat_size_with_time", 9)
-        series_id_raw = _get("series_id", 10)
-        series_name_raw = _get("series_name", 11)
-        series_kind_raw = _get("series_kind", 12)
-        series_level_raw = _get("series_level", 13)
-        location_raw = _get("location", 14)
+        category_id_raw = _get("category_id", 6)
+        laps_behind_raw = _get("laps_behind", 7)
+        winner_time_ms = _get("winner_time_ms", 8)
+        time_max_ms = _get("time_max_ms", 9)
+        cat_size = _get("cat_size", 10)
+        cat_size_with_time = _get("cat_size_with_time", 11)
+        series_id_raw = _get("series_id", 12)
+        series_name_raw = _get("series_name", 13)
+        series_kind_raw = _get("series_kind", 14)
+        series_level_raw = _get("series_level", 15)
+        location_raw = _get("location", 16)
 
         if event_id is None or event_date is None or series_id_raw is None:
             continue
@@ -439,6 +486,19 @@ async def build_evolution(
                 1,
             )
 
+        # avg_speed_kmh (feature 043, R-11): per-válida only, no aggregate.
+        course_setup = (
+            setup_by_event_category.get((int(event_id), int(category_id_raw)))
+            if category_id_raw is not None
+            else None
+        )
+        avg_speed_kmh_val = derive_figures(
+            course_setup,
+            str(status) if status is not None else "",
+            int(race_time_ms) if race_time_ms is not None else None,
+            int(laps_behind_raw) if laps_behind_raw is not None else None,
+        ).avg_speed_kmh
+
         series.append(
             EvolutionPoint(
                 valida_num=int(valida_num) if valida_num is not None else 0,
@@ -456,6 +516,7 @@ async def build_evolution(
                 percentile=percentile,
                 position=position_val,
                 gap_pct=gap_pct_val,
+                avg_speed_kmh=avg_speed_kmh_val,
             )
         )
         group_rows.append(

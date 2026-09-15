@@ -17,6 +17,15 @@ Endpoints implementados:
 - ``PUT    /race-results/{result_id}/coach-note``   — escribe/reemplaza nota del entrenador (coach + admin).
 - ``DELETE /race-results/{result_id}/coach-note``   — elimina nota del entrenador (coach + admin).
 
+Perfil de circuito (feature 043, T019 — rama coach/admin; la rama parent es T055):
+
+- ``GET    /{race_event_id}/course``                          — variantes + setups + descripción + sugerencia (coach + admin).
+- ``POST   /{race_event_id}/course/variants``                 — sube GPX y crea variante (coach + admin).
+- ``PUT    /{race_event_id}/course/variants/{variant_id}/file`` — sube GPX y reemplaza geometría de una variante (coach + admin).
+- ``PATCH  /{race_event_id}/course/variants/{variant_id}``    — renombra variante (coach + admin).
+- ``DELETE /{race_event_id}/course/variants/{variant_id}``    — elimina variante sin uso (coach + admin).
+- ``PUT    /{race_event_id}/course/setups``                   — reemplaza la tabla de vueltas por categoría (coach + admin).
+
 Convenciones:
 - RBAC: coach + admin en escritura. Admin exclusivo para DELETE de evento.
 - Parent en lectura con scope reducido a sus propios hijos (FR-030).
@@ -27,10 +36,10 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, require_role
@@ -39,6 +48,7 @@ from app.models.race_event import RaceEvent, RaceEventStatus
 from app.models.race_event_roster import RaceEventRoster
 from app.models.race_result import RaceResult
 from app.models.user import User, UserRole
+from app.schemas.race_course import CourseRead, SetupsReplace, VariantRename
 from app.schemas.race_event import (
     CalendarAutoCreateRead,
     CalendarLinkRead,
@@ -52,12 +62,14 @@ from app.schemas.race_imports import RaceEventConditionsRead, RaceEventCondition
 from app.schemas.race_results import CoachNoteUpdate, EventResultsRead, EventStandingsRead, ResultRow
 from app.schemas.race_roster import RosterEntryCreate, RosterEntryRead, RosterEntryUpdate, RosterRead
 import app.services.race_events as race_events_svc
+import app.services.race.course.service as course_svc
 import app.services.race.results_read as results_svc
 import app.services.race.roster as roster_svc
 import app.services.race.standings as standings_svc
 from app.models.race_series import RaceSeries, RaceSeriesKind
 from app.services.audit import AuditEntityType, record_audit
 from app.services.permissions import allowed_athlete_ids_for
+from app.services.race.course.gpx_processing import CourseProcessingError
 from app.services.race.series_rules import assert_championship_single_event, derive_event_fields_for_series
 from app.services.request_context import AuditContext, get_request_context
 
@@ -468,7 +480,6 @@ async def get_race_event(
     - 404: evento no existe.
     - 403: usuario sin rol coach o admin.
     """
-    from sqlalchemy import exists
     from app.models.calendar_event import CalendarEvent
 
     result = await db.execute(select(RaceEvent).where(RaceEvent.id == race_event_id))
@@ -485,6 +496,7 @@ async def get_race_event(
     has_calendar_event = bool(has_cal_result.scalar())
     payload = RaceEventRead.model_validate(event)
     payload.has_calendar_event = has_calendar_event
+    payload.has_course_data = await race_events_svc.event_has_course_data(db, event)
     return payload
 
 
@@ -602,7 +614,9 @@ async def create_race_event(
             request_id=ctx.request_id,
         )
 
-    return RaceEventRead.model_validate(event)
+    payload = RaceEventRead.model_validate(event)
+    payload.has_course_data = await race_events_svc.event_has_course_data(db, event)
+    return payload
 
 
 # ---------------------------------------------------------------------------
@@ -653,7 +667,9 @@ async def update_race_event(
             changed_fields=updated_fields,
             request_id=ctx.request_id,
         )
-    return RaceEventRead.model_validate(event)
+    payload = RaceEventRead.model_validate(event)
+    payload.has_course_data = await race_events_svc.event_has_course_data(db, event)
+    return payload
 
 
 # ---------------------------------------------------------------------------
@@ -1002,6 +1018,365 @@ async def update_race_event_conditions(
         weather_notes=event.weather_notes,
         updated_at=event.updated_at,
     )
+
+
+# ---------------------------------------------------------------------------
+# Perfil de circuito — GET/POST/PUT/PATCH/DELETE /{race_event_id}/course/*
+# (feature 043, T019). PATCH /course/description es T041 y no se toca aquí.
+# ---------------------------------------------------------------------------
+
+_COURSE_GPX_CONTENT_TYPES = {
+    "application/gpx+xml",
+    "application/xml",
+    "text/xml",
+    # A diferencia de la subida de recorridos de entrenamiento
+    # (`training_sessions.py`), aquí SÍ se acepta: algunos navegadores mandan
+    # octet-stream para un .gpx (course-api.md §2).
+    "application/octet-stream",
+}
+_COURSE_MAX_GPX_SIZE_BYTES = 5 * 1024 * 1024  # 5 MB
+_COURSE_GZIP_MAGIC = b"\x1f\x8b"
+_COURSE_ZIP_MAGIC = b"\x50\x4b"
+
+# Mensaje en español neutro por código de `CourseProcessingError` — tabla
+# `course-api.md` §6. Todos estos códigos son 422 (unsupported_media_type,
+# file_too_large y los 409 se generan aparte, fuera de `process_gpx`).
+_COURSE_GPX_ERROR_MESSAGES: dict[str, str] = {
+    "not_gpx": "El archivo no es un GPX válido.",
+    "xml_unsafe": "El archivo contiene estructuras XML no permitidas.",
+    "malformed": "No pudimos leer el archivo; verifica que sea un GPX completo.",
+    "no_track_points": "El GPX no contiene puntos de recorrido.",
+    "no_position": "El GPX no contiene coordenadas válidas.",
+    "too_short": "El recorrido es demasiado corto para ser una vuelta (menos de 300 m).",
+    "too_long": "La vuelta supera los 15 km; indica cuántas vueltas contiene la grabación.",
+    "too_few_points": "La grabación tiene muy pocos puntos para dibujar el circuito.",
+    "compressed_not_allowed": "No se aceptan archivos comprimidos; sube el GPX sin comprimir.",
+}
+
+
+def _course_processing_error_to_http(exc: CourseProcessingError) -> HTTPException:
+    message = _COURSE_GPX_ERROR_MESSAGES.get(
+        exc.code, "No pudimos procesar el archivo GPX."
+    )
+    return HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail={"code": exc.code, "message": message},
+    )
+
+
+async def _read_and_validate_course_gpx_upload(file: UploadFile) -> bytes:
+    """Guardas de la subida GPX, en el orden del contrato (course-api.md §2) —
+    mismo estilo que ``training_sessions.py:upload_route_file`` (content-type
+    → extensión → magic bytes de compresión → tamaño), con el set de
+    content-types propio de este endpoint (ver ``_COURSE_GPX_CONTENT_TYPES``).
+    """
+    content_type = (file.content_type or "").split(";")[0].strip()
+    if content_type and content_type not in _COURSE_GPX_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail={
+                "code": "unsupported_media_type",
+                "message": "El archivo debe ser un GPX.",
+            },
+        )
+
+    filename = (file.filename or "").lower()
+    if not filename.endswith(".gpx"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "not_gpx", "message": "El archivo no es un GPX válido."},
+        )
+
+    raw = await file.read(_COURSE_MAX_GPX_SIZE_BYTES + 1)
+
+    if raw[:2] in (_COURSE_GZIP_MAGIC, _COURSE_ZIP_MAGIC):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "compressed_not_allowed",
+                "message": "No se aceptan archivos comprimidos; sube el GPX sin comprimir.",
+            },
+        )
+
+    if len(raw) > _COURSE_MAX_GPX_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail={
+                "code": "file_too_large",
+                "message": "El archivo supera los 5 MB permitidos.",
+            },
+        )
+
+    return raw
+
+
+@router.get(
+    "/{race_event_id}/course",
+    response_model=CourseRead,
+    summary="Perfil de circuito de una válida",
+)
+async def get_race_event_course(
+    race_event_id: int,
+    db: AsyncSession = Depends(get_db),
+    _current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+) -> CourseRead:
+    """Variantes de recorrido, tabla de vueltas por categoría, descripción
+    estructurada y sugerencia de prefill de la válida anterior de la serie.
+
+    Códigos de respuesta:
+    - 200: perfil de circuito (``has_course_data=false`` y listas vacías si
+      la válida aún no tiene nada capturado).
+    - 404: ``race_event_id`` no existe.
+    - 403: usuario sin rol coach o admin.
+    """
+    course = await course_svc.get_course(db, race_event_id)
+    if course is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "code": "race_event_not_found",
+                "message": f"Evento de carrera con id={race_event_id} no existe.",
+            },
+        )
+    return course
+
+
+@router.post(
+    "/{race_event_id}/course/variants",
+    response_model=CourseRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Subir GPX y crear una variante de recorrido",
+)
+async def create_race_event_course_variant(
+    race_event_id: int,
+    file: Annotated[UploadFile, File(description="Archivo .gpx de una vuelta del circuito (máx 5 MB).")],
+    label: Annotated[str, Form(min_length=1, max_length=60)],
+    recorded_laps: Annotated[Optional[int], Form()] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
+) -> CourseRead:
+    """Procesa el GPX subido por el coach y crea una variante de recorrido.
+
+    Presupuesto: p95 <= 1500 ms (constitución, escritura transaccional con
+    parseo CPU-bound).
+
+    Códigos de respuesta:
+    - 201: variante creada. Body: ``CourseRead`` completo.
+    - 404: ``race_event_id`` no existe.
+    - 409: ``duplicate_recording`` (mismo archivo ya subido) o
+      ``variant_label_taken`` (nombre repetido en la misma válida).
+    - 415: content-type no es GPX.
+    - 422: archivo no es un GPX válido, comprimido, o falla algún paso del
+      procesamiento (ver ``course-api.md`` §6).
+    - 413: archivo mayor a 5 MB.
+    - 403: usuario sin rol coach o admin.
+    """
+    raw = await _read_and_validate_course_gpx_upload(file)
+
+    try:
+        course = await course_svc.create_variant(
+            db,
+            race_event_id,
+            label=label.strip(),
+            recorded_laps=recorded_laps,
+            content=raw,
+            filename=file.filename or "",
+            user_id=current_user.id,
+        )
+    except CourseProcessingError as exc:
+        raise _course_processing_error_to_http(exc) from exc
+
+    new_variant_id = course.variants[-1].id
+    await record_audit(
+        db,
+        action=AuditAction.create,
+        entity_type=AuditEntityType.race_event,
+        entity_id=race_event_id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=None,
+        changed_fields=[f"course_variant:{new_variant_id}"],
+        request_id=ctx.request_id,
+    )
+    return course
+
+
+@router.put(
+    "/{race_event_id}/course/variants/{variant_id}/file",
+    response_model=CourseRead,
+    summary="Reemplazar el GPX de una variante de recorrido existente",
+)
+async def replace_race_event_course_variant_file(
+    race_event_id: int,
+    variant_id: int,
+    file: Annotated[UploadFile, File(description="Nuevo archivo .gpx de la variante (máx 5 MB).")],
+    recorded_laps: Annotated[Optional[int], Form()] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
+) -> CourseRead:
+    """Reprocesa el GPX y sobrescribe geometría/figuras/detección en el mismo
+    ``id`` de variante (el ``label`` no cambia — no forma parte de este body).
+
+    Presupuesto: p95 <= 1500 ms (constitución, escritura transaccional con
+    parseo CPU-bound).
+
+    Códigos de respuesta:
+    - 200: variante reemplazada. Body: ``CourseRead`` completo.
+    - 404: ``race_event_id`` o ``variant_id`` no existen (o no coinciden).
+    - 409: ``duplicate_recording`` o ``variant_label_taken``.
+    - 415: content-type no es GPX.
+    - 422: archivo no es un GPX válido, comprimido, o falla algún paso del
+      procesamiento (ver ``course-api.md`` §6).
+    - 413: archivo mayor a 5 MB.
+    - 403: usuario sin rol coach o admin.
+    """
+    raw = await _read_and_validate_course_gpx_upload(file)
+
+    try:
+        course = await course_svc.replace_variant_file(
+            db,
+            race_event_id,
+            variant_id,
+            recorded_laps=recorded_laps,
+            content=raw,
+            filename=file.filename or "",
+            user_id=current_user.id,
+        )
+    except CourseProcessingError as exc:
+        raise _course_processing_error_to_http(exc) from exc
+
+    await record_audit(
+        db,
+        action=AuditAction.update,
+        entity_type=AuditEntityType.race_event,
+        entity_id=race_event_id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=None,
+        changed_fields=[f"course_variant:{variant_id}"],
+        request_id=ctx.request_id,
+    )
+    return course
+
+
+@router.patch(
+    "/{race_event_id}/course/variants/{variant_id}",
+    response_model=CourseRead,
+    summary="Renombrar una variante de recorrido",
+)
+async def rename_race_event_course_variant(
+    race_event_id: int,
+    variant_id: int,
+    body: VariantRename,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
+) -> CourseRead:
+    """Renombra una variante existente.
+
+    Códigos de respuesta:
+    - 200: variante renombrada. Body: ``CourseRead`` completo.
+    - 404: ``race_event_id`` o ``variant_id`` no existen (o no coinciden).
+    - 409: ``variant_label_taken``.
+    - 403: usuario sin rol coach o admin.
+    """
+    course = await course_svc.rename_variant(
+        db,
+        race_event_id,
+        variant_id,
+        label=body.label,
+        user_id=current_user.id,
+    )
+    await record_audit(
+        db,
+        action=AuditAction.update,
+        entity_type=AuditEntityType.race_event,
+        entity_id=race_event_id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=None,
+        changed_fields=[f"course_variant:{variant_id}"],
+        request_id=ctx.request_id,
+    )
+    return course
+
+
+@router.delete(
+    "/{race_event_id}/course/variants/{variant_id}",
+    response_model=CourseRead,
+    summary="Eliminar una variante de recorrido",
+)
+async def delete_race_event_course_variant(
+    race_event_id: int,
+    variant_id: int,
+    db: AsyncSession = Depends(get_db),
+    _current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
+) -> CourseRead:
+    """Elimina una variante sin uso.
+
+    Códigos de respuesta:
+    - 200: variante eliminada. Body: ``CourseRead`` completo (sin ``204`` —
+      el cliente reemplaza su query key con la respuesta, course-api.md §4).
+    - 404: ``race_event_id`` o ``variant_id`` no existen (o no coinciden).
+    - 409: ``variant_in_use`` — alguna categoría todavía la referencia.
+    - 403: usuario sin rol coach o admin.
+    """
+    course = await course_svc.delete_variant(db, race_event_id, variant_id)
+    await record_audit(
+        db,
+        action=AuditAction.delete,
+        entity_type=AuditEntityType.race_event,
+        entity_id=race_event_id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=None,
+        changed_fields=[f"course_variant:{variant_id}"],
+        request_id=ctx.request_id,
+    )
+    return course
+
+
+@router.put(
+    "/{race_event_id}/course/setups",
+    response_model=CourseRead,
+    summary="Reemplazar la tabla de vueltas por categoría",
+)
+async def replace_race_event_course_setups(
+    race_event_id: int,
+    body: SetupsReplace,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
+) -> CourseRead:
+    """Reemplazo total de la tabla de vueltas por categoría de la válida.
+
+    Códigos de respuesta:
+    - 200: tabla reemplazada. Body: ``CourseRead`` completo.
+    - 404: ``race_event_id`` no existe.
+    - 422: ``variant_not_in_event``, ``unknown_category`` o ``duplicate_category``.
+    - 403: usuario sin rol coach o admin.
+    """
+    course = await course_svc.replace_setups(
+        db,
+        race_event_id,
+        setups=body.setups,
+        user_id=current_user.id,
+    )
+    await record_audit(
+        db,
+        action=AuditAction.update,
+        entity_type=AuditEntityType.race_event,
+        entity_id=race_event_id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=None,
+        changed_fields=["course_setups"],
+        request_id=ctx.request_id,
+    )
+    return course
 
 
 # ---------------------------------------------------------------------------

@@ -483,6 +483,19 @@ class EvolutionPoint(BaseModel):
             "``None`` si no finalizó o no hay tiempo del ganador."
         ),
     )
+    avg_speed_kmh: Optional[float] = Field(
+        default=None,
+        description=(
+            "Velocidad promedio de esta válida (feature 043, R-11), derivada "
+            "con ``course.derived.derive_figures`` a partir del setup de "
+            "recorrido de la categoría en este evento. ``None`` si el evento "
+            "no tiene recorrido configurado para esta categoría o si la "
+            "dinámica de carrera no permite calcularla (DNF/DNS/DSQ, o "
+            "minus_laps sin laps_behind). No existe ningún agregado "
+            "(promedio/mejor/tendencia) de esta métrica en ningún lado — "
+            "solo el valor por válida."
+        ),
+    )
 
 
 class ComparisonGroupOption(BaseModel):

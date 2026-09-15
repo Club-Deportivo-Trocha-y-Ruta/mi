@@ -177,7 +177,7 @@ describe("CompetitionFormPage — FR-024 calendar sync payload", () => {
     const body = await fillSubmitAndCaptureBody();
     expect(body).toMatchObject({ create_calendar_event: true });
     await waitFor(() =>
-      expect(mockNavigate).toHaveBeenCalledWith("/competitions/42"),
+      expect(mockNavigate).toHaveBeenCalledWith("/competitions/42?tab=circuito"),
     );
   });
 

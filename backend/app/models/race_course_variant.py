@@ -34,6 +34,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
 )
+from sqlalchemy.dialects.sqlite import INTEGER as SQLITE_INTEGER
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -63,7 +64,11 @@ class RaceCourseVariant(ActorTimestampMixin, Base):
         Index("ix_race_course_variants_event", "race_event_id"),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(SQLITE_INTEGER(), "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    )
     race_event_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("race_events.id", ondelete="CASCADE"), nullable=False
     )

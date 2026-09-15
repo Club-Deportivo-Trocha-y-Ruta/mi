@@ -70,6 +70,11 @@ const DiffTable = lazy(() =>
   import("@/components/competitions/import/DiffTable").then((m) => ({ default: m.DiffTable })),
 );
 
+// CourseTab lazy → panel "Circuito (opcional)" del step 3, feature 043.
+const CourseTab = lazy(() =>
+  import("@/components/race/course/CourseTab").then((m) => ({ default: m.CourseTab })),
+);
+
 // ---------------------------------------------------------------------------
 // F-UP-REV5 — Revision UX helpers
 // ---------------------------------------------------------------------------
@@ -1832,6 +1837,30 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
               raceEventId={commitMutation.data.race_event_id}
               conditions={parseResult?.conditions}
             />
+          )}
+
+          {/* Circuito (opcional) tras commit exitoso — feature 043 */}
+          {commitMutation.data && !commitMutation.isError && (
+            <div className="mt-4 space-y-2">
+              <h3 className="text-sm font-semibold text-charcoal">
+                Circuito (opcional)
+              </h3>
+              <Suspense
+                fallback={
+                  <div
+                    role="status"
+                    aria-live="polite"
+                    className="h-24 animate-pulse rounded-lg bg-light-gray"
+                    data-testid="wizard-course-tab-loading"
+                  />
+                }
+              >
+                <CourseTab
+                  raceEventId={commitMutation.data.race_event_id}
+                  compact
+                />
+              </Suspense>
+            </div>
           )}
         </div>
       )}

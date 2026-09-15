@@ -72,6 +72,7 @@ _TABLES = [
     "race_categories",
     "race_competitors",
     "race_results",
+    "race_course_variants",
     *AUDIT_TABLES,
 ]
 
@@ -116,6 +117,7 @@ async def sqlite_engine() -> AsyncGenerator[AsyncEngine, None]:
     from app.models.race_category import RaceCategory as _C  # noqa: F401
     from app.models.race_competitor import RaceCompetitor as _Comp  # noqa: F401
     from app.models.race_result import RaceResult as _R  # noqa: F401
+    from app.models.race_course_variant import RaceCourseVariant as _CV  # noqa: F401
     from app.models.user import User as _U  # noqa: F401
 
     tables = [Base.metadata.tables[t] for t in _TABLES]

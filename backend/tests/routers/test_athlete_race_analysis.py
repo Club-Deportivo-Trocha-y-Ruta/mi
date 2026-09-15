@@ -113,6 +113,8 @@ async def engine() -> AsyncGenerator[AsyncEngine, None]:
             "race_categories",
             "race_competitors",
             "race_results",
+            "race_course_variants",
+            "race_course_category_setups",
             "athlete_ai_insights",
             "anthropometric_records",
             "parental_consents",

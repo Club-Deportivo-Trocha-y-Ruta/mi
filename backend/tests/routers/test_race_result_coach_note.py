@@ -98,6 +98,8 @@ async def sqlite_engine() -> AsyncEngine:
     from app.models.club import Club as _Cl, ClubMember as _CM  # noqa: F401
     from app.models.race_category import RaceCategory as _Cat  # noqa: F401
     from app.models.race_competitor import RaceCompetitor as _Comp  # noqa: F401
+    from app.models.race_course_category_setup import RaceCourseCategorySetup as _RCS  # noqa: F401
+    from app.models.race_course_variant import RaceCourseVariant as _RCV  # noqa: F401
     from app.models.race_event import RaceEvent as _E  # noqa: F401
     from app.models.race_import import RaceImport as _I  # noqa: F401
     from app.models.race_result import RaceResult as _R  # noqa: F401
@@ -118,6 +120,8 @@ async def sqlite_engine() -> AsyncEngine:
             "race_categories",
             "race_competitors",
             "race_results",
+            "race_course_variants",
+            "race_course_category_setups",
             *AUDIT_TABLES,
         )
     ]

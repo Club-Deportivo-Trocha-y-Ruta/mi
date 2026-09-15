@@ -426,6 +426,9 @@ interface EvolutionChartPoint {
   series_level?: string;
   event_date: string;
   value: number | null;
+  /** Feature 043 (US2) — solo se usa en la vista de tabla (`EvolutionTable`),
+   *  nunca en la gráfica/tooltip: no es una serie, es un valor por fila. */
+  avg_speed_kmh?: number | null;
 }
 
 /** Mapea un `EvolutionPoint` de la API al shape mínimo que usan el chart,
@@ -440,6 +443,7 @@ function toChartPoint(p: EvolutionPoint): EvolutionChartPoint {
     series_level: p.series_level,
     event_date: p.event_date,
     value: p.value,
+    avg_speed_kmh: p.avg_speed_kmh,
   };
 }
 
@@ -537,6 +541,7 @@ function EvolutionTable({ points, unit }: EvolutionTableProps) {
           <th className="px-3 py-2 font-medium">Evento</th>
           <th className="px-3 py-2 font-medium">Fecha</th>
           <th className="px-3 py-2 font-medium">Valor</th>
+          <th className="px-3 py-2 font-medium">Vel. prom.</th>
         </tr>
       </thead>
       <tbody>
@@ -552,6 +557,11 @@ function EvolutionTable({ points, unit }: EvolutionTableProps) {
             <td className="px-3 py-1.5">{p.label}</td>
             <td className="px-3 py-1.5">{p.event_date}</td>
             <td className="px-3 py-1.5">{formatValue(p.value, unit)}</td>
+            <td className="px-3 py-1.5">
+              {p.avg_speed_kmh != null
+                ? `${p.avg_speed_kmh.toFixed(1)} km/h`
+                : "sin dato"}
+            </td>
           </tr>
         ))}
       </tbody>

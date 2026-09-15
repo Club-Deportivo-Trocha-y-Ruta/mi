@@ -159,7 +159,8 @@ def circle_gpx(
 
 
 def out_and_back_gpx(length_m: float) -> bytes:
-    """A straight line north for `length_m / 2`, then back toward the start.
+    """A line north for `length_m / 2` with a gentle lateral wobble, then
+    back toward the start.
 
     The inbound leg is the same points in reverse, except it deliberately
     stops a safe margin short of the exact start (more than
@@ -169,18 +170,33 @@ def out_and_back_gpx(length_m: float) -> bytes:
     1 lap" branch of lap detection. Total recorded distance is therefore
     approximately, not exactly, `length_m`. No elevation, no extensions, no
     time.
+
+    A small sine wobble (amplitude 5 m, period 10 points) is added on the
+    cross-track axis: a perfectly straight out-and-back has zero curvature,
+    so Ramer-Douglas-Peucker (`gpx_processing._rdp`, epsilon 3 m) correctly
+    collapses each leg to its two endpoints -- 3 points total, legitimately
+    below `MIN_POINTS=20` per the simplification contract. Real GPS
+    recordings always carry some position noise; this wobble (kept far
+    under `_CLOSURE_RADIUS_M`, so it does not affect the closure check
+    above) restores that realism instead of exercising a degenerate
+    zero-curvature path no real upload would ever produce.
     """
     half = length_m / 2.0
     num_steps = 100
     step = half / num_steps
+    wobble_amplitude_m = 5.0
+    wobble_period_points = 10
 
-    outbound = [(0.0, step * i) for i in range(num_steps + 1)]  # 0 .. half
+    def _wobble(i: int) -> float:
+        return wobble_amplitude_m * math.sin(2 * math.pi * i / wobble_period_points)
+
+    outbound = [(_wobble(i), step * i) for i in range(num_steps + 1)]  # 0 .. half
 
     safe_margin = _CLOSURE_RADIUS_M + 15.0
     stop_at_y = min(half, safe_margin)
     inbound = [
-        (0.0, y)
-        for y in (half - step * i for i in range(1, num_steps + 1))
+        (_wobble(num_steps + i), y)
+        for i, y in enumerate((half - step * k for k in range(1, num_steps + 1)), start=1)
         if y >= stop_at_y
     ]
 

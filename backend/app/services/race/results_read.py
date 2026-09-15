@@ -10,6 +10,11 @@ Design constraints
 ------------------
 - Single aggregated query (one round-trip) joining race_results → race_competitors
   → race_categories.  No N+1.
+- Feature 043 (US2) adds exactly one course-setup query
+  (``RaceCourseCategorySetup`` + eager-loaded ``variant``), always run once
+  per call regardless of row/category count — the hard "+1 statement"
+  performance contract. Distance/speed figures are derived in Python via
+  ``course.derived.derive_figures`` — never a query per row.
 - Soft-deleted rows (``deleted_at IS NOT NULL``) are excluded at SQL level.
 - ``is_our_club = RaceResult.athlete_id IS NOT NULL`` (single-club app; any
   confirmed competitor link means "our club").
@@ -28,12 +33,15 @@ from typing import Optional
 
 from sqlalchemy import asc, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.race_category import RaceCategory
 from app.models.race_competitor import RaceCompetitor
+from app.models.race_course_category_setup import RaceCourseCategorySetup
 from app.models.race_event import RaceEvent
 from app.models.race_result import RaceResult
 from app.schemas.race_results import CategoryResults, EventResultsRead, ResultRow
+from app.services.race.course.derived import derive_figures
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +91,34 @@ async def get_event_results(
     ).mappings().one_or_none()
     if event_row is None:
         return None
+
+    # 1b. Course setups (feature 043, US2) — exactly one extra query, run
+    #     once per call regardless of row/category count (contract:
+    #     "get_event_results runs exactly one more statement than before").
+    #     Keyed by category_id since a category can only have one setup per
+    #     race_event_id (unique constraint). ``has_course_data`` is derived
+    #     from this same query alone: a variant uploaded but not yet
+    #     assigned to any category setup renders no distance/speed for any
+    #     row either way, so gating the results columns on "at least one
+    #     setup exists" (rather than "at least one variant exists") is both
+    #     the more useful signal for this endpoint and what keeps the query
+    #     count a hard, unconditional +1 — a second variant-exists fallback
+    #     query would only fire in that narrow interim state and would
+    #     violate the performance contract. The course tab's own
+    #     ``has_course_data`` (whether a variant exists at all, independent
+    #     of setups) is a deliberately different definition in
+    #     ``course/service.py``, for a different UI surface.
+    setup_rows = (
+        await db.execute(
+            select(RaceCourseCategorySetup)
+            .options(selectinload(RaceCourseCategorySetup.variant))
+            .where(RaceCourseCategorySetup.race_event_id == race_event_id)
+        )
+    ).scalars().all()
+    setup_by_category: dict[int, RaceCourseCategorySetup] = {
+        s.category_id: s for s in setup_rows
+    }
+    has_course_data = bool(setup_by_category)
 
     # 2. Build the aggregated query: results → competitors → categories.
     #    ORDER BY: category sort_order then position ASC (NULLs last via CASE).
@@ -140,6 +176,7 @@ async def get_event_results(
                 event_date=event_row["event_date"],
                 location=event_row["location"],
                 status=event_row["status"].value if hasattr(event_row["status"], "value") else str(event_row["status"]),
+                has_course_data=has_course_data,
                 categories=[],
             )
         stmt = stmt.where(RaceResult.athlete_id.in_(allowed_athlete_ids))
@@ -151,11 +188,14 @@ async def get_event_results(
     categories_map: dict[int, dict] = {}
     for row in rows:
         cat_id = row["category_id"]
+        setup = setup_by_category.get(cat_id)
         if cat_id not in categories_map:
             categories_map[cat_id] = {
                 "category_id": cat_id,
                 "code": row["category_code"],
                 "label": row["category_label"],
+                "laps": setup.laps if setup is not None else None,
+                "variant_label": setup.variant.label if setup is not None else None,
                 "rows": [],
             }
         # FR-005 / SC-005: coach_note is coach/admin-only. When
@@ -163,6 +203,8 @@ async def get_event_results(
         # parents never see the coach's private qualitative note, even
         # for their own child's result row.
         is_parent_scope = allowed_athlete_ids is not None
+        status_str = row["status"].value if hasattr(row["status"], "value") else str(row["status"])
+        figures = derive_figures(setup, status_str, row["race_time_ms"], row["laps_behind"])
         categories_map[cat_id]["rows"].append(
             ResultRow(
                 result_id=row["id"],
@@ -172,13 +214,17 @@ async def get_event_results(
                 club_text=row["club_text"],
                 athlete_id=row["athlete_id"],
                 is_our_club=(row["athlete_id"] is not None),
-                status=row["status"].value if hasattr(row["status"], "value") else str(row["status"]),
+                status=status_str,
                 race_time_ms=row["race_time_ms"],
                 laps_behind=row["laps_behind"],
                 points_awarded=row["points_awarded"] if row["points_awarded"] is not None else 0,
                 bib_number=row["bib_number"],
                 coach_note=None if is_parent_scope else row["coach_note"],
                 coach_note_updated_at=None if is_parent_scope else row["coach_note_updated_at"],
+                distance_km=figures.distance_km,
+                avg_speed_kmh=figures.avg_speed_kmh,
+                lap_distance_km=figures.lap_distance_km,
+                elevation_gain_m=figures.elevation_gain_m,
             )
         )
 
@@ -197,5 +243,6 @@ async def get_event_results(
         event_date=event_row["event_date"],
         location=event_row["location"],
         status=event_row["status"].value if hasattr(event_row["status"], "value") else str(event_row["status"]),
+        has_course_data=has_course_data,
         categories=category_list,
     )
