@@ -92,6 +92,10 @@ from app.models.strava_activity_lap import (
 # Feature 041 — Multi-coach governance (audit trail)
 from app.models.audit_log import AuditAction, AuditActorKind, AuditLog
 
+# Feature 043 — Race course profile
+from app.models.race_course_variant import RaceCourseVariant
+from app.models.race_course_category_setup import RaceCourseCategorySetup
+
 __all__ = [
     "Base",
     "ActorTimestampMixin",
@@ -194,4 +198,7 @@ __all__ = [
     "AuditLog",
     "AuditAction",
     "AuditActorKind",
+    # Feature 043 — Race course profile
+    "RaceCourseVariant",
+    "RaceCourseCategorySetup",
 ]

@@ -130,6 +130,11 @@ async def sqlite_engine() -> AsyncEngine:
             "race_results",
             "race_event_roster",
             "race_competitor_link_audit",
+            # Feature 043: RaceEvent.course_variants/course_setups cascade
+            # "all, delete-orphan" — an ORM delete of a race_event now enumerates
+            # these tables even when the row itself never uses course data.
+            "race_course_variants",
+            "race_course_category_setups",
             *AUDIT_TABLES,
         )
     ]
