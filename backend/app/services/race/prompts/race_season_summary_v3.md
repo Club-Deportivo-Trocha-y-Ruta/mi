@@ -7,6 +7,9 @@
 {# y usa el subconjunto: athlete_ref, age, ltad_group, season, validas_count,  #}
 {# season_block, training_block, anthro_block, dialogue_block, catalog_block,  #}
 {# memory_recent_insights, principle_labels.                                   #}
+{# course_by_valida (dict[int, str]) — feature 043 (US4): un course_meta ya    #}
+{# formateado por válida que SÍ tiene dato de circuito (vacío == veto "SIN     #}
+{# DATO" a nivel de temporada; una válida ausente del dict no se menciona).    #}
 {# -------------------------------------------------------------------------- #}
 # Rol
 
@@ -108,6 +111,22 @@ No hay catálogo disponible: deja `catalog_ref` en `null` en todas las acciones.
 {% endfor %}
 
 Cita como máximo 3, copiando la etiqueta exacta. Si ninguna aplica, deja la lista vacía.
+{% endif %}
+
+{% if course_by_valida %}
+## Circuitos registrados por válida
+
+Estas son las **únicas** características de circuito registradas, una por válida. Para cualquier válida no listada aquí, no menciones distancia, vueltas, terreno, desnivel ni dificultad técnica de esa válida.
+
+{% for valida_num, block in course_by_valida.items() %}
+**Válida {{ valida_num }}:**
+{{ block }}
+
+{% endfor %}
+{% else %}
+## Circuitos — SIN DATO
+
+PROHIBIDO mencionar distancia, vueltas, terreno, desnivel, altimetría o dificultad técnica de cualquier válida de la temporada.
 {% endif %}
 
 # Ejemplo resuelto (datos ficticios — NO son de esta temporada)

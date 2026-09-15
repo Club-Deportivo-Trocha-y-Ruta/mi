@@ -13,6 +13,7 @@
 import { useState } from "react";
 
 import { CategorySetupTable } from "@/components/race/course/CategorySetupTable";
+import { CourseDescriptionCard } from "@/components/race/course/CourseDescriptionCard";
 import { VariantsCard } from "@/components/race/course/VariantsCard";
 import { VariantUploadDialog } from "@/components/race/course/VariantUploadDialog";
 import { Button } from "@/components/ui/button";
@@ -66,7 +67,7 @@ function CourseTabError({ onRetry }: { onRetry: () => void }) {
       <p className="text-sm text-mid-gray">
         No se pudo cargar el circuito. Intenta de nuevo.
       </p>
-      <Button variant="outline" size="sm" onClick={onRetry}>
+      <Button variant="outline" size="lg" onClick={onRetry}>
         Reintentar
       </Button>
     </div>
@@ -100,12 +101,6 @@ function CourseTabEmpty({ onAddVariant, readOnly }: CourseTabEmptyProps) {
           <Button onClick={onAddVariant} data-testid="course-tab-add-variant-btn">
             Agregar variante
           </Button>
-          <div className="flex flex-col items-center gap-0.5">
-            <Button variant="outline" disabled data-testid="course-tab-describe-btn">
-              Describir la pista
-            </Button>
-            <span className="text-[11px] text-mid-gray">Próximamente</span>
-          </div>
         </div>
       )}
     </div>
@@ -164,7 +159,13 @@ export function CourseTab({ raceEventId, compact, readOnly }: CourseTabProps) {
         </>
       )}
 
-      {/* CourseDescriptionCard — T043 */}
+      {!isLoading && !isError && data && (
+        <CourseDescriptionCard
+          raceEventId={raceEventId}
+          description={data.description}
+          readOnly={readOnly}
+        />
+      )}
       {/* CourseSummary — T058 */}
     </div>
   );

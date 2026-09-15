@@ -504,6 +504,97 @@ def format_race_meta(conditions: dict[str, Any] | None) -> str | None:
     return "\n".join(lines)
 
 
+# Etiquetas de dificultad técnica del circuito (feature 043, contrato §2).
+_COURSE_DIFFICULTY_LABELS: dict[int, str] = {
+    1: "muy fácil",
+    2: "fácil",
+    3: "media",
+    4: "técnico",
+    5: "muy técnico",
+}
+
+# Sectores clave: código snake_case → frase legible en español (feature 043).
+_COURSE_SECTOR_LABELS: dict[str, str] = {
+    "subida_larga": "subida larga",
+    "bajada_tecnica": "bajada técnica",
+    "rock_garden": "rock garden",
+    "singletrack": "singletrack",
+    "plano_rapido": "plano rápido",
+    "paso_quebrada": "paso de quebrada",
+    "raices": "raíces",
+    "escalones": "escalones",
+}
+
+
+def _course_km(meters: float) -> str:
+    """Metros → km con coma decimal (convención española del prompt)."""
+    return f"{meters / 1000:.1f}".replace(".", ",")
+
+
+def format_course_meta(course: dict[str, Any] | None) -> str | None:
+    """Formatea el perfil de circuito registrado de una válida → bloque markdown.
+
+    Feature 043 (User Story 4), contrato ``ai-course-block.md`` §2. Mismo
+    contrato de ausencia que :func:`format_race_meta`:
+
+    - Devuelve ``None`` cuando ``course`` es falsy o cuando ninguno de sus
+      seis campos (``lap_distance_m``, ``elevation_gain_m``, ``laps``,
+      ``terrain_type``, ``technical_difficulty``, ``key_sectors``) está
+      presente — activa el veto "SIN DATO" del prompt (PROHIBIDO mencionar
+      distancia/vueltas/terreno/desnivel/dificultad).
+    - Solo lista bullets de campos efectivamente registrados, en el orden
+      fijo del contrato, nunca rellena con "—".
+    """
+    if not course:
+        return None
+
+    lap_distance_m = course.get("lap_distance_m")
+    elevation_gain_m = course.get("elevation_gain_m")
+    laps = course.get("laps")
+    terrain_type = course.get("terrain_type")
+    technical_difficulty = course.get("technical_difficulty")
+    key_sectors = course.get("key_sectors")
+
+    if (
+        lap_distance_m is None
+        and elevation_gain_m is None
+        and laps is None
+        and not terrain_type
+        and technical_difficulty is None
+        and not key_sectors
+    ):
+        return None
+
+    lines: list[str] = []
+    if lap_distance_m is not None:
+        lines.append(f"- Distancia por vuelta: {_course_km(lap_distance_m)} km")
+    if elevation_gain_m is not None:
+        lines.append(f"- Desnivel positivo por vuelta: {elevation_gain_m} m")
+    if laps is not None:
+        if lap_distance_m is not None:
+            total_km = _course_km(lap_distance_m * laps)
+            lines.append(f"- Vueltas de la categoría: {laps} (distancia total {total_km} km)")
+        else:
+            lines.append(f"- Vueltas de la categoría: {laps}")
+    if terrain_type:
+        lines.append(f"- Terreno: {terrain_type}")
+    if technical_difficulty is not None:
+        label = _COURSE_DIFFICULTY_LABELS.get(
+            int(technical_difficulty), str(technical_difficulty)
+        )
+        lines.append(f"- Dificultad técnica: {technical_difficulty}/5 ({label})")
+    if key_sectors:
+        readable = ", ".join(
+            _COURSE_SECTOR_LABELS.get(sector, str(sector).replace("_", " "))
+            for sector in key_sectors
+        )
+        lines.append(f"- Sectores clave: {readable}")
+
+    if not lines:
+        return None
+    return "\n".join(lines)
+
+
 def _podium_to_md(podium: dict[str, Any]) -> str:
     """Bloque markdown corto con el podio."""
     if not podium or not podium.get("podium"):
@@ -578,6 +669,13 @@ class AnalystV3Input:
     field_metrics: dict[str, Any] | None = None
     season_rows: list[dict[str, Any]] = dc_field(default_factory=list)
     race_meta: str | None = None
+    # Feature 043 (US4): perfil de circuito de ESTA válida, ya formateado por
+    # format_course_meta. None → veto "Circuito — SIN DATO" en el prompt.
+    course_meta: str | None = None
+    # Feature 043 (US4): solo para analysis_kind="season" — un course_meta
+    # por válida que SÍ tiene dato de circuito (las que no, se omiten del
+    # dict; dict vacío == veto de ausencia también a nivel de temporada).
+    course_by_valida: dict[int, str] | None = None
     anthro_context: dict[str, Any] | None = None
     training_window: dict[str, Any] | None = None
     coach_dialogue: list[dict[str, Any]] = dc_field(default_factory=list)
@@ -1398,6 +1496,8 @@ class RaceAnalystAgent:
             "field_block": _v3_field_block(input_.field_metrics),
             "season_block": _v3_season_block(input_.season_rows),
             "conditions_block": input_.race_meta,
+            "course_block": input_.course_meta,
+            "course_by_valida": input_.course_by_valida or {},
             "anthro_block": _v3_anthro_block(input_.anthro_context),
             "training_block": _v3_training_block(input_.training_window),
             "dialogue_block": _v3_dialogue_block(input_.coach_dialogue),

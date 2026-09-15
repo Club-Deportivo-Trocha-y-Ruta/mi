@@ -25,6 +25,7 @@ Perfil de circuito (feature 043, T019 — rama coach/admin; la rama parent es T0
 - ``PATCH  /{race_event_id}/course/variants/{variant_id}``    — renombra variante (coach + admin).
 - ``DELETE /{race_event_id}/course/variants/{variant_id}``    — elimina variante sin uso (coach + admin).
 - ``PUT    /{race_event_id}/course/setups``                   — reemplaza la tabla de vueltas por categoría (coach + admin).
+- ``PATCH  /{race_event_id}/course/description``              — actualiza descripción estructurada (coach + admin).
 
 Convenciones:
 - RBAC: coach + admin en escritura. Admin exclusivo para DELETE de evento.
@@ -48,7 +49,7 @@ from app.models.race_event import RaceEvent, RaceEventStatus
 from app.models.race_event_roster import RaceEventRoster
 from app.models.race_result import RaceResult
 from app.models.user import User, UserRole
-from app.schemas.race_course import CourseRead, SetupsReplace, VariantRename
+from app.schemas.race_course import CourseDescriptionUpdate, CourseRead, SetupsReplace, VariantRename
 from app.schemas.race_event import (
     CalendarAutoCreateRead,
     CalendarLinkRead,
@@ -1022,7 +1023,7 @@ async def update_race_event_conditions(
 
 # ---------------------------------------------------------------------------
 # Perfil de circuito — GET/POST/PUT/PATCH/DELETE /{race_event_id}/course/*
-# (feature 043, T019). PATCH /course/description es T041 y no se toca aquí.
+# (feature 043, T019; PATCH /course/description es T041).
 # ---------------------------------------------------------------------------
 
 _COURSE_GPX_CONTENT_TYPES = {
@@ -1374,6 +1375,69 @@ async def replace_race_event_course_setups(
         actor_kind=ctx.actor_kind,
         club_id=None,
         changed_fields=["course_setups"],
+        request_id=ctx.request_id,
+    )
+    return course
+
+
+@router.patch(
+    "/{race_event_id}/course/description",
+    response_model=CourseRead,
+    summary="Actualizar la descripción estructurada del circuito",
+)
+async def update_race_event_course_description(
+    race_event_id: int,
+    body: CourseDescriptionUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
+) -> CourseRead:
+    """Actualización parcial de los cuatro campos de descripción del circuito.
+
+    Solo los campos presentes en el body se aplican; los ausentes conservan
+    su valor actual (``model_dump(exclude_unset=True)``), un ``null``
+    explícito limpia el campo.
+
+    Códigos de respuesta:
+    - 200: perfil de circuito actualizado (o sin cambios si el body no traía
+      ningún campo).
+    - 404: ``race_event_id`` no existe.
+    - 422: ``technical_difficulty`` fuera de 1-5, ``key_sectors`` con un
+      código desconocido, más de 8 elementos o duplicados, o
+      ``course_notes`` mayor a 1000 caracteres (validado por Pydantic antes
+      de llegar aquí).
+    - 403: usuario sin rol coach o admin.
+    """
+    changed_fields = sorted(body.model_dump(exclude_unset=True).keys())
+
+    if not changed_fields:
+        # Body vacío — retornamos el estado actual sin tocar la DB ni el audit log.
+        course = await course_svc.get_course(db, race_event_id)
+        if course is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={
+                    "code": "race_event_not_found",
+                    "message": f"Evento de carrera con id={race_event_id} no existe.",
+                },
+            )
+        return course
+
+    course = await course_svc.update_description(
+        db,
+        race_event_id,
+        body,
+        user_id=current_user.id,
+    )
+    await record_audit(
+        db,
+        action=AuditAction.update,
+        entity_type=AuditEntityType.race_event,
+        entity_id=race_event_id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=None,
+        changed_fields=[f"course_description:{field}" for field in changed_fields],
         request_id=ctx.request_id,
     )
     return course

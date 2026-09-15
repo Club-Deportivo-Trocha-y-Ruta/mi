@@ -41,11 +41,13 @@ from sqlalchemy.pool import StaticPool
 from app.dependencies import get_current_user, get_db
 from app.main import app
 from app.models import Base
+from app.models.audit_log import AuditLog
 from app.models.race_category import CategoryGender, RaceCategory
 from app.models.race_course_variant import RaceCourseVariant
 from app.models.race_event import RaceEvent, RaceEventStatus
 from app.models.race_series import RaceSeries
 from app.models.user import User, UserRole
+from app.services.audit import AuditEntityType
 from tests.helpers.audit_tables import AUDIT_TABLES
 from tests.helpers.gpx_builder import circle_gpx
 from tests.helpers.query_counting import count_selects
@@ -619,3 +621,195 @@ class TestQueryCount:
             r = await coach_client.get(_course_url(100))
         assert r.status_code == 200, r.text
         assert counter[0] <= 3, f"GET /course issued {counter[0]} SELECTs"
+
+
+# ===========================================================================
+# PATCH /course/description (feature 043, User Story 3, T040)
+#
+# Contract: course-api.md §5b. Body is all four description fields, each
+# optional, `extra="forbid"`; `exclude_unset` semantics — a field absent from
+# the body is untouched, an explicit `null` clears it.
+#
+# TDD note: `PATCH .../course/description` does not exist on the router yet
+# (T041 lands it — see the "PATCH /course/description es T041 y no se toca
+# aquí" comment above `get_race_event_course` in `app/routers/race_events.py`).
+# Every case below either 404s (no matching route registered) or fails its
+# assertion until then. That is the expected state — do not skip, xfail, or
+# mock the missing route/service function.
+# ===========================================================================
+
+
+class TestDescriptionPatch:
+    @pytest.mark.asyncio
+    async def test_partial_update_leaves_other_fields_untouched(self, coach_client):
+        seed = await coach_client.patch(
+            _course_url(100, "/description"),
+            json={
+                "terrain_type": "trocha",
+                "technical_difficulty": 3,
+                "key_sectors": ["rock_garden"],
+                "course_notes": "Sube técnica al inicio.",
+            },
+        )
+        assert seed.status_code == 200, seed.text
+
+        r = await coach_client.patch(
+            _course_url(100, "/description"),
+            json={"terrain_type": "mixto"},
+        )
+        assert r.status_code == 200, r.text
+        description = r.json()["description"]
+        assert description["terrain_type"] == "mixto"
+        # exclude_unset semantics — fields absent from this second body must
+        # keep the value the first PATCH set, not revert to null.
+        assert description["technical_difficulty"] == 3
+        assert description["key_sectors"] == ["rock_garden"]
+        assert description["course_notes"] == "Sube técnica al inicio."
+
+        # A follow-up GET confirms the persisted state, not just the response.
+        get_resp = await coach_client.get(_course_url(100))
+        assert get_resp.status_code == 200, get_resp.text
+        assert get_resp.json()["description"] == description
+
+    @pytest.mark.asyncio
+    async def test_explicit_null_clears_field(self, coach_client):
+        seed = await coach_client.patch(
+            _course_url(100, "/description"),
+            json={"technical_difficulty": 4},
+        )
+        assert seed.status_code == 200, seed.text
+        assert seed.json()["description"]["technical_difficulty"] == 4
+
+        r = await coach_client.patch(
+            _course_url(100, "/description"),
+            json={"technical_difficulty": None},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["description"]["technical_difficulty"] is None
+
+    @pytest.mark.asyncio
+    async def test_course_notes_over_limit_rejected(self, coach_client):
+        r = await coach_client.patch(
+            _course_url(100, "/description"),
+            json={"course_notes": "x" * 1001},
+        )
+        assert r.status_code == 422, r.text
+        body_text = json.dumps(r.json())
+        assert "1000" in body_text or "1 000" in body_text, body_text
+
+    @pytest.mark.asyncio
+    async def test_technical_difficulty_out_of_range_rejected(self, coach_client):
+        r = await coach_client.patch(
+            _course_url(100, "/description"),
+            json={"technical_difficulty": 6},
+        )
+        assert r.status_code == 422, r.text
+
+    @pytest.mark.asyncio
+    async def test_unknown_key_sector_code_rejected(self, coach_client):
+        r = await coach_client.patch(
+            _course_url(100, "/description"),
+            json={"key_sectors": ["volcano"]},
+        )
+        assert r.status_code == 422, r.text
+
+    @pytest.mark.asyncio
+    async def test_more_than_eight_key_sectors_rejected(self, coach_client):
+        # Only 8 codes exist in the KeySector catalogue, so a 9th entry must
+        # repeat one — the >8 count check fires before the duplicate check
+        # either way (schema validator order), so this still isolates the
+        # "too many sectors" case rather than the "duplicate sector" one.
+        r = await coach_client.patch(
+            _course_url(100, "/description"),
+            json={
+                "key_sectors": [
+                    "subida_larga",
+                    "bajada_tecnica",
+                    "rock_garden",
+                    "singletrack",
+                    "plano_rapido",
+                    "paso_quebrada",
+                    "raices",
+                    "escalones",
+                    "subida_larga",
+                ]
+            },
+        )
+        assert r.status_code == 422, r.text
+
+    @pytest.mark.asyncio
+    async def test_description_alone_sets_has_course_data_with_zero_variants(
+        self, coach_client
+    ):
+        r = await coach_client.patch(
+            _course_url(100, "/description"),
+            json={
+                "terrain_type": "sendero",
+                "technical_difficulty": 2,
+                "key_sectors": ["singletrack"],
+                "course_notes": "Circuito de bosque, sin variantes subidas aún.",
+            },
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["variants"] == []
+        assert body["has_course_data"] is True
+
+    @pytest.mark.asyncio
+    async def test_mutation_writes_audit_row(self, coach_client, db_session_factory):
+        r = await coach_client.patch(
+            _course_url(100, "/description"),
+            json={"terrain_type": "pista", "course_notes": "Superficie compactada."},
+        )
+        assert r.status_code == 200, r.text
+
+        async with db_session_factory() as session:
+            rows = (
+                (
+                    await session.execute(
+                        select(AuditLog).where(
+                            AuditLog.entity_type == AuditEntityType.race_event.value,
+                            AuditLog.entity_id == 100,
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+
+        assert rows, "expected at least one audit_log row for the PATCH"
+        # The exact `changed_fields` shape ("course_description:<field,…>" per
+        # course-api.md §22) is left to T041's implementation — asserted
+        # loosely here on the touched field names being named somewhere in
+        # the row(s) rather than pinned to one exact string.
+        changed = ",".join(
+            field for row in rows for field in (row.changed_fields or [])
+        )
+        assert "course_description" in changed
+        assert "terrain_type" in changed
+        assert "course_notes" in changed
+
+    @pytest.mark.asyncio
+    async def test_non_coach_forbidden(self, athlete_client):
+        r = await athlete_client.patch(
+            _course_url(100, "/description"),
+            json={"terrain_type": "mixto"},
+        )
+        assert r.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_anon_unauthorized(self, anon_client):
+        r = await anon_client.patch(
+            _course_url(100, "/description"),
+            json={"terrain_type": "mixto"},
+        )
+        assert r.status_code in (401, 403)
+
+    @pytest.mark.asyncio
+    async def test_unknown_race_event_404(self, coach_client):
+        r = await coach_client.patch(
+            _course_url(999999, "/description"),
+            json={"terrain_type": "mixto"},
+        )
+        assert r.status_code == 404
+        assert r.json()["detail"]["code"] == "race_event_not_found"

@@ -45,7 +45,6 @@ describe("CourseTab — estado vacío", () => {
     expect(
       screen.getByTestId("course-tab-add-variant-btn"),
     ).toBeInTheDocument();
-    expect(screen.getByTestId("course-tab-describe-btn")).toBeInTheDocument();
   });
 
   it("readOnly=true (parent): oculta las acciones de edición del estado vacío", async () => {
@@ -58,9 +57,6 @@ describe("CourseTab — estado vacío", () => {
     // Pero ninguna acción de edición — "coach/admin only" (ui-course.md §2).
     expect(
       screen.queryByTestId("course-tab-add-variant-btn"),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByTestId("course-tab-describe-btn"),
     ).not.toBeInTheDocument();
   });
 });

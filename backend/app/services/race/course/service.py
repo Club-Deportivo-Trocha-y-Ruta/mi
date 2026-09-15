@@ -29,6 +29,7 @@ from app.models.race_course_variant import RaceCourseVariant
 from app.models.race_event import RaceEvent
 from app.schemas.race_course import (
     CourseDescriptionRead,
+    CourseDescriptionUpdate,
     CourseRead,
     LapDetectionRead,
     SetupIn,
@@ -463,6 +464,43 @@ async def delete_variant(
         )
 
     await db.delete(variant)
+    await db.flush()
+
+    return await _rebuild_course(db, race_event_id)
+
+
+# ---------------------------------------------------------------------------
+# PATCH /course/description — actualización parcial de descripción (coach/admin)
+# ---------------------------------------------------------------------------
+
+
+async def update_description(
+    db: AsyncSession,
+    race_event_id: int,
+    payload: CourseDescriptionUpdate,
+    *,
+    user_id: int,
+) -> CourseRead:
+    """Actualización parcial de los cuatro campos de descripción del circuito.
+
+    ``exclude_unset``: un campo ausente del body no se toca; un ``null``
+    explícito limpia la columna (sigue estando en el dict de
+    ``model_dump(exclude_unset=True)`` porque Pydantic v2 solo excluye lo
+    que nunca se asignó, no lo asignado a ``None``). El cálculo de qué
+    campos cambiaron para el audit log lo hace el router directamente sobre
+    el body, igual que ``update_race_event_conditions``.
+    """
+    del user_id  # paridad de interfaz con las demás mutaciones de este módulo.
+
+    await _assert_event_exists(db, race_event_id)
+
+    result = await db.execute(select(RaceEvent).where(RaceEvent.id == race_event_id))
+    event = result.scalar_one()
+
+    campos_actualizados = payload.model_dump(exclude_unset=True)
+    for campo, valor in campos_actualizados.items():
+        setattr(event, campo, valor)
+
     await db.flush()
 
     return await _rebuild_course(db, race_event_id)

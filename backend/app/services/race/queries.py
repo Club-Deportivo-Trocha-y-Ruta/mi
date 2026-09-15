@@ -37,6 +37,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.race_category import RaceCategory
 from app.models.race_competitor import RaceCompetitor
+from app.models.race_course_category_setup import RaceCourseCategorySetup
+from app.models.race_course_variant import RaceCourseVariant
 from app.models.race_event import RaceEvent
 from app.models.race_result import RaceResult, ResultStatus
 from app.models.race_series import RaceSeries
@@ -321,6 +323,99 @@ async def fetch_event_conditions(
             "altitude_msnm": getattr(e, "altitude_msnm", None),
             "weather_notes": getattr(e, "weather_notes", None),
         }
+    return out
+
+
+async def fetch_course_context(
+    db: AsyncSession,
+    season: int,
+    valida_nums: list[int],
+    category_id: int | None,
+) -> dict[int, dict[str, Any]]:
+    """Perfil de circuito registrado por válida para una categoría (feature 043).
+
+    Mismo patrón que :func:`fetch_event_conditions`: reutiliza los caches de
+    ``load_events``/``load_series`` para resolver ``valida_num -> RaceEvent``
+    dentro de la temporada (``series_ids_in_season``).
+
+    Invariante (contracts/ai-course-block.md §1): **toda** válida solicitada
+    aparece como clave del dict devuelto, incluso cuando no hay evento en la
+    temporada, ``category_id is None`` o el evento resuelto no tiene
+    ``RaceCourseCategorySetup`` para esa categoría — en cualquiera de esos
+    casos el valor es ``{}`` (la ausencia debe ser representable).
+
+    Cuando hay setup, el valor es ``{lap_distance_m, elevation_gain_m, laps,
+    terrain_type, technical_difficulty, key_sectors}`` — NUNCA
+    ``course_notes`` (FR-020, exclusión estructural): terreno/dificultad/
+    sectores se leen del ``RaceEvent`` ya cacheado (columnas planas, sin
+    query extra); solo ``lap_distance_m``/``elevation_gain_m``/``laps``
+    requieren la única query adicional de esta función, que selecciona
+    ``RaceCourseCategorySetup`` unido a ``RaceCourseVariant`` — ninguna de
+    las dos tablas tiene columna ``course_notes``.
+
+    Args:
+        db: Sesión async.
+        season: año de temporada (vía ``RaceSeries.season_year``).
+        valida_nums: números de válida a resolver (``sequence_number``).
+        category_id: categoría del corredor. ``None`` → todas las entradas
+            quedan en ``{}`` (p. ej. el resumen de temporada, donde puede
+            haber ambigüedad de categoría o simplemente ninguna que pasar).
+
+    Returns:
+        ``{valida_num: {...} | {}}`` — una clave por cada ``valida_num``
+        solicitado, sin excepción.
+    """
+    if not valida_nums:
+        return {}
+
+    out: dict[int, dict[str, Any]] = {int(v): {} for v in valida_nums}
+
+    events = await load_events(db)
+    series = await load_series(db)
+
+    series_ids_in_season = {s.id for s in series if s.season_year == season}
+    valida_set = set(valida_nums)
+
+    event_by_valida: dict[int, RaceEvent] = {}
+    for e in events:
+        if e.series_id not in series_ids_in_season:
+            continue
+        seq = e.sequence_number
+        if seq not in valida_set or seq in event_by_valida:
+            continue
+        event_by_valida[int(seq)] = e
+
+    if category_id is None or not event_by_valida:
+        return out
+
+    event_ids = [e.id for e in event_by_valida.values()]
+    stmt = select(RaceCourseCategorySetup, RaceCourseVariant).join(
+        RaceCourseVariant,
+        RaceCourseVariant.id == RaceCourseCategorySetup.variant_id,
+    ).where(
+        RaceCourseCategorySetup.category_id == category_id,
+        RaceCourseCategorySetup.race_event_id.in_(event_ids),
+    )
+    res = await db.execute(stmt)
+    setup_by_event_id: dict[int, tuple[RaceCourseCategorySetup, RaceCourseVariant]] = {
+        setup.race_event_id: (setup, variant) for setup, variant in res.all()
+    }
+
+    for valida_num, event in event_by_valida.items():
+        match = setup_by_event_id.get(event.id)
+        if match is None:
+            continue
+        setup, variant = match
+        terrain = getattr(event, "terrain_type", None)
+        out[valida_num] = {
+            "lap_distance_m": variant.lap_distance_m,
+            "elevation_gain_m": variant.elevation_gain_m,
+            "laps": setup.laps,
+            "terrain_type": terrain.value if terrain is not None else None,
+            "technical_difficulty": event.technical_difficulty,
+            "key_sectors": event.key_sectors or [],
+        }
+
     return out
 
 
