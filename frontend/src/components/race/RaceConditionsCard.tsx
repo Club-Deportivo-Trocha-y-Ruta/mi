@@ -204,7 +204,7 @@ export function RaceConditionsCard({
           value={formatTemp(c.temperature_c)}
         />
         <ConditionRow
-          label="Terreno"
+          label="Estado de la pista"
           value={formatSurface(c.surface_condition)}
         />
         <ConditionRow

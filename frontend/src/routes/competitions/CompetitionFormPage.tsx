@@ -16,10 +16,18 @@
  *       Copa: sequence_number enviado, is_championship ignorado (backend deriva).
  *       Campeonato: sequence_number omitido, is_championship ignorado.
  *
+ * Hotfix multicopa — identidad de válida (2026-09-16):
+ *   - Campo "Prioridad de la válida" (Sin prioridad / A / B / C), solo copa.
+ *     Solo A (y los campeonatos, con CD) envían correo a familias tras un
+ *     análisis de IA aprobado — ver copy inline.
+ *   - Campeonato: prioridad fija CD, mostrada de solo lectura (el coach no
+ *     puede elegirla).
+ *
  * Campos:
  *   - Tipo de competencia (Copa / Campeonato)
  *   - Serie (picker dinámico según tipo)
  *   - Número de válida (solo copa)
+ *   - Prioridad de la válida (solo copa; CD de solo lectura en campeonato)
  *   - Nombre (auto-sugerido si vacío)
  *   - Fecha
  *   - Sede
@@ -41,6 +49,7 @@ import { Loader2 } from "lucide-react";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import {
   competitionEventSchema,
+  PRIORITY_OPTIONS,
   STATUS_OPTIONS,
   VALIDA_OPTIONS,
   type CompetitionEventFormValues,
@@ -266,6 +275,7 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
       series_kind: "cup",
       series_id: 0,
       sequence_number: 1,
+      priority: null,
       name: "",
       event_date: "",
       location: null,
@@ -274,6 +284,7 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
   });
 
   const watchedSequence = watch("sequence_number");
+  const watchedPriority = watch("priority");
   const watchedLocation = watch("location");
   const watchedName = watch("name");
   const watchedStatus = watch("status");
@@ -294,6 +305,9 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
           series_kind: "cup",
           series_id: ev.series_id,
           sequence_number: ev.sequence_number,
+          // CD nunca aplica a una válida de copa; si llegara así (dato
+          // inconsistente), se trata como "sin prioridad" en el form.
+          priority: ev.priority === "CD" ? null : ev.priority,
           name: ev.name,
           event_date: ev.event_date,
           location: ev.location ?? null,
@@ -304,6 +318,7 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
           series_kind: "championship",
           series_id: ev.series_id,
           sequence_number: undefined,
+          priority: undefined,
           name: ev.name,
           event_date: ev.event_date,
           location: ev.location ?? null,
@@ -324,6 +339,7 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
         series_kind: "cup",
         series_id: 0,
         sequence_number: 1,
+        priority: null,
       }));
     } else {
       reset((current) => ({
@@ -331,6 +347,7 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
         series_kind: "championship",
         series_id: 0,
         sequence_number: undefined,
+        priority: undefined,
       }));
     }
   }
@@ -369,6 +386,7 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
       return {
         series_id: values.series_id,
         sequence_number: values.sequence_number,
+        priority: values.priority ?? null,
         name: values.name,
         event_date: values.event_date,
         location: values.location || null,
@@ -376,7 +394,7 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
         create_calendar_event: createCalendarEvent,
       };
     }
-    // championship: omitir sequence_number; backend lo fuerza a 1
+    // championship: omitir sequence_number y priority; backend fuerza 1/CD
     return {
       series_id: values.series_id,
       name: values.name,
@@ -394,10 +412,11 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
         event_date: values.event_date,
         location: values.location ?? null,
         sequence_number: values.sequence_number,
+        priority: values.priority ?? null,
         status: values.status,
       };
     }
-    // championship: no enviar sequence_number
+    // championship: no enviar sequence_number ni priority
     return {
       name: values.name,
       event_date: values.event_date,
@@ -719,6 +738,56 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
                       ?.message}
                 </p>
               )}
+            </div>
+          )}
+
+          {/* Prioridad de la válida — solo copa (hotfix multicopa) */}
+          {seriesKind === "cup" && (
+            <div>
+              <label htmlFor="event-priority" className={labelClass}>
+                Prioridad de la válida{" "}
+                <span className="font-normal text-mid-gray">(opcional)</span>
+              </label>
+              <select
+                id="event-priority"
+                value={watchedPriority ?? ""}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  setValue(
+                    "priority",
+                    raw === "" ? null : (raw as "A" | "B" | "C"),
+                    { shouldDirty: true },
+                  );
+                }}
+                className={inputClass}
+                aria-describedby="event-priority-help"
+              >
+                {PRIORITY_OPTIONS.map((opt) => (
+                  <option key={opt.value ?? "none"} value={opt.value ?? ""}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              <p id="event-priority-help" className="mt-1 text-xs text-mid-gray">
+                Solo las válidas de prioridad A (y los campeonatos) envían un
+                correo a las familias después de un análisis de IA aprobado.
+              </p>
+            </div>
+          )}
+
+          {/* Prioridad — campeonato, siempre CD, solo lectura */}
+          {seriesKind === "championship" && (
+            <div>
+              <p className={labelClass}>Prioridad</p>
+              <div
+                className={`${inputClass} flex items-center bg-light-gray text-mid-gray`}
+              >
+                CD (fija para campeonatos)
+              </div>
+              <p className="mt-1 text-xs text-mid-gray">
+                Los campeonatos siempre envían un correo a las familias
+                después de un análisis de IA aprobado.
+              </p>
             </div>
           )}
 

@@ -110,7 +110,7 @@
       }
     ],
     "race_meta": "- Clima: nublado\n- Temperatura: 19 °C\n- Superficie de la pista: húmeda\n- Altitud: 1650 msnm",
-    "course_meta": "- Distancia por vuelta: 4,2 km\n- Desnivel positivo por vuelta: 110 m\n- Vueltas de la categoría: 3 (distancia total 12,6 km)\n- Terreno: mixto\n- Dificultad técnica: 4/5 (técnico)\n- Sectores clave: subida larga, rock garden",
+    "course_meta": "- Distancia por vuelta: 4,2 km\n- Desnivel positivo por vuelta: 110 m\n- Vueltas de la categoría: 3 (distancia total 12,6 km)\n- Tipo de superficie: mixto\n- Dificultad técnica: 4/5 (técnico)\n- Sectores clave: subida larga, rock garden",
     "anthro_context": {
       "records_count": 3,
       "latest": {
@@ -176,7 +176,7 @@
   },
   "expected_themes": [
     "circuito",
-    "terreno",
+    "superficie",
     "distancia"
   ],
   "forbidden_terms": [
@@ -193,14 +193,14 @@
   ],
   "expected_headline_keywords": [
     "circuito",
-    "terreno",
+    "superficie",
     "gap"
   ],
   "must_reference_catalog": true,
   "max_words": 450,
   "ideal_output": {
     "schema_version": "v3",
-    "headline": "El gap subió frente a las válidas previas en el circuito de terreno mixto y técnico más exigente de la temporada, no por una caída de forma.",
+    "headline": "El gap subió frente a las válidas previas en el circuito de superficie mixta y técnica más exigente de la temporada, no por una caída de forma.",
     "field_reading": {
       "percentile": 72.7,
       "expected_position": 3,
@@ -213,11 +213,11 @@
     "trend": "mixed",
     "observations": [
       {
-        "claim": "El gap crece respecto de las cuatro válidas previas, pero el circuito de esta fecha es el único con terreno mixto y dificultad técnica registrada de la temporada.",
+        "claim": "El gap crece respecto de las cuatro válidas previas, pero el circuito de esta fecha es el único con superficie mixta y dificultad técnica registrada de la temporada.",
         "evidence": [
           "gap 9.8% al líder",
           "gap 5.1% y 6.2% en las dos válidas anteriores",
-          "circuito con terreno mixto y sectores técnicos"
+          "circuito con superficie mixta y sectores técnicos"
         ],
         "domain": "conditions",
         "confidence": "medium"
@@ -266,7 +266,7 @@
       }
     ],
     "watch_signals": [
-      "Si el gap sigue por encima de 8% en circuitos de terreno simple, revisar la lectura de terreno más allá de este caso puntual."
+      "Si el gap sigue por encima de 8% en circuitos de superficie simple, revisar la lectura del circuito más allá de este caso puntual."
     ],
     "coach_question": "¿Cómo describiría la sensación en los sectores de subida larga y bajada técnica comparada con circuitos más planos?",
     "data_gaps": [

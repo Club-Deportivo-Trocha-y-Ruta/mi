@@ -85,6 +85,13 @@ export interface AnalyzeAthleteButtonProps {
    * Desactivar cuando el botón ya vive en el tab Insights. @default true.
    */
   showInsightsLink?: boolean;
+  /**
+   * Muestra el `AIBudgetHint` bajo el botón (≈Ns / % restante / agotado).
+   * Desactivar cuando el hint ya se muestra una sola vez en un contenedor
+   * padre (ej. las cards de InsightsTab, con el panel grupal encima) — el
+   * botón sigue deshabilitándose por presupuesto agotado igual. @default true.
+   */
+  showBudgetHint?: boolean;
 }
 
 export function AnalyzeAthleteButton({
@@ -97,6 +104,7 @@ export function AnalyzeAthleteButton({
   label = "Analizar con IA",
   alwaysShowLabel = false,
   showInsightsLink = true,
+  showBudgetHint = true,
 }: AnalyzeAthleteButtonProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [successRunId, setSuccessRunId] = useState<string | null>(null);
@@ -231,7 +239,9 @@ export function AnalyzeAthleteButton({
         </button>
 
         {/* Pista pre-lanzamiento de presupuesto/concurrencia (T051) */}
-        <AIBudgetHint status={aiStatus.data} className="max-w-[200px]" />
+        {showBudgetHint && (
+          <AIBudgetHint status={aiStatus.data} className="max-w-[200px]" />
+        )}
       </div>
 
       <ConfirmDialog

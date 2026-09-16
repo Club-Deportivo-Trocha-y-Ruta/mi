@@ -14,6 +14,7 @@ import { describe, it, expect } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement, type ReactNode } from "react";
+import { http, HttpResponse } from "msw";
 
 import { mswServer } from "@/test/setup";
 import { raceCourseEmptyHandler } from "@/test/msw/raceCourseHandlers";
@@ -57,6 +58,29 @@ describe("CourseTab — estado vacío", () => {
     // Pero ninguna acción de edición — "coach/admin only" (ui-course.md §2).
     expect(
       screen.queryByTestId("course-tab-add-variant-btn"),
+    ).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Cold start (backend Render Free despertando)
+// ---------------------------------------------------------------------------
+
+describe("CourseTab — cold start", () => {
+  it("un 503 al cargar el circuito muestra la copy calmada de cold start, no el tono de error", async () => {
+    mswServer.use(
+      http.get("*/api/race-analysis/race-events/:id/course", () =>
+        HttpResponse.json({ detail: "Service Unavailable" }, { status: 503 }),
+      ),
+    );
+    wrap(<CourseTab raceEventId={41} />);
+
+    expect(await screen.findByTestId("course-tab-error")).toBeInTheDocument();
+    expect(
+      screen.getByText(/la aplicación está iniciando/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("No se pudo cargar el circuito. Intenta de nuevo."),
     ).not.toBeInTheDocument();
   });
 });

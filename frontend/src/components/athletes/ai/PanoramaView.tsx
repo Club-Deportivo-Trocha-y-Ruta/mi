@@ -16,6 +16,19 @@
  * Privacidad: este componente no filtra por modo — la responsabilidad
  * recae en HeroLastInsightCard (confianza, boletín) y en el tab-gating
  * del padre (Comparador, Distribución).
+ *
+ * Wave 3 (hotfix multicopa, 2026-09-16): "Mejor posición" y "Válidas
+ * completadas" mezclaban el ranking de TODAS las copas/campeonatos de la
+ * temporada en un solo mínimo/conteo — el mismo colapso de identidad que
+ * originó el bug (dos copas no compiten en el mismo pelotón, un P3 de una
+ * copa chica no es comparable a un P3 de una copa grande). Este componente
+ * es visible para coach Y parent, así que no puede consumir el endpoint
+ * coach/admin-only de panorama de temporada (`by_series`,
+ * `SeasonInsightsPage.tsx`) — en su lugar reutiliza `useAthleteEvolution`
+ * (ya autorizado para los 3 roles, feature 039) y su propio `groups`, con
+ * el mismo criterio de "copa por defecto" que `EvolutionChart.tsx`
+ * (primera copa, o el primer grupo si no hay copas). Con una sola copa (o
+ * ninguna) en la temporada el label no cambia — se ve igual que antes.
  */
 import { useMemo } from "react";
 import { Sparkles } from "lucide-react";
@@ -24,7 +37,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAthleteInsights } from "@/hooks/athletes/useAthleteInsights";
 import { useAthleteEvolution } from "@/hooks/athletes/useAthleteEvolution";
-import { EvolutionMetric } from "@/types/athleteRaceAnalysis.types";
+import {
+  EvolutionMetric,
+  type ComparisonGroupOption,
+} from "@/types/athleteRaceAnalysis.types";
 import type { AthleteOut } from "@/types/athlete.types";
 import { HeroLastInsightCard } from "./HeroLastInsightCard";
 import { MiniSparkline } from "./MiniSparkline";
@@ -61,22 +77,57 @@ export function PanoramaView({
   });
   const totalApproved = headerQuery.data?.total ?? null;
 
-  // KPI: mejor posición de la temporada (posición mínima numérica = mejor)
-  // Usamos la serie de evolución de "ranking" para calcular el mínimo.
+  // KPI: mejor posición de la temporada (posición mínima numérica = mejor).
+  // Pedimos la temporada completa (sin `seriesId`) y resolvemos el grupo
+  // por defecto en cliente — mismo patrón que `EvolutionChart.tsx` (evita
+  // una segunda ida y vuelta al backend para el caso más común).
   const evolutionQuery = useAthleteEvolution(
     athlete.id,
     season,
     EvolutionMetric.RANKING,
   );
 
-  const bestPosition = useMemo(() => {
+  const groups: ComparisonGroupOption[] = evolutionQuery.data?.groups ?? [];
+
+  // Wave 3: primera copa de la temporada (o el primer grupo si el atleta
+  // solo tiene campeonatos) — nunca se mezclan copas distintas en el
+  // mínimo. `undefined` cuando no hay grupos (temporada sin datos, o
+  // fixtures/insights previos a la feature 039 sin `series_id`).
+  const primaryGroupId = useMemo(() => {
+    if (groups.length === 0) return undefined;
+    const firstCup = groups.find((g) => g.kind === "cup");
+    return (firstCup ?? groups[0]).series_id;
+  }, [groups]);
+  const primaryGroup = groups.find((g) => g.series_id === primaryGroupId);
+  // Un solo grupo en toda la temporada → el label no cambia, se ve igual
+  // que antes del hotfix.
+  const bestPositionLabel =
+    groups.length > 1 && primaryGroup
+      ? `Mejor posición ${season} · ${primaryGroup.label}`
+      : `Mejor posición ${season}`;
+  const racesCompletedLabel =
+    groups.length > 1 && primaryGroup
+      ? `Válidas completadas · ${primaryGroup.label}`
+      : "Válidas completadas";
+
+  // Serie a promediar: filtrada al grupo por defecto cuando hay más de una
+  // copa/campeonato; si el filtro no matchea nada (puntos legacy sin
+  // `series_id`) cae a la serie completa — back-compat, mismo criterio que
+  // `EvolutionChart.tsx`.
+  const rankingSeries = useMemo(() => {
     const series = evolutionQuery.data?.series ?? [];
-    const positions = series
+    if (primaryGroupId === undefined) return series;
+    const filtered = series.filter((p) => p.series_id === primaryGroupId);
+    return filtered.length > 0 ? filtered : series;
+  }, [evolutionQuery.data, primaryGroupId]);
+
+  const bestPosition = useMemo(() => {
+    const positions = rankingSeries
       .map((p) => p.value)
       .filter((v): v is number => v !== null && Number.isFinite(v));
     if (positions.length === 0) return null;
     return Math.min(...positions);
-  }, [evolutionQuery.data]);
+  }, [rankingSeries]);
 
   return (
     <div className="space-y-4" data-testid="panorama-view">
@@ -134,9 +185,10 @@ export function PanoramaView({
           testId="panorama-kpi-total"
         />
 
-        {/* KPI 2: Mejor posición temporada */}
+        {/* KPI 2: Mejor posición temporada — Wave 3: acotada a la copa
+            principal del atleta (ver nota del docstring del archivo). */}
         <KpiCard
-          label={`Mejor posición ${season}`}
+          label={bestPositionLabel}
           value={
             evolutionQuery.isLoading
               ? null
@@ -150,14 +202,17 @@ export function PanoramaView({
 
         {/* KPI 3: "Podios" está pendiente de un campo adicional del backend
             (ver docstring del archivo) — mientras tanto esta KPI muestra
-            "Válidas completadas" de la serie, que sí es un dato real. */}
+            "Válidas completadas" de la serie, que sí es un dato real. Wave
+            3: misma copa que KPI 2 (`rankingSeries`) — una fila con "P1 de
+            Copa Valle" junto a un conteo de válidas de TODAS las copas
+            confundiría al coach sobre a qué carreras se refiere cada cifra. */}
         <KpiCard
-          label="Válidas completadas"
+          label={racesCompletedLabel}
           value={
             evolutionQuery.isLoading
               ? null
               : (() => {
-                  const count = (evolutionQuery.data?.series ?? []).filter(
+                  const count = rankingSeries.filter(
                     (p) => p.value !== null,
                   ).length;
                   return count > 0 ? String(count) : "—";

@@ -57,7 +57,7 @@ from app.services.race.agents.analyst import (
     format_course_meta,
 )
 from app.services.race.prompts import render_prompt
-from app.services.race.queries import fetch_course_context
+from app.services.race.queries import fetch_course_context, fetch_course_context_by_event
 from app.services.race.schemas import AnalysisInput, LTADGroup
 from tests.helpers.audit_tables import AUDIT_TABLES
 
@@ -383,6 +383,132 @@ async def test_fetch_course_context_course_table_queries_never_select_course_not
 
 
 # ---------------------------------------------------------------------------
+# 1b. fetch_course_context — series_id (hotfix identidad de válida)
+#
+# Dos copas de la misma temporada, ambas con un evento sequence_number=4,
+# cada una con su propio setup para la misma categoría. Sin series_id, la
+# ambigüedad preexistente no se afirma (solo se documenta); con series_id
+# cada copa ve únicamente su propio circuito.
+# ---------------------------------------------------------------------------
+
+
+async def test_fetch_course_context_series_id_scopes_to_own_series(db: AsyncSession):
+    _seed_coach(db)
+    series_valle = _seed_series(db, series_id=1, season=_SEASON)
+    series_letsgo = RaceSeries(
+        id=2,
+        name="Copa Let's Go Ficticia",
+        season_year=_SEASON,
+        organizer="Liga Ficticia",
+        points_scheme_code="copa_ficticia_test",
+    )
+    db.add(series_letsgo)
+    category = _seed_category(db, category_id=10, code="PJUV_A")
+
+    event_valle_v4 = _seed_event(
+        db, event_id=41, series_id=series_valle.id, sequence_number=4,
+        terrain_type=TerrainType.mixto, technical_difficulty=3,
+    )
+    variant_valle = _seed_variant(db, variant_id=41, race_event_id=event_valle_v4.id, lap_distance_m=4200)
+    _seed_setup(db, race_event_id=event_valle_v4.id, category_id=category.id, variant_id=variant_valle.id, laps=3)
+
+    event_letsgo_v4 = _seed_event(
+        db, event_id=42, series_id=series_letsgo.id, sequence_number=4,
+        terrain_type=TerrainType.trocha, technical_difficulty=5,
+    )
+    variant_letsgo = _seed_variant(db, variant_id=42, race_event_id=event_letsgo_v4.id, lap_distance_m=6000)
+    _seed_setup(db, race_event_id=event_letsgo_v4.id, category_id=category.id, variant_id=variant_letsgo.id, laps=2)
+
+    await db.commit()
+
+    result_valle = await fetch_course_context(db, _SEASON, [4], category.id, series_id=series_valle.id)
+    assert result_valle[4]["lap_distance_m"] == 4200
+    assert result_valle[4]["laps"] == 3
+
+    result_letsgo = await fetch_course_context(db, _SEASON, [4], category.id, series_id=series_letsgo.id)
+    assert result_letsgo[4]["lap_distance_m"] == 6000
+    assert result_letsgo[4]["laps"] == 2
+
+
+async def test_fetch_course_context_without_series_id_behaviour_unchanged(db: AsyncSession):
+    """Sin ``series_id`` la ambigüedad entre las dos copas en V4 preexiste:
+    solo se afirma que se resuelve UNA entrada, NUNCA cuál copa "gana"."""
+    _seed_coach(db)
+    series_valle = _seed_series(db, series_id=1, season=_SEASON)
+    series_letsgo = RaceSeries(
+        id=2,
+        name="Copa Let's Go Ficticia",
+        season_year=_SEASON,
+        organizer="Liga Ficticia",
+        points_scheme_code="copa_ficticia_test",
+    )
+    db.add(series_letsgo)
+    category = _seed_category(db, category_id=10, code="PJUV_A")
+
+    event_valle_v4 = _seed_event(db, event_id=41, series_id=series_valle.id, sequence_number=4)
+    variant_valle = _seed_variant(db, variant_id=41, race_event_id=event_valle_v4.id, lap_distance_m=4200)
+    _seed_setup(db, race_event_id=event_valle_v4.id, category_id=category.id, variant_id=variant_valle.id, laps=3)
+
+    event_letsgo_v4 = _seed_event(db, event_id=42, series_id=series_letsgo.id, sequence_number=4)
+    variant_letsgo = _seed_variant(db, variant_id=42, race_event_id=event_letsgo_v4.id, lap_distance_m=6000)
+    _seed_setup(db, race_event_id=event_letsgo_v4.id, category_id=category.id, variant_id=variant_letsgo.id, laps=2)
+
+    await db.commit()
+
+    result = await fetch_course_context(db, _SEASON, [4], category.id)
+    assert set(result.keys()) == {4}
+    assert result[4]["lap_distance_m"] in (4200, 6000)
+
+
+# ---------------------------------------------------------------------------
+# 1c. fetch_course_context_by_event
+# ---------------------------------------------------------------------------
+
+
+async def test_fetch_course_context_by_event_keys_both_events_no_course_notes(
+    db: AsyncSession,
+):
+    _seed_coach(db)
+    series = _seed_series(db)
+    category = _seed_category(db, category_id=10, code="PJUV_A")
+    other_category = _seed_category(db, category_id=11, code="PJUV_B")
+
+    event1 = _seed_event(
+        db, event_id=1, series_id=series.id, sequence_number=1,
+        course_notes="Estudiante Ficticio Uno — dato ficticio",
+        terrain_type=TerrainType.mixto, technical_difficulty=4,
+    )
+    variant1 = _seed_variant(db, variant_id=1, race_event_id=event1.id, lap_distance_m=4200)
+    _seed_setup(db, race_event_id=event1.id, category_id=category.id, variant_id=variant1.id, laps=3)
+
+    # event2 solo tiene setup para la OTRA categoría -> entrada {} para la pedida.
+    event2 = _seed_event(db, event_id=2, series_id=series.id, sequence_number=2)
+    variant2 = _seed_variant(db, variant_id=2, race_event_id=event2.id)
+    _seed_setup(db, race_event_id=event2.id, category_id=other_category.id, variant_id=variant2.id, laps=2)
+
+    await db.commit()
+
+    # event_id 999: no existe -> {}.
+    result = await fetch_course_context_by_event(db, [event1.id, event2.id, 999], category.id)
+
+    assert set(result.keys()) == {event1.id, event2.id, 999}
+    assert result[event1.id]["lap_distance_m"] == 4200
+    assert "course_notes" not in result[event1.id]
+    assert result[event2.id] == {}
+    assert result[999] == {}
+
+
+async def test_fetch_course_context_by_event_none_category_all_empty(db: AsyncSession):
+    _seed_coach(db)
+    series = _seed_series(db)
+    event1 = _seed_event(db, event_id=1, series_id=series.id, sequence_number=1)
+    await db.commit()
+
+    result = await fetch_course_context_by_event(db, [event1.id], None)
+    assert result == {event1.id: {}}
+
+
+# ---------------------------------------------------------------------------
 # 2. format_course_meta
 # ---------------------------------------------------------------------------
 
@@ -406,7 +532,7 @@ def test_format_course_meta_partial_only_description_fields_no_distance_or_laps(
     }
     text = format_course_meta(course)
     assert text is not None
-    assert "- Terreno: mixto" in text
+    assert "- Tipo de superficie: mixto" in text
     assert "- Dificultad técnica: 4/5 (técnico)" in text
     assert "Distancia por vuelta" not in text
     assert "Desnivel positivo" not in text
@@ -430,7 +556,7 @@ def test_format_course_meta_every_field_present_matches_contract_worked_example(
     assert "- Distancia por vuelta: 4,2 km" in text
     assert "- Desnivel positivo por vuelta: 110 m" in text
     assert "- Vueltas de la categoría: 3 (distancia total 12,6 km)" in text
-    assert "- Terreno: mixto" in text
+    assert "- Tipo de superficie: mixto" in text
     assert "- Dificultad técnica: 4/5 (técnico)" in text
     assert "- Sectores clave: subida larga, rock garden" in text
     assert text.count("\n") == 5  # exactamente seis bullets, ni uno más
@@ -460,6 +586,21 @@ def test_analyst_v3_prompt_shows_sin_dato_veto_when_course_meta_absent():
     assert "PROHIBIDO mencionar distancia" in text
 
 
+def test_analyst_v3_conditions_veto_does_not_forbid_course_vocabulary():
+    """Sin condiciones y con circuito: el veto de condiciones no puede prohibir
+    las palabras que el bloque de circuito imprime unas líneas más abajo."""
+    text = render(
+        AnalystV3Input(valida_num=4, course_meta="- Tipo de superficie: mixto"),
+        PROMPT_VERSION_ANALYST_V3,
+    )
+    veto_start = text.index("## Condiciones registradas — SIN DATO")
+    veto = text[veto_start : text.index("## Circuito registrado", veto_start)]
+    assert "PROHIBIDO mencionar clima" in veto
+    assert "terreno" not in veto.lower()
+    assert "superficie" not in veto.lower()
+    assert "- Tipo de superficie: mixto" in text
+
+
 def test_season_v3_prompt_shows_registered_course_block_when_present():
     """NOTA (T046, escrito antes de que aterricen T047-049 — actualizado en T050b):
 
@@ -473,17 +614,22 @@ def test_season_v3_prompt_shows_registered_course_block_when_present():
     a ``race_season_summary_v3.md`` una sección propia ("## Circuitos
     registrados por válida") que itera ese mapping — distinta del bloque
     singular "## Circuito registrado" del prompt por-válida.
+
+    NOTA 2 (hotfix multicopa): ``course_by_valida`` pasó de estar keyed por
+    número de válida a estar keyed por ETIQUETA con copa (dos copas de la
+    misma temporada pueden compartir "Válida 4" — un dict int-keyed
+    perdería una de las dos, ver plans/multicopa-identidad-valida.md).
     """
     text = render(
         AnalystV3Input(
             valida_num=0,
             analysis_kind="season",
-            course_by_valida={4: "- Distancia por vuelta: 4,2 km"},
+            course_by_valida={"Copa Valle · Válida IV": "- Distancia por vuelta: 4,2 km"},
         ),
         PROMPT_VERSION_SEASON_SUMMARY_V3,
     )
     assert "Circuitos registrados por válida" in text
-    assert "**Válida 4:**" in text
+    assert "**Copa Valle · Válida IV:**" in text
     assert "- Distancia por vuelta: 4,2 km" in text
 
 
@@ -579,3 +725,63 @@ async def test_end_to_end_course_present_vs_absent_changes_the_rendered_prompt(
     assert "Circuito — SIN DATO" in text_absent
     assert "PROHIBIDO mencionar distancia" in text_absent
     assert text_present != text_absent
+
+
+# ---------------------------------------------------------------------------
+# 5. Verdad de campo del critic v3 — mismo circuito que vio el analista
+# ---------------------------------------------------------------------------
+
+_COURSE_ENTRY = {
+    "lap_distance_m": 4200,
+    "elevation_gain_m": 110,
+    "laps": 3,
+    "terrain_type": "mixto",
+    "technical_difficulty": 4,
+    "key_sectors": ["subida_larga"],
+}
+
+
+def test_critic_ground_truth_v3_includes_registered_course():
+    from app.services.race.ai.nodes.critic_agent import _build_ground_truth
+
+    state = {"course_context": {4: _COURSE_ENTRY}}
+    text = _build_ground_truth(state, 4, include_course=True)
+    assert "### Circuito registrado" in text
+    assert "- Distancia por vuelta: 4,2 km" in text
+    assert "- Tipo de superficie: mixto" in text
+
+
+def test_critic_ground_truth_v3_declares_absent_course():
+    from app.services.race.ai.nodes.critic_agent import _build_ground_truth
+
+    text = _build_ground_truth({"course_context": {4: None}}, 4, include_course=True)
+    assert "### Circuito registrado\nsin circuito registrado" in text
+
+
+def test_critic_ground_truth_default_excludes_course_for_v2():
+    from app.services.race.ai.nodes.critic_agent import _build_ground_truth
+
+    text = _build_ground_truth({"course_context": {4: _COURSE_ENTRY}}, 4)
+    assert "Circuito registrado" not in text
+    assert "Tipo de superficie" not in text
+
+
+def test_critic_ground_truth_season_lists_course_per_valida():
+    from app.services.race.ai.nodes.critic_agent import _build_ground_truth
+
+    state = {
+        "analysis_kind": "season",
+        "course_context": {3: _COURSE_ENTRY, 5: None},
+    }
+    text = _build_ground_truth(state, 0, include_course=True)
+    assert "Válida 3:\n- Distancia por vuelta: 4,2 km" in text
+    assert "Válida 5:" not in text
+    assert "sin circuito registrado" not in text
+
+
+def test_critic_ground_truth_never_prints_course_notes():
+    from app.services.race.ai.nodes.critic_agent import _build_ground_truth
+
+    entry = {**_COURSE_ENTRY, "course_notes": "texto libre del coach"}
+    text = _build_ground_truth({"course_context": {4: entry}}, 4, include_course=True)
+    assert "texto libre del coach" not in text

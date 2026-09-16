@@ -16,7 +16,7 @@ Rúbrica (pesos suman 1.0 — ``RULE_WEIGHTS_V3``)
 |------|--------------------|-------------------------------------------------------------------|
 | 0.15 | ``schema``         | Objeto válido, cardinalidades, coherencia de ``field_reading``, no fallback |
 | 0.25 | ``grounding``      | Cada número de headline/claim/evidence existe en los datos del caso |
-| 0.15 | ``forbidden``      | Ningún término prohibido y ningún issue ``privacy``/``ltad`` de los prechecks |
+| 0.15 | ``forbidden``      | Ningún término prohibido y ningún issue must-block (``privacy``/``ltad``/``factual``) de los prechecks |
 | 0.10 | ``catalog``        | ``catalog_ref`` existentes (+ al menos uno si el caso lo exige)     |
 | 0.10 | ``headline``       | No es plantilla y comparte ≥1 keyword esperada                      |
 | 0.10 | ``themes``         | Proporción de ``expected_themes`` presentes en el texto             |
@@ -186,6 +186,8 @@ _DATA_BLOCK_KEYS: tuple[str, ...] = (
     "training_block",
     "dialogue_block",
     "catalog_block",
+    "course_block",
+    "course_by_valida",
     "valida_label",
 )
 
@@ -236,6 +238,17 @@ def case_data_blocks(case: Mapping[str, Any]) -> str:
             parts.append(f"- {label}: {value}")
     for key in _DATA_BLOCK_KEYS:
         value = context.get(key)
+        if isinstance(value, Mapping):
+            # Multicopa (hotfix identidad de válida): ``course_by_valida``
+            # pasó de estar keyed por número de válida (int) a estar keyed
+            # por la etiqueta completa con copa (str, p. ej. "Copa Let's Go
+            # Interdepartamental · Válida IV" — ya incluye "Válida"). Solo
+            # se antepone el literal "Válida " para las claves legadas
+            # (int), nunca para una etiqueta que ya lo trae.
+            value = "\n".join(
+                (f"Válida {v}:\n{block}" if isinstance(v, int) else f"{v}:\n{block}")
+                for v, block in value.items()
+            )
         if value:
             parts.append(f"### {key}\n{value}")
     memory = context.get("memory_recent_insights") or []
@@ -309,14 +322,24 @@ def _score_forbidden(
     case: Mapping[str, Any],
     precheck_categories: set[str],
 ) -> float:
-    """Binaria: ningún término prohibido ni issue de privacidad/LTAD."""
+    """Binaria: ningún término prohibido ni issue must-block de los prechecks.
+
+    Multicopa (hotfix identidad de válida): reutiliza
+    ``prechecks.MUST_BLOCK_CATEGORIES`` en vez de una lista propia — desde
+    ese hotfix incluye ``factual`` (estado de carrera inventado, p. ej.
+    "reprogramada") junto a ``privacy``/``ltad``; hardcodear el par viejo
+    acá habría dejado ese defecto sin puntuar pese a que el critic real sí
+    lo bloquea.
+    """
     if draft is None:
         return 0.0
     forbidden = [str(t) for t in (case.get("forbidden_terms") or []) if str(t).strip()]
     haystack = _normalize("\n".join(_draft_text_fields(draft)))
     if any(_normalize(term) in haystack for term in forbidden):
         return 0.0
-    if {"privacy", "ltad"} & precheck_categories:
+    from app.services.race.ai.prechecks import MUST_BLOCK_CATEGORIES
+
+    if {c.value for c in MUST_BLOCK_CATEGORIES} & precheck_categories:
         return 0.0
     return 1.0
 

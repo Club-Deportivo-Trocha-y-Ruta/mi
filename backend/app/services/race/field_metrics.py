@@ -224,11 +224,19 @@ def compute_field_metrics(
         series_level = (
             s.level.value if s is not None and hasattr(s.level, "value") else (str(s.level) if s else None)
         )
+        # ``short_name`` se agrega en paralelo (worker distinto) — getattr con
+        # default evita romper antes/después de que esa columna aterrice.
+        series_id_val = s.id if s is not None else None
+        series_name_val = s.name if s is not None else None
+        series_short_name_val = getattr(s, "short_name", None) if s is not None else None
 
         out[r.event_id] = {
             "event_id": r.event_id,
             "valida_num": event.sequence_number,
             "event_date": event.event_date.isoformat() if event.event_date else None,
+            "series_id": series_id_val,
+            "series_name": series_name_val,
+            "series_short_name": series_short_name_val,
             "series_kind": series_kind,
             "series_level": series_level,
             "is_championship": is_championship,

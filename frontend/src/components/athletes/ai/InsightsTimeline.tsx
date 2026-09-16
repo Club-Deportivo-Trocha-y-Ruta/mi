@@ -53,11 +53,10 @@ import {
   confidenceVariant,
   extractSection,
   extractSeasonContext,
-  getCarreraTier,
   getV2Preview,
   progressionLabel,
   PROMPT_VERSION_V2,
-  validaLabel,
+  raceLabelForInsight,
 } from "@/lib/insights";
 import { cn } from "@/lib/utils";
 import type {
@@ -250,21 +249,27 @@ function formatRaceDate(isoDate: string): string {
  * servidor (`insights_history.list_athlete_insights`), en vez de mostrar
  * `generated_at` como si fuera la fecha de la carrera.
  *
+ * Hotfix multicopa (2026-09-16): la etiqueta base ahora viene de
+ * `raceLabelForInsight` (nombra la copa cuando el dato está disponible) —
+ * reemplaza al retirado `validaLabel`, que nunca distinguía una válida de
+ * una copa de la misma válida de otra copa.
+ *
  * Sin `event_date` (resumen de temporada, filas legacy sin evento
- * vinculado) devuelve solo la etiqueta de `validaLabel` — no inventamos
- * una fecha de carrera que no existe.
+ * vinculado) devuelve solo la etiqueta de `raceLabelForInsight` — no
+ * inventamos una fecha de carrera que no existe.
  */
 function validaLabelWithDate(
   insight: Pick<
     AthleteInsightOut,
-    "valida_num" | "series_kind" | "series_level" | "event_date"
+    | "valida_num"
+    | "series_kind"
+    | "series_level"
+    | "series_name"
+    | "series_short_name"
+    | "event_date"
   >,
 ): string {
-  const label = validaLabel({
-    valida_num: insight.valida_num,
-    series_kind: insight.series_kind,
-    series_level: insight.series_level,
-  });
+  const label = raceLabelForInsight(insight, "chip");
   return insight.event_date
     ? `${label} · ${formatRaceDate(insight.event_date)}`
     : label;
@@ -274,13 +279,31 @@ function validaLabelWithDate(
  * Clases del ramp ordinal A/B/C (feature 033, `contracts/chart-style.md`
  * §"A/B/C ordinal scale") — un solo matiz (accent teal de la marca),
  * lightness monótono. El Campeonato Departamental ("CD") ya no es un 4º
- * valor: `getCarreraTier` lo resuelve a tier `A` (ver `lib/insights.ts`).
+ * valor: `tierFromPriority` lo resuelve a tier `A` (ver nota ahí).
  */
 const TIER_RAMP_CLASSES: Record<"A" | "B" | "C", string> = {
   A: "border-[--color-tier-a]/40 bg-[--color-tier-a]/10 text-[--color-tier-a]",
   B: "border-[--color-tier-b]/40 bg-[--color-tier-b]/10 text-[--color-tier-b]",
   C: "border-[--color-tier-c]/40 bg-[--color-tier-c]/10 text-[--color-tier-c]",
 };
+
+/**
+ * `priority` del evento vinculado (`AthleteInsightOut.priority`) → tier del
+ * badge. `CD` (campeonato) lee como tier `A` — mismo criterio que
+ * `NextRaceTile.tsx` (ver su nota). `null`/`undefined` (UNKNOWN, o insight
+ * sin `priority` porque es previo a esta columna) → sin badge.
+ *
+ * Wave 3 (hotfix multicopa, 2026-09-16): reemplaza a `getCarreraTier`
+ * (calendario Copa Valle hardcodeado por mes, retirado de
+ * `lib/insights.ts`) — el tier ahora es real por evento y funciona para
+ * cualquier copa.
+ */
+function tierFromPriority(
+  priority: AthleteInsightOut["priority"],
+): "A" | "B" | "C" | null {
+  if (priority === null || priority === undefined) return null;
+  return priority === "CD" ? "A" : priority;
+}
 
 /**
  * Badge del tier de carrera Copa Valle (A / B / C — ordinal, nunca color de
@@ -450,15 +473,16 @@ export function InsightsTimeline({
         aria-label="Histórico de análisis del deportista"
       >
         {grouped.map(([monthKey, groupItems]) => {
-          // Tier de carrera basado en la fecha del primer item del grupo.
-          // Solo se muestra si NINGUNO de los items es resumen-temporada
-          // (valida_num === 0).
+          // Tier de carrera de la prioridad del primer item del grupo (real
+          // por evento, Wave 3). Solo se muestra si NINGUNO de los items es
+          // resumen-temporada (valida_num === 0). Un grupo mes-año puede en
+          // teoría mezclar carreras de copas/prioridades distintas — se
+          // simplifica al primer item, mismo criterio que el calendario
+          // retirado usaba (su fecha).
           const hasSeasonSummary = groupItems.some((i) => i.valida_num === 0);
-          const firstDate = groupItems[0]?.generated_at;
-          const tier =
-            !hasSeasonSummary && firstDate
-              ? getCarreraTier(firstDate)
-              : null;
+          const tier = hasSeasonSummary
+            ? null
+            : tierFromPriority(groupItems[0]?.priority);
 
           return (
             <section key={monthKey} className="space-y-2 pb-4">

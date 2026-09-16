@@ -95,9 +95,14 @@ from app.models.calendar_event import (
 from app.models.club import Club, ClubMember, ClubRole
 from app.models.race_category import CategoryGender, RaceCategory
 from app.models.race_competitor import RaceCompetitor
-from app.models.race_event import RaceEvent, RaceEventStatus, SurfaceCondition
+from app.models.race_event import (
+    RaceEvent,
+    RaceEventPriority,
+    RaceEventStatus,
+    SurfaceCondition,
+)
 from app.models.race_result import RaceResult, ResultStatus
-from app.models.race_series import RaceSeries
+from app.models.race_series import RaceSeries, RaceSeriesKind
 from app.models.user import User, UserRole
 from tests.helpers.audit_tables import AUDIT_TABLES
 from tests.helpers.query_counting import count_selects
@@ -149,7 +154,6 @@ async def sqlite_engine() -> AsyncEngine:
     from app.models.race_category import RaceCategory as _C  # noqa: F401
     from app.models.race_competitor import RaceCompetitor as _Comp  # noqa: F401
     from app.models.race_event import RaceEvent as _E  # noqa: F401
-    from app.models.race_event_roster import RaceEventRoster as _RER  # noqa: F401
     from app.models.race_import import RaceImport as _I  # noqa: F401
     from app.models.race_result import RaceResult as _R  # noqa: F401
     from app.models.race_series import RaceSeries as _S  # noqa: F401
@@ -176,7 +180,6 @@ async def sqlite_engine() -> AsyncEngine:
             "race_categories",
             "race_competitors",
             "race_results",
-            "race_event_roster",
             # Feature 043: RaceEvent.course_variants/course_setups cascade
             # "all, delete-orphan" — an ORM delete of a race_event now enumerates
             # these tables even when the row itself never uses course data.
@@ -545,6 +548,7 @@ class TestCreateRaceEvent:
         assert body["name"] == "VALIDA VI ROLDANILLO"
         assert body["status"] == "scheduled"   # default RaceEventStatus.SCHEDULED
         assert body["is_championship"] is False
+        assert body["priority"] is None  # sin enviar → sin asignar (tier UNKNOWN)
         assert body["created_by_user_id"] == 10  # coach id del token override
         # Sin condiciones → NULL
         assert body["climate"] is None
@@ -574,6 +578,85 @@ class TestCreateRaceEvent:
         r = await admin_client.post(_COLLECTION_URL, json=payload)
         assert r.status_code == 201, r.text
         assert r.json()["created_by_user_id"] == 1  # admin id
+
+    # ── Priority (hotfix "identidad de válida", 2026-09-16) ──────────────
+
+    @pytest.mark.asyncio
+    async def test_post_priority_a_persiste(self, coach_client, db_session_factory):
+        """POST con priority='A' en válida regular de copa → 201 y persiste."""
+        payload = {
+            "series_id": 1,
+            "sequence_number": 8,
+            "name": "VALIDA VIII GINEBRA",
+            "event_date": "2026-11-01",
+            "priority": "A",
+        }
+        r = await coach_client.post(_COLLECTION_URL, json=payload)
+        assert r.status_code == 201, r.text
+        body = r.json()
+        assert body["priority"] == "A"
+
+        async with db_session_factory() as s:
+            evt = (
+                await s.execute(select(RaceEvent).where(RaceEvent.id == body["id"]))
+            ).scalar_one()
+            assert evt.priority == RaceEventPriority.A
+
+    @pytest.mark.asyncio
+    async def test_post_priority_cd_en_copa_422(self, coach_client):
+        """POST con priority='CD' en una serie 'cup' → 422 (guard: 'CD' es el
+        tier de campeonato, se valida contra is_championship DERIVADO del
+        kind de la serie, nunca contra el valor enviado en is_championship)."""
+        payload = {
+            "series_id": 1,
+            "sequence_number": 9,
+            "name": "VALIDA IX FICTICIA",
+            "event_date": "2026-11-08",
+            "priority": "CD",
+            "is_championship": True,  # ignorado por el servidor — sigue siendo cup
+        }
+        r = await coach_client.post(_COLLECTION_URL, json=payload)
+        assert r.status_code == 422, r.text
+        assert "CD" in r.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_post_priority_cd_en_campeonato_ok(
+        self, coach_client, db_session_factory
+    ):
+        """POST con priority='CD' en una serie 'championship' → 201 (CD sí
+        aplica cuando el evento resulta ser de campeonato)."""
+        async with db_session_factory() as s:
+            s.add(RaceSeries(
+                id=50, name="Cto. Departamental Ficticio 2026", season_year=2026,
+                organizer="Liga", points_scheme_code="copa_valle_2026",
+                kind=RaceSeriesKind.championship,
+            ))
+            await s.commit()
+
+        payload = {
+            "series_id": 50,
+            "name": "Cto. Departamental Ficticio",
+            "event_date": "2026-12-01",
+            "priority": "CD",
+        }
+        r = await coach_client.post(_COLLECTION_URL, json=payload)
+        assert r.status_code == 201, r.text
+        body = r.json()
+        assert body["is_championship"] is True
+        assert body["priority"] == "CD"
+
+    @pytest.mark.asyncio
+    async def test_post_priority_invalida_422(self, coach_client):
+        """priority='Z' no pertenece al enum → 422."""
+        payload = {
+            "series_id": 1,
+            "sequence_number": 10,
+            "name": "VALIDA X FICTICIA",
+            "event_date": "2026-11-15",
+            "priority": "Z",
+        }
+        r = await coach_client.post(_COLLECTION_URL, json=payload)
+        assert r.status_code == 422
 
     @pytest.mark.asyncio
     async def test_post_con_condiciones_completas(
@@ -872,6 +955,107 @@ class TestUpdateRaceEvent:
         assert r.status_code == 404
         assert "9999" in r.json()["detail"]
 
+    # ── Priority (hotfix "identidad de válida", 2026-09-16) ──────────────
+
+    @pytest.mark.asyncio
+    async def test_patch_priority_a_persiste(self, coach_client, db_session_factory):
+        """PATCH priority='A' en válida regular de copa → 200 y persiste."""
+        r = await coach_client.patch(
+            _DETAIL_URL.format(event_id=100),
+            json={"priority": "A"},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["priority"] == "A"
+
+        async with db_session_factory() as s:
+            evt = (
+                await s.execute(select(RaceEvent).where(RaceEvent.id == 100))
+            ).scalar_one()
+            assert evt.priority == RaceEventPriority.A
+
+    @pytest.mark.asyncio
+    async def test_patch_priority_cd_en_evento_no_campeonato_422(self, coach_client):
+        """priority='CD' en válida is_championship=False → 422 (guard: 'CD'
+        es el tier de campeonato, no tiene sentido en una válida de copa)."""
+        r = await coach_client.patch(
+            _DETAIL_URL.format(event_id=100),
+            json={"priority": "CD"},
+        )
+        assert r.status_code == 422, r.text
+        assert "CD" in r.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_patch_priority_cd_en_campeonato_ok(
+        self, coach_client, db_session_factory
+    ):
+        """priority='CD' SÍ es válido en un evento de campeonato existente."""
+        async with db_session_factory() as s:
+            s.add(RaceEvent(
+                id=200, series_id=1, sequence_number=99,
+                name="Cto. Departamental Ficticio", event_date=date(2026, 11, 1),
+                location="Cali", is_championship=True,
+                status=RaceEventStatus.SCHEDULED, created_by_user_id=10,
+            ))
+            await s.commit()
+
+        r = await coach_client.patch(
+            _DETAIL_URL.format(event_id=200),
+            json={"priority": "CD"},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["priority"] == "CD"
+
+    @pytest.mark.asyncio
+    async def test_patch_priority_cd_junto_con_is_championship_true_ok(
+        self, coach_client, db_session_factory
+    ):
+        """priority='CD' + is_championship=True en el MISMO body → 200 (la
+        validación usa el valor efectivo del body, no solo el estado actual
+        en DB)."""
+        async with db_session_factory() as s:
+            s.add(RaceEvent(
+                id=201, series_id=1, sequence_number=98,
+                name="Evento a reclasificar", event_date=date(2026, 11, 2),
+                location="Cali", is_championship=False,
+                status=RaceEventStatus.SCHEDULED, created_by_user_id=10,
+            ))
+            await s.commit()
+
+        r = await coach_client.patch(
+            _DETAIL_URL.format(event_id=201),
+            json={"priority": "CD", "is_championship": True},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["priority"] == "CD"
+
+    @pytest.mark.asyncio
+    async def test_patch_priority_null_limpia_campo(
+        self, coach_client, db_session_factory
+    ):
+        """PATCH priority=null limpia una prioridad previamente asignada."""
+        async with db_session_factory() as s:
+            evt = (
+                await s.execute(select(RaceEvent).where(RaceEvent.id == 100))
+            ).scalar_one()
+            evt.priority = RaceEventPriority.B
+            await s.commit()
+
+        r = await coach_client.patch(
+            _DETAIL_URL.format(event_id=100),
+            json={"priority": None},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["priority"] is None
+
+    @pytest.mark.asyncio
+    async def test_patch_priority_invalida_422(self, coach_client):
+        """priority='Z' no pertenece al enum → 422."""
+        r = await coach_client.patch(
+            _DETAIL_URL.format(event_id=100),
+            json={"priority": "Z"},
+        )
+        assert r.status_code == 422
+
     # ── PR6: propagación válida → calendar_event ligado ──────────────────
 
     @pytest.mark.asyncio
@@ -1019,6 +1203,53 @@ class TestListRaceEvents:
             assert "has_results" in item
             assert "has_calendar_event" in item
             assert "conditions_completeness" in item
+
+    # ── Priority derivado (hotfix "identidad de válida", 2026-09-16) ─────
+
+    @pytest.mark.asyncio
+    async def test_list_priority_null_por_defecto(self, coach_client):
+        """Eventos 100/101/102 (seed_minimal): sin priority asignada y sin
+        ser campeonato → item.priority es None (tier UNKNOWN)."""
+        r = await coach_client.get(_COLLECTION_URL)
+        assert r.status_code == 200, r.text
+        priorities = {item["id"]: item["priority"] for item in r.json()["items"]}
+        assert priorities == {100: None, 101: None, 102: None}
+
+    @pytest.mark.asyncio
+    async def test_list_priority_refleja_columna_cuando_esta_asignada(
+        self, coach_client, db_session_factory
+    ):
+        """priority='B' en la columna se expone tal cual (evento no campeonato)."""
+        async with db_session_factory() as s:
+            evt = (
+                await s.execute(select(RaceEvent).where(RaceEvent.id == 100))
+            ).scalar_one()
+            evt.priority = RaceEventPriority.B
+            await s.commit()
+
+        r = await coach_client.get(_COLLECTION_URL)
+        priorities = {item["id"]: item["priority"] for item in r.json()["items"]}
+        assert priorities[100] == "B"
+
+    @pytest.mark.asyncio
+    async def test_list_priority_cd_para_campeonato_aunque_columna_sea_null(
+        self, coach_client, db_session_factory
+    ):
+        """Evento de campeonato (is_championship=True) SIEMPRE expone 'CD'
+        aunque priority esté NULL — get_race_tier reutilizado, no una regla
+        local nueva."""
+        async with db_session_factory() as s:
+            s.add(RaceEvent(
+                id=300, series_id=1, sequence_number=99,
+                name="Cto. Departamental Ficticio", event_date=date(2026, 12, 1),
+                location="Cali", is_championship=True,
+                status=RaceEventStatus.SCHEDULED, created_by_user_id=10,
+            ))
+            await s.commit()
+
+        r = await coach_client.get(_COLLECTION_URL)
+        priorities = {item["id"]: item["priority"] for item in r.json()["items"]}
+        assert priorities[300] == "CD"
 
     @pytest.mark.asyncio
     async def test_list_filtrado_por_season_2026(self, coach_client):

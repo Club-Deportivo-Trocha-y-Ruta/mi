@@ -8,7 +8,6 @@
  * Layout (consenso UX + head-coach):
  *   ┌─ Header (título + select Temporada) ────────────────────────┐
  *   │ Selector ANTES   [swap ⇄]   Selector DESPUÉS               │
- *   │ Banner tapering (si tipos A vs B difieren)                  │
  *   │ Banner Circa-PHV (si record antropométrico reciente)        │
  *   │ Tabla unificada: Métrica | Antes | Después | Cambio        │
  *   │ Resumen "Mejoró N de M métricas — Confianza X"              │
@@ -22,6 +21,24 @@
  * Principio coach: NO mostramos gap al ganador ni % del ganador — viola
  * "edad biológica > cronológica" (el P1 puede ser Post-PHV mientras el
  * atleta es Pre-PHV).
+ *
+ * Hotfix multicopa (2026-09-16, `plans/multicopa-identidad-valida.md`):
+ * antes, las opciones A/B eran una lista fija "Válida I..VII + CD"
+ * (`VALIDA_OPTIONS`, retirada) deduplicada por `valida_num` contra un
+ * calendario Copa Valle hardcodeado (`lib/raceCalendar.ts`, retirado) — dos
+ * copas con la misma Válida IV colapsaban en una sola opción y el badge de
+ * "tipo de carrera" (A/B/C) mezclaba temporadas de copas distintas. Ahora
+ * las opciones salen de las carreras REALES del atleta
+ * (`useAthleteRaces`/`RaceParticipationOption`, por `event_id`) cruzadas
+ * con sus insights aprobados, y A/B quedan acotados a la MISMA copa
+ * (`series_id`) — comparar entre copas distintas ya no es posible desde
+ * este panel.
+ *
+ * Wave 3: el banner de "tipos de carrera distintos" vuelve, ahora sobre
+ * `race_events.priority` real por evento (`RaceParticipationOption`) en vez
+ * del antiguo `getRaceMeta().type` Copa-Valle-only — solo se muestra cuando
+ * AMBOS lados tienen `priority` no nulo y difieren, copy genérico sin
+ * nombrar ninguna copa.
  */
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -39,12 +56,8 @@ import { ErrorState, isColdStartError } from "@/components/shared/ErrorState";
 import { useAnthropometry } from "@/hooks/athletes/useAnthropometry";
 import { useAthleteInsightDetail } from "@/hooks/athletes/useAthleteInsightDetail";
 import { useAthleteInsights } from "@/hooks/athletes/useAthleteInsights";
-import {
-  getRaceMeta,
-  getRaceTypeBadgeStyle,
-  type RaceMeta,
-} from "@/lib/raceCalendar";
-import { validaLabel } from "@/lib/insights";
+import { useAthleteRaces } from "@/hooks/athletes/useAthleteRaces";
+import { raceLabelForInsight } from "@/lib/insights";
 import {
   computePercentile,
   evaluateImprovementCount,
@@ -64,22 +77,11 @@ import {
   type AthleteInsightOut,
 } from "@/types/athleteRaceAnalysis.types";
 import { MaturationStatus } from "@/types/enums";
+import type { RaceEventPriority } from "@/types/raceEvents.types";
 
 // ---------------------------------------------------------------------------
 // Constantes
 // ---------------------------------------------------------------------------
-
-/** Opciones del selector de válida. 0 representa "Sin selección". */
-const VALIDA_OPTIONS: Array<{ value: number; label: string }> = [
-  { value: 1, label: "Válida I" },
-  { value: 2, label: "Válida II" },
-  { value: 3, label: "Válida III" },
-  { value: 4, label: "Válida IV" },
-  { value: 5, label: "Válida V" },
-  { value: 6, label: "Válida VI" },
-  { value: 7, label: "Válida VII" },
-  { value: 99, label: "Cto. Departamental" },
-];
 
 /** Tap target mínimo WCAG (44×44 px). */
 // Wave 5 (feature 036, target-size sweep): era `min-h-[44px]` — el floor de
@@ -94,6 +96,119 @@ const PHV_FRESHNESS_DAYS = 90;
 
 function getDefaultSeason(): number {
   return new Date().getFullYear();
+}
+
+// ---------------------------------------------------------------------------
+// Opciones A/B — carreras reales del atleta con insight aprobado (hotfix
+// multicopa). Reemplaza al antiguo `VALIDA_OPTIONS` fijo.
+// ---------------------------------------------------------------------------
+
+interface RaceOption {
+  eventId: number;
+  insight: AthleteInsightOut;
+  /** `null` cuando la carrera todavía no trae identidad de copa (legacy). */
+  seriesId: number | null;
+  eventDate: string;
+  location: string | null;
+  /**
+   * Wave 3 (hotfix multicopa) — `race_events.priority` real del evento.
+   * `null` = UNKNOWN. Única fuente del banner de tapering-mismatch (ver
+   * `TaperingBanner`) — reemplaza al antiguo `getRaceMeta().type`
+   * (`lib/raceCalendar.ts`, retirado, Copa Valle only).
+   */
+  priority: RaceEventPriority | null;
+}
+
+/**
+ * Cruza el listado de insights aprobados/activos de la temporada con las
+ * carreras reales del atleta (`useAthleteRaces`) y devuelve las opciones
+ * elegibles para el comparador, ordenadas cronológicamente por
+ * `event_date`.
+ *
+ * Reglas:
+ *   - Solo insights `coach_approved && is_active`, con `valida_num` de
+ *     válida concreta (excluye 0 = resumen de temporada) y `event_id` no
+ *     nulo.
+ *   - El `event_id` debe existir en las carreras reales del atleta — un
+ *     insight cuyo evento no aparece ahí (carrera borrada, o la lista de
+ *     carreras todavía no cargó) se excluye en vez de adivinar su fecha o
+ *     su copa.
+ *   - Dedup por `event_id` (no por `valida_num`, que colisiona entre
+ *     copas): conserva el insight más reciente por carrera.
+ */
+function buildEligibleOptions(
+  insights: AthleteInsightOut[],
+  races: Array<{
+    event_id: number;
+    event_date: string;
+    location: string | null;
+    series_id?: number;
+    priority?: RaceEventPriority | null;
+  }>,
+): RaceOption[] {
+  const raceByEventId = new Map(races.map((r) => [r.event_id, r]));
+  const approved = insights.filter(
+    (i) =>
+      i.coach_approved &&
+      i.is_active &&
+      i.valida_num !== null &&
+      i.valida_num !== undefined &&
+      i.valida_num !== 0 &&
+      i.event_id !== null &&
+      i.event_id !== undefined &&
+      raceByEventId.has(i.event_id),
+  );
+  const byEvent = new Map<number, AthleteInsightOut>();
+  for (const i of approved) {
+    const eventId = i.event_id as number;
+    const prev = byEvent.get(eventId);
+    if (
+      !prev ||
+      new Date(i.generated_at).getTime() > new Date(prev.generated_at).getTime()
+    ) {
+      byEvent.set(eventId, i);
+    }
+  }
+  const options: RaceOption[] = Array.from(byEvent.entries()).map(
+    ([eventId, insight]) => {
+      const race = raceByEventId.get(eventId)!;
+      return {
+        eventId,
+        insight,
+        seriesId: race.series_id ?? null,
+        eventDate: race.event_date,
+        location: race.location,
+        priority: race.priority ?? null,
+      };
+    },
+  );
+  return options.sort((a, b) => a.eventDate.localeCompare(b.eventDate));
+}
+
+/**
+ * Elige el par por defecto A/B: el grupo de MISMA copa (`series_id`) con
+ * más carreras elegibles (empate → el primero encontrado), tomando la
+ * primera y la última cronológicamente dentro de ese grupo. `null` cuando
+ * ninguna copa tiene al menos 2 carreras elegibles — el panel no puede
+ * armar un par válido (mismo criterio que bloquea la selección manual
+ * cross-copa, ver `SideSelector`).
+ */
+function pickDefaultPair(
+  options: RaceOption[],
+): { a: number; b: number } | null {
+  const bySeries = new Map<number | null, RaceOption[]>();
+  for (const o of options) {
+    const arr = bySeries.get(o.seriesId) ?? [];
+    arr.push(o);
+    bySeries.set(o.seriesId, arr);
+  }
+  let best: RaceOption[] | null = null;
+  for (const group of bySeries.values()) {
+    if (group.length < 2) continue;
+    if (!best || group.length > best.length) best = group;
+  }
+  if (!best) return null;
+  return { a: best[0].eventId, b: best[best.length - 1].eventId };
 }
 
 // ---------------------------------------------------------------------------
@@ -116,88 +231,67 @@ export function ComparatorPanel({
 }: ComparatorPanelProps) {
   const [season, setSeason] = useState<number>(getDefaultSeason());
 
-  // Lista global de insights aprobados/activos de la temporada — usada para:
-  //   1. Calcular defaults inteligentes (primera y última válida con insight).
-  //   2. Detectar empty state global (menos de 2 válidas con insight).
-  //   3. Calcular "mejor marca propia" agregando todos los detalles.
+  // Lista global de insights aprobados/activos de la temporada + carreras
+  // reales del atleta — el cruce de ambas produce las opciones elegibles
+  // (ver `buildEligibleOptions`).
   const seasonListQuery = useAthleteInsights(athleteId, {
     season,
     limit: 50,
   });
+  const racesQuery = useAthleteRaces(athleteId, season);
 
-  const validasConInsight = useMemo(() => {
-    const items = seasonListQuery.data?.items ?? [];
-    // Solo insights aprobados/activos con válida COMPETITIVA específica.
-    // Excluimos valida_num=0 (sentinel del backend para "Resumen de
-    // temporada") y números fuera del calendario Copa Valle.
-    const knownValidas = new Set([1, 2, 3, 4, 5, 6, 7, 99]);
-    const filtered = items.filter(
-      (i) =>
-        i.coach_approved &&
-        i.is_active &&
-        i.valida_num !== null &&
-        i.valida_num !== undefined &&
-        knownValidas.has(i.valida_num),
-    );
-    // Dedup por valida_num conservando el más reciente.
-    const byValida = new Map<number, AthleteInsightOut>();
-    for (const i of filtered) {
-      const v = i.valida_num as number;
-      const prev = byValida.get(v);
-      if (
-        !prev ||
-        new Date(i.generated_at).getTime() > new Date(prev.generated_at).getTime()
-      ) {
-        byValida.set(v, i);
-      }
-    }
-    // Orden cronológico por fecha de la válida en el calendario (si existe)
-    // o por valida_num como fallback.
-    return Array.from(byValida.values()).sort((a, b) => {
-      const metaA = getRaceMeta(season, a.valida_num);
-      const metaB = getRaceMeta(season, b.valida_num);
-      if (metaA && metaB) return metaA.date_iso.localeCompare(metaB.date_iso);
-      return (a.valida_num ?? 0) - (b.valida_num ?? 0);
-    });
-  }, [seasonListQuery.data, season]);
+  const eligibleOptions = useMemo(
+    () =>
+      buildEligibleOptions(
+        seasonListQuery.data?.items ?? [],
+        racesQuery.data?.items ?? [],
+      ),
+    [seasonListQuery.data, racesQuery.data],
+  );
 
-  // Defaults: primera y última válida con insight aprobado.
-  const [validaA, setValidaA] = useState<number | null>(null);
-  const [validaB, setValidaB] = useState<number | null>(null);
+  const defaultPair = useMemo(
+    () => pickDefaultPair(eligibleOptions),
+    [eligibleOptions],
+  );
+
+  // Defaults: primera y última carrera elegible de la copa con más
+  // carreras en la temporada.
+  const [eventA, setEventA] = useState<number | null>(null);
+  const [eventB, setEventB] = useState<number | null>(null);
 
   useEffect(() => {
-    // Solo seteamos cuando todavía no hay selección o cuando cambia la
-    // temporada y los valores actuales ya no aplican.
-    if (validasConInsight.length === 0) {
-      setValidaA(null);
-      setValidaB(null);
+    if (!defaultPair) {
+      setEventA(null);
+      setEventB(null);
       return;
     }
-    const first = validasConInsight[0].valida_num as number;
-    const last =
-      validasConInsight[validasConInsight.length - 1].valida_num as number;
-    setValidaA((current) => {
-      if (current === null) return first;
-      const stillExists = validasConInsight.some((i) => i.valida_num === current);
-      return stillExists ? current : first;
+    setEventA((current) => {
+      if (current === null) return defaultPair.a;
+      const stillExists = eligibleOptions.some((o) => o.eventId === current);
+      return stillExists ? current : defaultPair.a;
     });
-    setValidaB((current) => {
-      if (current === null) return last !== first ? last : first;
-      const stillExists = validasConInsight.some((i) => i.valida_num === current);
-      return stillExists ? current : last;
+    setEventB((current) => {
+      if (current === null) return defaultPair.b;
+      const stillExists = eligibleOptions.some((o) => o.eventId === current);
+      return stillExists ? current : defaultPair.b;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [validasConInsight.length, season]);
+  }, [defaultPair, season]);
 
   const handleSwap = () => {
-    setValidaA(validaB);
-    setValidaB(validaA);
+    setEventA(eventB);
+    setEventB(eventA);
   };
 
+  const optionA = eligibleOptions.find((o) => o.eventId === eventA);
+  const optionB = eligibleOptions.find((o) => o.eventId === eventB);
+
   // Estados derivados
-  const hasEnoughValidas = validasConInsight.length >= 2;
-  const sameValida = validaA !== null && validaA === validaB;
-  const seasonListColdStart = isColdStartError(seasonListQuery.error);
+  const hasEnoughValidas = defaultPair !== null;
+  const sameEvent = eventA !== null && eventA === eventB;
+  const isLoading = seasonListQuery.isLoading || racesQuery.isLoading;
+  const isError = seasonListQuery.isError || racesQuery.isError;
+  const coldStart = isColdStartError(seasonListQuery.error ?? racesQuery.error);
 
   return (
     <section
@@ -207,52 +301,49 @@ export function ComparatorPanel({
     >
       <Header season={season} onSeasonChange={setSeason} />
 
-      {seasonListQuery.isLoading ? (
+      {isLoading ? (
         <Skeleton className="h-40 w-full rounded-lg" />
-      ) : seasonListQuery.isError ? (
+      ) : isError ? (
         <ErrorState
           message={
-            seasonListColdStart
+            coldStart
               ? undefined
               : "No se pudieron cargar los análisis de la temporada."
           }
-          onRetry={() => void seasonListQuery.refetch()}
-          isColdStart={seasonListColdStart}
+          onRetry={() => {
+            void seasonListQuery.refetch();
+            void racesQuery.refetch();
+          }}
+          isColdStart={coldStart}
         />
       ) : !hasEnoughValidas ? (
-        <EmptyPair count={validasConInsight.length} />
+        <EmptyPair count={eligibleOptions.length} />
       ) : (
         <>
           <SelectorsRow
-            season={season}
-            validaA={validaA}
-            validaB={validaB}
-            onValidaAChange={setValidaA}
-            onValidaBChange={setValidaB}
+            options={eligibleOptions}
+            eventA={eventA}
+            eventB={eventB}
+            onEventAChange={setEventA}
+            onEventBChange={setEventB}
             onSwap={handleSwap}
-            availableValidas={validasConInsight
-              .map((i) => i.valida_num as number)
-              .sort((a, b) => a - b)}
           />
 
-          {sameValida ? (
+          {sameEvent ? (
             <p
               role="status"
               className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900"
             >
               Selecciona dos válidas distintas para comparar.
             </p>
-          ) : (
+          ) : optionA && optionB ? (
             <ComparisonBody
               athleteId={athleteId}
-              season={season}
-              validaA={validaA as number}
-              validaB={validaB as number}
-              insightA={validasConInsight.find((i) => i.valida_num === validaA)}
-              insightB={validasConInsight.find((i) => i.valida_num === validaB)}
+              optionA={optionA}
+              optionB={optionB}
               viewMode={viewMode}
             />
-          )}
+          ) : null}
         </>
       )}
     </section>
@@ -281,7 +372,7 @@ function Header({
           Comparador progreso
         </h3>
         <p className="mt-0.5 text-xs text-mid-gray">
-          Mide al atleta contra sí mismo entre dos válidas de la temporada.
+          Mide al atleta contra sí mismo entre dos válidas de la misma copa.
         </p>
       </div>
       <label className="sr-only" htmlFor="cmp-season">
@@ -312,35 +403,41 @@ function Header({
 }
 
 // ---------------------------------------------------------------------------
-// Selectores A / swap / B + chips de tipo carrera
+// Selectores A / swap / B + bloqueo cross-copa
 // ---------------------------------------------------------------------------
 
 function SelectorsRow({
-  season,
-  validaA,
-  validaB,
-  onValidaAChange,
-  onValidaBChange,
+  options,
+  eventA,
+  eventB,
+  onEventAChange,
+  onEventBChange,
   onSwap,
-  availableValidas,
 }: {
-  season: number;
-  validaA: number | null;
-  validaB: number | null;
-  onValidaAChange: (v: number) => void;
-  onValidaBChange: (v: number) => void;
+  options: RaceOption[];
+  eventA: number | null;
+  eventB: number | null;
+  onEventAChange: (v: number) => void;
+  onEventBChange: (v: number) => void;
   onSwap: () => void;
-  availableValidas: number[];
 }) {
+  const seriesIdOfA = options.find((o) => o.eventId === eventA)?.seriesId ?? null;
+  const seriesIdOfB = options.find((o) => o.eventId === eventB)?.seriesId ?? null;
+  // Más de una copa entre las opciones elegibles → el bloqueo cross-copa
+  // aplica y vale la pena mostrar la explicación accesible.
+  const hasMultipleCups =
+    new Set(options.map((o) => o.seriesId)).size > 1;
+
   return (
     <div className="grid grid-cols-1 items-start gap-3 md:grid-cols-[1fr_auto_1fr]">
       <SideSelector
         side="A"
         label="ANTES"
-        validaNum={validaA}
-        onChange={onValidaAChange}
-        season={season}
-        availableValidas={availableValidas}
+        selectedEventId={eventA}
+        onChange={onEventAChange}
+        options={options}
+        constrainToSeriesId={seriesIdOfB}
+        showCupHint={hasMultipleCups}
       />
       <button
         type="button"
@@ -358,10 +455,11 @@ function SelectorsRow({
       <SideSelector
         side="B"
         label="DESPUÉS"
-        validaNum={validaB}
-        onChange={onValidaBChange}
-        season={season}
-        availableValidas={availableValidas}
+        selectedEventId={eventB}
+        onChange={onEventBChange}
+        options={options}
+        constrainToSeriesId={seriesIdOfA}
+        showCupHint={hasMultipleCups}
       />
     </div>
   );
@@ -370,62 +468,77 @@ function SelectorsRow({
 function SideSelector({
   side,
   label,
-  validaNum,
+  selectedEventId,
   onChange,
-  season,
-  availableValidas,
+  options,
+  constrainToSeriesId,
+  showCupHint,
 }: {
   side: "A" | "B";
   label: string;
-  validaNum: number | null;
+  selectedEventId: number | null;
   onChange: (v: number) => void;
-  season: number;
-  availableValidas: number[];
+  options: RaceOption[];
+  /** `series_id` del OTRO lado ya seleccionado — las opciones de una copa
+   * distinta quedan deshabilitadas. `null` = sin restricción todavía. */
+  constrainToSeriesId: number | null;
+  showCupHint: boolean;
 }) {
-  const meta = getRaceMeta(season, validaNum);
-  const badgeStyle = meta ? getRaceTypeBadgeStyle(meta.type) : null;
+  const selected = options.find((o) => o.eventId === selectedEventId);
   const testId = side === "A" ? "comparator-col-a" : "comparator-col-b";
+  const hintId = `cmp-cup-hint-${side.toLowerCase()}`;
   return (
     <div className="rounded-xl bg-light-gray/30 p-3" data-testid={testId}>
       <div className="text-[10px] font-semibold uppercase tracking-wider text-mid-gray">
         {label}
       </div>
       <select
-        value={validaNum ?? ""}
+        value={selectedEventId ?? ""}
         onChange={(e) => onChange(Number(e.target.value))}
         aria-label={`${side === "A" ? "Válida A" : "Válida B"} — seleccionar válida`}
+        aria-describedby={showCupHint ? hintId : undefined}
         className={cn(
           "mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40",
           TAP_TARGET_CLASSES,
           "shadow-ring",
         )}
       >
-        {VALIDA_OPTIONS.map((o) => (
-          <option
-            key={o.value}
-            value={o.value}
-            disabled={!availableValidas.includes(o.value)}
-          >
-            {o.label}
-            {!availableValidas.includes(o.value) ? " (sin análisis)" : ""}
-          </option>
-        ))}
+        {options.map((o) => {
+          // Nunca deshabilitamos la opción ya seleccionada — solo bloquea
+          // ELEGIR una carrera de otra copa hacia adelante.
+          const isCurrentlySelected = o.eventId === selectedEventId;
+          const isOtherCup =
+            constrainToSeriesId !== null &&
+            o.seriesId !== null &&
+            o.seriesId !== constrainToSeriesId;
+          const disabled = !isCurrentlySelected && isOtherCup;
+          return (
+            <option key={o.eventId} value={o.eventId} disabled={disabled}>
+              {raceLabelForInsight(o.insight, "chip")} —{" "}
+              {formatDayMonthShort(`${o.eventDate}T12:00:00Z`)}
+              {disabled ? " (otra copa)" : ""}
+            </option>
+          );
+        })}
       </select>
+      {showCupHint && (
+        <p id={hintId} className="mt-1 text-[11px] text-mid-gray">
+          Solo se pueden comparar válidas de la misma copa.
+        </p>
+      )}
       <div className="mt-2 flex items-center gap-2 text-xs">
-        {meta ? (
+        {selected ? (
           <>
-            <Badge
-              className={cn(badgeStyle?.className)}
-              aria-label={`Tipo de carrera: ${badgeStyle?.label}`}
-            >
-              {badgeStyle?.label}
+            <Badge aria-label={`Copa: ${raceLabelForInsight(selected.insight, "chip")}`}>
+              {raceLabelForInsight(selected.insight, "chip")}
             </Badge>
             <span className="text-mid-gray">
-              {meta.location} · {formatDayMonthShort(`${meta.date_iso}T12:00:00Z`)}
+              {selected.location ?? "—"} ·{" "}
+              {formatDayMonthShort(`${selected.eventDate}T12:00:00Z`)}
             </span>
           </>
         ) : (
-          <span className="text-mid-gray">Sin metadata de calendario</span>
+          <span className="text-mid-gray">Sin selección</span>
         )}
       </div>
     </div>
@@ -446,7 +559,7 @@ function EmptyPair({ count }: { count: number }) {
     >
       {count === 0
         ? "Aún no hay análisis aprobados en esta temporada."
-        : "Necesitas al menos 2 válidas con análisis aprobado para comparar."}
+        : "Necesitas al menos 2 válidas de la misma copa con análisis aprobado para comparar."}
     </div>
   );
 }
@@ -457,23 +570,31 @@ function EmptyPair({ count }: { count: number }) {
 
 function ComparisonBody({
   athleteId,
-  season,
-  validaA,
-  validaB,
-  insightA,
-  insightB,
+  optionA,
+  optionB,
   viewMode,
 }: {
   athleteId: number;
-  season: number;
-  validaA: number;
-  validaB: number;
-  insightA: AthleteInsightOut | undefined;
-  insightB: AthleteInsightOut | undefined;
+  optionA: RaceOption;
+  optionB: RaceOption;
   viewMode: "coach" | "parent";
 }) {
-  const detailA = useAthleteInsightDetail(athleteId, insightA?.id);
-  const detailB = useAthleteInsightDetail(athleteId, insightB?.id);
+  const detailA = useAthleteInsightDetail(athleteId, optionA.insight.id);
+  const detailB = useAthleteInsightDetail(athleteId, optionB.insight.id);
+  const validaA = optionA.insight.valida_num as number;
+  const validaB = optionB.insight.valida_num as number;
+
+  // Banner tapering-mismatch (Wave 3, hotfix multicopa): solo cuando AMBOS
+  // lados tienen `priority` real (no `null`/UNKNOWN) y difieren — nunca se
+  // adivina a partir de uno solo o de un calendario. Copy genérico (A/B/C),
+  // sin nombrar ninguna copa — la comparación ya está acotada a la misma
+  // copa (`series_id`), esto solo avisa que el TIPO de carrera cambió.
+  const taperingMismatch =
+    optionA.priority !== null &&
+    optionB.priority !== null &&
+    optionA.priority !== optionB.priority
+      ? { a: optionA.priority, b: optionB.priority }
+      : null;
 
   // Anthropometry para el banner Circa-PHV (solo si hay record reciente).
   const anthropometryQuery = useAnthropometry(athleteId);
@@ -487,11 +608,6 @@ function ComparisonBody({
       return ageDays >= 0 && ageDays <= PHV_FRESHNESS_DAYS;
     });
   }, [anthropometryQuery.data]);
-
-  const metaA = getRaceMeta(season, validaA);
-  const metaB = getRaceMeta(season, validaB);
-  const taperingMismatch =
-    !!metaA && !!metaB && metaA.type !== metaB.type;
 
   if (detailA.isLoading || detailB.isLoading) {
     return <Skeleton className="h-64 w-full rounded-lg" />;
@@ -514,14 +630,15 @@ function ComparisonBody({
   return (
     <div className="space-y-3">
       {taperingMismatch ? (
-        <TaperingBanner metaA={metaA} metaB={metaB} />
+        <TaperingBanner priorityA={taperingMismatch.a} priorityB={taperingMismatch.b} />
       ) : null}
       {phvBannerVisible ? <PHVBanner /> : null}
 
       <DiffTable
-        season={season}
         validaA={validaA}
         validaB={validaB}
+        labelA={raceLabelForInsight(optionA.insight, "chip")}
+        labelB={raceLabelForInsight(optionB.insight, "chip")}
         detailA={detailA.data ?? null}
         detailB={detailB.data ?? null}
         viewMode={viewMode}
@@ -532,6 +649,7 @@ function ComparisonBody({
         detailB={detailB.data ?? null}
         validaA={validaA}
         validaB={validaB}
+        labelB={raceLabelForInsight(optionB.insight, "chip")}
       />
 
       {viewMode === "parent" ? (
@@ -559,15 +677,15 @@ function ComparisonBody({
 }
 
 // ---------------------------------------------------------------------------
-// Banner: tipos de carrera distintos (warning de tapering)
+// Banner: tipos de carrera distintos (aviso de tapering)
 // ---------------------------------------------------------------------------
 
 function TaperingBanner({
-  metaA,
-  metaB,
+  priorityA,
+  priorityB,
 }: {
-  metaA: RaceMeta;
-  metaB: RaceMeta;
+  priorityA: RaceEventPriority;
+  priorityB: RaceEventPriority;
 }) {
   return (
     <p
@@ -575,8 +693,8 @@ function TaperingBanner({
       data-testid="comparator-tapering-banner"
       className="rounded-xl bg-amber-50 px-4 py-3 text-xs text-amber-900"
     >
-      <strong>Carreras de distinto tipo</strong> ({metaA.type} vs {metaB.type}).
-      Parte de la mejora puede deberse al tapering. Interpreta con cautela.
+      <strong>Carreras de distinto tipo</strong> ({priorityA} vs {priorityB}
+      ). Parte de la mejora puede deberse al tapering. Interpreta con cautela.
     </p>
   );
 }
@@ -620,13 +738,16 @@ interface RowSpec {
 function DiffTable({
   validaA,
   validaB,
+  labelA,
+  labelB,
   detailA,
   detailB,
   viewMode,
 }: {
-  season: number;
   validaA: number;
   validaB: number;
+  labelA: string;
+  labelB: string;
   detailA: AthleteInsightDetailOut | null;
   detailB: AthleteInsightDetailOut | null;
   viewMode: "coach" | "parent";
@@ -663,9 +784,6 @@ function DiffTable({
   const noDataA = detailA !== null && metricsA === null;
   const noDataB = detailB !== null && metricsB === null;
   const anyLegacy = noDataA || noDataB;
-
-  const labelA = validaLabel(validaA);
-  const labelB = validaLabel(validaB);
 
   const rows: RowSpec[] = useMemo(() => {
     return buildRows({
@@ -912,11 +1030,13 @@ function ImprovementSummary({
   detailB,
   validaA,
   validaB,
+  labelB,
 }: {
   detailA: AthleteInsightDetailOut | null;
   detailB: AthleteInsightDetailOut | null;
   validaA: number;
   validaB: number;
+  labelB: string;
 }) {
   const snapA = detailA?.metrics_snapshot;
   const snapB = detailB?.metrics_snapshot;
@@ -983,7 +1103,7 @@ function ImprovementSummary({
       className="text-sm font-medium text-charcoal"
     >
       Mejoró {improved} de {total} métricas — Confianza {confidenceLabel} ·{" "}
-      {validaLabel(validaB)}
+      {labelB}
     </p>
   );
 }

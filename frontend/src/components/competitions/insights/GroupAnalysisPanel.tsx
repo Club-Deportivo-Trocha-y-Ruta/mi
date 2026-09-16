@@ -129,7 +129,7 @@ export function GroupAnalysisPanel({
       data-testid="group-analysis-panel"
     >
       {/* Header row */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-2">
           <Sparkles
             size={16}
@@ -148,80 +148,84 @@ export function GroupAnalysisPanel({
           )}
         </div>
 
-        {/* Launch button */}
-        <div className="flex flex-wrap items-center gap-2">
-          {showRetry && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => retry(retryableIds)}
-              disabled={isLaunching}
-              data-testid="group-retry-button"
-            >
-              Reintentar pendientes
-            </Button>
-          )}
+        {/* Launch button + pista de presupuesto, agrupados a la derecha */}
+        <div className="flex flex-col items-end gap-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            {showRetry && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => retry(retryableIds)}
+                disabled={isLaunching}
+                data-testid="group-retry-button"
+              >
+                Reintentar pendientes
+              </Button>
+            )}
 
-          <TooltipProvider delayDuration={200}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                {/* Wrapper span needed for Tooltip to work on disabled button */}
-                <span
-                  className={launchDisabled ? "cursor-not-allowed" : undefined}
-                >
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() => launch()}
-                    disabled={launchDisabled}
-                    aria-label={
-                      !hasResults
-                        ? "La competencia no tiene resultados importados."
-                        : budgetExhausted
-                          ? AI_BUDGET_EXHAUSTED_MESSAGE
-                          : isInProgress
-                            ? "Análisis en curso…"
-                            : "Analizar con IA"
-                    }
-                    data-testid="group-launch-button"
-                    className={launchDisabled ? "pointer-events-none" : undefined}
+            <TooltipProvider delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  {/* Wrapper span needed for Tooltip to work on disabled button */}
+                  <span
+                    className={launchDisabled ? "cursor-not-allowed" : undefined}
                   >
-                    {isLaunching ? (
-                      <Loader2
-                        size={14}
-                        className="animate-spin"
-                        aria-hidden="true"
-                      />
-                    ) : (
-                      <Sparkles size={14} aria-hidden="true" />
-                    )}
-                    Analizar con IA
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              {!hasResults && (
-                <TooltipContent side="bottom" className="max-w-56">
-                  La competencia no tiene resultados importados.
-                </TooltipContent>
-              )}
-              {hasResults && !budgetExhausted && isInProgress && (
-                <TooltipContent side="bottom">
-                  Análisis en curso…
-                </TooltipContent>
-              )}
-              {hasResults && budgetExhausted && (
-                <TooltipContent side="bottom" className="max-w-56">
-                  {AI_BUDGET_EXHAUSTED_MESSAGE}
-                </TooltipContent>
-              )}
-            </Tooltip>
-          </TooltipProvider>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => launch()}
+                      disabled={launchDisabled}
+                      aria-label={
+                        !hasResults
+                          ? "La competencia no tiene resultados importados."
+                          : budgetExhausted
+                            ? AI_BUDGET_EXHAUSTED_MESSAGE
+                            : isInProgress
+                              ? "Análisis en curso…"
+                              : "Analizar con IA"
+                      }
+                      data-testid="group-launch-button"
+                      className={launchDisabled ? "pointer-events-none" : undefined}
+                    >
+                      {isLaunching ? (
+                        <Loader2
+                          size={14}
+                          className="animate-spin"
+                          aria-hidden="true"
+                        />
+                      ) : (
+                        <Sparkles size={14} aria-hidden="true" />
+                      )}
+                      Analizar con IA
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                {!hasResults && (
+                  <TooltipContent side="bottom" className="max-w-56">
+                    La competencia no tiene resultados importados.
+                  </TooltipContent>
+                )}
+                {hasResults && !budgetExhausted && isInProgress && (
+                  <TooltipContent side="bottom">
+                    Análisis en curso…
+                  </TooltipContent>
+                )}
+                {hasResults && budgetExhausted && (
+                  <TooltipContent side="bottom" className="max-w-56">
+                    {AI_BUDGET_EXHAUSTED_MESSAGE}
+                  </TooltipContent>
+                )}
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+
+          {/* Pista pre-lanzamiento de presupuesto/concurrencia (T052) — bajo
+              el botón que la origina, no como línea suelta a lo ancho del
+              panel. */}
+          <AIBudgetHint status={aiStatus.data} />
         </div>
       </div>
-
-      {/* Pista pre-lanzamiento de presupuesto/concurrencia (T052) */}
-      <AIBudgetHint status={aiStatus.data} />
 
       {/* Error banner (422/429/503) */}
       {errorMessage && (

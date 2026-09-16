@@ -16,9 +16,10 @@
  *    rebote silencioso de ProtectedRoute — `/athletes/:id` es coach-only).
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation } from "react-router-dom";
+import { axe } from "jest-axe";
 
 const mockNavigate = vi.fn();
 vi.mock("react-router-dom", async () => {
@@ -156,7 +157,7 @@ describe("InsightsTab (siempre grid scopeado, sin flag)", () => {
     renderTab(5);
     expect(screen.getByTestId("insights-tab")).toBeInTheDocument();
     expect(screen.getByTestId("insights-tab-card-145")).toBeInTheDocument();
-    expect(screen.getByText(/2 atletas con análisis IA/i)).toBeInTheDocument();
+    expect(screen.getByText(/1 de 2 atletas con análisis IA/i)).toBeInTheDocument();
     // NO debe montar el hub viejo (no hay tabs "Nuevo análisis"/"Cargar resultados").
     expect(screen.queryByText(/nuevo análisis/i)).not.toBeInTheDocument();
   });
@@ -166,12 +167,14 @@ describe("InsightsTab (siempre grid scopeado, sin flag)", () => {
     mockUseClubInsightsByRace.mockReturnValue(INSIGHTS);
     const user = userEvent.setup();
     renderTab(5);
-    // La navegación ahora la resuelve AthleteLink con un <Link> declarativo
-    // (ya no un onClick imperativo vía useNavigate) — ver el describe
-    // "enlace al detalle del atleta según rol" para la cobertura admin/coach.
-    const link = screen.getByTestId("insights-tab-card-145").closest("a");
+    // Patrón "stretched link" (T-insights-redesign): el <a> de AthleteLink
+    // envuelve solo el nombre (no toda la card) y su `after:inset-0` es lo
+    // que estira el área clickable en el navegador real; en jsdom no hay
+    // hit-testing por CSS, así que el test apunta directo al link.
+    const card = screen.getByTestId("insights-tab-card-145");
+    const link = within(card).getByRole("link", { name: "Isabel Quinonez" });
     expect(link).toHaveAttribute("href", "/athletes/145?tab=ai_analysis");
-    await user.click(screen.getByTestId("insights-tab-card-145"));
+    await user.click(link);
     expect(screen.getByTestId("location-display")).toHaveTextContent(
       "/athletes/145?tab=ai_analysis",
     );
@@ -188,6 +191,38 @@ describe("InsightsTab (siempre grid scopeado, sin flag)", () => {
     expect(screen.getByTestId("insights-tab")).toBeInTheDocument();
     expect(
       screen.getByText(/No hay insights generados para esta válida/i),
+    ).toBeInTheDocument();
+  });
+
+  it("un error 503 (cold start) muestra la copy calmada, no el tono de error", () => {
+    mockUseClubInsightsByRace.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error("Request failed with status code 503"),
+      refetch: vi.fn(),
+    });
+    renderTab(5);
+    expect(screen.getByTestId("insights-tab")).toBeInTheDocument();
+    expect(
+      screen.getByText(/la aplicación está iniciando/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("No se pudieron cargar los insights. Intenta de nuevo."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("un error real (no cold start) muestra la copy de error con 'Intenta de nuevo'", () => {
+    mockUseClubInsightsByRace.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error("Error de validación"),
+      refetch: vi.fn(),
+    });
+    renderTab(5);
+    expect(
+      screen.getByText("No se pudieron cargar los insights. Intenta de nuevo."),
     ).toBeInTheDocument();
   });
 });
@@ -247,7 +282,8 @@ describe("InsightsTab — enlace al detalle del atleta según rol (AthleteLink)"
     mockUseClubInsightsByRace.mockReturnValue(INSIGHTS);
     renderTab(5);
 
-    const link = screen.getByTestId("insights-tab-card-145").closest("a");
+    const card = screen.getByTestId("insights-tab-card-145");
+    const link = within(card).getByRole("link", { name: "Isabel Quinonez" });
     expect(link).toHaveAttribute("href", "/athletes/145?tab=ai_analysis");
   });
 
@@ -288,5 +324,76 @@ describe("InsightsTab — enlace al detalle del atleta según rol (AthleteLink)"
     // Atleta 201 no tiene insight_id → no es clickable independientemente del rol.
     const card = screen.getByTestId("insights-tab-card-201");
     expect(card.closest("a")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Rediseño del grid (excerpt en texto plano, orden, a11y) — ver
+// src/lib/markdownExcerpt.ts para la limpieza de markdown.
+// ---------------------------------------------------------------------------
+
+const MIXED_ORDER = {
+  data: {
+    race_event_id: 5,
+    race_event_label: "Válida IV — Cali",
+    total_athletes: 2,
+    items: [
+      // Pendiente primero en el orden del backend — debe renderizar
+      // DESPUÉS del analizado (orden: analizados primero).
+      {
+        athlete_id: 301,
+        athlete_display_name: "Pendiente Uno",
+        valida_num: 4,
+        insight_id: null,
+        summary_excerpt: null,
+        generated_at: null,
+        confidence: null,
+      },
+      {
+        athlete_id: 145,
+        athlete_display_name: "Isabel Quinonez",
+        valida_num: 4,
+        insight_id: 99,
+        summary_excerpt: "## Hallazgo principal\nEl bajón **táctico** del cierre.",
+        generated_at: "2026-05-25T19:49:00",
+        confidence: "medium",
+      },
+    ],
+  },
+  isLoading: false,
+  isError: false,
+  refetch: vi.fn(),
+};
+
+describe("InsightsTab — excerpt en texto plano (markdown crudo limpio)", () => {
+  it("no renderiza el markdown crudo del excerpt (sin '##', sin '**', sin el título del header)", () => {
+    mockUseClubInsightsByRace.mockReturnValue(MIXED_ORDER);
+    renderTab(5);
+    const card = screen.getByTestId("insights-tab-card-145");
+    expect(card).toHaveTextContent("El bajón táctico del cierre.");
+    expect(card.textContent).not.toContain("##");
+    expect(card.textContent).not.toContain("**");
+    expect(card.textContent).not.toContain("Hallazgo principal");
+  });
+});
+
+describe("InsightsTab — orden de cards (analizados primero)", () => {
+  it("ordena las cards con análisis antes que las pendientes, sin importar el orden del backend", () => {
+    mockUseClubInsightsByRace.mockReturnValue(MIXED_ORDER);
+    renderTab(5);
+    const cards = screen.getAllByRole("article");
+    expect(cards.map((el) => el.getAttribute("data-testid"))).toEqual([
+      "insights-tab-card-145",
+      "insights-tab-card-301",
+    ]);
+  });
+});
+
+describe("InsightsTab — accesibilidad (T-insights-redesign)", () => {
+  it("jest-axe: 0 violaciones con una mezcla de cards pendientes y analizadas", async () => {
+    mockUseClubInsightsByRace.mockReturnValue(MIXED_ORDER);
+    const { container } = renderTab(5);
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
   });
 });

@@ -1,7 +1,7 @@
 /**
  * InfoTab — metadata del evento de carrera.
  *
- * Muestra: nombre, fecha, sede, estado, serie, número de válida,
+ * Muestra: nombre, fecha, sede, estado, serie, número de válida, prioridad,
  * campeonato y datos de auditoría.
  *
  * Props:
@@ -13,11 +13,32 @@
  *     (`undefined`) mientras la serie está cargando o para snapshots
  *     pre-023 sin nivel resuelto → se asume "Campeonato Departamental"
  *     (fallback conservador, comportamiento previo).
+ *   - `seriesName?: string` — nombre de la serie, resuelto en el padre igual
+ *     que `seriesLevel` (misma lista, mismo find). Ausente mientras carga o
+ *     si no se encontró → la fila "Serie" cae a "—" en vez del id crudo.
+ *   - `seriesShortName?: string | null` — nombre corto de la serie (hotfix
+ *     multicopa — identidad de válida, 2026-09-16), resuelto en el padre
+ *     igual que `seriesName`. Precarga el diálogo de edición; ausente
+ *     (`undefined`) mientras carga → el diálogo abre con el campo vacío.
+ *
+ * Hotfix multicopa — identidad de válida: la fila "Serie" solo permite
+ * editar el nombre corto para válidas de copa (`!event.is_championship`) —
+ * el nombre corto es un concepto de copa, no de campeonato. La fila
+ * "Prioridad" lee `event.priority` directamente (ya viene en `RaceEventRead`,
+ * no requiere resolución en el padre).
  */
+import { useState } from "react";
+import { Pencil } from "lucide-react";
+
 import { ActorChip } from "@/components/audit/ActorChip";
-import type { RaceEventRead, RaceEventStatus } from "@/types/raceEvents.types";
+import { EditSeriesShortNameDialog } from "@/components/competitions/EditSeriesShortNameDialog";
+import {
+  RACE_EVENT_PRIORITY_LABELS,
+  type RaceEventRead,
+  type RaceEventStatus,
+} from "@/types/raceEvents.types";
 import type { RaceSeriesLevel } from "@/types/raceSeries.types";
-import { championshipLabel } from "@/lib/raceSeriesLabels";
+import { championshipLabel, seriesChipLabel } from "@/lib/raceSeriesLabels";
 
 // ---------------------------------------------------------------------------
 // Helpers de formato
@@ -81,9 +102,23 @@ export interface InfoTabProps {
   event: RaceEventRead;
   /** Nivel de la serie del campeonato. Ver nota de props arriba. */
   seriesLevel?: RaceSeriesLevel;
+  /** Nombre de la serie. Ver nota de props arriba. */
+  seriesName?: string;
+  /** Nombre corto de la serie (hotfix multicopa). Ver nota de props arriba. */
+  seriesShortName?: string | null;
 }
 
-export function InfoTab({ event, seriesLevel }: InfoTabProps) {
+export function InfoTab({
+  event,
+  seriesLevel,
+  seriesName,
+  seriesShortName,
+}: InfoTabProps) {
+  const [editShortNameOpen, setEditShortNameOpen] = useState(false);
+  const priorityLabel = event.priority
+    ? RACE_EVENT_PRIORITY_LABELS[event.priority]
+    : null;
+
   return (
     <div className="space-y-4">
       {/* Tarjeta principal */}
@@ -126,13 +161,71 @@ export function InfoTab({ event, seriesLevel }: InfoTabProps) {
             )}
           </InfoRow>
 
-          <InfoRow label="Serie ID">
-            <span className="font-mono text-xs text-mid-gray">
-              {event.series_id}
-            </span>
+          <InfoRow label="Prioridad">
+            {event.is_championship ? (
+              <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                CD
+              </span>
+            ) : priorityLabel ? (
+              <span
+                className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${
+                  priorityLabel === "A"
+                    ? "bg-blue-100 text-blue-800"
+                    : "bg-[rgba(34,42,53,0.08)] text-charcoal"
+                }`}
+              >
+                {priorityLabel}
+              </span>
+            ) : (
+              <span className="text-mid-gray">Sin prioridad</span>
+            )}
+            {(event.is_championship || event.priority === "A") && (
+              <span className="ml-2 text-xs text-mid-gray">
+                Envía correo a familias tras un análisis aprobado.
+              </span>
+            )}
+          </InfoRow>
+
+          <InfoRow label="Serie">
+            <div className="flex items-center gap-2">
+              <span>
+                {seriesName
+                  ? seriesChipLabel(seriesName, seriesShortName)
+                  : "—"}
+              </span>
+              {!event.is_championship && seriesName && (
+                <button
+                  type="button"
+                  onClick={() => setEditShortNameOpen(true)}
+                  aria-label="Editar nombre corto de la copa"
+                  className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-lg text-mid-gray transition-colors hover:bg-light-gray hover:text-charcoal"
+                  data-testid="btn-edit-series-short-name"
+                >
+                  <Pencil size={13} aria-hidden="true" />
+                </button>
+              )}
+            </div>
           </InfoRow>
         </div>
       </div>
+
+      {/*
+        Montaje perezoso: solo se monta (y solo entonces se llama
+        `useUpdateRaceSeries`, que requiere un QueryClientProvider en el
+        árbol) cuando el coach realmente abre el diálogo. Evita forzar un
+        QueryClientProvider en cada consumidor de InfoTab que nunca edita
+        el nombre corto — mismo criterio que los tabs lazy de
+        CompetitionDetailPage.
+      */}
+      {editShortNameOpen && !event.is_championship && seriesName && (
+        <EditSeriesShortNameDialog
+          open={editShortNameOpen}
+          onOpenChange={setEditShortNameOpen}
+          seriesId={event.series_id}
+          seriesName={seriesName}
+          currentShortName={seriesShortName}
+        />
+      )}
 
       {/* Tarjeta de auditoría */}
       <div

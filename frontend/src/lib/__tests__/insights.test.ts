@@ -5,8 +5,9 @@
  *   - extractSeasonContext: section present / absent / legacy insight
  *   - progressionLabel: all 5 ProgressionAssessment values
  *   - Legacy compat: old summaryText without new section returns null, no crash
- *   - getCarreraTier / TAPER_GUIDANCE: tier lookup by date and taper guidance
- *     per tier (T025)
+ *   - TAPER_GUIDANCE: taper guidance per tier (T025) — `getCarreraTier`
+ *     (hardcoded Copa Valle calendar) retired Wave 3 (hotfix multicopa,
+ *     2026-09-16), tier now comes from `race_events.priority`.
  */
 import { describe, it, expect } from "vitest";
 import {
@@ -14,10 +15,10 @@ import {
   progressionLabel,
   extractSection,
   getV2Preview,
-  getCarreraTier,
   TAPER_GUIDANCE,
   confidenceStatus,
-  validaLabel,
+  raceLabel,
+  raceLabelForInsight,
 } from "@/lib/insights";
 import type { ProgressionAssessment } from "@/types/raceAnalysis.types";
 import type { InsightConfidence } from "@/types/athleteRaceAnalysis.types";
@@ -141,38 +142,11 @@ describe("legacy insight compat (no regression)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// getCarreraTier / TAPER_GUIDANCE — T025
+// TAPER_GUIDANCE — T025. `getCarreraTier`/`CARRERA_TIER` (calendario Copa
+// Valle hardcodeado por mes) se retiraron en Wave 3 del hotfix multicopa
+// (2026-09-16) — el tier ahora viene de `race_events.priority`, real por
+// evento; ver `NextRaceTile.tsx`/`InsightsTimeline.tsx`.
 // ---------------------------------------------------------------------------
-
-describe("getCarreraTier", () => {
-  const cases: Array<[string, "A" | "B" | "C"]> = [
-    ["2026-01-31", "C"],
-    ["2026-02-28", "C"],
-    ["2026-04-19", "C"],
-    ["2026-05-17", "A"],
-    // Campeonato Departamental (junio): NO es un 4º tier — resuelve a "A"
-    // (su intensidad de tapering real), la distinción de campeonato queda
-    // aparte en el badge "CD" de CompetitionDetailPage.tsx (T015).
-    ["2026-06-12", "A"],
-    ["2026-08-15", "B"],
-    ["2026-09-12", "A"],
-    ["2026-10-18", "B"],
-  ];
-
-  it.each(cases)("maps %s → tier %s", (date, tier) => {
-    expect(getCarreraTier(date)).toBe(tier);
-  });
-
-  it("returns null for a date not in CARRERA_TIER (e.g. off-season month)", () => {
-    expect(getCarreraTier("2026-03-15")).toBeNull();
-    expect(getCarreraTier("2026-11-15")).toBeNull();
-    expect(getCarreraTier("2027-05-17")).toBeNull();
-  });
-
-  it("returns null for an invalid date string (no crash)", () => {
-    expect(getCarreraTier("not-a-date")).toBeNull();
-  });
-});
 
 describe("TAPER_GUIDANCE", () => {
   it("tier A — full taper, warning at 10d, danger at 7d", () => {
@@ -202,11 +176,11 @@ describe("TAPER_GUIDANCE", () => {
     });
   });
 
-  it("has no 'CD' entry — the Departamental Championship resolves to tier A, not a 4th tier", () => {
+  it("has no 'CD' entry — call sites read a championship's priority as tier A, not a 4th tier", () => {
     expect(Object.keys(TAPER_GUIDANCE).sort()).toEqual(["A", "B", "C"]);
   });
 
-  it("covers all 3 tier keys returned by getCarreraTier (completeness check)", () => {
+  it("covers all 3 tiers of RaceEventPriority ('CD' excluded, see above)", () => {
     const tiers: Array<"A" | "B" | "C"> = ["A", "B", "C"];
     for (const tier of tiers) {
       expect(TAPER_GUIDANCE[tier]).toBeTruthy();
@@ -230,134 +204,168 @@ describe("confidenceStatus", () => {
 });
 
 // ---------------------------------------------------------------------------
-// validaLabel — feature 036 (T030/T032): helper único, reemplaza el antiguo
-// `validaLabel` arábigo de este módulo y `getValidaLabel` (lib/raceCalendar.ts,
-// romano). Fuente de campeonato: `series_kind`, no el `valida_num === 99`
-// retirado (ese chequeo numérico sobrevive solo como fallback legacy).
+// raceLabel / raceLabelForInsight — hotfix multicopa (2026-09-16, plans/
+// multicopa-identidad-valida.md). Reemplaza a `validaLabel` como fuente
+// única de verdad: SIEMPRE nombra la copa cuando el dato está disponible,
+// para que dos copas con la misma Válida IV en la misma temporada no se
+// lean (ni se agrupen) como si fueran la misma carrera.
 // ---------------------------------------------------------------------------
 
-describe("validaLabel", () => {
-  describe("atajo numérico (retrocompatible, sin series_kind)", () => {
-    it.each<[number, string]>([
-      [1, "Válida I"],
-      [2, "Válida II"],
-      [3, "Válida III"],
-      [4, "Válida IV"],
-      [5, "Válida V"],
-      [6, "Válida VI"],
-      [7, "Válida VII"],
-    ])("%i → %s (formato romano, no arábigo)", (num, expected) => {
-      expect(validaLabel(num)).toBe(expected);
-    });
-
-    it("0 → Resumen de temporada", () => {
-      expect(validaLabel(0)).toBe("Resumen de temporada");
-    });
-
-    it("99 (convención retirada) → Cto. Departamental como fallback sin series_kind", () => {
-      expect(validaLabel(99)).toBe("Cto. Departamental");
-    });
-
-    it("null/undefined → guión", () => {
-      expect(validaLabel(null)).toBe("—");
-      expect(validaLabel(undefined)).toBe("—");
-    });
+describe("raceLabel", () => {
+  it("form long: nombra la copa completa + válida romana + sede", () => {
+    expect(
+      raceLabel(
+        {
+          seriesName: "Copa Let's GO",
+          seriesShortName: "Let's GO",
+          validaNum: 4,
+          isChampionship: false,
+          location: "Alcalá",
+        },
+        { form: "long" },
+      ),
+    ).toBe("Copa Let's GO · Válida IV — Alcalá");
   });
 
-  describe("objeto con series_kind — fuente de verdad autoritativa (T030)", () => {
-    it("series_kind='cup' → etiqueta de válida regular en romano", () => {
-      expect(validaLabel({ valida_num: 3, series_kind: "cup" })).toBe(
-        "Válida III",
-      );
-    });
+  it("form chip: usa la abreviación + válida arábiga compacta", () => {
+    expect(
+      raceLabel(
+        {
+          seriesName: "Copa Let's GO",
+          seriesShortName: "Let's GO",
+          validaNum: 4,
+          isChampionship: false,
+        },
+        { form: "chip" },
+      ),
+    ).toBe("Let's GO · V4");
+  });
 
-    it("series_kind='championship' → Cto. Departamental sin depender de valida_num===99", () => {
-      // La convención retirada exigía valida_num===99; series_kind decide
-      // ahora sin ese número mágico — aquí valida_num=1 y aun así gana
-      // "Cto. Departamental" porque series_kind es la fuente autoritativa.
-      expect(
-        validaLabel({ valida_num: 1, series_kind: "championship" }),
-      ).toBe("Cto. Departamental");
-    });
+  it("dos copas comparten valida_num=4 pero producen etiquetas distintas (bug original)", () => {
+    const copaValle = raceLabel(
+      {
+        seriesName: "Copa Valle de Ciclomontañismo",
+        seriesShortName: "Copa Valle",
+        validaNum: 4,
+        isChampionship: false,
+      },
+      { form: "chip" },
+    );
+    const letsGo = raceLabel(
+      {
+        seriesName: "Copa Let's GO",
+        seriesShortName: "Let's GO",
+        validaNum: 4,
+        isChampionship: false,
+      },
+      { form: "chip" },
+    );
+    expect(copaValle).toBe("Copa Valle · V4");
+    expect(letsGo).toBe("Let's GO · V4");
+    expect(copaValle).not.toBe(letsGo);
+  });
 
-    it("valida_num=0 es agregado de temporada sin importar series_kind", () => {
-      expect(validaLabel({ valida_num: 0, series_kind: null })).toBe(
-        "Resumen de temporada",
-      );
-    });
+  it("series_name/series_short_name ausentes (insight legacy) cae al rótulo sin copa, nunca inventa una", () => {
+    expect(
+      raceLabel({ validaNum: 4, isChampionship: false }, { form: "long" }),
+    ).toBe("Válida IV");
+    expect(
+      raceLabel({ validaNum: 4, isChampionship: false }, { form: "chip" }),
+    ).toBe("Válida IV");
+  });
 
-    it("series_kind null/undefined cae al fallback numérico (valida_num=99)", () => {
-      expect(validaLabel({ valida_num: 99, series_kind: null })).toBe(
-        "Cto. Departamental",
-      );
-      expect(validaLabel({ valida_num: 99, series_kind: undefined })).toBe(
-        "Cto. Departamental",
-      );
-    });
+  it("chip prefiere seriesShortName sobre seriesName; long prefiere seriesName sobre seriesShortName", () => {
+    const input = {
+      seriesName: "Copa Let's GO",
+      seriesShortName: "Let's GO",
+      validaNum: 2,
+      isChampionship: false,
+    };
+    expect(raceLabel(input, { form: "chip" })).toContain("Let's GO");
+    expect(raceLabel(input, { form: "long" })).toContain("Copa Let's GO");
+  });
 
-    it("event_id/event_date en null (insight sin evento vinculado) no rompe ni cambia el texto", () => {
-      expect(
-        validaLabel({
-          valida_num: 3,
+  it("campeonato nunca lleva nombre de copa así se pase seriesName", () => {
+    expect(
+      raceLabel(
+        {
+          seriesName: "Copa Let's GO",
+          seriesShortName: "Let's GO",
+          validaNum: 1,
+          isChampionship: true,
+          seriesLevel: "national",
+        },
+        { form: "long" },
+      ),
+    ).toBe("Cto. Nacional");
+  });
+
+  it("seriesLevel='departmental' explícito → Cto. Departamental (feature 039, T039)", () => {
+    expect(
+      raceLabel(
+        { validaNum: 1, isChampionship: true, seriesLevel: "departmental" },
+        { form: "chip" },
+      ),
+    ).toBe("Cto. Departamental");
+  });
+
+  it("seriesLevel null/undefined cae al default histórico 'Cto. Departamental'", () => {
+    expect(
+      raceLabel({ validaNum: 1, isChampionship: true, seriesLevel: null }, { form: "chip" }),
+    ).toBe("Cto. Departamental");
+    expect(
+      raceLabel({ validaNum: 1, isChampionship: true }, { form: "chip" }),
+    ).toBe("Cto. Departamental");
+  });
+
+  it("valida_num=0 sigue siendo Resumen de temporada sin importar la copa", () => {
+    expect(
+      raceLabel(
+        { seriesName: "Copa Let's GO", validaNum: 0, isChampionship: false },
+        { form: "chip" },
+      ),
+    ).toBe("Resumen de temporada");
+  });
+
+  it("null/undefined validaNum → guión", () => {
+    expect(raceLabel({ validaNum: null }, { form: "chip" })).toBe("—");
+    expect(raceLabel({ validaNum: undefined }, { form: "long" })).toBe("—");
+  });
+});
+
+describe("raceLabelForInsight", () => {
+  it("deriva isChampionship de series_kind cuando está presente", () => {
+    expect(
+      raceLabelForInsight(
+        {
+          valida_num: 4,
           series_kind: "cup",
-          event_id: null,
-          event_date: null,
-        }),
-      ).toBe("Válida III");
-    });
-
-    it("acepta el objeto completo del contrato con todo en null salvo valida_num", () => {
-      expect(
-        validaLabel({
-          valida_num: null,
-          series_kind: null,
-          event_id: null,
-          event_date: null,
-        }),
-      ).toBe("—");
-    });
+          series_name: "Copa Let's GO",
+          series_short_name: "Let's GO",
+        },
+        "chip",
+      ),
+    ).toBe("Let's GO · V4");
   });
 
-  describe("series_level — Cto. Nacional vs Departamental (feature 039, T039)", () => {
-    it("series_level='national' → Cto. Nacional", () => {
-      expect(
-        validaLabel({
-          valida_num: 1,
-          series_kind: "championship",
-          series_level: "national",
-        }),
-      ).toBe("Cto. Nacional");
-    });
+  it("sin series_kind cae al fallback legacy valida_num===99 (ej. ClubInsightByRaceItem)", () => {
+    expect(raceLabelForInsight({ valida_num: 99 }, "chip")).toBe(
+      "Cto. Departamental",
+    );
+    expect(raceLabelForInsight({ valida_num: 3 }, "chip")).toBe("Válida III");
+  });
 
-    it("series_level='departmental' → Cto. Departamental (explícito, no solo default)", () => {
-      expect(
-        validaLabel({
-          valida_num: 1,
-          series_kind: "championship",
-          series_level: "departmental",
-        }),
-      ).toBe("Cto. Departamental");
-    });
-
-    it("series_level null/undefined cae al default histórico 'Cto. Departamental'", () => {
-      expect(
-        validaLabel({ valida_num: 1, series_kind: "championship", series_level: null }),
-      ).toBe("Cto. Departamental");
-      expect(
-        validaLabel({
-          valida_num: 1,
-          series_kind: "championship",
-          series_level: undefined,
-        }),
-      ).toBe("Cto. Departamental");
-    });
-
-    it("series_level='national' no afecta una válida regular (series_kind='cup')", () => {
-      // El nivel solo tiene sentido para campeonatos — una válida de copa
-      // nunca debe leer "Nacional" así el caller lo pase por error.
-      expect(
-        validaLabel({ valida_num: 3, series_kind: "cup", series_level: "national" }),
-      ).toBe("Válida III");
-    });
+  it("series_id/series_name/series_short_name en null (fila previa a esta columna) no inventa una copa", () => {
+    expect(
+      raceLabelForInsight(
+        {
+          valida_num: 4,
+          series_kind: "cup",
+          series_name: null,
+          series_short_name: null,
+        },
+        "long",
+      ),
+    ).toBe("Válida IV");
   });
 });

@@ -82,9 +82,16 @@ from app.services.race.ai.runner import (
     resume_run,
     submit_run,
 )
+from app.services.race.group_launch import (
+    EventNotAnalyzableError,
+    RaceEventNotFoundError,
+    resolve_event_scope,
+    resolve_events_for_season_valida,
+)
 from app.services.race.schemas import ChatResponse
 from app.schemas.season_panorama import (
     SeasonPanoramaAthleteItem,
+    SeasonPanoramaSeriesItem,
     SeasonPanoramaResponse,
 )
 from app.services.permissions import (
@@ -773,6 +780,52 @@ async def start_run(
             detail="Cap v2: máximo 4 válidas por lanzamiento. Usa resumen temporada para visión global.",
         )
 
+    # Hotfix "identidad de válida" (2026-09-16, item CONTRACT §API/start_run).
+    # Camino A — ``race_event_id`` explícito: ancla el análisis a ESA
+    # competencia, valida que pertenezca a ``body.season`` y DERIVA
+    # ``valida_nums`` de su ``sequence_number`` (nunca se adivina desde un
+    # número de válida suelto). Camino B — sólo ``valida_nums``: si algún
+    # número es ambiguo en la temporada (dos copas comparten
+    # ``sequence_number``), 409 explícito en vez de mezclar datos de otra
+    # copa — el mismo bug que produjo el análisis cruzado Copa Valle/Copa
+    # Let's Go que motivó este hotfix.
+    resolved_event_id: Optional[int] = body.race_event_id
+    if body.race_event_id is not None:
+        try:
+            event_season, event_seq = await resolve_event_scope(db, body.race_event_id)
+        except RaceEventNotFoundError:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Evento no encontrado",
+            )
+        except EventNotAnalyzableError:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="El evento no tiene número de válida asignado; no puede analizarse",
+            )
+        if event_season != body.season:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"El evento pertenece a la temporada {event_season}, "
+                    f"no a la temporada {body.season} indicada."
+                ),
+            )
+        body.valida_nums = [event_seq]
+    elif body.valida_nums:
+        for vn in body.valida_nums:
+            candidates = await resolve_events_for_season_valida(db, body.season, vn)
+            if len(candidates) > 1:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"El número de válida {vn} es ambiguo en la temporada "
+                        f"{body.season}: hay más de una copa con esa válida. "
+                        "Lanza el análisis desde la competencia específica "
+                        "(indica race_event_id) para no mezclar datos de otra copa."
+                    ),
+                )
+
     # El atleta tiene que ser del club de quien lanza (hallazgo H1 de T080).
     # Va **antes** del chequeo de archivado a propósito: si no, la diferencia
     # entre 404 y 403 le confirma a un entrenador de otro club que ese id
@@ -826,6 +879,11 @@ async def start_run(
         "season": body.season,
         "valida_nums": body.valida_nums,
         "explain_mode": body.explain_mode,
+        # Hotfix "identidad de válida": ancla del run, siempre presente
+        # (puede ser None en un lanzamiento sin evento explícito) — ver
+        # find_active_run/persist_insight, que dependen de esta clave para
+        # no confundir copas con el mismo número de válida.
+        "event_id": resolved_event_id,
     }
 
     # Insert agent_runs (status=running). El run_id es el thread_id del
@@ -929,6 +987,9 @@ async def start_run(
         "explain_mode": body.explain_mode,
         "run_id": run_id,
         "prompt_version": settings.race_ai_prompt_version,
+        # Hotfix "identidad de válida": ancla del run (contrato Pipeline
+        # state, W2-P) — set by every launch path, puede ser None.
+        "event_id": resolved_event_id,
         "forbidden_names": forbidden_names,
         # Feature 037 (T101/T204): athlete_sex/analysis_kind viajan al state
         # para que analyst.py resuelva athlete_ref y active la rama v3 del
@@ -1909,6 +1970,11 @@ async def season_panorama(
             podiums=row.podiums,
             best_position=row.best_position,
             total_points=row.total_points,
+            # Hotfix "identidad de válida" (bug #8): desglose por copa —
+            # fuente de verdad, los campos de arriba quedan deprecados.
+            by_series=[
+                SeasonPanoramaSeriesItem(**s._asdict()) for s in row.by_series
+            ],
         )
         for row in rows
     ]

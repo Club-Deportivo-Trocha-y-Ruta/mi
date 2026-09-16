@@ -53,7 +53,6 @@ export const auditEntityTypeSchema = z.enum([
   "race_import",
   "race_series",
   "race_event",
-  "race_event_roster",
   "race_result",
   "race_competitor",
   "interval_structure",

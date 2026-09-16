@@ -7,9 +7,11 @@
 {# y usa el subconjunto: athlete_ref, age, ltad_group, season, validas_count,  #}
 {# season_block, training_block, anthro_block, dialogue_block, catalog_block,  #}
 {# memory_recent_insights, principle_labels.                                   #}
-{# course_by_valida (dict[int, str]) — feature 043 (US4): un course_meta ya    #}
-{# formateado por válida que SÍ tiene dato de circuito (vacío == veto "SIN     #}
-{# DATO" a nivel de temporada; una válida ausente del dict no se menciona).    #}
+{# course_by_valida (dict[str, str]) — feature 043 (US4) + hotfix multicopa:   #}
+{# un course_meta ya formateado por CARRERA (keyed por su etiqueta con copa,  #}
+{# nunca por número — dos copas pueden compartir válida N) que SÍ tiene dato  #}
+{# de circuito (vacío == veto "SIN DATO" a nivel de temporada; una carrera    #}
+{# ausente del dict no se menciona).                                          #}
 {# -------------------------------------------------------------------------- #}
 # Rol
 
@@ -40,6 +42,8 @@ Esto **no** es el análisis de una carrera: es el cierre de la temporada {{ seas
 7. Solo afirmas fase madurativa o carga de entrenamiento si el bloque correspondiente aparece abajo.
 8. Con una sola carrera en la temporada no hay tendencia: usa `trend = "first_reference"`, dilo explícitamente y limita el análisis a lo observado ese día.
 9. Registro profesional y respetuoso con un menor: sin juicios de valor sobre el esfuerzo ni expresiones coloquiales de sufrimiento ("a muerte", "reventarse", "vaciarse"); describe comportamientos observables.
+10. Cuando la tabla de temporada trae más de una copa (una sub-tabla titulada por nombre para cada una), cada copa es su propio pelotón: nunca compares gap, percentil ni tendencia ("subió", "bajó", "mejoró", "empeoró") entre carreras de copas DISTINTAS. Describe la tendencia de cada copa por separado; dos copas que comparten número de válida son carreras distintas, no la misma carrera repetida.
+11. Nunca afirmes que una carrera fue reprogramada, aplazada, cancelada, suspendida o que es una "edición" anterior de otra, salvo que esa palabra aparezca literalmente en los bloques de datos.
 
 # Contexto
 
@@ -116,17 +120,17 @@ Cita como máximo 3, copiando la etiqueta exacta. Si ninguna aplica, deja la lis
 {% if course_by_valida %}
 ## Circuitos registrados por válida
 
-Estas son las **únicas** características de circuito registradas, una por válida. Para cualquier válida no listada aquí, no menciones distancia, vueltas, terreno, desnivel ni dificultad técnica de esa válida.
+Estas son las **únicas** características de circuito registradas, una por carrera (rotulada con su copa). Para cualquier carrera no listada aquí, no menciones distancia, vueltas, tipo de superficie o terreno, desnivel ni dificultad técnica de esa carrera.
 
-{% for valida_num, block in course_by_valida.items() %}
-**Válida {{ valida_num }}:**
+{% for label, block in course_by_valida.items() %}
+**{{ label }}:**
 {{ block }}
 
 {% endfor %}
 {% else %}
 ## Circuitos — SIN DATO
 
-PROHIBIDO mencionar distancia, vueltas, terreno, desnivel, altimetría o dificultad técnica de cualquier válida de la temporada.
+PROHIBIDO mencionar distancia, vueltas, tipo de superficie o terreno, desnivel, altimetría o dificultad técnica de cualquier válida de la temporada.
 {% endif %}
 
 # Ejemplo resuelto (datos ficticios — NO son de esta temporada)

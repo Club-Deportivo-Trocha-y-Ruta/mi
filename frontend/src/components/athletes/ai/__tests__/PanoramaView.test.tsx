@@ -14,7 +14,7 @@
  * (model, prompt, tokens) ni el badge de confianza al rol parent.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { axe } from "jest-axe";
 
@@ -782,6 +782,91 @@ describe("PanoramaView", () => {
       });
       expect(screen.getByText(/mejor posición/i)).toBeInTheDocument();
       expect(screen.getByText(/válidas completadas/i)).toBeInTheDocument();
+    });
+
+    describe("Wave 3 — KPIs acotados a la copa principal (hotfix multicopa)", () => {
+      it("con 2+ copas, 'Mejor posición' y 'Válidas completadas' se acotan a la copa con más puntos y el label la nombra", async () => {
+        mswServer.use(
+          http.get(
+            "*/api/athletes/:athleteId/race-analysis/evolution",
+            () =>
+              HttpResponse.json({
+                season: 2026,
+                metric: "ranking",
+                confidence: "high",
+                selected_group: null,
+                groups: [
+                  {
+                    comparison_group: "cup:12",
+                    series_id: 12,
+                    kind: "cup",
+                    level: "departmental",
+                    label: "Copa Valle",
+                    n_points: 4,
+                  },
+                  {
+                    comparison_group: "cup:55",
+                    series_id: 55,
+                    kind: "cup",
+                    level: "departmental",
+                    label: "Let's GO",
+                    n_points: 1,
+                  },
+                ],
+                series: [
+                  // 4 puntos de Copa Valle (series_id=12) — el grupo con más
+                  // puntos, debe ganar como copa por defecto.
+                  { valida_num: 1, event_id: 91, event_date: "2026-01-31", value: 5, unit: null, series_id: 12 },
+                  { valida_num: 2, event_id: 92, event_date: "2026-02-28", value: 3, unit: null, series_id: 12 },
+                  { valida_num: 3, event_id: 93, event_date: "2026-04-19", value: 1, unit: null, series_id: 12 },
+                  { valida_num: 4, event_id: 94, event_date: "2026-05-17", value: 2, unit: null, series_id: 12 },
+                  // 1 punto de Copa Let's GO (series_id=55) — mejor posición
+                  // absoluta (P1), pero NO debe ganar el mínimo porque
+                  // pertenece a otra copa.
+                  { valida_num: 4, event_id: 204, event_date: "2026-09-13", value: 1, unit: null, series_id: 55 },
+                ],
+              } satisfies Record<string, unknown>),
+          ),
+        );
+        renderWithProviders(
+          <PanoramaView
+            athlete={athlete}
+            mode="coach"
+            onOpenDetail={vi.fn()}
+            onAddToNewsletter={vi.fn()}
+          />,
+        );
+        await waitFor(() => {
+          expect(
+            within(screen.getByTestId("panorama-kpi-best-position")).getByText("P1"),
+          ).toBeInTheDocument();
+        });
+        // Mínimo dentro de Copa Valle es P1 (evento 93) — coincide con el
+        // mínimo global en este fixture, así que lo que prueba el caso es
+        // el LABEL (nombra la copa) y el conteo de válidas (4, no 5).
+        expect(screen.getByText(/mejor posición 2026 · copa valle/i)).toBeInTheDocument();
+        expect(
+          within(screen.getByTestId("panorama-kpi-races")).getByText("4"),
+        ).toBeInTheDocument();
+        expect(
+          screen.getByText(/válidas completadas · copa valle/i),
+        ).toBeInTheDocument();
+      });
+
+      it("con una sola copa (default fixture, 1 grupo) el label NO nombra la copa — se ve igual que antes", async () => {
+        renderWithProviders(
+          <PanoramaView
+            athlete={athlete}
+            mode="coach"
+            onOpenDetail={vi.fn()}
+            onAddToNewsletter={vi.fn()}
+          />,
+        );
+        await waitFor(() => {
+          expect(screen.getByText("Mejor posición 2026")).toBeInTheDocument();
+        });
+        expect(screen.getByText("Válidas completadas")).toBeInTheDocument();
+      });
     });
 
     it("no filtra la nota de backlog interna 'TODO Sprint 3' a producción (T035b)", async () => {

@@ -4,8 +4,8 @@ disco para que la narrativa la escriba Claude Code (skill ``bitacora-pdf``).
 
 Reutiliza ``build_newsletter_metrics`` (misma agregación que el boletín del
 producto) y la enriquece con datos que el boletín actual no usa: feedback
-individual por sesión, volumen Strava, calendario/roster reales de la
-próxima válida y notas del coach por resultado.
+individual por sesión, volumen Strava, calendario real de la próxima
+válida y notas del coach por resultado.
 
 Uso (desde ``backend/`` con el venv activo)::
 
@@ -229,7 +229,6 @@ async def _upcoming_races(db, athlete_id: int, club_id: int, month_end: date) ->
 
     from app.models.calendar_event import CalendarEvent, EventAttendance, EventStatus, EventType
     from app.models.race_event import RaceEvent, RaceEventStatus
-    from app.models.race_event_roster import RaceEventRoster
 
     horizon = month_end + timedelta(days=75)
     stmt = (
@@ -244,19 +243,9 @@ async def _upcoming_races(db, athlete_id: int, club_id: int, month_end: date) ->
         .limit(3)
     )
     events = (await db.execute(stmt)).scalars().all()
-    roster_rows = (
-        await db.execute(
-            select(RaceEventRoster).where(
-                RaceEventRoster.athlete_id == athlete_id,
-                RaceEventRoster.race_event_id.in_([e.id for e in events] or [0]),
-            )
-        )
-    ).scalars().all()
-    roster_by_event = {r.race_event_id: r for r in roster_rows}
 
     races = []
     for e in events:
-        roster = roster_by_event.get(e.id)
         races.append(
             {
                 "race_event_id": e.id,
@@ -267,9 +256,6 @@ async def _upcoming_races(db, athlete_id: int, club_id: int, month_end: date) ->
                 "date": _iso(e.event_date),
                 "location": e.location,
                 "is_championship": e.is_championship,
-                "roster_status": _enum_value(roster.status) if roster else None,
-                # roster.note es texto libre del coach: se omite a propósito;
-                # si algún día se expone en brief.md debe pasar por _redact().
             }
         )
 
@@ -555,14 +541,8 @@ def render_brief(snap: dict) -> str:
     up = extras.get("upcoming") or {}
     if up.get("race_events"):
         for e in up["race_events"]:
-            roster = {
-                "confirmed": "inscripción confirmada",
-                "called_up": "convocado/a, pendiente de confirmar",
-                "withdrawn": "retirado/a de la convocatoria",
-                None: "sin convocatoria registrada",
-            }.get(e.get("roster_status"), e.get("roster_status"))
             a(f"- Próxima carrera: {e['name']} ({e.get('series') or ''}) — {e['date']}"
-              + (f" — {e['location']}" if e.get("location") else "") + f" — {roster}")
+              + (f" — {e['location']}" if e.get("location") else ""))
     else:
         fallback = (eb.get("calendar") or {}).get("next_race_events") or []
         if fallback:

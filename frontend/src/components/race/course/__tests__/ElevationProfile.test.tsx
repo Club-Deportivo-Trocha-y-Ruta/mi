@@ -44,7 +44,9 @@ vi.mock("recharts", () => ({
   Area: () => <div data-testid="elevation-area" />,
   CartesianGrid: () => <div data-testid="elevation-grid" />,
   XAxis: () => <div data-testid="elevation-x" />,
-  YAxis: () => <div data-testid="elevation-y" />,
+  YAxis: ({ domain }: { domain?: unknown }) => (
+    <div data-testid="elevation-y" data-domain={JSON.stringify(domain)} />
+  ),
   Tooltip: () => <div data-testid="elevation-tooltip" />,
 }));
 
@@ -82,6 +84,21 @@ function buildLargeGeometry(): Array<[number, number, number | null]> {
 }
 
 const LARGE_GEOMETRY = buildLargeGeometry();
+
+// ---------------------------------------------------------------------------
+// Eje Y ajustado al rango real
+// ---------------------------------------------------------------------------
+
+describe("ElevationProfile — eje Y", () => {
+  it("el dominio parte del rango real con margen (no desde 0 m), para que el desnivel sea visible", () => {
+    // min=950, max=1020 → margen max(10, 70·0.15)=10.5 → [930, 1040].
+    render(<ElevationProfile geometry={SMALL_GEOMETRY} elevationGainM={70} />);
+    expect(screen.getByTestId("elevation-y")).toHaveAttribute(
+      "data-domain",
+      "[930,1040]",
+    );
+  });
+});
 
 // ---------------------------------------------------------------------------
 // aria-label — min/max (enteros) + elevationGainM verbatim

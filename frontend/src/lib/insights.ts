@@ -124,86 +124,126 @@ const VALIDA_ROMAN_NUMERALS: Record<number, string> = {
   7: "VII",
 };
 
-export interface ValidaLabelInput {
-  /**
-   * 0 = agregado de temporada. 1..7 = válida regular. 99 = Cto.
-   * Departamental bajo la convención retirada (usado solo como fallback,
-   * ver `seriesKind`). `null`/`undefined` = no aplica.
-   */
-  valida_num?: number | null;
-  /**
-   * Identidad autoritativa (features 014/016): cuando está presente decide
-   * "Válida N" vs "Cto. Departamental" en lugar de la convención retirada
-   * `valida_num === 99`. `null`/`undefined` → cae al fallback numérico,
-   * para llamadores legacy que aún no exponen este campo (ej.
-   * `ClubInsightByRaceItem`, feature 036 T030).
-   */
-  series_kind?: string | null;
-  /**
-   * Feature 039 (T039) — nivel del campeonato (`"departmental"` |
-   * `"national"`); decide "Cto. Departamental" vs "Cto. Nacional" cuando
-   * `isChampionship` es `true`. Ignorado para válidas regulares.
-   * `null`/`undefined` → default "departamental", para llamadores legacy
-   * que aún no exponen este campo (mismo criterio que `series_kind`).
-   */
-  series_level?: string | null;
-  /**
-   * No afecta el texto devuelto — aceptados para que los llamadores puedan
-   * pasar el insight/ítem del contrato tal cual, sin desestructurar. Ambos
-   * pueden ser `null` (insight sin evento vinculado).
-   */
-  event_id?: number | null;
-  event_date?: string | null;
+// ---------------------------------------------------------------------------
+// raceLabel — hotfix multicopa (2026-09-16)
+// ---------------------------------------------------------------------------
+
+export interface RaceLabelInput {
+  /** Nombre completo de la copa/serie, ej. "Copa Let's GO". `null` en
+   * insights legacy (sin columna) o carreras sin serie vinculada. */
+  seriesName?: string | null;
+  /** Abreviación para chip, ej. "Let's GO". */
+  seriesShortName?: string | null;
+  /** 0 = agregado de temporada. 1..N = válida regular. `null` = no aplica. */
+  validaNum?: number | null;
+  /** `true` para Cto. Departamental/Nacional — nunca lleva nombre de copa. */
+  isChampionship?: boolean | null;
+  /** Nivel del campeonato (`"departmental"` | `"national"`). Ignorado para
+   * copas. `null`/`undefined` → default "departamental" (mismo criterio
+   * histórico de `validaLabel`). */
+  seriesLevel?: string | null;
+  /** Sede de la carrera — se agrega solo en el form "long", cuando llega. */
+  location?: string | null;
+}
+
+export interface RaceLabelOptions {
+  form: "long" | "chip";
 }
 
 /**
- * Etiqueta legible y única para una válida/campeonato/agregado de temporada:
- * "Válida III", "Cto. Departamental", "Cto. Nacional", "Resumen de
- * temporada" o "—".
+ * Etiqueta de válida/campeonato/agregado de temporada que SIEMPRE nombra la
+ * copa cuando el dato está disponible — reemplaza `validaLabel` como fuente
+ * única de verdad (hotfix multicopa, `plans/multicopa-identidad-valida.md`):
+ * `validaLabel` nunca mostraba a qué copa pertenecía una válida ("Válida
+ * IV" a secas), lo que dejaba a la UI indistinguible entre la Válida IV de
+ * dos copas distintas de la misma temporada — el mismo colapso de
+ * identidad que produjo el bug de análisis IA cruzado entre copas.
  *
- * Fuente única de verdad para este dato en toda la app (feature 036, T032)
- * — reemplaza los antiguos `validaLabel` (arábigo, este mismo módulo) y
- * `getValidaLabel` (romano, `lib/raceCalendar.ts`), que producían texto
- * distinto para el mismo insight. Formato romano adoptado de
- * `MiniSparkline.tsx`.
+ * Formas:
+ *   - `"long"`:  "Copa Let's GO · Válida IV — Alcalá" (nombre completo +
+ *     válida en romano + sede si se pasó `location`).
+ *   - `"chip"`:  "Let's GO · V4" (abreviación + válida arábiga compacta).
  *
- * La distinción "Cto. Departamental" vs válida regular usa `series_kind`
- * (feature 014/016) en vez de la convención retirada `valida_num === 99`
- * (T030) — ese chequeo numérico sobrevive únicamente como fallback para
- * llamadores que todavía no exponen `series_kind`.
+ * Los campeonatos NUNCA llevan nombre de copa — conservan el mismo texto
+ * fijo de siempre ("Cto. Departamental"/"Cto. Nacional", `seriesLevel`),
+ * por decisión de producto (no reabrir, ver plan del hotfix).
  *
- * Feature 039 (T039): dentro de un campeonato, `series_level` decide
- * "Cto. Departamental" vs "Cto. Nacional" — un campeonato reúne un pelotón
- * distinto según su nivel (`contracts/ai-context.md`). `null`/`undefined`
- * (insights previos a la feature, o llamadores que no lo exponen aún, ej.
- * `ComparatorPanel.tsx`/`ClubInsightByRaceItem`) cae al default histórico
- * "departamental" — ningún llamador existente cambia de texto.
- *
- * Acepta un número plano (atajo retrocompatible, ej. selectores que solo
- * conocen el número de válida) o el objeto `ValidaLabelInput` con el
- * contrato completo.
+ * `seriesName`/`seriesShortName` ausentes o `null` (insights previos a la
+ * columna, o carrera sin serie vinculada) caen al rótulo histórico sin
+ * copa — NUNCA se inventa un nombre de copa.
  */
-export function validaLabel(
-  input: number | null | undefined | ValidaLabelInput,
+export function raceLabel(
+  input: RaceLabelInput,
+  options: RaceLabelOptions,
 ): string {
   const {
-    valida_num: num,
-    series_kind: seriesKind,
-    series_level: seriesLevel,
-  } =
-    typeof input === "object" && input !== null
-      ? input
-      : { valida_num: input, series_kind: undefined, series_level: undefined };
+    seriesName,
+    seriesShortName,
+    validaNum,
+    isChampionship,
+    seriesLevel,
+    location,
+  } = input;
 
-  if (num === null || num === undefined) return "—";
-  if (num === 0) return "Resumen de temporada";
+  if (validaNum === null || validaNum === undefined) return "—";
+  if (validaNum === 0) return "Resumen de temporada";
 
-  const isChampionship = seriesKind != null ? seriesKind === "championship" : num === 99;
   if (isChampionship) {
-    return seriesLevel === "national" ? "Cto. Nacional" : "Cto. Departamental";
+    const champLabel =
+      seriesLevel === "national" ? "Cto. Nacional" : "Cto. Departamental";
+    return options.form === "long" && location
+      ? `${champLabel} — ${location}`
+      : champLabel;
   }
 
-  return `Válida ${VALIDA_ROMAN_NUMERALS[num] ?? num}`;
+  const validaRoman = VALIDA_ROMAN_NUMERALS[validaNum] ?? String(validaNum);
+  const cupName =
+    options.form === "chip"
+      ? (seriesShortName ?? seriesName ?? null)
+      : (seriesName ?? seriesShortName ?? null);
+
+  if (options.form === "chip") {
+    return cupName ? `${cupName} · V${validaNum}` : `Válida ${validaRoman}`;
+  }
+
+  const base = cupName
+    ? `${cupName} · Válida ${validaRoman}`
+    : `Válida ${validaRoman}`;
+  return location ? `${base} — ${location}` : base;
+}
+
+/**
+ * Adaptador de `raceLabel` para un insight (`AthleteInsightOut` o
+ * `ClubInsightByRaceItem`) — evita repetir en cada call site la misma
+ * derivación de `isChampionship` que ya usaba `validaLabel`
+ * (`series_kind` cuando está presente; si no, el fallback retirado
+ * `valida_num === 99` para filas/tipos legacy sin `series_kind`, ej.
+ * `ClubInsightByRaceItem`).
+ */
+export function raceLabelForInsight(
+  insight: {
+    valida_num?: number | null;
+    series_kind?: "cup" | "championship" | null;
+    series_level?: string | null;
+    series_name?: string | null;
+    series_short_name?: string | null;
+  },
+  form: "long" | "chip",
+): string {
+  const isChampionship =
+    insight.series_kind != null
+      ? insight.series_kind === "championship"
+      : insight.valida_num === 99;
+  return raceLabel(
+    {
+      validaNum: insight.valida_num,
+      isChampionship,
+      seriesLevel: insight.series_level,
+      seriesName: insight.series_name,
+      seriesShortName: insight.series_short_name,
+    },
+    { form },
+  );
 }
 
 /**
@@ -245,8 +285,8 @@ export function confidenceStatus(
 
 /**
  * @deprecated Usa `confidenceStatus()` — mantenido en términos de la
- * misma tabla mientras `HeroLastInsightCard.tsx`, `InsightsTimeline.tsx`,
- * `AthletesTab.tsx` e `InsightsTab.tsx` siguen consumiendo `<Badge
+ * misma tabla mientras `HeroLastInsightCard.tsx`, `InsightsTimeline.tsx`
+ * e `InsightsTab.tsx` siguen consumiendo `<Badge
  * variant>` en lugar de `<StatusBadge>`. Su migración a `StatusBadge` no
  * está cubierta por ninguna tarea de `tasks.md` en este feature (solo
  * `AthleteAIAnalysisTab.tsx`'s duplicate lo está, vía T019) — se deja
@@ -268,72 +308,26 @@ export function confidenceLabel(confidence: InsightConfidence): string {
 }
 
 // ---------------------------------------------------------------------------
-// Calendario Copa Valle 2026 — tier por mes-año
-// ---------------------------------------------------------------------------
-
-/**
- * Mapa mes-año → tier ordinal (intensidad de tapering) de la carrera Copa
- * Valle 2026. Clave: "YYYY-MM" (ISO). Valores tomados del CLAUDE.md §
- * Calendario Copa Valle 2026.
- *
- * `CD` (Campeonato Departamental) NO es un 4º tier: por
- * `contracts/chart-style.md` §"A/B/C ordinal scale" / `data-model.md` §2,
- * su intensidad de tapering real es **A** (tapering completo, 7 días) —
- * la distinción de campeonato es un hecho ortogonal, ya representado por
- * separado en el badge "CD" con ícono `Trophy`
- * (`CompetitionDetailPage.tsx:452-460`), no fusionado en esta escala.
- *
- *   I   31-ene (2026-01)  → C  (sin tapering)
- *   II  28-feb (2026-02)  → C
- *   III 19-abr (2026-04)  → C  (diagnóstica)
- *   IV  17-may (2026-05)  → A  (tapering completo)
- *   CD  12-jun (2026-06)  → A  (Campeonato Departamental, mismo tapering que A)
- *   V   01-ago (2026-08)  → B  (mini-tapering)
- *   VI  12-sep (2026-09)  → A
- *   VII 18-oct (2026-10)  → B
- */
-const CARRERA_TIER: Record<string, "A" | "B" | "C"> = {
-  "2026-01": "C",
-  "2026-02": "C",
-  "2026-04": "C",
-  "2026-05": "A",
-  "2026-06": "A",
-  "2026-08": "B",
-  "2026-09": "A",
-  "2026-10": "B",
-};
-
-/**
- * Dado un insight (o su fecha ``generated_at``), devuelve el tier ordinal
- * (A/B/C) de la carrera Copa Valle correspondiente al mes-año de la fecha.
- * Devuelve ``null`` si la fecha no coincide con ninguna válida del calendario.
- *
- * @param date - ISO date string o Date object (``generated_at`` del insight).
- */
-export function getCarreraTier(
-  date: Date | string,
-): "A" | "B" | "C" | null {
-  const d = typeof date === "string" ? new Date(date) : date;
-  if (!Number.isFinite(d.getTime())) return null;
-  // getMonth() es 0-based — añadimos 1 y pad con "0".
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const year = String(d.getFullYear());
-  const key = `${year}-${month}`;
-  return CARRERA_TIER[key] ?? null;
-}
-
-// ---------------------------------------------------------------------------
 // Guía de tapering por tier de carrera — tile "Próxima carrera" (Inicio coach)
 // ---------------------------------------------------------------------------
 
 /**
- * Guía de tapering asociada a un tier de carrera Copa Valle.
+ * Guía de tapering asociada a un tier de carrera.
  *
  * `taperDays` es la ventana de tapering completa en días (`[min, max]`),
  * `null` cuando el tier no tiene tapering (diagnóstica). `warningAt`/`dangerAt`
  * son los umbrales de `daysUntil` (días restantes hasta la carrera) que
  * disparan cada estado de urgencia en la tile ("upcoming"/"in_window");
  * ambos `null` cuando el tier nunca escala urgencia (tier C).
+ *
+ * Wave 3 (hotfix multicopa, 2026-09-16): el tier ya NO se deriva de un
+ * calendario Copa Valle hardcodeado por mes (`getCarreraTier`/
+ * `CARRERA_TIER`, retirados) — viene de `race_events.priority` ('A'|'B'|
+ * 'C'|'CD', `RaceEventPriority`), real por evento y válido para cualquier
+ * copa. `CD` (campeonato) se sigue leyendo como tier `A` en los call sites
+ * (`NextRaceTile.tsx`, `InsightsTimeline.tsx`) — misma intensidad de
+ * tapering completo, sin entrada propia acá; la distinción de campeonato
+ * la sigue llevando su propio badge/ícono, no esta escala.
  */
 export interface TaperGuidance {
   label: string;
@@ -343,14 +337,10 @@ export interface TaperGuidance {
 }
 
 /**
- * Mapa tier → guía de tapering, clave según `getCarreraTier`.
+ * Mapa tier → guía de tapering.
  *
  * Copia exacta de las etiquetas de categoría ya usadas en el wizard de
  * calendario (`EventForm.tsx:71-75`, `COMPETITION_CATEGORIES`) para A/B/C.
- * El Campeonato Departamental (junio) resuelve a tier `A` desde
- * `CARRERA_TIER` — no tiene entrada propia aquí (ver nota en
- * `CARRERA_TIER`); su distinción de campeonato la sigue llevando el badge
- * "CD" independiente en `CompetitionDetailPage.tsx`.
  *
  * Umbrales de urgencia (`warningAt`/`dangerAt`) per
  * `specs/031-coach-home-mission-control/contracts/home-tiles.md`:

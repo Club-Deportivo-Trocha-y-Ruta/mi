@@ -25,7 +25,7 @@ from app.models.race_category import CategoryGender, CategoryTier, RaceCategory
 from app.models.race_competitor import RaceCompetitor
 from app.models.race_event import RaceEvent, RaceEventStatus
 from app.models.race_result import RaceResult, ResultStatus
-from app.models.race_series import RaceSeries
+from app.models.race_series import RaceSeries, RaceSeriesKind
 from app.services.race.analytics import (
     athlete_progression,
     club_ranking,
@@ -461,8 +461,14 @@ class TestClubRanking:
     async def test_by_category_only_counts_tyr_with_athlete_id(
         self, analytics_session: FakeAsyncSession
     ):
-        """Sólo competitors con athlete_id NOT NULL suman puntos."""
-        ranking = await club_ranking(analytics_session, season=_SEASON)
+        """Sólo competitors con athlete_id NOT NULL suman puntos.
+
+        ``series_id=1`` (la única copa de ``analytics_session``) — desde el
+        hotfix "identidad de válida" (2026-09-16), ``club_ranking`` sin
+        ``series_id`` agrupa por copa en vez de devolver un dict plano; ver
+        ``TestClubRankingMultiCup`` para el caso agrupado.
+        """
+        ranking = await club_ranking(analytics_session, season=_SEASON, series_id=1)
         # 4 races para TyR INF_A → 30+36+36+40 = 142
         inf_a_bucket = [b for b in ranking["by_category"] if b["category_code"] == _INF_A_CODE]
         assert len(inf_a_bucket) == 1
@@ -471,13 +477,14 @@ class TestClubRanking:
         assert inf_a_bucket[0]["podiums"] == 4
         assert inf_a_bucket[0]["wins"] == 1
         assert inf_a_bucket[0]["active_riders"] == 1
+        assert ranking["series_id"] == 1
 
     @pytest.mark.asyncio
     async def test_total_points_equals_sum_of_by_category(
         self, analytics_session: FakeAsyncSession
     ):
         """``total_points`` = sum(by_category.total_points)."""
-        ranking = await club_ranking(analytics_session, season=_SEASON)
+        ranking = await club_ranking(analytics_session, season=_SEASON, series_id=1)
         sum_cat = sum(b["total_points"] for b in ranking["by_category"])
         assert ranking["total_points"] == sum_cat
         assert ranking["total_wins"] == 1
@@ -488,7 +495,7 @@ class TestClubRanking:
         self, analytics_session: FakeAsyncSession
     ):
         """INF_A pertenece al tier 'menores' → 1 rider único en menores."""
-        ranking = await club_ranking(analytics_session, season=_SEASON)
+        ranking = await club_ranking(analytics_session, season=_SEASON, series_id=1)
         dist = ranking["distribution_by_tier"]
         assert dist["menores"] == 1
         assert dist["juvenil"] == 0
@@ -500,16 +507,129 @@ class TestClubRanking:
     async def test_empty_when_no_events_in_season(
         self, fake_session: FakeAsyncSession
     ):
-        """Sin events en la temporada → estructura vacía pero válida."""
+        """Sin copas en la temporada (sin ``series_id``) → ``by_series`` vacío."""
         ranking = await club_ranking(fake_session, season=2099)
+        assert ranking == {"by_series": []}
+
+    @pytest.mark.asyncio
+    async def test_empty_when_series_id_has_no_events(
+        self, fake_session: FakeAsyncSession
+    ):
+        """``series_id`` que no existe → estructura plana en 0, no error."""
+        ranking = await club_ranking(fake_session, season=2099, series_id=999)
         assert ranking["by_category"] == []
         assert ranking["total_points"] == 0
-        assert ranking["total_podiums"] == 0
-        assert ranking["total_wins"] == 0
-        assert ranking["active_riders"] == 0
-        assert ranking["distribution_by_tier"] == {
-            "menores": 0, "juvenil": 0, "adulto": 0, "master": 0,
-        }
+        assert ranking["series_id"] == 999
+        assert ranking["series_name"] is None
+
+
+class TestClubRankingMultiCup:
+    """Hotfix "identidad de válida" (2026-09-16, bug #8): ``club_ranking``
+    sin ``series_id`` debía agrupar por copa, no sumar todas las series de
+    la temporada en un solo total."""
+
+    @pytest.mark.asyncio
+    async def test_single_cup_season_grouped_matches_flat_scope(
+        self, analytics_session: FakeAsyncSession
+    ):
+        """Con una sola copa en la temporada, el modo agrupado (sin
+        ``series_id``) debe degenerar en una lista de 1 elemento idéntico al
+        dict plano que se obtiene pasando ``series_id`` explícito."""
+        flat = await club_ranking(analytics_session, season=_SEASON, series_id=1)
+        grouped = await club_ranking(analytics_session, season=_SEASON)
+        assert set(grouped.keys()) == {"by_series"}
+        assert len(grouped["by_series"]) == 1
+        assert grouped["by_series"][0] == flat
+
+    @pytest.mark.asyncio
+    async def test_two_cups_same_season_never_sum_points(
+        self, analytics_session: FakeAsyncSession
+    ):
+        """Segunda copa (Let's Go) en la MISMA temporada con su propio TyR y
+        puntos — el ranking agrupado debe mantener cada copa aislada, nunca
+        sumar los puntos de una en el total de la otra (el bug original)."""
+        store = analytics_session.store
+        letsgo = _seed_series(store, season=_SEASON)
+        letsgo.name = "Copa Let's Go Interdepartamental XCO"
+        letsgo.kind = RaceSeriesKind.cup
+        # 2 válidas de la copa Let's Go, en junio/julio — DESPUÉS de la Copa
+        # Valle de ``analytics_session`` (enero-abril 2026, ver
+        # ``_seed_events`` default ``base_date=date(2026, 1, 31)``) para
+        # ejercitar el orden por fecha de primera válida corrida, no por
+        # ``series_id`` ni por orden de creación (Let's Go tiene series_id
+        # MAYOR pero fecha MÁS TARDE → debe quedar segunda).
+        lg_events = _seed_events(
+            store, letsgo.id, count=2, base_date=date(2026, 6, 1)
+        )
+        inf_a = _get_cat(store, _INF_A_CODE)
+        lg_tyr = _seed_competitor(store, "Otro TyR", athlete_id=77)
+        for ev, pos, pts in zip(lg_events, [1, 2], [40, 30]):
+            _seed_result(
+                store, event_id=ev.id, category_id=inf_a.id,
+                competitor_id=lg_tyr.id, athlete_id=77, position=pos,
+                race_time_ms=1_500_000, points=pts,
+            )
+
+        grouped = await club_ranking(analytics_session, season=_SEASON)
+        assert len(grouped["by_series"]) == 2
+
+        # Orden por fecha de primera válida corrida → Copa Valle (enero)
+        # antes de Let's Go (junio), aunque Let's Go tenga series_id mayor.
+        assert grouped["by_series"][0]["series_id"] == 1
+        assert grouped["by_series"][1]["series_id"] == letsgo.id
+        assert grouped["by_series"][1]["series_name"] == (
+            "Copa Let's Go Interdepartamental XCO"
+        )
+
+        valle_bucket = grouped["by_series"][0]
+        lg_bucket = grouped["by_series"][1]
+
+        # Let's Go: solo sus 2 válidas (40+30=70) — nada de la Copa Valle.
+        assert lg_bucket["total_points"] == 70
+        assert lg_bucket["total_wins"] == 1
+        assert lg_bucket["active_riders"] == 1
+
+        # Copa Valle: sigue en 142, sin contaminarse con los puntos de Let's Go.
+        assert valle_bucket["total_points"] == 142
+        assert valle_bucket["active_riders"] == 1
+
+        # Ningún bucket contiene al TyR de la otra copa.
+        inf_a_lg = [b for b in lg_bucket["by_category"] if b["category_code"] == _INF_A_CODE][0]
+        inf_a_valle = [
+            b for b in valle_bucket["by_category"] if b["category_code"] == _INF_A_CODE
+        ][0]
+        assert inf_a_lg["active_riders"] == 1
+        assert inf_a_valle["active_riders"] == 1
+
+    @pytest.mark.asyncio
+    async def test_championship_excluded_from_grouped_ranking(
+        self, analytics_session: FakeAsyncSession
+    ):
+        """Un campeonato en la misma temporada NUNCA aparece en ``by_series``
+        — no tiene ranking acumulado por puntos (``RaceSeriesKind``)."""
+        store = analytics_session.store
+        champ = _seed_series(store, season=_SEASON)
+        champ.name = "Campeonato Departamental Valle 2026"
+        champ.kind = RaceSeriesKind.championship
+        champ_events = _seed_events(
+            store, champ.id, count=1, base_date=date(2026, 7, 1)
+        )
+        inf_a = _get_cat(store, _INF_A_CODE)
+        tyr = next(
+            c for c in store.competitors.values() if c.display_name == "Thiago Duque"
+        )
+        _seed_result(
+            store, event_id=champ_events[0].id, category_id=inf_a.id,
+            competitor_id=tyr.id, athlete_id=42, position=1,
+            race_time_ms=1_500_000, points=100,
+        )
+
+        grouped = await club_ranking(analytics_session, season=_SEASON)
+        series_ids = {b["series_id"] for b in grouped["by_series"]}
+        assert champ.id not in series_ids
+        assert len(grouped["by_series"]) == 1
+        # Copa Valle sigue en 142 — el campeonato no se sumó.
+        assert grouped["by_series"][0]["total_points"] == 142
 
 
 # ===========================================================================

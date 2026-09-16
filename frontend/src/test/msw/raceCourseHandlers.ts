@@ -91,6 +91,7 @@ export function makeCourseRead(overrides?: Partial<CourseRead>): CourseRead {
     suggested_setups: [
       {
         category_id: 12,
+        category_label: "Sub-15 varones",
         laps: 3,
         variant_label: "Circuito completo",
         source_event_id: 38,

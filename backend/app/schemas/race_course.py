@@ -112,6 +112,7 @@ class SuggestedSetupRead(BaseModel):
     """Sugerencia de prefill tomada de la válida anterior de la serie (R-14)."""
 
     category_id: int
+    category_label: str
     laps: int
     variant_label: str
     source_event_id: int

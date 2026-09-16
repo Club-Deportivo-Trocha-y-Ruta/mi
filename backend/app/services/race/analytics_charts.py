@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import math
+from types import SimpleNamespace
 from typing import Any, Optional
 
 from sqlalchemy import select, text
@@ -32,6 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.race_course_category_setup import RaceCourseCategorySetup
+from app.models.race_event import RaceEventPriority
 from app.models.race_series import RaceSeriesKind, RaceSeriesLevel
 from app.schemas.athlete_race_analysis import (
     AnalysisConfidence,
@@ -45,6 +47,7 @@ from app.schemas.athlete_race_analysis import (
     RaceParticipationOption,
     RaceParticipationResponse,
 )
+from app.services.notification.race_event_tier import RaceTier, get_race_tier
 from app.services.race.comparison_groups import build_comparison_group, group_label
 from app.services.race.course.derived import derive_figures
 from app.services.race.race_labels import build_race_label
@@ -828,7 +831,9 @@ async def list_athlete_races(
             s.level          AS series_level,
             e.event_date,
             e.name           AS event_name,
-            e.location
+            e.location,
+            e.is_championship,
+            e.priority
         FROM race_results rr
         JOIN race_events e  ON e.id = rr.event_id
         JOIN race_series s  ON s.id = e.series_id
@@ -844,7 +849,9 @@ async def list_athlete_races(
             s.level,
             e.event_date,
             e.name,
-            e.location
+            e.location,
+            e.is_championship,
+            e.priority
         ORDER BY e.event_date ASC
         """
     )
@@ -873,6 +880,8 @@ async def list_athlete_races(
         event_date_raw = _get("event_date", 6)
         event_name_raw = _get("event_name", 7)
         location_raw   = _get("location", 8)
+        is_championship_raw = _get("is_championship", 9)
+        priority_raw   = _get("priority", 10)
 
         if (
             event_id_raw is None
@@ -905,6 +914,29 @@ async def list_athlete_races(
         location_str: str | None = str(location_raw) if location_raw else None
         label = build_race_label(kind_enum, seq_num, location_str, level=level_enum)
 
+        # Tier expuesto: reutiliza race_event_tier.get_race_tier (no
+        # duplicar la regla "campeonato ⇒ CD aunque priority sea NULL").
+        # La query es raw SQL (no ORM RaceEvent) — un SimpleNamespace con
+        # los 3 atributos que get_race_tier lee basta, sin query adicional.
+        priority_enum: RaceEventPriority | None = None
+        if priority_raw is not None:
+            priority_str = (
+                priority_raw.value
+                if isinstance(priority_raw, RaceEventPriority)
+                else str(priority_raw)
+            )
+            if priority_str:
+                priority_enum = RaceEventPriority(priority_str)
+        tier = get_race_tier(
+            SimpleNamespace(
+                id=int(event_id_raw),
+                is_championship=bool(is_championship_raw),
+                sequence_number=seq_num,
+                priority=priority_enum,
+            )
+        )
+        exposed_priority = None if tier is RaceTier.UNKNOWN else tier.value
+
         items.append(
             RaceParticipationOption(
                 event_id=int(event_id_raw),
@@ -919,6 +951,7 @@ async def list_athlete_races(
                 # también declara min_length=1.
                 series_name=str(series_name_raw) if series_name_raw is not None else "Serie",
                 series_level=level_enum.value,
+                priority=exposed_priority,
             )
         )
 

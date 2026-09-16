@@ -16,6 +16,7 @@ from app.services.race.agents.analyst import (
     PROMPT_VERSION_SEASON_SUMMARY_V3,
     AnalystV3Input,
     RaceAnalystAgent,
+    _v3_season_block,
     series_label_v3,
 )
 from app.services.race.prompts import render_prompt
@@ -275,6 +276,32 @@ def test_season_prompt_renders_the_season_table():
     assert cup_idx < champ_heading_idx < champ_row_idx
 
 
+def test_v3_season_block_renders_one_titled_table_per_cup_when_two_cups_share_a_valida():
+    """Hotfix multicopa: dos copas DISTINTAS (no copa+campeonato) que
+    comparten ``valida_num`` deben rendir dos sub-tablas tituladas con su
+    propio nombre — nunca una sola tabla donde ambas "Válida 4" queden
+    indistinguibles (ver plans/multicopa-identidad-valida.md)."""
+    copa_valle_v4 = {**FIELD_METRICS_V4, "series_id": 1, "series_name": "Copa Valle"}
+    copa_letsgo_v4 = {
+        **FIELD_METRICS_V4,
+        "event_id": 43,
+        "series_id": 9,
+        "series_name": "Copa Let's Go Interdepartamental",
+        "event_date": "2026-09-13",
+    }
+    block = _v3_season_block([copa_valle_v4, copa_letsgo_v4])
+
+    assert block is not None
+    assert "*Copa Valle*" in block
+    assert "*Copa Let's Go Interdepartamental*" in block
+    valle_idx = block.index("*Copa Valle*")
+    letsgo_idx = block.index("*Copa Let's Go Interdepartamental*")
+    # Cada nombre de copa encabeza SU PROPIA sub-tabla — no aparece ninguna
+    # tabla sin encabezado que mezcle ambas filas "Válida 4".
+    assert block.count("| 4 |") == 2
+    assert valle_idx != letsgo_idx
+
+
 def test_season_prompt_season_table_single_kind_has_no_heading():
     """Con un solo tipo de fila (solo copa) no aparece ningún encabezado (F-4)."""
     text = render(
@@ -314,3 +341,21 @@ def test_series_label_marks_championships():
     assert series_label_v3(FIELD_METRICS_CHAMPIONSHIP) == "Cto. Departamental"
     assert series_label_v3(FIELD_METRICS_V4) == "Válida 4 · Copa"
     assert series_label_v3(None) == ""
+
+
+def test_series_label_v3_uses_the_real_cup_name_when_present():
+    """Hotfix multicopa (plans/multicopa-identidad-valida.md): con
+    ``series_name``/``series_short_name`` en ``field_metrics`` (poblados por
+    ``compute_field_metrics``), la etiqueta antepone el nombre real de la
+    copa en vez del literal genérico "Copa" — así dos copas que comparten
+    ``valida_num`` nunca rinden el mismo texto."""
+    fm = {**FIELD_METRICS_V4, "series_name": "Copa Let's Go Interdepartamental"}
+    assert series_label_v3(fm) == "Copa Let's Go Interdepartamental · Válida IV"
+
+    fm_short = {**FIELD_METRICS_V4, "series_name": "Copa Let's Go", "series_short_name": "Let's Go"}
+    assert series_label_v3(fm_short) == "Let's Go · Válida IV"
+
+    # Un campeonato no antepone copa — sin cambios (product decision: los
+    # campeonatos mantienen el tratamiento previo).
+    champ = {**FIELD_METRICS_CHAMPIONSHIP, "series_name": "Campeonato Departamental"}
+    assert series_label_v3(champ) == "Cto. Departamental"

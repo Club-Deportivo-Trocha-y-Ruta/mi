@@ -86,6 +86,27 @@ export interface RaceSeriesRead {
   level: RaceSeriesLevel;
   /** Número de eventos (válidas o campeonatos) en la serie. */
   event_count: number;
+  /**
+   * Nombre corto para chips/etiquetas donde el espacio es limitado
+   * (ej. "Let's GO" en vez de "Copa Let's Go Interdepartamental XCO").
+   * Hotfix multicopa — identidad de válida. Máx. 40 caracteres.
+   */
+  short_name: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// PATCH — Actualizar serie (hotfix multicopa — identidad de válida)
+// ---------------------------------------------------------------------------
+
+/**
+ * Payload parcial de actualización de una serie de competencias.
+ * Mirror de `RaceSeriesUpdate` del backend — `PATCH /api/race-analysis/race-series/{id}`.
+ *
+ * `short_name: null` limpia el nombre corto (vuelve a usar `name` en chips).
+ */
+export interface RaceSeriesUpdate {
+  name?: string;
+  short_name?: string | null;
 }
 
 // ---------------------------------------------------------------------------

@@ -314,9 +314,13 @@ async def list_club_insights_by_race(
             detail="No tienes permisos para esta acción",
         )
 
+    series = event.series
     return ClubInsightsByRaceResponse(
         race_event_id=race_event_id,
         race_event_label=build_race_event_label(event),
+        series_id=series.id if series is not None else None,
+        series_name=series.name if series is not None else None,
+        series_short_name=series.short_name if series is not None else None,
         total_athletes=len(items),
         items=items,
     )

@@ -372,6 +372,101 @@ async def test_fetch_results_for_athlete_id_inexistente(
 
 
 # ---------------------------------------------------------------------------
+# fetch_results_for_athlete — series_id (hotfix identidad de válida)
+#
+# Dos copas de la MISMA temporada, ambas con un evento sequence_number=4:
+# sin series_id el comportamiento no cambia (ambigüedad preexistente, no se
+# afirma cuál "gana" — solo que series_id resuelve la ambigüedad); con
+# series_id cada copa retorna únicamente su propio resultado.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def two_series_same_valida_num(
+    race_db: FakeAsyncSession,
+) -> tuple[FakeAsyncSession, int, int, int, int]:
+    """Copa Valle (series de ``race_db``) + Copa Let's Go, ambas con V4.
+
+    Retorna ``(session, series_valle_id, series_letsgo_id, event_valle_v4_id,
+    event_letsgo_v4_id)``.
+    """
+    store = race_db.store
+    series_valle_id = next(iter(store.series))
+    cat_id = _get_inf_a_id(store)
+
+    series_letsgo = _seed_series(store, season=_SEASON)
+    series_letsgo.name = "Copa Let's Go"
+    letsgo_events = _seed_events(store, series_letsgo.id, count=4)
+    event_letsgo_v4 = letsgo_events[-1]
+    assert event_letsgo_v4.sequence_number == 4
+
+    event_valle_v4 = next(
+        e
+        for e in store.events.values()
+        if e.series_id == series_valle_id and e.sequence_number == 4
+    )
+
+    competitor = _seed_competitor(store, "Corredor Copa Let's Go", athlete_id=_ATHLETE_ID)
+    _seed_result(
+        store,
+        event_id=event_letsgo_v4.id,
+        category_id=cat_id,
+        competitor_id=competitor.id,
+        athlete_id=_ATHLETE_ID,
+        position=1,
+        race_time_ms=1_000_000,
+    )
+
+    return (
+        race_db,
+        series_valle_id,
+        series_letsgo.id,
+        event_valle_v4.id,
+        event_letsgo_v4.id,
+    )
+
+
+@pytest.mark.asyncio
+async def test_fetch_results_for_athlete_series_id_scopes_to_own_series(
+    two_series_same_valida_num: tuple[FakeAsyncSession, int, int, int, int],
+) -> None:
+    """Con ``series_id``, cada copa retorna solo su propio resultado de V4."""
+    (
+        session,
+        series_valle_id,
+        series_letsgo_id,
+        event_valle_v4_id,
+        event_letsgo_v4_id,
+    ) = two_series_same_valida_num
+
+    res_valle = await fetch_results_for_athlete(
+        session, _ATHLETE_ID, _SEASON, valida_nums=[4], series_id=series_valle_id
+    )
+    assert [r.event_id for r in res_valle] == [event_valle_v4_id]
+
+    res_letsgo = await fetch_results_for_athlete(
+        session, _ATHLETE_ID, _SEASON, valida_nums=[4], series_id=series_letsgo_id
+    )
+    assert [r.event_id for r in res_letsgo] == [event_letsgo_v4_id]
+
+
+@pytest.mark.asyncio
+async def test_fetch_results_for_athlete_without_series_id_behaviour_unchanged(
+    two_series_same_valida_num: tuple[FakeAsyncSession, int, int, int, int],
+) -> None:
+    """Sin ``series_id`` el filtro sigue siendo por temporada completa: la
+    ambigüedad entre las dos copas en V4 preexiste (no se afirma cuál
+    "gana" — solo que el conteo total refleja ambos eventos de V4)."""
+    session, _series_valle_id, _series_letsgo_id, event_valle_v4_id, event_letsgo_v4_id = (
+        two_series_same_valida_num
+    )
+
+    res = await fetch_results_for_athlete(session, _ATHLETE_ID, _SEASON, valida_nums=[4])
+    event_ids = {r.event_id for r in res}
+    assert event_ids == {event_valle_v4_id, event_letsgo_v4_id}
+
+
+# ---------------------------------------------------------------------------
 # fetch_podium_context
 # ---------------------------------------------------------------------------
 

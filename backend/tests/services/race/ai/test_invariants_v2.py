@@ -291,7 +291,7 @@ async def test_gap_to_winner_calculated_when_winner_present(
         position=1, race_time_ms=2000, sequence_number=1,
     )
 
-    async def _fake_fetch_results_for_athlete(db, aid, season, valida_nums=None):
+    async def _fake_fetch_results_for_athlete(db, aid, season, valida_nums=None, series_id=None):
         return [athlete_result]
 
     async def _fake_fetch_all_results_for_season(db, cat_id, season):
@@ -341,7 +341,7 @@ async def test_gap_is_none_when_winner_unavailable(
         position=5, race_time_ms=2500, sequence_number=2,
     )
 
-    async def _fake_fetch_results_for_athlete(db, aid, season, valida_nums=None):
+    async def _fake_fetch_results_for_athlete(db, aid, season, valida_nums=None, series_id=None):
         return [athlete_result]
 
     async def _fake_fetch_all_results_for_season(db, cat_id, season):

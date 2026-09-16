@@ -615,6 +615,7 @@ class TestRaceSeriesT007:
             "organizer",
             "kind",
             "level",
+            "short_name",
             "event_count",
         }
         for item in r.json()["items"]:
@@ -625,6 +626,130 @@ class TestRaceSeriesT007:
         raw = r.text.lower()
         for pii_field in ("birth_date", "dob", "medical", "weight", "height"):
             assert pii_field not in raw, f"Campo PII '{pii_field}' aparece en response"
+
+
+# ---------------------------------------------------------------------------
+# ═══════════════════════════════════════════════════════════════════════════
+# Hotfix "identidad de válida" (2026-09-16) — PATCH /race-series/{id}
+# ═══════════════════════════════════════════════════════════════════════════
+# ---------------------------------------------------------------------------
+
+
+class TestRaceSeriesUpdate:
+    """PATCH /race-series/{id}: name/short_name, RBAC, 404, 409 duplicado."""
+
+    @pytest.mark.asyncio
+    async def test_patch_short_name_persiste(self, coach_client, db_factory):
+        """PATCH short_name → 200 y persiste; se refleja en el GET siguiente."""
+        async with db_factory() as s:
+            await _seed_base_users(s)
+            s.add(RaceSeries(
+                id=1, name="Copa Let's Go Interdepartamental XCO",
+                season_year=2026, organizer="Liga",
+                points_scheme_code="copa_valle_2026",
+            ))
+            await s.commit()
+
+        r = await coach_client.patch(
+            f"{_SERIES_URL}1", json={"short_name": "Let's Go"}
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["short_name"] == "Let's Go"
+        assert body["name"] == "Copa Let's Go Interdepartamental XCO"
+
+        async with db_factory() as s:
+            series = (
+                await s.execute(select(RaceSeries).where(RaceSeries.id == 1))
+            ).scalar_one()
+            assert series.short_name == "Let's Go"
+
+    @pytest.mark.asyncio
+    async def test_patch_short_name_vacio_limpia_campo(self, coach_client, db_factory):
+        """Enviar short_name='' (o solo espacios) normaliza a NULL."""
+        async with db_factory() as s:
+            await _seed_base_users(s)
+            s.add(RaceSeries(
+                id=1, name="Copa Ficticia", season_year=2026,
+                organizer="Liga", points_scheme_code="copa_valle_2026",
+                short_name="Ficticia",
+            ))
+            await s.commit()
+
+        r = await coach_client.patch(f"{_SERIES_URL}1", json={"short_name": "   "})
+        assert r.status_code == 200, r.text
+        assert r.json()["short_name"] is None
+
+    @pytest.mark.asyncio
+    async def test_patch_name_persiste(self, coach_client, db_factory):
+        """PATCH name → 200 y persiste, sin tocar short_name."""
+        async with db_factory() as s:
+            await _seed_base_users(s)
+            s.add(RaceSeries(
+                id=1, name="Copa Vieja", season_year=2026,
+                organizer="Liga", points_scheme_code="copa_valle_2026",
+                short_name="Vieja",
+            ))
+            await s.commit()
+
+        r = await coach_client.patch(f"{_SERIES_URL}1", json={"name": "Copa Nueva"})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["name"] == "Copa Nueva"
+        assert body["short_name"] == "Vieja"
+
+    @pytest.mark.asyncio
+    async def test_patch_404_serie_inexistente(self, coach_client, db_factory):
+        async with db_factory() as s:
+            await _seed_base_users(s)
+            await s.commit()
+
+        r = await coach_client.patch(f"{_SERIES_URL}999", json={"short_name": "X"})
+        assert r.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_patch_409_name_duplicado_misma_temporada(self, coach_client, db_factory):
+        """Renombrar a un name ya usado por otra serie de la misma temporada → 409."""
+        async with db_factory() as s:
+            await _seed_base_users(s)
+            s.add(RaceSeries(
+                id=1, name="Copa A 2026", season_year=2026,
+                organizer="Liga", points_scheme_code="copa_valle_2026",
+            ))
+            s.add(RaceSeries(
+                id=2, name="Copa B 2026", season_year=2026,
+                organizer="Liga", points_scheme_code="copa_valle_2026",
+            ))
+            await s.commit()
+
+        r = await coach_client.patch(f"{_SERIES_URL}2", json={"name": "Copa A 2026"})
+        assert r.status_code == 409, r.text
+
+    @pytest.mark.asyncio
+    async def test_patch_422_campo_extra_forbid(self, coach_client, db_factory):
+        async with db_factory() as s:
+            await _seed_base_users(s)
+            s.add(RaceSeries(
+                id=1, name="Copa X", season_year=2026,
+                organizer="Liga", points_scheme_code="copa_valle_2026",
+            ))
+            await s.commit()
+
+        r = await coach_client.patch(f"{_SERIES_URL}1", json={"season_year": 2027})
+        assert r.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_patch_parent_forbidden(self, parent_client, db_factory):
+        async with db_factory() as s:
+            await _seed_base_users(s)
+            s.add(RaceSeries(
+                id=1, name="Copa X", season_year=2026,
+                organizer="Liga", points_scheme_code="copa_valle_2026",
+            ))
+            await s.commit()
+
+        r = await parent_client.patch(f"{_SERIES_URL}1", json={"short_name": "X"})
+        assert r.status_code == 403
 
 
 # ---------------------------------------------------------------------------

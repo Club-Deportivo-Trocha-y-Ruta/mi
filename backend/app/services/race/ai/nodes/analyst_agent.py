@@ -34,7 +34,7 @@ from app.services.race.agents.analyst import (
 )
 from app.services.race.ai.events import with_events
 from app.services.race.ai.retry import with_retry
-from app.services.race.race_labels import build_race_label
+from app.services.race.race_labels import build_race_label, series_display_name
 from app.services.race.schemas import AnalysisInput, LTADGroup
 
 logger = logging.getLogger(__name__)
@@ -178,6 +178,14 @@ def _valida_label(race_row: dict | None, field_metrics: dict | None) -> str | No
     como una válida más (AC-2.3 / regla 10 del prompt v3). Devuelve ``None``
     cuando no hay metadatos de serie — ahí el agente cae en
     ``series_label_v3(field_metrics)``, el comportamiento previo.
+
+    Multicopa (hotfix identidad de válida): cuando alguna de las dos fuentes
+    trae ``series_name``/``series_short_name`` (``race_row`` vía
+    ``analytics.athlete_progression`` desde feature 039; ``field_metrics``
+    vía ``compute_field_metrics``), antepone el nombre real de la copa
+    (``series_display_name``) — así "Válida IV" pasa a "Copa Let's Go ·
+    Válida IV" y dos copas que comparten válida nunca rinden la misma
+    etiqueta. Sin esos campos, el resultado es idéntico al previo.
     """
     sources = [s for s in (race_row, field_metrics) if isinstance(s, dict)]
     if not sources:
@@ -208,7 +216,10 @@ def _valida_label(race_row: dict | None, field_metrics: dict | None) -> str | No
     except (ValueError, TypeError):
         return None
 
-    return build_race_label(kind, sequence_number, pick("location"), level=level)
+    cup_label = series_display_name(pick("series_name"), pick("series_short_name"))
+    return build_race_label(
+        kind, sequence_number, pick("location"), level=level, series_label=cup_label
+    )
 
 
 def _build_input(
@@ -460,10 +471,29 @@ def _field_metrics_for_row(
     return field_by_valida.get(valida_num)
 
 
-def _season_rows_for_prompt(state: dict) -> list[dict]:
-    """Filas de temporada con métricas de pelotón, ordenadas cronológicamente."""
+def _season_rows_for_prompt(
+    state: dict, *, series_id: int | None, analyzed_date: str | None
+) -> list[dict]:
+    """Filas de temporada con métricas de pelotón, ordenadas cronológicamente.
+
+    Multicopa (hotfix identidad de válida — ver
+    ``plans/multicopa-identidad-valida.md``, product decision: spec 039 US4
+    es la autoridad, un per-válida de una copa SOLO ve rondas ANTERIORES de
+    ESA MISMA copa, nunca otra copa ni un campeonato).
+
+    ``series_id`` acota a la copa del run (``None`` en el resumen de
+    temporada, que sí necesita todas las filas para agruparlas por copa en
+    ``_v3_season_block``/``_group_cup_rows_by_series``). ``analyzed_date``
+    recorta a ``event_date <= analyzed_date`` — un per-válida nunca debe
+    asomarse a carreras futuras de su propia copa. Con ambos ``None`` (rama
+    de temporada) se devuelven todas las filas sin recorte.
+    """
     field_context: dict = state.get("field_context") or {}
     rows = [v for v in field_context.values() if isinstance(v, dict)]
+    if series_id is not None:
+        rows = [r for r in rows if r.get("series_id") == series_id]
+    if analyzed_date is not None:
+        rows = [r for r in rows if (r.get("event_date") or "") <= analyzed_date]
     return sorted(rows, key=lambda r: (r.get("event_date") or "", r.get("valida_num") or 0))
 
 
@@ -490,12 +520,86 @@ def _course_meta_for_valida(state: dict, valida_num: int) -> str | None:
     return format_course_meta(course_context.get(valida_num))
 
 
+def _course_meta_for_event(state: dict, event_id: int) -> str | None:
+    """Perfil de circuito registrado para ese evento (o ``None``).
+
+    Multicopa (hotfix): variante keyed por ``event_id`` de
+    :func:`_course_meta_for_valida`, para el resumen de temporada — ver
+    ``_season_course_by_valida``.
+    """
+    from app.services.race.agents.analyst import format_course_meta
+
+    course_by_event: dict[int, dict] = state.get("course_context_by_event") or {}
+    return format_course_meta(course_by_event.get(event_id))
+
+
+def _season_event_label(field_metrics_row: dict[str, Any]) -> str:
+    """Etiqueta con la copa real para una entrada de ``field_context``.
+
+    Multicopa (hotfix): el resumen de temporada debe distinguir dos copas
+    que comparten ``valida_num`` (spec 014) — un dict keyed por número de
+    válida perdería una de las dos entradas al chocar la clave. Reusa el
+    mismo par ``series_display_name`` + ``build_race_label`` que
+    ``series_label_v3``/``_valida_label`` (agents/analyst.py) para que las
+    tres etiquetas del pipeline sean consistentes.
+    """
+    is_championship = bool(field_metrics_row.get("is_championship"))
+    kind = RaceSeriesKind.championship if is_championship else RaceSeriesKind.cup
+    level_raw = str(field_metrics_row.get("series_level") or "").lower()
+    try:
+        level = RaceSeriesLevel(level_raw) if level_raw else RaceSeriesLevel.departmental
+    except ValueError:
+        level = RaceSeriesLevel.departmental
+    cup_label = series_display_name(
+        field_metrics_row.get("series_name"), field_metrics_row.get("series_short_name")
+    )
+    valida_num = field_metrics_row.get("valida_num")
+
+    if is_championship:
+        prefix = "Cto. Nacional" if level is RaceSeriesLevel.national else "Cto. Departamental"
+        return f"{cup_label} · {prefix}" if cup_label else prefix
+    if valida_num is None:
+        return cup_label or "Copa"
+    if not cup_label:
+        return f"Válida {valida_num} · Copa"
+    return build_race_label(kind, int(valida_num), None, level=level, series_label=cup_label)
+
+
+def _season_course_by_valida(state: dict) -> dict[str, str]:
+    """``course_by_valida`` de temporada — keyed por etiqueta, no por válida.
+
+    Multicopa (hotfix, CONTRACT → Pipeline state): dos copas pueden compartir
+    ``valida_num`` (spec 014), así que un dict ``{valida_num: str}`` no puede
+    representar ambas — colisionarían en la misma clave y se perdería una.
+    Se construye desde ``course_context_by_event`` (keyed por ``event_id``,
+    sin ambigüedad, poblado por ``load_race_data`` SOLO en runs de temporada)
+    y ``field_context`` (también keyed por ``event_id``) para resolver la
+    etiqueta con la copa real de cada evento. Un evento sin bloque de
+    circuito (los seis campos ausentes) se omite — mismo veto de ausencia
+    que la versión por-válida.
+    """
+    course_by_event: dict[int, dict] = state.get("course_context_by_event") or {}
+    field_context: dict = state.get("field_context") or {}
+
+    def _sort_key(event_id: int) -> tuple[str, int]:
+        row = field_context.get(event_id) or {}
+        return (row.get("event_date") or "", event_id)
+
+    out: dict[str, str] = {}
+    for event_id in sorted(course_by_event.keys(), key=_sort_key):
+        block = _course_meta_for_event(state, event_id)
+        if block is None:
+            continue
+        row = field_context.get(event_id) or {}
+        out[_season_event_label(row)] = block
+    return out
+
+
 def _build_v3_inputs(state: dict, athlete_ref: str) -> list[AnalystV3Input]:
     """Construye una entrada v3 por válida (o una sola para la temporada)."""
     analysis_kind = state.get("analysis_kind") or "valida"
     metrics_base = state.get("metrics") or {}
     progression_all: list[dict] = metrics_base.get("progression", []) or []
-    season_rows = _season_rows_for_prompt(state)
     memory: list[str] = list(state.get("memory") or [])[:3]
 
     common = {
@@ -504,7 +608,6 @@ def _build_v3_inputs(state: dict, athlete_ref: str) -> list[AnalystV3Input]:
         "ltad_group": str(_resolve_ltad(state).value),
         "season": state.get("season"),
         "validas_count": int(state.get("season_validas_count") or 0),
-        "season_rows": season_rows,
         "anthro_context": state.get("anthro_context"),
         "training_window": state.get("training_window"),
         "coach_dialogue": list(state.get("coach_dialogue") or []),
@@ -514,25 +617,19 @@ def _build_v3_inputs(state: dict, athlete_ref: str) -> list[AnalystV3Input]:
 
     if analysis_kind == "season":
         # La temporada no tiene fila de carrera ni lectura de pelotón propia:
-        # la tabla de temporada es todo el insumo (spec §US5).
-        # Feature 043 (US4): un course_meta por válida que SÍ tiene dato de
-        # circuito — las que no, se omiten del dict (veto de ausencia).
-        # ``valida_nums`` está vacío en un lanzamiento global (spec §US5); las
-        # válidas reales de la temporada están en las claves de
-        # ``course_context`` (load_race_data las deriva de los resultados
-        # cuando no hay válidas explícitas), así que se itera sobre esas
-        # claves y no sobre ``valida_nums``.
-        course_context: dict[int, dict] = state.get("course_context") or {}
-        course_by_valida = {
-            v: b
-            for v in sorted(course_context.keys())
-            if (b := _course_meta_for_valida(state, v)) is not None
-        }
+        # la tabla de temporada es todo el insumo (spec §US5). Multicopa
+        # (hotfix): series_id=None/analyzed_date=None → todas las filas, para
+        # que _v3_season_block las agrupe por copa (_group_cup_rows_by_series).
+        # course_by_valida se arma por-evento (ver _season_course_by_valida)
+        # para que dos copas con la misma válida N rindan dos entradas.
         return [
             AnalystV3Input(
                 valida_num=0,
                 analysis_kind="season",
-                course_by_valida=course_by_valida,
+                season_rows=_season_rows_for_prompt(
+                    state, series_id=None, analyzed_date=None
+                ),
+                course_by_valida=_season_course_by_valida(state),
                 **common,
             )
         ]
@@ -540,6 +637,12 @@ def _build_v3_inputs(state: dict, athlete_ref: str) -> list[AnalystV3Input]:
     field_context: dict = state.get("field_context") or {}
     field_by_valida = _field_metrics_by_valida(state)
     anchored_event_id = state.get("event_id")
+    # Multicopa (hotfix): la copa de ESTE lanzamiento, resuelta por
+    # load_race_data desde el ancla (o desde (season, valida_num) cuando
+    # resuelve sin ambigüedad). Sin ella no se "adivina" — "Recorrido hasta
+    # acá" queda vacío en vez de asomarse a otra copa (product decision: el
+    # per-válida nunca menciona otra copa).
+    run_series_id = state.get("series_id")
     inputs: list[AnalystV3Input] = []
     for valida_num in list(state.get("valida_nums") or []):
         race_row = _resolve_race_row(progression_all, valida_num, anchored_event_id)
@@ -549,6 +652,16 @@ def _build_v3_inputs(state: dict, athlete_ref: str) -> list[AnalystV3Input]:
         field_metrics = _field_metrics_for_row(
             field_context, field_by_valida, race_row, valida_num
         )
+        analyzed_date = (race_row or {}).get("event_date") or (
+            field_metrics or {}
+        ).get("event_date")
+        season_rows = (
+            _season_rows_for_prompt(
+                state, series_id=run_series_id, analyzed_date=analyzed_date
+            )
+            if run_series_id is not None
+            else []
+        )
         inputs.append(
             AnalystV3Input(
                 valida_num=valida_num,
@@ -556,6 +669,7 @@ def _build_v3_inputs(state: dict, athlete_ref: str) -> list[AnalystV3Input]:
                 valida_label=_valida_label(race_row, field_metrics),
                 race_row=race_row,
                 field_metrics=field_metrics,
+                season_rows=season_rows,
                 race_meta=_race_meta_for_valida(state, valida_num),
                 course_meta=_course_meta_for_valida(state, valida_num),
                 **common,

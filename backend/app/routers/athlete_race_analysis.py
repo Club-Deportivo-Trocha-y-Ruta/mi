@@ -71,6 +71,7 @@ from app.services.race.analytics_charts import (
 from app.services.race.ai.budget_guard import BudgetExceededError, check_budget
 from app.services.race.ai.runner import RunBackpressureError, submit_run
 from app.services.race.group_launch import find_active_run
+from app.services.notification.race_event_tier import RaceTier, get_race_tier
 from app.services.privacy import athlete_has_ai_processing_consent
 from app.services.race.insights_history import (
     get_athlete_insight,
@@ -112,6 +113,13 @@ def _insight_to_out(row: AthleteAiInsight) -> AthleteInsightOut:
     """
     event = row.event
     series = event.series if event is not None else None
+    # Tier expuesto: get_race_tier (nunca la columna cruda) — un campeonato
+    # con priority=NULL igual expone 'CD'. UNKNOWN → None. event ya viene
+    # eager-cargado (contains_eager en insights_history) — sin query extra.
+    exposed_priority: Optional[str] = None
+    if event is not None:
+        tier = get_race_tier(event, series=series)
+        exposed_priority = None if tier is RaceTier.UNKNOWN else tier.value
     headline: Optional[str] = None
     structured_raw = getattr(row, "structured_json", None)
     if structured_raw is not None:
@@ -127,6 +135,10 @@ def _insight_to_out(row: AthleteAiInsight) -> AthleteInsightOut:
         event_date=event.event_date if event is not None else None,
         series_kind=series.kind.value if series is not None else None,
         series_level=series.level.value if series is not None else None,
+        series_id=series.id if series is not None else None,
+        series_name=series.name if series is not None else None,
+        series_short_name=series.short_name if series is not None else None,
+        priority=exposed_priority,
         use_case=row.use_case,
         summary_text=row.summary_text,
         confidence=row.confidence,
@@ -319,6 +331,15 @@ async def list_insights(
     season: Optional[int] = Query(default=None, ge=2020, le=2100),
     use_case: Optional[str] = Query(default=None, max_length=32),
     valida_num: Optional[int] = Query(default=None, ge=0, le=99),
+    event_id: Optional[int] = Query(
+        default=None,
+        ge=1,
+        description=(
+            "Filtra por evento concreto (hotfix 'identidad de válida', "
+            "2026-09-16) — desambigua cuando dos copas comparten "
+            "valida_num en la misma temporada."
+        ),
+    ),
     include_deprecated: bool = Query(default=False),
     latest_only: bool = Query(default=True),
     limit: int = Query(default=20, ge=1, le=100),
@@ -338,6 +359,7 @@ async def list_insights(
         season=season,
         use_case=use_case,
         valida_num=valida_num,
+        event_id=event_id,
         include_deprecated=include_deprecated,
         latest_only=latest_only,
         limit=limit,
@@ -808,7 +830,9 @@ async def start_athlete_run(
     # completa, sin filtro) no tiene una "misma válida" contra la cual
     # comparar y queda fuera del alcance de este guard.
     for vn in valida_nums or []:
-        existing_run_id = await find_active_run(db, athlete.id, body.season, int(vn))
+        existing_run_id = await find_active_run(
+            db, athlete.id, body.season, int(vn), event_id=resolved_event_id
+        )
         if existing_run_id is not None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,

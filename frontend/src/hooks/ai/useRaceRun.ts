@@ -399,6 +399,12 @@ export function useApproveStep(runId: string) {
       // rebote `athlete-activities` (Strava) y `athlete-newsletter(s)`.
       void invalidateAthleteAiQueries(queryClient);
     },
+    onError: (err) => {
+      // 409 = el run ya no espera HITL; refrescar el estado oculta la tarjeta.
+      if ((err as { response?: { status?: number } })?.response?.status === 409) {
+        void queryClient.invalidateQueries({ queryKey: raceRunKeys.status(runId) });
+      }
+    },
   });
 }
 

@@ -15,9 +15,11 @@
  *   - `hasCourseData=false` → no renderiza nada (`null`).
  *   - Raíz: `data-testid="course-summary"`.
  *   - Por variante: `data-testid="course-summary-figures-{variantId}"` con
- *     distancia (km), desnivel (m, o "sin dato") y vueltas (si algún setup
- *     referencia esa variante — se omite la palabra "vueltas" si ninguno lo
- *     hace).
+ *     distancia (km), desnivel (m, o "sin dato" en minúscula — solo cuando
+ *     `has_elevation=true`; se omite el desnivel por completo si es `false`,
+ *     porque `VariantBlock` ya muestra "Sin altimetría en la grabación") y
+ *     vueltas (si algún setup referencia esa variante — se omite la palabra
+ *     "vueltas" si ninguno lo hace).
  *   - `has_elevation=false` → texto fijo "Sin altimetría en la grabación" en
  *     vez de `ElevationProfile`; `CourseMap` se sigue mostrando siempre.
  *   - Tabla de vueltas por categoría: `data-testid="course-summary-setup-row-{categoryId}"`,
@@ -152,7 +154,7 @@ describe("CourseSummary — figuras por variante", () => {
     expect(figures).toHaveTextContent(/vueltas/i);
   });
 
-  it("usa la convención 'sin dato' cuando elevation_gain_m es null, y omite 'vueltas' si ningún setup referencia la variante", async () => {
+  it("omite el desnivel por completo cuando has_elevation=false (ya lo cubre 'Sin altimetría en la grabación'), y omite 'vueltas' si ningún setup referencia la variante", async () => {
     render(
       <CourseSummary
         hasCourseData
@@ -166,8 +168,35 @@ describe("CourseSummary — figuras por variante", () => {
       `course-summary-figures-${VARIANT_NO_ELEVATION.id}`,
     );
     expect(figures).toHaveTextContent("2.5 km");
-    expect(figures).toHaveTextContent(/sin dato/i);
+    expect(figures).not.toHaveTextContent(/desnivel/i);
     expect(figures).not.toHaveTextContent(/vueltas/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// mapOnly (pestaña del coach)
+// ---------------------------------------------------------------------------
+
+describe("CourseSummary — mapOnly", () => {
+  it("solo muestra mapa + perfil de la primera variante: sin cifras, vueltas ni descripción", async () => {
+    render(
+      <CourseSummary
+        hasCourseData
+        variants={[VARIANT_WITH_ELEVATION, VARIANT_NO_ELEVATION]}
+        setups={[SETUP_HIGHLIGHTED, SETUP_OTHER]}
+        description={FULL_DESCRIPTION}
+        myCategories={[]}
+        mapOnly
+      />,
+    );
+    expect(await screen.findByTestId("mock-course-map")).toBeInTheDocument();
+    expect(await screen.findByTestId("mock-elevation-profile")).toBeInTheDocument();
+    expect(
+      screen.queryByTestId(`course-summary-variant-${VARIANT_NO_ELEVATION.id}`),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId(/^course-summary-figures-/)).not.toBeInTheDocument();
+    expect(screen.queryByTestId("course-summary-setups")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("course-summary-description")).not.toBeInTheDocument();
   });
 });
 

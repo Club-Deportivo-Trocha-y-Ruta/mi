@@ -11,7 +11,7 @@
 import { ArrowDown, ArrowUp } from "lucide-react";
 
 import { useAthleteInsights } from "@/hooks/athletes/useAthleteInsights";
-import { validaLabel } from "@/lib/insights";
+import { raceLabelForInsight } from "@/lib/insights";
 import { cn } from "@/lib/utils";
 
 export interface AnalystPickerProps {
@@ -66,7 +66,7 @@ export function AnalystPicker({
         {selectedInsightIds.map((id, index) => {
           const insight = insightsById.get(id);
           const label = insight?.headline || `Insight #${id}`;
-          const sublabel = insight ? validaLabel(insight) : null;
+          const sublabel = insight ? raceLabelForInsight(insight, "chip") : null;
 
           return (
             <li

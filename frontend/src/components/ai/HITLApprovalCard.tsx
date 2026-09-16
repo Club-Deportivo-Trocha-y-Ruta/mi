@@ -148,9 +148,11 @@ export function HITLApprovalCard({
   /** Cualquier acción en vuelo bloquea las demás (una sola decisión por run). */
   const busy = submitting || cancelling;
   const errorMsg = mutation.isError
-    ? mutation.error instanceof Error
-      ? mutation.error.message
-      : "Error enviando la decisión."
+    ? (mutation.error as { response?: { status?: number } })?.response?.status === 409
+      ? "Este análisis ya no está esperando aprobación: se completó o alguien ya tomó la decisión."
+      : mutation.error instanceof Error
+        ? mutation.error.message
+        : "Error enviando la decisión."
     : null;
   const discardErrorMsg = cancelMutation.isError
     ? cancelMutation.error instanceof Error

@@ -17,6 +17,14 @@
  *  - tipo=Copa → el select de nivel no existe.
  *  - Crear serie con Nacional → payload de la mutación incluye level:"national".
  *  - 0 violaciones a11y con el select de nivel visible.
+ *
+ * Hotfix multicopa — identidad de válida (2026-09-16):
+ *  - tipo=Copa → select "Prioridad de la válida" (Sin prioridad/A/B/C) visible.
+ *  - Elegir "B" → el payload de creación incluye priority: "B".
+ *  - "Sin prioridad" (default) → el payload incluye priority: null.
+ *  - tipo=Campeonato → el select de prioridad no existe; se muestra "CD"
+ *    de solo lectura en su lugar.
+ *  - mode=edit precarga la prioridad guardada en el select.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
@@ -136,6 +144,8 @@ describe("CompetitionFormPage — mode=create", () => {
     await waitFor(() => expect(receivedBody).not.toBeNull());
     expect(receivedBody).toMatchObject({
       sequence_number: 4,
+      // Hotfix multicopa: "Sin prioridad" (default) → null en el payload.
+      priority: null,
       name: "Válida 4 · Cali",
       event_date: "2026-05-17",
       location: "Cali",
@@ -402,5 +412,90 @@ describe("CompetitionFormPage spec-023 — nivel de serie de campeonato", () => 
 
     const results = await axe(container);
     expect(results).toHaveNoViolations();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Hotfix multicopa — identidad de válida (2026-09-16)
+// ---------------------------------------------------------------------------
+
+describe("CompetitionFormPage hotfix multicopa — prioridad de la válida", () => {
+  it("tipo=Copa → select 'Prioridad de la válida' visible, default 'Sin prioridad'", async () => {
+    renderForm("create");
+    const prioritySelect = (await screen.findByLabelText(
+      /Prioridad de la válida/i,
+    )) as HTMLSelectElement;
+    expect(prioritySelect).toHaveDisplayValue(/Sin prioridad/i);
+  });
+
+  it("elegir prioridad 'B' → el payload de creación incluye priority: 'B'", async () => {
+    let receivedBody: unknown = null;
+    mswServer.use(
+      http.post("*/api/race-analysis/race-events/", async ({ request }) => {
+        receivedBody = await request.json();
+        return HttpResponse.json(makeRaceEventRead({ id: 555 }), {
+          status: 201,
+        });
+      }),
+    );
+    const user = userEvent.setup();
+    renderForm("create");
+
+    const seriesSelect = await screen.findByLabelText(/Serie/i);
+    await waitFor(() =>
+      expect(
+        Array.from((seriesSelect as HTMLSelectElement).options).some(
+          (o) => o.value === "2",
+        ),
+      ).toBe(true),
+    );
+    await user.selectOptions(seriesSelect, "2");
+
+    await user.selectOptions(screen.getByLabelText("Número de válida"), "4");
+    await user.selectOptions(
+      screen.getByLabelText(/Prioridad de la válida/i),
+      "B",
+    );
+    await user.type(screen.getByLabelText("Nombre"), "Válida 4 · Cali");
+    await user.type(screen.getByLabelText("Fecha"), "2026-05-17");
+
+    await user.click(
+      screen.getByRole("button", { name: /Crear competencia/i }),
+    );
+
+    await waitFor(() => expect(receivedBody).not.toBeNull());
+    expect(receivedBody).toMatchObject({ priority: "B" });
+  });
+
+  it("tipo=Campeonato → el select de prioridad no existe; muestra 'CD' de solo lectura", async () => {
+    const user = userEvent.setup();
+    renderForm("create");
+
+    const kindSelect = await screen.findByLabelText(/Tipo de competencia/i);
+    await user.selectOptions(kindSelect, "championship");
+
+    expect(
+      screen.queryByLabelText(/Prioridad de la válida/i),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/CD \(fija para campeonatos\)/i)).toBeInTheDocument();
+  });
+
+  it("mode=edit precarga la prioridad guardada de la válida", async () => {
+    mswServer.use(
+      http.get("*/api/race-analysis/race-events/1", () =>
+        HttpResponse.json(
+          makeRaceEventRead({ id: 1, sequence_number: 4, priority: "C" }),
+        ),
+      ),
+    );
+    renderForm("edit");
+
+    await waitFor(() =>
+      expect(
+        (screen.getByLabelText(
+          /Prioridad de la válida/i,
+        ) as HTMLSelectElement).value,
+      ).toBe("C"),
+    );
   });
 });

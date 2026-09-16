@@ -4,19 +4,21 @@
  * Cada fila:
  *  - Muestra nombre del atleta + chip de estado (es-CO).
  *  - Si hay un run_id activo, pollea su estado vía useRunStatus.
- *  - Cuando el run llega a hitl_waiting, muestra HITLApprovalCard.
+ *  - Solo mientras el run espera aprobación (hitl_request vigente), muestra HITLApprovalCard.
  *  - Notifica al padre cuando el run alcanza estado terminal (done/failed).
  *
  * Privacidad: sólo muestra athlete_display_name (pseudónimo del backend),
  * nunca el athlete_id real ni datos identificadores adicionales.
  */
-import { useEffect } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import { AnalysisRunTimeline } from "@/components/ai/AnalysisRunTimeline";
 import { HITLApprovalCard } from "@/components/ai/HITLApprovalCard";
 import { StatusBadge, type Status } from "@/components/shared/StatusBadge";
 import { useRunStatus, isTerminalState } from "@/hooks/ai/useRaceRun";
+import { findPendingHitlEvent } from "@/lib/hitlEvents";
 import { cn } from "@/lib/utils";
+import type { InsightV3 } from "@/types/insightV3.types";
 import type { GroupRunOutcome, RunState } from "@/types/raceAnalysis.types";
 import type { TrackedRunEntry } from "@/hooks/ai/useGroupAnalysis";
 
@@ -89,28 +91,42 @@ export function GroupRunRow({ entry, onTerminated }: GroupRunRowProps) {
   const statusQuery = useRunStatus(run_id ?? null);
   const runState = statusQuery.data?.latest?.state;
 
-  // Extract HITL step from events (mirrors pattern in AthleteAIAnalysisTab).
-  const lastHitlEvent = statusQuery.data?.events
-    ?.slice()
-    .reverse()
-    .find(
-      (e) =>
-        e.type === "hitl_request" ||
-        e.type === "hitl_required" ||
-        e.node === "hitl_gate_review",
-    );
+  const pendingHitlEvent = useMemo(
+    () => findPendingHitlEvent(statusQuery.data?.events),
+    [statusQuery.data],
+  );
+
+  // Mismo autorreparado que AthleteAIAnalysisTab: pausado en HITL pero sin el
+  // hitl_request (único evento con el borrador) en el buffer → refetch completo
+  // una sola vez por run.
+  const healedRunRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (runState !== "hitl_waiting" || !run_id || pendingHitlEvent) return;
+    if (healedRunRef.current === run_id) return;
+    healedRunRef.current = run_id;
+    statusQuery.resetEvents();
+    void statusQuery.refetch();
+  }, [runState, run_id, pendingHitlEvent, statusQuery]);
+
   const hitlStepId =
-    typeof lastHitlEvent?.payload?.step_id === "string"
-      ? (lastHitlEvent.payload.step_id as string)
+    typeof pendingHitlEvent?.payload?.step_id === "string"
+      ? (pendingHitlEvent.payload.step_id as string)
       : "hitl_default";
   const draftMarkdown =
-    typeof lastHitlEvent?.payload?.draft_markdown === "string"
-      ? (lastHitlEvent.payload.draft_markdown as string)
+    typeof pendingHitlEvent?.payload?.draft_markdown === "string"
+      ? (pendingHitlEvent.payload.draft_markdown as string)
       : "_(El agente generó un borrador, pero no incluyó el markdown en el evento. Aprueba o rechaza.)_";
+  const structuredDraft =
+    pendingHitlEvent?.payload?.structured_draft &&
+    typeof pendingHitlEvent.payload.structured_draft === "object"
+      ? (pendingHitlEvent.payload.structured_draft as InsightV3)
+      : null;
 
+  // Un run terminado nunca muestra la tarjeta: aprobarlo devolvería 409.
   const showHITL =
     run_id !== null &&
-    (runState === "hitl_waiting" || !!lastHitlEvent);
+    !isTerminalState(runState) &&
+    (runState === "hitl_waiting" || !!pendingHitlEvent);
 
   const badge = groupRunStatus(runState, outcome);
 
@@ -170,6 +186,7 @@ export function GroupRunRow({ entry, onTerminated }: GroupRunRowProps) {
           runId={run_id}
           stepId={hitlStepId}
           draftMarkdown={draftMarkdown}
+          structuredDraft={structuredDraft}
         />
       )}
     </li>

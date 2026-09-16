@@ -43,7 +43,7 @@ async def test_load_race_data_serializes_and_picks_focus_event(monkeypatch, conf
         _FakeResult(id=1, event_id=11, category_id=7, competitor_id=22, athlete_id=1, position=2),
         _FakeResult(id=2, event_id=12, category_id=7, competitor_id=22, athlete_id=1, position=1),
     ]
-    async def _fake_fetch_results(db, aid, season, valida_nums=None):
+    async def _fake_fetch_results(db, aid, season, valida_nums=None, series_id=None):
         return rs
 
     async def _fake_fetch_podium(db, cat, evt):
@@ -64,7 +64,7 @@ async def test_load_race_data_serializes_and_picks_focus_event(monkeypatch, conf
 async def test_load_race_data_handles_empty(monkeypatch, configure_db_factory, fake_session):
     configure_db_factory(fake_session)
 
-    async def _fake_fetch_results(db, aid, season, valida_nums=None):
+    async def _fake_fetch_results(db, aid, season, valida_nums=None, series_id=None):
         return []
 
     monkeypatch.setattr(mod, "fetch_results_for_athlete", _fake_fetch_results)
@@ -100,7 +100,7 @@ async def test_full_season_context_trimmed_to_launched_validas(
     ]
     series = [_FakeSeries(id=1, season_year=2026)]
 
-    async def _fake_fetch_results(db, aid, season, valida_nums=None):
+    async def _fake_fetch_results(db, aid, season, valida_nums=None, series_id=None):
         if valida_nums is None:
             return all_results
         s = set(valida_nums)
@@ -168,7 +168,7 @@ async def test_full_season_context_includes_prior_validas(
     ]
     series = [_FakeSeries(id=1, season_year=2026)]
 
-    async def _fake_fetch_results(db, aid, season, valida_nums=None):
+    async def _fake_fetch_results(db, aid, season, valida_nums=None, series_id=None):
         if valida_nums is None:
             return all_results
         s = set(valida_nums)
@@ -229,7 +229,7 @@ async def test_full_season_context_unfiltered_when_valida_nums_none(
     ]
     series = [_FakeSeries(id=1, season_year=2026)]
 
-    async def _fake_fetch_results(db, aid, season, valida_nums=None):
+    async def _fake_fetch_results(db, aid, season, valida_nums=None, series_id=None):
         return all_results
 
     async def _fake_fetch_podium(db, cat, evt):
@@ -302,7 +302,7 @@ async def test_anchored_event_id_trims_context_despite_sequence_collision(
         _FakeSeries(id=3, season_year=2026),
     ]
 
-    async def _fake_fetch_results(db, aid, season, valida_nums=None):
+    async def _fake_fetch_results(db, aid, season, valida_nums=None, series_id=None):
         if valida_nums is None:
             return all_results
         s = set(valida_nums)
@@ -373,7 +373,7 @@ async def test_full_season_results_valida_num_uses_event_sequence_number(
     ]
     series = [_FakeSeries(id=1, season_year=2026)]
 
-    async def _fake_fetch_results(db, aid, season, valida_nums=None):
+    async def _fake_fetch_results(db, aid, season, valida_nums=None, series_id=None):
         return all_results
 
     async def _fake_fetch_podium(db, cat, evt):

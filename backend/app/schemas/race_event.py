@@ -26,7 +26,12 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.models.race_event import RaceEventStatus, SurfaceCondition, TerrainType
+from app.models.race_event import (
+    RaceEventPriority,
+    RaceEventStatus,
+    SurfaceCondition,
+    TerrainType,
+)
 from app.schemas.race_course import KeySector
 
 
@@ -122,6 +127,16 @@ class RaceEventCreate(_ConditionsFields):
         default=RaceEventStatus.SCHEDULED,
         description="Estado inicial del evento. Por defecto: scheduled.",
     )
+    priority: Optional[RaceEventPriority] = Field(
+        default=None,
+        description=(
+            "Prioridad/tier planificada de la válida: 'A' | 'B' | 'C' | 'CD' | "
+            "null (sin asignar → tier UNKNOWN, sin email a padres). 'CD' solo "
+            "es válido cuando el evento resulta ser de campeonato (derivado "
+            "del kind de la serie, no del valor enviado en is_championship); "
+            "el servidor rechaza con 422 en caso contrario."
+        ),
+    )
 
     # Calendar sync (FR-024): create a linked CalendarEvent on competition creation.
     # Default ON per decision D1 in docs/12-competitions-unification/workflow.md.
@@ -158,6 +173,15 @@ class RaceEventUpdate(BaseModel):
     sequence_number: Optional[int] = Field(default=None, ge=1, le=99)
     status: Optional[RaceEventStatus] = None
     is_championship: Optional[bool] = None
+    priority: Optional[RaceEventPriority] = Field(
+        default=None,
+        description=(
+            "Prioridad/tier planificada de la válida: 'A' | 'B' | 'C' | 'CD' | "
+            "null (sin asignar → tier UNKNOWN, sin email a padres). 'CD' solo "
+            "es válido para eventos de campeonato (is_championship=True); el "
+            "servidor rechaza con 422 en caso contrario."
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -178,6 +202,13 @@ class RaceEventRead(BaseModel):
     location: Optional[str] = None
     is_championship: bool
     status: RaceEventStatus
+    priority: Optional[RaceEventPriority] = Field(
+        default=None,
+        description=(
+            "Prioridad/tier planificada de la válida (hotfix 'identidad de "
+            "válida', 2026-09-16). None = sin asignar → tier UNKNOWN."
+        ),
+    )
     # Condiciones de carrera (pueden ser None si aún no se capturaron)
     climate: Optional[str] = None
     temperature_c: Optional[Decimal] = None
@@ -237,6 +268,16 @@ class RaceEventListItem(BaseModel):
     location: Optional[str] = None
     is_championship: bool
     status: RaceEventStatus
+    priority: Optional[Literal["A", "B", "C", "CD"]] = Field(
+        default=None,
+        description=(
+            "Tier planificado, resuelto vía ``race_event_tier.get_race_tier`` "
+            "— NUNCA la columna ``RaceEvent.priority`` cruda. Para "
+            "campeonatos siempre es ``'CD'`` aunque la columna esté en "
+            "``NULL`` (hotfix 'identidad de válida', 2026-09-16). ``None`` = "
+            "tier ``UNKNOWN`` (sin prioridad asignada, sin email a padres)."
+        ),
+    )
     # Flags derivados (calculados en el servicio)
     has_results: bool = False
     has_calendar_event: bool = False

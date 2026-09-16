@@ -379,6 +379,69 @@ async def test_coach_ignora_su_propio_club_sin_param(client_factory):
     assert ids == {200}
 
 
+@pytest.mark.asyncio
+async def test_by_series_two_cups_produces_two_entries(
+    seeded_factory, client_factory
+):
+    """Hotfix "identidad de válida" (bug #8): dos copas activas la misma
+    temporada deben producir DOS entradas en ``by_series`` — una por copa,
+    cada una con SUS PROPIOS races/points/podiums/wins/best_position — en
+    vez de mezclarse en el total cross-cup (deprecado) de arriba.
+    """
+    async with seeded_factory() as s:
+        # series_id=2 ya está tomado por la serie 2025 de seeded_factory.
+        await create_race_series(
+            s, series_id=3, season_year=2026, name="Copa Let's Go Test"
+        )
+        await create_race_event(
+            s, event_id=8, series_id=3, sequence_number=1,
+            name="Copa B Válida I", event_date=date(2026, 6, 1), location="Alcalá",
+        )
+        # athlete_144 también corre la Copa B: 1 válida, pos=2 (30pts, podio).
+        await create_race_result(
+            s, event_id=8, category_id=100, competitor_id=501, athlete_id=144,
+            position=2, points_awarded=30,
+        )
+        await s.commit()
+
+    async with await client_factory(10, UserRole.coach, "coach1@test.com") as client:
+        r = await client.get("/api/race-analysis/insights/season/2026")
+
+    assert r.status_code == 200
+    items = r.json()["items"]
+    a144 = next(i for i in items if i["athlete_id"] == 144)
+
+    by_series = {s["series_id"]: s for s in a144["by_series"]}
+    assert set(by_series.keys()) == {1, 3}
+
+    copa_a = by_series[1]
+    assert copa_a["races"] == 2
+    assert copa_a["points"] == 60
+    assert copa_a["podiums"] == 2
+    assert copa_a["wins"] == 1
+    assert copa_a["best_position"] == 1
+    assert copa_a["series_kind"] == "cup"
+
+    copa_b = by_series[3]
+    assert copa_b["races"] == 1
+    assert copa_b["points"] == 30
+    assert copa_b["podiums"] == 1
+    assert copa_b["wins"] == 0
+    assert copa_b["best_position"] == 2
+    assert copa_b["series_name"] == "Copa Let's Go Test"
+    # short_name no se sembró → None, no se inventa un valor.
+    assert copa_b["series_short_name"] is None
+
+    # athlete_145 (sin resultados en Copa B) sigue con un solo by_series.
+    a145 = next(i for i in items if i["athlete_id"] == 145)
+    assert {s["series_id"] for s in a145["by_series"]} == {1}
+
+    # El total cross-cup (deprecado) de athlete_144 sigue sumando AMBAS
+    # copas — comportamiento pre-existente, sin cambios en este hotfix.
+    assert a144["races_count"] == 3
+    assert a144["total_points"] == 90
+
+
 # ---------------------------------------------------------------------------
 # Privacidad (PR3 audit)
 # ---------------------------------------------------------------------------
@@ -400,6 +463,12 @@ async def test_privacidad_response_no_filtra_campos_internos(client_factory):
         "podiums",
         "best_position",
         "total_points",
+        # Hotfix "identidad de válida" (2026-09-16, bug #8): desglose por
+        # copa — el router mapea ``SeasonPanoramaRow.by_series`` →
+        # ``SeasonPanoramaSeriesItem`` (ver
+        # ``test_by_series_two_cups_produces_two_entries`` más abajo para
+        # el contenido real con dos copas).
+        "by_series",
     }
     async with await client_factory(10, UserRole.coach, "coach1@test.com") as client:
         r = await client.get("/api/race-analysis/insights/season/2026")
@@ -408,5 +477,6 @@ async def test_privacidad_response_no_filtra_campos_internos(client_factory):
         assert set(item.keys()) == allowed_keys, (
             f"El item filtró campos no permitidos: {set(item.keys()) - allowed_keys}"
         )
+        assert isinstance(item["by_series"], list)
     # El wrapper tampoco debe tener campos extra.
     assert set(r.json().keys()) == {"season", "total_athletes", "items"}

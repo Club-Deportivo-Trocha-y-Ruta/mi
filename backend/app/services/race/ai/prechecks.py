@@ -5,11 +5,15 @@ Reglas Python puras (sin LLM) que corren ANTES del critic LLM sobre cada
 (tolerante a formatos: ``8.6%``, ``8,6 %``, ``0:35:30``, ``2:49``,
 ``35:30``, enteros), nombres prohibidos, reglas LTAD inviolables, referencia
 de catálogo inexistente (se sanea, no solo se reporta), pregunta al coach
-bien formada, y solapamiento con headlines previos.
+bien formada, solapamiento con headlines previos y — desde el hotfix de
+identidad de válida (multicopa) — invención de estado de carrera
+(reprogramada/aplazada/cancelada/suspendida/pospuesta) no respaldado por los
+datos.
 
 Cada issue lleva una categoría interna (``PrecheckCategory``) que decide si
-fuerza HITL: solo ``privacy`` y ``ltad`` disparan ``must_block`` — el resto
-(``grounding``, ``catalog``, ``style``) degrada confianza pero no bloquea.
+fuerza HITL: ``privacy``, ``ltad`` y ``factual`` disparan ``must_block`` — el
+resto (``grounding``, ``catalog``, ``style``) degrada confianza pero no
+bloquea.
 
 El resultado incluye ``sanitized_draft``: una copia del draft con los
 ``catalog_ref`` inexistentes eliminados (``None``), porque ese fix se aplica
@@ -19,6 +23,7 @@ sin intervención del coach.
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Iterable
@@ -42,10 +47,19 @@ class PrecheckCategory(str, Enum):
     GROUNDING = "grounding"
     CATALOG = "catalog"
     STYLE = "style"
+    # Hotfix identidad de válida (multicopa): afirmación factual inventada
+    # (p.ej. estado de carrera) sin respaldo en los datos. No es un simple
+    # error de grounding numérico: es una afirmación binaria de alta
+    # confianza que el coach/familia puede tomar como cierta ("la carrera
+    # fue reprogramada") — el mismo tipo de daño que privacy/ltad, así que
+    # bloquea igual que ellas.
+    FACTUAL = "factual"
 
 
 # Categorías que fuerzan HITL antes de mostrar el insight al coach.
-MUST_BLOCK_CATEGORIES = frozenset({PrecheckCategory.PRIVACY, PrecheckCategory.LTAD})
+MUST_BLOCK_CATEGORIES = frozenset(
+    {PrecheckCategory.PRIVACY, PrecheckCategory.LTAD, PrecheckCategory.FACTUAL}
+)
 
 
 @dataclass(frozen=True)
@@ -242,6 +256,67 @@ def _ltad_issues(text: str, *, athlete_age: int | None) -> list[PrecheckIssue]:
     return issues
 
 
+# ---------------------------------------------------------------------------
+# Invención de estado de carrera (hotfix identidad de válida, multicopa)
+# ---------------------------------------------------------------------------
+#
+# Bug real que motiva esta regla: el analista mezcló Copa Valle V4/V5 en un
+# análisis de Copa Let's Go y redactó "En la reprogramada Válida 4..." — un
+# estado de carrera que NUNCA estuvo en las condiciones/circuito registrados
+# de esa válida. Wordlist cerrada (sin heurística de "parece una fecha
+# movida"): cualquier mención de uno de estos stems en el draft que no
+# aparezca también, literalmente, en la verdad de campo (ground truth) que
+# vio el analista es una invención.
+_RACE_STATUS_STEMS = (
+    "reprogramad",
+    "reprogramaci",  # reprogramación
+    "aplazad",
+    "cancelad",
+    "suspendid",
+    "pospuest",
+)
+
+
+def _strip_accents_lower(text: str) -> str:
+    """minúsculas + sin tildes — comparación tolerante a acentos."""
+    normalized = unicodedata.normalize("NFD", text or "")
+    without_accents = "".join(ch for ch in normalized if unicodedata.category(ch) != "Mn")
+    return without_accents.lower()
+
+
+def _race_status_issues(text: str, ground_truth: str | None) -> list[PrecheckIssue]:
+    """Detecta un estado de carrera mencionado en el draft sin respaldo.
+
+    Compara el mismo stem literal en ambos textos (sin tildes, sin mayúsculas)
+    — no es un semantic match, así que no hay falso positivo plausible: o el
+    draft usa una palabra de la wordlist y la verdad de campo también la
+    usa (dato real), o no la usa (nada que reportar).
+    """
+    normalized_draft = _strip_accents_lower(text)
+    normalized_truth = _strip_accents_lower(ground_truth or "")
+    issues: list[PrecheckIssue] = []
+    for stem in _RACE_STATUS_STEMS:
+        if stem in normalized_draft and stem not in normalized_truth:
+            issues.append(
+                PrecheckIssue(
+                    PrecheckCategory.FACTUAL,
+                    CriticIssue(
+                        section="race_status",
+                        problem=(
+                            f"El draft menciona un estado de carrera "
+                            f"('{stem}…') que no aparece en las condiciones "
+                            "o el circuito registrados."
+                        ),
+                        suggested_fix=(
+                            "Eliminar la mención de estado de la carrera: "
+                            "no está respaldada por los datos registrados."
+                        ),
+                    ),
+                )
+            )
+    return issues
+
+
 def _forbidden_name_issues(text: str, forbidden_names: Iterable[str]) -> list[PrecheckIssue]:
     issues: list[PrecheckIssue] = []
     lowered = text.lower()
@@ -365,12 +440,22 @@ def run_prechecks(
     ltad_group: str | None = None,
     forbidden_names: Iterable[str] | None = None,
     previous_headlines: Iterable[str] | None = None,
+    ground_truth: str | None = None,
 ) -> PrecheckResult:
     """Corre todas las reglas deterministas sobre ``draft`` (InsightV3).
 
     No lanza excepción por draft inválido: si ``draft`` es ``None`` retorna un
     issue ``high``-equivalente (categoría ``privacy`` para forzar HITL) sin
     ``sanitized_draft``.
+
+    ``ground_truth``: el mismo bloque markdown que arma
+    ``critic_agent._build_ground_truth`` (condiciones + circuito + resultado
+    + podio) — insumo de la regla de invención de estado de carrera (ver
+    ``_race_status_issues``). A diferencia de ``grounding_numbers`` (donde
+    la ausencia de dato es conservadora: no se reporta issue), aquí la
+    ausencia SÍ bloquea si el draft menciona un estado — es una wordlist
+    cerrada de alto riesgo, no un número cualquiera, y en el pipeline real
+    el critic v3 siempre construye y pasa este bloque.
     """
     if draft is None:
         return PrecheckResult(
@@ -395,6 +480,9 @@ def run_prechecks(
 
     # 2) Reglas LTAD inviolables.
     issues.extend(_ltad_issues(full_text, athlete_age=athlete_age))
+
+    # 2b) Invención de estado de carrera (hotfix identidad de válida).
+    issues.extend(_race_status_issues(full_text, ground_truth))
 
     # 3) Grounding numérico.
     ground_set = {_normalize_token(t) for t in (grounding_numbers or [])}

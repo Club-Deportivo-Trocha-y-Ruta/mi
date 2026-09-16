@@ -27,6 +27,8 @@ FIELD_CONTEXT = {
         "event_id": 41,
         "valida_num": 4,
         "event_date": "2026-05-10",
+        "series_id": 100,
+        "series_name": "Copa Valle",
         "series_kind": "cup",
         "series_level": "departmental",
         "is_championship": False,
@@ -42,6 +44,8 @@ FIELD_CONTEXT = {
         "event_id": 42,
         "valida_num": 5,
         "event_date": "2026-06-14",
+        "series_id": 100,
+        "series_name": "Copa Valle",
         "series_kind": "cup",
         "series_level": "departmental",
         "is_championship": False,
@@ -103,6 +107,9 @@ def base_state(**overrides) -> dict:
         "athlete_id": 7,
         "season": 2026,
         "event_id": 41,
+        # Resuelto por load_race_data desde el ancla (event_id=41 → Copa
+        # Valle, series_id=100 en FIELD_CONTEXT) — hotfix multicopa.
+        "series_id": 100,
         "valida_nums": [4],
         "prompt_version": PROMPT_VERSION_ANALYST_V3,
         "analysis_kind": "valida",

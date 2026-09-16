@@ -313,3 +313,71 @@ def test_headline_no_overlap_with_previous_is_clean():
         i.category == PrecheckCategory.STYLE and "headline" in i.issue.section
         for i in result.issues
     )
+
+
+# ---------------------------------------------------------------------------
+# Invención de estado de carrera (hotfix identidad de válida, multicopa)
+# ---------------------------------------------------------------------------
+
+
+def test_race_status_invention_trips_precheck_and_blocks():
+    """La frase real del bug de producción: la Copa Valle nunca se movió,
+    pero el analista mezcló su progresión con la de Copa Let's Go y
+    describió la válida analizada como "reprogramada"."""
+    draft = _draft(
+        headline="En la reprogramada Válida 4, el percentil subió de 18.8 a 40",
+        observations=[
+            _Observation(
+                claim="Mejoró frente a la edición de mayo, pero bajó respecto al 50 de la Válida 5",
+                evidence=["18.8", "40", "50"],
+            )
+        ],
+    )
+    ground_truth = "### Condiciones registradas\nsin condiciones registradas"
+    result = run_prechecks(
+        draft, grounding_numbers=["18.8", "40", "50"], ground_truth=ground_truth
+    )
+    assert result.must_block is True
+    assert any(i.category == PrecheckCategory.FACTUAL for i in result.issues)
+
+
+def test_race_status_present_in_ground_truth_is_clean():
+    draft = _draft(
+        headline="Terminó su carrera",
+        observations=[
+            _Observation(
+                claim="La carrera fue suspendida por lluvia en el último tramo",
+                evidence=[],
+            )
+        ],
+    )
+    ground_truth = (
+        "### Condiciones registradas\n"
+        "Clima: lluvia — carrera suspendida por seguridad del circuito"
+    )
+    result = run_prechecks(draft, ground_truth=ground_truth)
+    assert not any(i.category == PrecheckCategory.FACTUAL for i in result.issues)
+
+
+def test_race_status_is_accent_and_case_insensitive():
+    draft = _draft(headline="La carrera quedó APLAZADA por el comité organizador")
+    result = run_prechecks(
+        draft, ground_truth="Nota del coach: carrera aplázada por el comité (dato real)"
+    )
+    assert not any(i.category == PrecheckCategory.FACTUAL for i in result.issues)
+
+
+def test_race_status_without_ground_truth_blocks_conservatively():
+    """Sin verdad de campo no hay cómo confirmar el estado — a diferencia de
+    grounding numérico, aquí la ausencia de dato bloquea (wordlist cerrada,
+    alto riesgo si se inventa)."""
+    draft = _draft(headline="La válida fue cancelada por el comité organizador")
+    result = run_prechecks(draft)
+    assert result.must_block is True
+    assert any(i.category == PrecheckCategory.FACTUAL for i in result.issues)
+
+
+def test_race_status_absent_from_draft_is_clean_regardless_of_ground_truth():
+    draft = _draft()
+    result = run_prechecks(draft, ground_truth="sin condiciones registradas")
+    assert not any(i.category == PrecheckCategory.FACTUAL for i in result.issues)

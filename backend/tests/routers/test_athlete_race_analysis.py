@@ -26,7 +26,7 @@ from typing import AsyncGenerator
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -682,6 +682,264 @@ async def test_get_insights_exposes_series_level(seeded_factory, client_factory)
         )
     assert detail_resp.status_code == 200
     assert detail_resp.json()["series_level"] == "national"
+
+
+@pytest.mark.asyncio
+async def test_get_insights_exposes_series_id_name_short_name(
+    seeded_factory, client_factory
+):
+    """Hotfix "identidad de válida" (2026-09-16, ver
+    ~/.claude/plans/multicopa-identidad-valida.md): el payload de insights
+    expone ``series_id``/``series_name``/``series_short_name`` resueltos vía
+    ``event_id`` — el cliente arma el label (chip/largo) sin un calendario
+    hardcodeado de una sola copa. ``short_name`` cae a ``None`` cuando la
+    serie no lo tiene definido; el agregado de temporada (sin ``event_id``)
+    expone los tres como ``None``."""
+    async with seeded_factory() as s:
+        from app.models.race_series import RaceSeries
+
+        letsgo = RaceSeries(
+            id=7,
+            name="Copa Let's Go Interdepartamental XCO",
+            short_name="Let's Go",
+            season_year=2026,
+            organizer="Liga",
+            points_scheme_code="copa_valle_2026",
+        )
+        s.add(letsgo)
+        await s.flush()
+        await create_race_event(
+            s,
+            event_id=7,
+            series_id=7,
+            sequence_number=4,
+            name="Cuarta Válida",
+            event_date=date(2026, 9, 13),
+        )
+        with_short_name = await create_insight(
+            s,
+            athlete_id=144,
+            season=2026,
+            valida_num=4,
+            event_id=7,
+            coach_approved=True,
+            is_active=1,
+        )
+        # event_id=1 fue sembrado por seeded_factory: series_id=1
+        # ("Copa Valle de Ciclomontanismo"), sin short_name.
+        without_short_name = await create_insight(
+            s,
+            athlete_id=144,
+            season=2026,
+            valida_num=3,
+            event_id=1,
+            coach_approved=True,
+            is_active=1,
+        )
+        season_aggregate = await create_insight(
+            s,
+            athlete_id=144,
+            season=2026,
+            valida_num=0,
+            use_case="season_summary_v2",
+            event_id=None,
+            coach_approved=True,
+            is_active=1,
+        )
+        await s.commit()
+
+    coach = _make_user(10, UserRole.coach, club_id=1)
+    async with client_factory(user=coach) as ac:
+        resp = await ac.get(
+            "/api/athletes/144/race-analysis/insights",
+            headers={"Authorization": "Bearer fake"},
+        )
+    assert resp.status_code == 200
+    items = {item["id"]: item for item in resp.json()["items"]}
+
+    letsgo_item = items[with_short_name.id]
+    assert letsgo_item["series_id"] == 7
+    assert letsgo_item["series_name"] == "Copa Let's Go Interdepartamental XCO"
+    assert letsgo_item["series_short_name"] == "Let's Go"
+
+    valle_item = items[without_short_name.id]
+    assert valle_item["series_id"] == 1
+    assert valle_item["series_name"] == "Copa Valle de Ciclomontanismo"
+    assert valle_item["series_short_name"] is None
+
+    aggregate_item = items[season_aggregate.id]
+    assert aggregate_item["series_id"] is None
+    assert aggregate_item["series_name"] is None
+    assert aggregate_item["series_short_name"] is None
+
+    # El detalle expone lo mismo.
+    async with client_factory(user=coach) as ac:
+        detail_resp = await ac.get(
+            f"/api/athletes/144/race-analysis/insights/{with_short_name.id}",
+            headers={"Authorization": "Bearer fake"},
+        )
+    assert detail_resp.status_code == 200
+    assert detail_resp.json()["series_short_name"] == "Let's Go"
+
+
+@pytest.mark.asyncio
+async def test_get_insights_parent_gets_series_fields_scoped_to_own_child(
+    seeded_factory, client_factory
+):
+    """Los campos nuevos (series_id/name/short_name) no amplían el acceso de
+    un parent: solo ve el insight de su propio hijo (athlete_id=144, NO
+    145), igual que antes de este hotfix — se limita a agregar campos al
+    MISMO insight ya visible, nunca a exponer datos de otro atleta."""
+    async with seeded_factory() as s:
+        from app.models.race_series import RaceSeries
+
+        letsgo = RaceSeries(
+            id=7, name="Copa Let's Go", short_name="Let's Go",
+            season_year=2026, organizer="Liga",
+            points_scheme_code="copa_valle_2026",
+        )
+        s.add(letsgo)
+        await s.flush()
+        await create_race_event(
+            s, event_id=7, series_id=7, sequence_number=1,
+            name="Válida I Let's Go", event_date=date(2026, 3, 1),
+        )
+        own_child_insight = await create_insight(
+            s, athlete_id=144, season=2026, valida_num=1, event_id=7,
+            coach_approved=True, is_active=1,
+        )
+        await s.commit()
+
+    parent = _make_user(20, UserRole.parent, club_id=None)
+    async with client_factory(user=parent) as ac:
+        # Hijo propio (144): ve los campos nuevos con normalidad.
+        own_resp = await ac.get(
+            "/api/athletes/144/race-analysis/insights",
+            headers={"Authorization": "Bearer fake"},
+        )
+        # Atleta ajeno (145): sigue bloqueado con 403 — el nuevo campo no
+        # abre una vía de acceso paralela.
+        other_resp = await ac.get(
+            "/api/athletes/145/race-analysis/insights",
+            headers={"Authorization": "Bearer fake"},
+        )
+
+    assert own_resp.status_code == 200
+    own_items = {item["id"]: item for item in own_resp.json()["items"]}
+    assert own_items[own_child_insight.id]["series_short_name"] == "Let's Go"
+
+    assert other_resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_get_insights_filters_by_event_id(seeded_factory, client_factory):
+    """Hotfix "identidad de válida": el filtro opcional ``event_id`` permite
+    pedir solo insights anclados a una válida concreta — evita que el
+    cliente reciba el insight de OTRA copa con el mismo valida_num
+    (ambigüedad copa vs. copa, el bug original de este hotfix)."""
+    async with seeded_factory() as s:
+        from app.models.race_series import RaceSeries
+
+        other_series = RaceSeries(
+            id=8, name="Otra Copa 2026", season_year=2026,
+            organizer="Liga", points_scheme_code="copa_valle_2026",
+        )
+        s.add(other_series)
+        await s.flush()
+        await create_race_event(
+            s, event_id=8, series_id=8, sequence_number=1,
+            name="Válida I Otra Copa", event_date=date(2026, 3, 1),
+        )
+        target = await create_insight(
+            s, athlete_id=144, season=2026, valida_num=1, event_id=8,
+            coach_approved=True, is_active=1,
+        )
+        # event_id=1 (seeded_factory, series_id=1): mismo valida_num=1,
+        # copa distinta.
+        other = await create_insight(
+            s, athlete_id=144, season=2026, valida_num=1, event_id=1,
+            coach_approved=True, is_active=1,
+        )
+        await s.commit()
+
+    coach = _make_user(10, UserRole.coach, club_id=1)
+    async with client_factory(user=coach) as ac:
+        resp = await ac.get(
+            "/api/athletes/144/race-analysis/insights",
+            params={"event_id": 8},
+            headers={"Authorization": "Bearer fake"},
+        )
+    assert resp.status_code == 200
+    ids = {item["id"] for item in resp.json()["items"]}
+    assert target.id in ids
+    assert other.id not in ids
+
+
+@pytest.mark.asyncio
+async def test_get_insights_exposes_priority_tier(seeded_factory, client_factory):
+    """Hotfix "identidad de válida": el payload de insights expone
+    ``priority`` resuelto vía ``race_event_tier.get_race_tier`` (NUNCA la
+    columna cruda) para el evento anclado. Un campeonato con la columna en
+    NULL igual expone ``'CD'``; sin ``priority`` ni campeonato expone
+    ``None``; el agregado de temporada (sin event_id) también expone
+    ``None``."""
+    async with seeded_factory() as s:
+        from app.models.race_event import RaceEvent, RaceEventPriority
+
+        # event_id=1 (seeded_factory): sin priority asignada, no campeonato.
+        no_priority_insight = await create_insight(
+            s, athlete_id=144, season=2026, valida_num=1, event_id=1,
+            coach_approved=True, is_active=1,
+        )
+
+        # Evento con priority='A' explícito en la columna.
+        await create_race_event(
+            s, event_id=9, series_id=1, sequence_number=2,
+            name="V2", event_date=date(2026, 4, 1),
+        )
+        evt9 = (
+            await s.execute(select(RaceEvent).where(RaceEvent.id == 9))
+        ).scalar_one()
+        evt9.priority = RaceEventPriority.A
+        a_priority_insight = await create_insight(
+            s, athlete_id=144, season=2026, valida_num=2, event_id=9,
+            coach_approved=True, is_active=1,
+        )
+
+        # Evento de campeonato con la columna priority en NULL.
+        await create_race_event(
+            s, event_id=10, series_id=1, sequence_number=3,
+            name="Cto. Departamental", event_date=date(2026, 5, 1),
+        )
+        evt10 = (
+            await s.execute(select(RaceEvent).where(RaceEvent.id == 10))
+        ).scalar_one()
+        evt10.is_championship = True
+        cd_insight = await create_insight(
+            s, athlete_id=144, season=2026, valida_num=3, event_id=10,
+            coach_approved=True, is_active=1,
+        )
+
+        season_aggregate = await create_insight(
+            s, athlete_id=144, season=2026, valida_num=0,
+            use_case="season_summary_v2", event_id=None,
+            coach_approved=True, is_active=1,
+        )
+        await s.commit()
+
+    coach = _make_user(10, UserRole.coach, club_id=1)
+    async with client_factory(user=coach) as ac:
+        resp = await ac.get(
+            "/api/athletes/144/race-analysis/insights",
+            headers={"Authorization": "Bearer fake"},
+        )
+    assert resp.status_code == 200
+    items = {item["id"]: item for item in resp.json()["items"]}
+
+    assert items[no_priority_insight.id]["priority"] is None
+    assert items[a_priority_insight.id]["priority"] == "A"
+    assert items[cd_insight.id]["priority"] == "CD"
+    assert items[season_aggregate.id]["priority"] is None
 
 
 @pytest.mark.asyncio

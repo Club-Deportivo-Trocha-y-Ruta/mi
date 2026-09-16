@@ -44,8 +44,12 @@ vi.mock("@/hooks/athletes/useLaunchAthleteAnalysis", () => ({
 }));
 
 // useAIStatus (T051) — sin datos por defecto: degradación reactiva-only.
+// Sobrescribible por test (ver "hint de presupuesto una sola vez") para
+// verificar que las cards no duplican el hint que ya muestra el panel grupal.
+let mockAIStatusData: import("@/types/ai.types").AIStatusResponse | undefined =
+  undefined;
 vi.mock("@/hooks/ai/useAIStatus", () => ({
-  useAIStatus: () => ({ data: undefined, isError: false }),
+  useAIStatus: () => ({ data: mockAIStatusData, isError: false }),
 }));
 
 // useAthleteRunOutcome (FR-013) — no-op en estos tests de visibilidad/flujo;
@@ -134,6 +138,7 @@ function renderTab(
 beforeEach(() => {
   vi.clearAllMocks();
   mockIsPending = false;
+  mockAIStatusData = undefined;
   mockUseClubInsightsByRace.mockReturnValue(INSIGHTS);
 });
 
@@ -239,5 +244,40 @@ describe("InsightsTab — flujo de lanzamiento por tarjeta", () => {
     await user.click(screen.getByTestId("ai-launch-btn-201"));
 
     expect(mockNavigate).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Hint de presupuesto una sola vez (rediseño) — el panel grupal ya lo
+// muestra; el botón por card lo suprime con showBudgetHint={false} para no
+// repetir "≈Ns" en cada tarjeta, pero sigue deshabilitándose si se agota.
+// ---------------------------------------------------------------------------
+
+describe("InsightsTab — hint de presupuesto no duplicado por card", () => {
+  it("no muestra el hint de ETA dentro de la card aunque useAIStatus tenga datos", () => {
+    mockAIStatusData = {
+      budget_status: "ok",
+      budget_remaining_pct: 80,
+      concurrency_available: true,
+      est_wait_seconds: 132,
+    };
+    renderTab({ isCoachOrAdmin: true });
+
+    expect(screen.queryByTestId("ai-budget-hint-duration")).not.toBeInTheDocument();
+    // El botón sigue presente y funcional, solo se suprime el hint repetido.
+    expect(screen.getByTestId("ai-launch-btn-145")).toBeInTheDocument();
+  });
+
+  it("el botón sigue deshabilitado cuando el presupuesto está agotado, aunque el hint no se muestre", () => {
+    mockAIStatusData = {
+      budget_status: "exhausted",
+      budget_remaining_pct: 0,
+      concurrency_available: true,
+      est_wait_seconds: 0,
+    };
+    renderTab({ isCoachOrAdmin: true });
+
+    expect(screen.queryByTestId("ai-budget-hint-exhausted")).not.toBeInTheDocument();
+    expect(screen.getByTestId("ai-launch-btn-145")).toBeDisabled();
   });
 });

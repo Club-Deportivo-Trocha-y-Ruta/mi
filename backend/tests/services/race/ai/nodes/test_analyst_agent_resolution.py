@@ -21,7 +21,11 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.race.ai.nodes.analyst_agent import _build_v3_inputs, analyst_agent
+from app.services.race.ai.nodes.analyst_agent import (
+    _build_v3_inputs,
+    _valida_label,
+    analyst_agent,
+)
 from tests.services.race.ai.conftest import make_analysis_output, make_zero_metrics
 
 # Válida I de copa y el campeonato departamental comparten valida_num=1
@@ -88,54 +92,107 @@ def test_build_v3_inputs_without_anchor_resolves_only_cup_rows():
 
 # ---------------------------------------------------------------------------
 # v3 — _build_v3_inputs, temporada: course_by_valida en lanzamiento global
-# (feature 043, US4) — ``state["valida_nums"]`` viene vacío en un
-# lanzamiento global (spec §US5); las válidas reales de la temporada solo
-# están en las claves de ``state["course_context"]``.
+# (feature 043, US4 + hotfix multicopa) — ``state["valida_nums"]`` viene
+# vacío en un lanzamiento global (spec §US5); las carreras reales de la
+# temporada solo están en las claves de ``state["course_context_by_event"]``
+# (keyed por event_id, NUNCA por valida_num — dos copas de la misma
+# temporada pueden compartir "Válida 4", spec 014, y un dict int-keyed
+# perdería una de las dos entradas). Las etiquetas se resuelven desde
+# ``state["field_context"]`` (también keyed por event_id).
 # ---------------------------------------------------------------------------
 
 
-def test_build_v3_inputs_season_course_by_valida_uses_course_context_keys_not_valida_nums():
+def test_build_v3_inputs_season_course_by_valida_uses_by_event_keys_not_valida_nums():
     """En lanzamiento global (``valida_nums`` vacío), ``course_by_valida`` debe
-    poblarse desde las claves de ``course_context`` — de lo contrario el
-    bloque de circuito de temporada queda inerte (SIN DATO) aunque haya
-    perfiles de circuito registrados."""
+    poblarse desde las claves de ``course_context_by_event`` — de lo
+    contrario el bloque de circuito de temporada queda inerte (SIN DATO)
+    aunque haya perfiles de circuito registrados."""
     state = {
         "analysis_kind": "season",
         "valida_nums": [],
         "metrics": {"progression": []},
-        "field_context": {},
+        "field_context": {
+            41: {
+                "event_id": 41, "valida_num": 4, "event_date": "2026-05-10",
+                "series_id": 1, "series_name": "Copa Valle", "series_kind": "cup",
+            },
+            72: {
+                "event_id": 72, "valida_num": 7, "event_date": "2026-08-02",
+                "series_id": 1, "series_name": "Copa Valle", "series_kind": "cup",
+            },
+        },
         "season": 2026,
         "season_validas_count": 2,
-        "course_context": {
-            4: {"terrain_type": "mixto", "technical_difficulty": 4},
-            7: {"laps": 3},
+        "course_context_by_event": {
+            41: {"terrain_type": "mixto", "technical_difficulty": 4},
+            72: {"laps": 3},
         },
     }
     inputs = _build_v3_inputs(state, "la deportista")
 
     assert len(inputs) == 1
     assert inputs[0].course_by_valida == {
-        4: "- Terreno: mixto\n- Dificultad técnica: 4/5 (técnico)",
-        7: "- Vueltas de la categoría: 3",
+        "Copa Valle · Válida IV": "- Tipo de superficie: mixto\n- Dificultad técnica: 4/5 (técnico)",
+        "Copa Valle · Válida VII": "- Vueltas de la categoría: 3",
     }
 
 
-def test_build_v3_inputs_season_course_by_valida_omits_validas_without_course_data():
-    """Una válida presente en ``course_context`` pero con los seis campos en
-    ``None``/ausentes (dict vacío) se omite del mapping — veto de ausencia
-    por válida, no un bloque vacío."""
+def test_build_v3_inputs_season_course_by_valida_omits_events_without_course_data():
+    """Un evento presente en ``course_context_by_event`` pero con los seis
+    campos en ``None``/ausentes (dict vacío) se omite del mapping — veto de
+    ausencia por carrera, no un bloque vacío."""
     state = {
         "analysis_kind": "season",
         "valida_nums": [],
         "metrics": {"progression": []},
-        "field_context": {},
+        "field_context": {
+            50: {
+                "event_id": 50, "valida_num": 5, "event_date": "2026-07-01",
+                "series_id": 1, "series_name": "Copa Valle", "series_kind": "cup",
+            },
+        },
         "season": 2026,
         "season_validas_count": 1,
-        "course_context": {5: {}},
+        "course_context_by_event": {50: {}},
     }
     inputs = _build_v3_inputs(state, "la deportista")
 
     assert inputs[0].course_by_valida == {}
+
+
+def test_build_v3_inputs_season_course_by_valida_disambiguates_two_cups_sharing_the_same_valida():
+    """Regresión del bug real (ver plans/multicopa-identidad-valida.md):
+    Copa Valle V4 (mayo) y Copa Let's Go V4 (septiembre) para el mismo
+    atleta deben aparecer como DOS entradas distintas — un dict keyed por
+    número de válida perdería una de las dos por colisión de clave."""
+    state = {
+        "analysis_kind": "season",
+        "valida_nums": [],
+        "metrics": {"progression": []},
+        "field_context": {
+            10: {
+                "event_id": 10, "valida_num": 4, "event_date": "2026-05-01",
+                "series_id": 1, "series_name": "Copa Valle", "series_kind": "cup",
+            },
+            43: {
+                "event_id": 43, "valida_num": 4, "event_date": "2026-09-13",
+                "series_id": 9, "series_name": "Copa Let's Go Interdepartamental",
+                "series_kind": "cup",
+            },
+        },
+        "season": 2026,
+        "season_validas_count": 2,
+        "course_context_by_event": {
+            10: {"terrain_type": "mixto"},
+            43: {"terrain_type": "trocha"},
+        },
+    }
+    inputs = _build_v3_inputs(state, "la deportista")
+
+    assert set(inputs[0].course_by_valida.keys()) == {
+        "Copa Valle · Válida IV",
+        "Copa Let's Go Interdepartamental · Válida IV",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -202,3 +259,143 @@ async def test_v2_records_for_vn_without_anchor_uses_only_cup_rows():
 
     records = agent.pairs[0][1].progression_df_records
     assert [r["event_id"] for r in records] == [11]
+
+
+def test_valida_label_prefixes_the_real_cup_name():
+    """Hotfix multicopa: la etiqueta canónica antepone el nombre real de la
+    copa (nunca el literal "Copa" a secas) cuando el dato está disponible."""
+    label = _valida_label(_COPA_LETSGO_V4, None)
+    assert label == "Copa Let's Go Interdepartamental · Válida IV"
+
+    # Sin series_name/series_short_name en ninguna fuente, el resultado no
+    # cambia frente al comportamiento previo al hotfix.
+    legacy_row = {"series_kind": "cup", "valida_num": 4}
+    assert _valida_label(legacy_row, None) == "Válida IV"
+
+
+# ---------------------------------------------------------------------------
+# Multicopa: identidad de válida (hotfix) — end-to-end, reproduce el bug real
+# de plans/multicopa-identidad-valida.md: Copa Valle V4 (mayo)/V5 (agosto) y
+# Copa Let's Go V4 (septiembre) para el mismo atleta.
+# ---------------------------------------------------------------------------
+
+
+class _RecordingV3Agent:
+    """Agente v3 falso que solo registra las entradas recibidas."""
+
+    def __init__(self) -> None:
+        self.received_inputs: list = []
+
+    async def invoke_v3(self, inputs, *, forbidden_names=None, **kwargs):
+        from app.services.race.agents.analyst import V3CallResult
+        from app.services.race.schemas import RunMetrics
+        from tests.services.race.test_insight_v3 import make_insight
+
+        self.received_inputs = list(inputs)
+        return {
+            i.valida_num: V3CallResult(
+                insight=make_insight(),
+                metrics=RunMetrics(
+                    tokens_in=1, tokens_out=1, latency_ms=1,
+                    cost_usd=0.0, prompt_version="race_analyst_v3",
+                ),
+                grounding_numbers=[],
+            )
+            for i in inputs
+        }
+
+
+_COPA_VALLE_V4 = {
+    "event_id": 10, "valida_num": 4, "event_date": "2026-05-01",
+    "series_id": 1, "series_name": "Copa Valle", "series_kind": "cup",
+    "position": 3,
+}
+_COPA_VALLE_V5 = {
+    "event_id": 11, "valida_num": 5, "event_date": "2026-08-01",
+    "series_id": 1, "series_name": "Copa Valle", "series_kind": "cup",
+    "position": 2,
+}
+_COPA_LETSGO_V4 = {
+    "event_id": 43, "valida_num": 4, "event_date": "2026-09-13",
+    "series_id": 9, "series_name": "Copa Let's Go Interdepartamental",
+    "series_kind": "cup", "position": 5,
+}
+
+
+@pytest.mark.asyncio
+async def test_per_valida_run_never_sees_another_cup_that_shares_the_valida_num():
+    """Un run anclado a Copa Let's Go V4 no debe ver la fila, el "Recorrido
+    hasta acá" ni la etiqueta de Copa Valle — aunque ambas copas tengan una
+    "Válida 4" el mismo año."""
+    fake = _RecordingV3Agent()
+    state = {
+        "athlete_id": 7,
+        "season": 2026,
+        "event_id": 43,  # ancla a Copa Let's Go V4
+        "series_id": 9,  # resuelto por load_race_data desde el ancla
+        "valida_nums": [4],
+        "prompt_version": "race_analyst_v3",
+        "analysis_kind": "valida",
+        "athlete_age": 13,
+        "ltad_group": "juvenil",
+        "athlete_sex": "F",
+        "anonymized_data": {"pseudonym": "AzulZorro"},
+        "metrics": {
+            "progression": [_COPA_VALLE_V4, _COPA_VALLE_V5, _COPA_LETSGO_V4]
+        },
+        "field_context": {10: _COPA_VALLE_V4, 11: _COPA_VALLE_V5, 43: _COPA_LETSGO_V4},
+        "season_validas_count": 3,
+        "forbidden_names": [],
+        "club_forbidden_names": [],
+        "_analyst_agent": fake,
+    }
+
+    await analyst_agent(state)
+
+    assert len(fake.received_inputs) == 1
+    input_ = fake.received_inputs[0]
+    assert input_.race_row["event_id"] == 43
+    assert all(r["event_id"] != 10 for r in input_.season_rows)
+    assert all(r["event_id"] != 11 for r in input_.season_rows)
+    assert input_.valida_label is not None
+    assert "Let's Go" in input_.valida_label
+    assert "Valle" not in input_.valida_label
+
+
+@pytest.mark.asyncio
+async def test_season_run_renders_both_cups_as_distinct_entries_sharing_the_valida_num():
+    """El run de temporada (analysis_kind='season') sí ve ambas copas, pero
+    como secciones/entradas separadas — nunca fusionadas en la misma fila ni
+    con la misma etiqueta."""
+    fake = _RecordingV3Agent()
+    state = {
+        "athlete_id": 7,
+        "season": 2026,
+        "valida_nums": None,
+        "prompt_version": "race_season_summary_v3",
+        "analysis_kind": "season",
+        "athlete_age": 13,
+        "ltad_group": "juvenil",
+        "athlete_sex": "F",
+        "anonymized_data": {"pseudonym": "AzulZorro"},
+        "metrics": {"progression": []},
+        "field_context": {10: _COPA_VALLE_V4, 11: _COPA_VALLE_V5, 43: _COPA_LETSGO_V4},
+        "course_context_by_event": {
+            10: {"terrain_type": "mixto"},
+            43: {"terrain_type": "trocha"},
+        },
+        "season_validas_count": 3,
+        "forbidden_names": [],
+        "club_forbidden_names": [],
+        "_analyst_agent": fake,
+    }
+
+    await analyst_agent(state)
+
+    input_ = fake.received_inputs[0]
+    assert input_.analysis_kind == "season"
+    assert {r["event_id"] for r in input_.season_rows} == {10, 11, 43}
+    assert set(input_.course_by_valida.keys()) == {
+        "Copa Valle · Válida IV",
+        "Copa Let's Go Interdepartamental · Válida IV",
+    }

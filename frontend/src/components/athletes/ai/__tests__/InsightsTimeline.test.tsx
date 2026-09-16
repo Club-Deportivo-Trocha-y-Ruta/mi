@@ -84,10 +84,12 @@ describe("InsightsTimeline", () => {
       expect(screen.getByTestId("insight-card-1")).toBeInTheDocument();
     });
     expect(screen.getByTestId("insight-card-2")).toBeInTheDocument();
-    // Cada card tiene badges (válida 4 + válida 3 del 2do mock) — formato
-    // romano, feature 036 T032.
-    expect(screen.getAllByText(/válida\s*iv\b/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/válida\s*iii\b/i).length).toBeGreaterThan(0);
+    // Cada card tiene badges (válida 4 + válida 3 del 2do mock) — hotfix
+    // multicopa (2026-09-16): el chip ahora nombra la copa por default del
+    // fixture ("Copa Valle · V4"/"Copa Valle · V3"), reemplaza al antiguo
+    // formato romano sin copa ("Válida IV"/"Válida III", feature 036 T032).
+    expect(screen.getAllByText(/copa valle · v4/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/copa valle · v3/i).length).toBeGreaterThan(0);
   });
 
   // ---------------------------------------------------------------------------

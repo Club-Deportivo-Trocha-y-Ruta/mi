@@ -449,12 +449,15 @@ async def test_dispatch_sends_email_with_summary_excerpt_for_v2_insight(monkeypa
         prompt_version=PROMPT_VERSION_V2,
     )
 
+    from app.models.race_event import RaceEventPriority
+
     event = SimpleNamespace(
         id=7,
         event_date=date(2026, 5, 17),
         location="Cali",
         sequence_number=4,
         is_championship=False,
+        priority=RaceEventPriority.A,
         series=SimpleNamespace(season_year=2026),
     )
 
@@ -580,12 +583,15 @@ async def test_dispatch_blocks_excerpt_if_name_leaks(caplog):
         prompt_version=PROMPT_VERSION_V2,
     )
 
+    from app.models.race_event import RaceEventPriority
+
     event = SimpleNamespace(
         id=7,
         event_date=date(2026, 5, 17),
         location="Cali",
         sequence_number=4,
         is_championship=False,
+        priority=RaceEventPriority.A,
         series=SimpleNamespace(season_year=2026),
     )
 

@@ -13,6 +13,16 @@ versionado introducido en BE-1 (``8c1d2e3f4a5b``):
   ``SELECT ... FOR UPDATE`` en MySQL para evitar carrera con otro coach
   publicando simultáneamente la misma terna ``(athlete_id, season, valida_num)``.
 
+Hotfix "identidad de válida" (2026-09-16, ver
+``~/.claude/plans/multicopa-identidad-valida.md``): :func:`deprecate_previous_active`
+ahora filtra por ``insight_scope_key`` (ver
+``app.models.athlete_ai_insight.compute_insight_scope_key``) en vez de crudo
+``(season, valida_num)`` — antes deprecaba (y por tanto "pisaba") el insight
+activo de OTRA copa que compartiera el mismo ``valida_num`` en la misma
+temporada. El parámetro ``event_id`` es opcional y ``None`` por defecto —
+callers existentes que no lo pasan conservan el comportamiento legado
+(colapsa a la clave ``valida:{season}:{valida_num}``, igual que antes).
+
 Privacidad
 ==========
 Las listas/details exponen sólo lo que ``AthleteInsightOut`` permite —
@@ -29,7 +39,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import contains_eager, selectinload
 
-from app.models.athlete_ai_insight import AthleteAiInsight
+from app.models.athlete_ai_insight import AthleteAiInsight, compute_insight_scope_key
 from app.models.race_event import RaceEvent
 from app.models.race_series import RaceSeries
 
@@ -71,6 +81,7 @@ async def list_athlete_insights(
     season: Optional[int] = None,
     use_case: Optional[str] = None,
     valida_num: Optional[int] = None,
+    event_id: Optional[int] = None,
     include_deprecated: bool = False,
     latest_only: bool = False,
     limit: int = 20,
@@ -84,6 +95,10 @@ async def list_athlete_insights(
         use_case: ej. ``"race_progression"``, ``"season_summary"``. None = todos.
         valida_num: Filtro estricto. Si se necesita "agregados de temporada"
             pasar ``0``. ``None`` = no filtra.
+        event_id: Filtro estricto adicional (hotfix "identidad de válida",
+            2026-09-16) sobre ``AthleteAiInsight.event_id`` — útil cuando
+            ``valida_num`` por sí solo es ambiguo entre copas. ``None`` = no
+            filtra (comportamiento previo sin cambios).
         include_deprecated: Si True, levanta el filtro ``deprecated_at IS NULL``.
             Sólo debe usarse desde rutas admin/coach.
         latest_only: Si True, fuerza ``is_active=1`` (solo el activo aprobado).
@@ -133,6 +148,8 @@ async def list_athlete_insights(
         base_filters.append(AthleteAiInsight.use_case == use_case)
     if valida_num is not None:
         base_filters.append(AthleteAiInsight.valida_num == valida_num)
+    if event_id is not None:
+        base_filters.append(AthleteAiInsight.event_id == event_id)
     if latest_only:
         base_filters.append(AthleteAiInsight.is_active == 1)
     elif not include_deprecated:
@@ -249,6 +266,26 @@ async def get_insight_supersedes_chain(
 # ---------------------------------------------------------------------------
 
 
+async def _resolve_unambiguous_event_id(
+    db: AsyncSession, *, season: int, valida_num: int
+) -> Optional[int]:
+    """Devuelve el ``id`` del ÚNICO ``race_event`` de ``season`` cuyo
+    ``sequence_number`` es ``valida_num`` — o ``None`` si hay cero o más de
+    uno (ambiguo entre copas). Mismo criterio que el backfill de
+    ``event_id`` legado de la migración ``c2314ccd7927``
+    (``race_series.season_year = season AND race_events.sequence_number =
+    valida_num``) — debe mantenerse en sincronía con ese SQL.
+    """
+    stmt = (
+        select(RaceEvent.id)
+        .join(RaceSeries, RaceEvent.series_id == RaceSeries.id)
+        .where(RaceSeries.season_year == season, RaceEvent.sequence_number == valida_num)
+    )
+    result = await db.execute(stmt)
+    ids = result.scalars().all()
+    return ids[0] if len(ids) == 1 else None
+
+
 async def deprecate_previous_active(
     db: AsyncSession,
     *,
@@ -256,6 +293,7 @@ async def deprecate_previous_active(
     season: int,
     valida_num: Optional[int],
     new_insight_id: Optional[int],
+    event_id: Optional[int] = None,
 ) -> Optional[int]:
     """Marca el insight activo de la terna como deprecado y lo enlaza al nuevo.
 
@@ -278,25 +316,49 @@ async def deprecate_previous_active(
         new_insight_id: PK del nuevo insight que reemplaza al previo. Puede
             ser ``None`` si aún no fue INSERTado (el caller debe hacer un
             segundo UPDATE post-flush para enlazar).
+        event_id: PK de ``race_events`` que ancla la válida concreta.
+            Hotfix "identidad de válida" (2026-09-16): sin esto, dos copas
+            corriendo el mismo ``valida_num`` en la misma temporada
+            colisionaban — deprecar la Válida 4 de Copa Let's Go apagaba
+            también la Válida 4 de Copa Valle del mismo atleta. ``None``
+            (default) reproduce el comportamiento legado — necesario para
+            callers que aún no resuelven ``event_id`` (ver
+            ``app/services/race/ai/nodes/persist_insight.py``, fuera del
+            alcance de este hotfix).
 
     Returns:
-        ID del insight deprecado, o ``None`` si no había activo previo.
+        ID del insight deprecado con scope ``event:{event_id}`` si lo
+        había; si no, el ID de la fila legada (``valida:{season}:{n}``)
+        deprecada por el fallback descrito abajo; ``None`` si no había
+        ninguna de las dos.
 
     Notas:
-        El campo ``valida_num`` ``IS NULL`` se respeta literalmente: la
-        comparación ``column == None`` en SQLAlchemy se traduce a
-        ``IS NULL`` automáticamente.
+        Filtra la búsqueda principal por ``insight_scope_key`` (ver
+        ``compute_insight_scope_key``) en vez de comparar ``season``/
+        ``valida_num`` crudos — es la clave que realmente identifica la
+        terna sin ambigüedad entre copas.
+
+        Fallback a fila legada: cuando se pasa ``event_id`` (y
+        ``valida_num`` no es ``0``/``None``, o sea NO es agregado de
+        temporada), además de la fila ``event:{event_id}`` también se
+        busca una fila activa con la clave legada ``valida:{season}:{n}``
+        (``event_id IS NULL``, insertada antes de que este caller
+        resolviera ``event_id``). Esa fila legada SOLO se deprecia si
+        ``(season, valida_num)`` mapea a EXACTAMENTE un ``race_event`` en
+        esa temporada y coincide con el ``event_id`` recibido — si hay
+        ambigüedad (otra copa comparte el mismo ``valida_num``), la fila
+        legada se deja intacta porque no hay forma segura de saber a cuál
+        copa pertenecía. Mismo criterio que el backfill de la migración
+        ``c2314ccd7927`` (``_resolve_unambiguous_event_id``, arriba).
     """
+    scope_key = compute_insight_scope_key(
+        season=season, valida_num=valida_num, event_id=event_id
+    )
     base_filters = [
         AthleteAiInsight.athlete_id == athlete_id,
-        AthleteAiInsight.season == season,
+        AthleteAiInsight.insight_scope_key == scope_key,
         AthleteAiInsight.is_active == 1,
     ]
-    # SQLAlchemy traduce ``== None`` a ``IS NULL`` automáticamente.
-    if valida_num is None:
-        base_filters.append(AthleteAiInsight.valida_num.is_(None))
-    else:
-        base_filters.append(AthleteAiInsight.valida_num == valida_num)
 
     select_stmt = select(AthleteAiInsight).where(*base_filters)
     if _is_mysql(db):
@@ -306,12 +368,36 @@ async def deprecate_previous_active(
 
     result = await db.execute(select_stmt)
     previous = result.scalar_one_or_none()
-    if previous is None:
+
+    previous_legacy = None
+    if event_id is not None and valida_num not in (None, 0):
+        resolved_event_id = await _resolve_unambiguous_event_id(
+            db, season=season, valida_num=valida_num
+        )
+        if resolved_event_id is not None and resolved_event_id == event_id:
+            legacy_scope_key = compute_insight_scope_key(
+                season=season, valida_num=valida_num, event_id=None
+            )
+            legacy_filters = [
+                AthleteAiInsight.athlete_id == athlete_id,
+                AthleteAiInsight.insight_scope_key == legacy_scope_key,
+                AthleteAiInsight.is_active == 1,
+            ]
+            legacy_select_stmt = select(AthleteAiInsight).where(*legacy_filters)
+            if _is_mysql(db):
+                legacy_select_stmt = legacy_select_stmt.with_for_update()
+            legacy_result = await db.execute(legacy_select_stmt)
+            previous_legacy = legacy_result.scalar_one_or_none()
+
+    ids_to_deprecate = [
+        row.id for row in (previous, previous_legacy) if row is not None
+    ]
+    if not ids_to_deprecate:
         return None
 
     update_stmt = (
         update(AthleteAiInsight)
-        .where(AthleteAiInsight.id == previous.id)
+        .where(AthleteAiInsight.id.in_(ids_to_deprecate))
         .values(
             is_active=None,
             deprecated_at=_utc_now(),
@@ -320,7 +406,7 @@ async def deprecate_previous_active(
         )
     )
     await db.execute(update_stmt)
-    return int(previous.id)
+    return int(previous.id) if previous is not None else int(previous_legacy.id)
 
 
 __all__ = [

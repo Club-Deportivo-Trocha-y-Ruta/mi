@@ -175,6 +175,79 @@ async def _compute_category_stats(
     return stats
 
 
+async def _resolve_row_event_ids(
+    db: Any, state: dict, valida_nums: list[int]
+) -> dict[int, Optional[int]]:
+    """``event_id`` real por cada ``valida_num`` del fan-out (hotfix "identidad de válida", Bug #4).
+
+    Antes de este hotfix TODAS las filas de un fan-out multi-válida
+    persistían el mismo ``state["event_id"]`` (el ancla singular del run) —
+    correcto sólo para la válida ancla; para el resto era, en el mejor caso,
+    casualidad. Este helper resuelve cada fila de forma independiente:
+
+    1. Prioridad: los propios registros de temporada del run
+       (``state["full_season_results"]``, poblados por ``load_race_data``
+       con ``event_id``/``valida_num``/``series_id`` reales de los
+       resultados del atleta) — nunca ambiguos porque vienen de datos
+       reales, no de una búsqueda genérica ``(season, sequence_number)``
+       que colisiona entre copas con el mismo número de válida. Cuando el
+       run trae una serie ancla (``state["series_id"]`` — contrato Pipeline
+       state, W2-P — o, en su defecto, la serie del propio evento ancla),
+       sólo se consideran registros de esa serie: así un atleta que corrió
+       la misma válida en dos copas distintas la misma temporada no
+       resuelve al evento equivocado.
+    2. Respaldo: el evento ancla (``state["event_id"]``) para su propio
+       ``valida_num`` — cubre el caso borde en que la carrera analizada es
+       DNS/DNF/DSQ y por tanto quedó excluida de ``full_season_results``
+       (``load_race_data`` sólo incluye finishers ahí).
+
+    ``valida_num<=0`` (agregado de temporada) siempre resuelve a ``None`` —
+    el resumen de temporada nunca ancla ``event_id`` (ver contrato).
+    """
+    out: dict[int, Optional[int]] = {vn: None for vn in valida_nums if vn > 0}
+    if not out:
+        return out
+
+    run_series_id = state.get("series_id")
+    anchor_event_id = state.get("event_id")
+    anchor_event: Any = None
+
+    if run_series_id is None and anchor_event_id is not None:
+        try:
+            events = await load_events(db)
+        except Exception:  # noqa: BLE001
+            events = []
+        anchor_event = next((e for e in events if e.id == anchor_event_id), None)
+        if anchor_event is not None:
+            run_series_id = getattr(anchor_event, "series_id", None)
+
+    for r in state.get("full_season_results") or []:
+        if not isinstance(r, dict):
+            continue
+        vn = r.get("valida_num")
+        eid = r.get("event_id")
+        if vn is None or eid is None or vn not in out:
+            continue
+        if run_series_id is not None and r.get("series_id") != run_series_id:
+            continue
+        if out[vn] is None:
+            out[vn] = int(eid)
+
+    if anchor_event_id is not None:
+        if anchor_event is None:
+            try:
+                events = await load_events(db)
+            except Exception:  # noqa: BLE001
+                events = []
+            anchor_event = next((e for e in events if e.id == anchor_event_id), None)
+        if anchor_event is not None:
+            anchor_vn = getattr(anchor_event, "sequence_number", None)
+            if anchor_vn is not None and anchor_vn in out and out[anchor_vn] is None:
+                out[anchor_vn] = int(anchor_event_id)
+
+    return out
+
+
 def _resolve_per_valida_confidence(state: dict) -> dict[int, InsightConfidence]:
     """Extrae la confianza computada por válida (feature 011, US4).
 
@@ -260,7 +333,9 @@ async def persist_insight(state: dict) -> dict[str, Any]:
     season = state["season"]
     coach_id = state.get("coach_id") or 0
     competitor_id = state.get("competitor_id")
-    event_id = state.get("event_id")
+    # Nota: el event_id por fila ya NO se lee de state["event_id"] aquí — ver
+    # _resolve_row_event_ids (hotfix "identidad de válida", Bug #4). El ancla
+    # singular del run sigue siendo consultada DENTRO de ese helper.
 
     # v3 (feature 037, T201): drafts estructurados por válida. Cuando existen,
     # ``summary_text`` es el markdown renderizado desde el JSON (ya viene en
@@ -374,6 +449,11 @@ async def persist_insight(state: dict) -> dict[str, Any]:
                     exc_info=True,
                 )
 
+            # Hotfix "identidad de válida" (Bug #4): event_id REAL por fila,
+            # nunca el ancla singular del run reutilizada para todo el
+            # fan-out — ver docstring de _resolve_row_event_ids.
+            row_event_ids = await _resolve_row_event_ids(db, state, valida_nums_db)
+
             if is_v2:
                 # v2: una fila por válida con summary_text DISTINTO.
                 per_valida_verdicts = state.get("per_valida_verdicts") or {}
@@ -382,6 +462,7 @@ async def persist_insight(state: dict) -> dict[str, Any]:
                 for vn_num, vn_summary, vn_recs, _vn_draft in v2_pairs:
                     previous_id: Optional[int] = None
                     is_active_value: Optional[int] = None
+                    row_event_id = row_event_ids.get(vn_num)
 
                     if approved:
                         previous_id = await deprecate_previous_active(
@@ -390,6 +471,7 @@ async def persist_insight(state: dict) -> dict[str, Any]:
                             season=season,
                             valida_num=vn_num,
                             new_insight_id=None,
+                            event_id=row_event_id,
                         )
                         is_active_value = 1
 
@@ -427,7 +509,7 @@ async def persist_insight(state: dict) -> dict[str, Any]:
                     new_row = AthleteAiInsight(
                         athlete_id=athlete_id,
                         competitor_id=competitor_id,
-                        event_id=event_id,
+                        event_id=row_event_id,
                         agent_run_id=state.get("agent_run_id"),
                         generated_by_user_id=coach_id,
                         season=season,
@@ -473,6 +555,7 @@ async def persist_insight(state: dict) -> dict[str, Any]:
                 for valida_num_db in valida_nums_db:
                     previous_id = None
                     is_active_value = None
+                    row_event_id = row_event_ids.get(valida_num_db)
 
                     if approved:
                         previous_id = await deprecate_previous_active(
@@ -481,13 +564,14 @@ async def persist_insight(state: dict) -> dict[str, Any]:
                             season=season,
                             valida_num=valida_num_db,
                             new_insight_id=None,
+                            event_id=row_event_id,
                         )
                         is_active_value = 1
 
                     new_row = AthleteAiInsight(
                         athlete_id=athlete_id,
                         competitor_id=competitor_id,
-                        event_id=event_id,
+                        event_id=row_event_id,
                         agent_run_id=state.get("agent_run_id"),
                         generated_by_user_id=coach_id,
                         season=season,

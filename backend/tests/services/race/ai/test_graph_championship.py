@@ -110,7 +110,7 @@ def patched_championship_pipeline(monkeypatch):
     anclado al Cto. Nacional — misma convención que ``patched_pipeline`` en
     ``test_graph.py``."""
 
-    async def _fetch_results(db, aid, season, valida_nums=None):
+    async def _fetch_results(db, aid, season, valida_nums=None, series_id=None):
         return [_CnResult()]
 
     async def _fetch_podium(db, cat, evt):

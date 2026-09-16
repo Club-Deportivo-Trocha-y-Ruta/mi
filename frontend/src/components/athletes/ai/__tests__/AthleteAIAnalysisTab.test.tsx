@@ -274,9 +274,11 @@ describe("AthleteAIAnalysisTab", () => {
     });
     // El header expone el conteo de aprobados del MSW handler default
     expect(screen.getByText(/2 aprobados/i)).toBeInTheDocument();
-    // Badge "Válida IV" (header) — formato romano, feature 036 T032.
+    // Badge de copa+válida (header) — hotfix multicopa (2026-09-16): nombra
+    // la copa del fixture default ("Copa Valle · V4"), reemplaza al antiguo
+    // formato romano sin copa ("Válida IV", feature 036 T032).
     expect(
-      screen.getAllByText(/válida\s*iv\b/i).length,
+      screen.getAllByText(/copa valle · v4/i).length,
     ).toBeGreaterThanOrEqual(1);
   });
 

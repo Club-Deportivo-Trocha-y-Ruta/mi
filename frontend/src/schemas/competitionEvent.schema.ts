@@ -13,6 +13,14 @@
  *   - `is_championship` eliminado del schema de formulario; se deriva del
  *     `kind` de la serie seleccionada (decisión D2, spec 014).
  *
+ * Hotfix multicopa — identidad de válida (2026-09-16):
+ *   - `priority` (A/B/C, opcional) solo aplica a válidas de copa. El coach
+ *     nunca elige `CD` — esa prioridad la fuerza el backend para campeonatos
+ *     y se muestra de solo lectura en el formulario (decisión del contrato).
+ *   - Incluido también (opcional, ignorado) en el schema de campeonato solo
+ *     para que `watch("priority")` sea válido en ambas variantes del
+ *     discriminated union — mismo patrón que `sequence_number`.
+ *
  * Cubre los campos admitidos por `RaceEventCreate` y `RaceEventUpdate`.
  */
 import { z } from "zod";
@@ -43,6 +51,8 @@ export const cupEventSchema = baseEventSchema.extend({
     .int()
     .min(1, "Mínimo 1")
     .max(98, "Máximo 98"),
+  /** `null`/ausente = "Sin prioridad" (UNKNOWN) — nunca envía correo. */
+  priority: z.enum(["A", "B", "C"]).nullable().optional(),
 });
 
 // ---------------------------------------------------------------------------
@@ -54,6 +64,8 @@ export const championshipEventSchema = baseEventSchema.extend({
   // sequence_number es ignorado para campeonatos; incluido como opcional
   // solo para que el tipo discriminado sea manejable en el formulario.
   sequence_number: z.number().int().optional(),
+  // priority también se ignora (el backend fuerza CD); mismo motivo.
+  priority: z.enum(["A", "B", "C"]).nullable().optional(),
 });
 
 // ---------------------------------------------------------------------------
@@ -93,3 +105,19 @@ export const STATUS_OPTIONS = [
   { value: "completed", label: "Completada" },
   { value: "cancelled", label: "Cancelada" },
 ] as const;
+
+// ---------------------------------------------------------------------------
+// Opciones de prioridad (solo copa — hotfix multicopa)
+// ---------------------------------------------------------------------------
+
+/**
+ * Opciones del select "Prioridad de la válida". `null` = "Sin prioridad"
+ * (UNKNOWN en el backend). No incluye `CD` — esa prioridad es exclusiva de
+ * campeonatos y la fuerza el backend, nunca la elige el coach.
+ */
+export const PRIORITY_OPTIONS: { value: "A" | "B" | "C" | null; label: string }[] = [
+  { value: null, label: "Sin prioridad" },
+  { value: "A", label: "A" },
+  { value: "B", label: "B" },
+  { value: "C", label: "C" },
+];

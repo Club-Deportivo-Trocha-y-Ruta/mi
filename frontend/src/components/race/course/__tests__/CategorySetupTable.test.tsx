@@ -48,6 +48,7 @@ const SETUP: CourseSetup = {
 
 const SUGGESTED: SuggestedSetup = {
   category_id: 12,
+  category_label: "Infantil masculino",
   laps: 3,
   variant_label: "Circuito completo",
   source_event_id: 38,
@@ -65,7 +66,7 @@ describe("CategorySetupTable — banner de sugerencia", () => {
         setups={[]}
         suggestedSetups={[SUGGESTED]}
         variants={[VARIANT]}
-        resultCategoryIds={[12]}
+        resultCategories={[{ category_id: 12, label: "Infantil masculino" }]}
       />,
     );
 
@@ -84,7 +85,7 @@ describe("CategorySetupTable — banner de sugerencia", () => {
         setups={[SETUP]}
         suggestedSetups={[SUGGESTED]}
         variants={[VARIANT]}
-        resultCategoryIds={[12]}
+        resultCategories={[{ category_id: 12, label: "Infantil masculino" }]}
       />,
     );
 
@@ -103,7 +104,7 @@ describe("CategorySetupTable — banner de sugerencia", () => {
         setups={[]}
         suggestedSetups={[]}
         variants={[VARIANT]}
-        resultCategoryIds={[12]}
+        resultCategories={[{ category_id: 12, label: "Infantil masculino" }]}
       />,
     );
 
@@ -134,7 +135,10 @@ describe("CategorySetupTable — filas en blanco omitidas", () => {
         setups={[]}
         suggestedSetups={[]}
         variants={[VARIANT]}
-        resultCategoryIds={[12, 13]}
+        resultCategories={[
+          { category_id: 12, label: "Infantil masculino" },
+          { category_id: 13, label: "Juvenil masculino" },
+        ]}
       />,
     );
 
@@ -179,7 +183,7 @@ describe("CategorySetupTable — validación de vueltas fuera de rango", () => {
         setups={[]}
         suggestedSetups={[]}
         variants={[VARIANT]}
-        resultCategoryIds={[12]}
+        resultCategories={[{ category_id: 12, label: "Infantil masculino" }]}
       />,
     );
 

@@ -58,9 +58,11 @@ DOWN_REVISION = "2a8baa967cc6"
 # Head actual de la cadena, distinto de REVISION: esta suite prueba la
 # migración de auditoría (041), pero `test_single_head` vigila la cadena
 # ENTERA, así que hay que subir esta constante con cada migración nueva.
-# Hoy: 5ba077132b3b (043, perfil de circuito) sobre d5b125474e2b (042, nueve
-# columnas de trazabilidad) sobre 45cd705c6b54.
-CURRENT_HEAD = "5ba077132b3b"
+# Hoy: c2314ccd7927 (hotfix "identidad de válida" — insight_scope_key,
+# race_events.priority, race_series.short_name) sobre 2c0097aa48b8 (drop
+# race_event_roster) sobre 5ba077132b3b (043, perfil de circuito) sobre
+# d5b125474e2b (042, nueve columnas de trazabilidad) sobre 45cd705c6b54.
+CURRENT_HEAD = "c2314ccd7927"
 
 
 def _require_test_url() -> URL:

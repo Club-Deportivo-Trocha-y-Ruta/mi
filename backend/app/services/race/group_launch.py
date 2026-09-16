@@ -124,6 +124,101 @@ class Member:
     display_name: str
 
 
+@dataclass(frozen=True)
+class AthleteAiContext:
+    """Contexto compartido para poblar el ``initial_state`` de un run IA.
+
+    Hotfix "identidad de válida" (2026-09-16, ver
+    ``~/.claude/plans/multicopa-identidad-valida.md``, Bug #2): centraliza
+    la resolución de edad, sexo, grupo LTAD, fase madurativa y nombres
+    prohibidos — histéricamente duplicada, casi idéntica, en
+    ``routers/race_analysis.py::start_run`` y en
+    ``routers/athlete_race_analysis.py`` (``start_athlete_run`` /
+    ``create_season_summary``). ``launch_group`` nunca poblaba estos campos:
+    sin ``forbidden_names`` el scrub de ``coach_note`` en ``anonymize.py``
+    no tenía nada que scrubear en un lanzamiento grupal — un vacío real de
+    privacidad, no solo de datos faltantes.
+    """
+
+    athlete_age: Optional[int]
+    athlete_sex: Optional[str]
+    ltad_group: Optional[str]
+    maturation_status: Optional[str]
+    forbidden_names: list[str]
+
+
+async def resolve_athlete_ai_context(db: AsyncSession, athlete: Athlete) -> AthleteAiContext:
+    """Resuelve el contexto IA de un atleta para inyectar en ``initial_state``.
+
+    Réplica exacta de la lógica usada por ``race_analysis.py::start_run``
+    (features 011/037): ``athlete_sex`` se resuelve siempre (no depende de
+    ``birth_date``); ``athlete_age``/``ltad_group``/``maturation_status``
+    solo cuando hay ``birth_date``. ``forbidden_names`` es best-effort (ver
+    :func:`app.services.race.ai.grounding.load_forbidden_names`) y siempre
+    devuelve una lista, nunca ``None``.
+    """
+    from app.services.race.ai.grounding import (
+        latest_maturation_status,
+        load_forbidden_names,
+        ltad_group_from_age,
+    )
+
+    athlete_sex_val: Optional[str] = None
+    if getattr(athlete, "sex", None) is not None:
+        athlete_sex_val = getattr(athlete.sex, "value", None) or str(athlete.sex)
+
+    athlete_age: Optional[int] = None
+    ltad_group_val: Optional[str] = None
+    maturation_status: Optional[str] = None
+    forbidden_names: list[str] = []
+
+    if getattr(athlete, "birth_date", None) is not None:
+        age_decimal = (date.today() - athlete.birth_date).days / 365.25
+        athlete_age = int(age_decimal)
+        ltad_group_val = ltad_group_from_age(age_decimal).value
+        maturation_status = await latest_maturation_status(db, athlete.id)
+        forbidden_names = await load_forbidden_names(
+            db, athlete.id, nickname=getattr(athlete, "nickname", None)
+        )
+    else:
+        logger.warning(
+            "resolve_athlete_ai_context: athlete_id=%s sin birth_date; "
+            "athlete_age/ltad_group/maturation_status no resueltos",
+            athlete.id,
+        )
+
+    return AthleteAiContext(
+        athlete_age=athlete_age,
+        athlete_sex=athlete_sex_val,
+        ltad_group=ltad_group_val,
+        maturation_status=maturation_status,
+        forbidden_names=forbidden_names,
+    )
+
+
+async def resolve_events_for_season_valida(
+    db: AsyncSession, season: int, valida_num: int
+) -> list[int]:
+    """PKs de ``race_events`` cuya serie es de ``season`` con ese ``sequence_number``.
+
+    Longitud > 1 ⇒ el número de válida es AMBIGUO en la temporada (dos copas,
+    o una copa y un campeonato, comparten ``sequence_number`` — hotfix
+    "identidad de válida"). Usado por :func:`find_active_run` (para no
+    adoptar un run legado que podría pertenecer a otra copa) y por
+    ``routers/race_analysis.py::start_run`` (para exigir desambiguación con
+    409 en vez de adivinar).
+    """
+    result = await db.execute(
+        select(RaceEvent.id)
+        .join(RaceSeries, RaceEvent.series_id == RaceSeries.id)
+        .where(
+            RaceSeries.season_year == season,
+            RaceEvent.sequence_number == valida_num,
+        )
+    )
+    return [int(x) for x in result.scalars().all()]
+
+
 # ---------------------------------------------------------------------------
 # Helper: UTC now
 # ---------------------------------------------------------------------------
@@ -278,6 +373,8 @@ async def find_active_run(
     athlete_id: int,
     season: int,
     valida_num: int,
+    *,
+    event_id: Optional[int] = None,
 ) -> Optional[str]:
     """Return the ``external_run_id`` of an active run for the given scope.
 
@@ -299,6 +396,15 @@ async def find_active_run(
         athlete_id: Athlete PK.
         season: Season year (e.g. 2026).
         valida_num: Sequence number of the event (e.g. 3).
+        event_id: Hotfix "identidad de válida" (2026-09-16). When given, a
+            candidate run's ``input_json.event_id`` must match it exactly.
+            A LEGACY run (persisted before this hotfix, so its payload has
+            no ``event_id`` key) is only adopted when ``(season,
+            valida_num)`` resolves to exactly one event in the season — if
+            it's ambiguous (two cups sharing the same ``sequence_number``)
+            we can't tell which cup the legacy run belongs to, so it is
+            NEVER adopted as a match. ``None`` (default) reproduces the
+            legacy behaviour for callers that don't resolve an anchor event.
 
     Returns:
         ``external_run_id`` string if an active run exists, else ``None``.
@@ -348,8 +454,28 @@ async def find_active_run(
         valida_nums = payload.get("valida_nums")
         # valida_nums=None means "all válidas" — treat as a match for any
         # specific valida_num to be conservative (avoids double-launching).
-        if valida_nums is None or valida_num in valida_nums:
-            return run_id
+        if valida_nums is not None and valida_num not in valida_nums:
+            continue
+
+        if event_id is not None:
+            payload_event_id = payload.get("event_id")
+            if payload_event_id is not None:
+                if payload_event_id != event_id:
+                    # Same (season, valida_num) but a DIFFERENT cup's event —
+                    # never a match (hotfix "identidad de válida").
+                    continue
+            else:
+                # Legacy row (pre-hotfix): no event_id of its own. Only
+                # adopt it if (season, valida_num) is unambiguous — else it
+                # could belong to another cup and we'd double-launch or
+                # silently skip the wrong athlete's run.
+                candidates = await resolve_events_for_season_valida(
+                    db, season, valida_num
+                )
+                if len(candidates) != 1:
+                    continue
+
+        return run_id
 
     return None
 
@@ -405,10 +531,17 @@ async def _insert_agent_run(
     explain_mode: bool,
     started_at: datetime,
     requested_by_user_id: int,
+    event_id: Optional[int] = None,
 ) -> None:
     """Insert a new ``agent_runs`` row with status=running.
 
     Mirrors the INSERT in ``race_analysis.start_run`` (lines 596-624).
+
+    ``event_id`` (hotfix "identidad de válida", Bug #2): the anchor event of
+    a group launch is ALWAYS known — a group launch starts FROM one specific
+    ``race_event_id`` — so it is always persisted in ``input_json``. Without
+    it, :func:`find_active_run` can't tell two cups sharing the same
+    ``valida_num`` apart for runs started by this path.
     """
     from app.services.race.agents.pricing import PROMPT_VERSION_ANALYST_V2
 
@@ -417,6 +550,7 @@ async def _insert_agent_run(
         "season": season,
         "valida_nums": valida_nums,
         "explain_mode": explain_mode,
+        "event_id": event_id,
     }
 
     await db.execute(
@@ -506,8 +640,12 @@ async def launch_group(
     items: list[GroupRunItem] = []
 
     for member in members:
-        # 1. Check for existing active run.
-        active_run_id = await find_active_run(db, member.athlete_id, season, valida_num)
+        # 1. Check for existing active run. ``event_id=race_event_id``
+        #    (hotfix "identidad de válida"): sin esto, dos copas con el
+        #    mismo valida_num "veían" el run activo de la otra.
+        active_run_id = await find_active_run(
+            db, member.athlete_id, season, valida_num, event_id=race_event_id
+        )
         if active_run_id is not None:
             items.append(
                 GroupRunItem(
@@ -524,14 +662,26 @@ async def launch_group(
         run_id = uuid.uuid4().hex
         started_at = _utc_now()
 
-        # Resolve athlete age for the initial state (best-effort, same
-        # pattern as start_run in race_analysis.py lines 629-643).
-        athlete_age: Optional[int] = None
+        # Resolve full AI context (age, sex, LTAD group, maturation status,
+        # forbidden_names) for the initial state — same helper used by
+        # ``race_analysis.py::start_run`` (best-effort, same pattern as that
+        # router). Bug #2 (hotfix "identidad de válida"): before this,
+        # ``launch_group`` only resolved ``athlete_age`` and NEVER set
+        # ``forbidden_names`` — a real privacy gap, since coach-note
+        # scrubbing in ``anonymize.py`` depends on it.
+        _ath: Optional[Athlete] = None
+        ai_context = AthleteAiContext(
+            athlete_age=None,
+            athlete_sex=None,
+            ltad_group=None,
+            maturation_status=None,
+            forbidden_names=[],
+        )
         try:
             # FR-014: ``_load_members`` ya excluye archivados; el filtro se
             # repite aquí (defensa en profundidad) para que un atleta
-            # archivado entre la selección y el lanzamiento no aporte edad
-            # al estado inicial del run.
+            # archivado entre la selección y el lanzamiento no aporte
+            # contexto al estado inicial del run.
             _ath_result = await db.execute(
                 select(Athlete).where(
                     Athlete.id == member.athlete_id,
@@ -539,13 +689,11 @@ async def launch_group(
                 )
             )
             _ath = _ath_result.scalar_one_or_none()
-            if _ath is not None and _ath.birth_date is not None:
-                athlete_age = int(
-                    (date.today() - _ath.birth_date).days / 365.25
-                )
+            if _ath is not None:
+                ai_context = await resolve_athlete_ai_context(db, _ath)
         except Exception:  # noqa: BLE001
             logger.debug(
-                "group_launch: could not resolve athlete_age for athlete_id=%s",
+                "group_launch: could not resolve AI context for athlete_id=%s",
                 member.athlete_id,
             )
 
@@ -556,9 +704,18 @@ async def launch_group(
             "coach_id": requested_by_user_id,
             "explain_mode": explain_mode,
             "run_id": run_id,
+            # Hotfix "identidad de válida" (Bug #2): el ancla del run — un
+            # lanzamiento grupal SIEMPRE nace desde un evento concreto.
+            "event_id": race_event_id,
+            "forbidden_names": ai_context.forbidden_names,
+            "athlete_sex": ai_context.athlete_sex,
         }
-        if athlete_age is not None:
-            initial_state["athlete_age"] = athlete_age
+        if ai_context.athlete_age is not None:
+            initial_state["athlete_age"] = ai_context.athlete_age
+        if ai_context.ltad_group is not None:
+            initial_state["ltad_group"] = ai_context.ltad_group
+        if _ath is not None:
+            initial_state["maturation_status"] = ai_context.maturation_status
 
         # 3. Persist the agent_runs row before spawning the task.
         try:
@@ -571,6 +728,7 @@ async def launch_group(
                 explain_mode=explain_mode,
                 started_at=started_at,
                 requested_by_user_id=requested_by_user_id,
+                event_id=race_event_id,
             )
         except Exception:  # noqa: BLE001
             logger.exception(
@@ -835,6 +993,9 @@ __all__ = [
     "EventNotAnalyzableError",
     "EventHasNoResultsError",
     "Member",
+    "AthleteAiContext",
+    "resolve_athlete_ai_context",
+    "resolve_events_for_season_valida",
     "resolve_event_scope",
     "resolve_group_members",
     "find_active_run",

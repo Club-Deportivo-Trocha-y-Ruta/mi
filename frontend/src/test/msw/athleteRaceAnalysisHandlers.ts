@@ -80,6 +80,18 @@ export function mockInsight(
   const finalSeriesKind = overrides?.series_kind ?? defaultSeriesKind;
   const defaultSeriesLevel: AthleteInsightOut["series_level"] =
     finalSeriesKind === "championship" ? "departmental" : null;
+  // Hotfix multicopa (2026-09-16): identidad de copa por default — mismo
+  // criterio que el resto de defaults de esta factory (siguen a
+  // `finalSeriesKind`, no al `series_kind` explícito del caller antes de
+  // resolverse). Un campeonato no lleva nombre de copa (ver `raceLabel`).
+  const defaultSeriesId: AthleteInsightOut["series_id"] =
+    finalSeriesKind === "championship" ? 31 : 12;
+  const defaultSeriesName: AthleteInsightOut["series_name"] =
+    finalSeriesKind === "championship"
+      ? "Campeonato Departamental"
+      : "Copa Valle de Ciclomontañismo";
+  const defaultSeriesShortName: AthleteInsightOut["series_short_name"] =
+    finalSeriesKind === "championship" ? null : "Copa Valle";
   return {
     id: 1,
     season: 2026,
@@ -88,6 +100,9 @@ export function mockInsight(
     event_date: "2026-05-17",
     series_kind: defaultSeriesKind,
     series_level: defaultSeriesLevel,
+    series_id: defaultSeriesId,
+    series_name: defaultSeriesName,
+    series_short_name: defaultSeriesShortName,
     use_case: "race_analysis",
     summary_text:
       "Resumen del desempeño del deportista en Válida IV. Mostró " +
@@ -148,6 +163,9 @@ export function mockFallbackSeasonSummaryInsight(
     event_id: null,
     event_date: null,
     series_kind: null,
+    series_id: null,
+    series_name: null,
+    series_short_name: null,
     use_case: "season_summary_v2",
     ...overrides,
   });
@@ -1405,6 +1423,10 @@ export const clubInsightsByRaceDefaultResponse: ClubInsightsByRaceResponse = {
       athlete_id: 145,
       athlete_display_name: "Isabel Quiñoez",
       valida_num: 4,
+      event_id: 91,
+      series_id: 12,
+      series_name: "Copa Valle de Ciclomontañismo",
+      series_short_name: "Copa Valle",
       insight_id: 99,
       summary_excerpt: "Finalizó en 3er lugar, con progreso técnico en frenada.",
       generated_at: "2026-05-25T19:49:00",
@@ -1414,6 +1436,10 @@ export const clubInsightsByRaceDefaultResponse: ClubInsightsByRaceResponse = {
       athlete_id: 0,
       athlete_display_name: "[Atleta del club]",
       valida_num: 4,
+      event_id: 91,
+      series_id: 12,
+      series_name: "Copa Valle de Ciclomontañismo",
+      series_short_name: "Copa Valle",
       insight_id: 100,
       summary_excerpt: null,
       generated_at: "2026-05-25T20:00:00",
@@ -1423,6 +1449,12 @@ export const clubInsightsByRaceDefaultResponse: ClubInsightsByRaceResponse = {
       athlete_id: 201,
       athlete_display_name: "Mateo Pérez",
       valida_num: 4,
+      // Fila legacy sin columna de identidad de copa (previa al hotfix
+      // multicopa) — `raceLabelForInsight` no debe inventar una copa.
+      event_id: null,
+      series_id: null,
+      series_name: null,
+      series_short_name: null,
       insight_id: null,
       summary_excerpt: null,
       generated_at: null,
@@ -1478,6 +1510,19 @@ export const seasonPanoramaDefaultResponse: SeasonPanoramaResponse = {
       podiums: 2,
       best_position: 1,
       total_points: 60,
+      by_series: [
+        {
+          series_id: 12,
+          series_name: "Copa Valle de Ciclomontañismo",
+          series_short_name: "Copa Valle",
+          series_kind: "cup",
+          races: 2,
+          points: 60,
+          podiums: 2,
+          wins: 1,
+          best_position: 1,
+        },
+      ],
     },
     {
       athlete_id: 145,
@@ -1487,6 +1532,19 @@ export const seasonPanoramaDefaultResponse: SeasonPanoramaResponse = {
       podiums: 0,
       best_position: 5,
       total_points: 10,
+      by_series: [
+        {
+          series_id: 12,
+          series_name: "Copa Valle de Ciclomontañismo",
+          series_short_name: "Copa Valle",
+          series_kind: "cup",
+          races: 1,
+          points: 10,
+          podiums: 0,
+          wins: 0,
+          best_position: 5,
+        },
+      ],
     },
   ],
 };
@@ -1494,6 +1552,79 @@ export const seasonPanoramaDefaultResponse: SeasonPanoramaResponse = {
 export const seasonPanoramaHandler = http.get(
   "*/api/race-analysis/insights/season/:year",
   () => HttpResponse.json(seasonPanoramaDefaultResponse),
+);
+
+/**
+ * Wave 3 (hotfix multicopa) — dos copas en la misma temporada: Copa Valle
+ * (series_id=12, donde ambos atletas corrieron) y Copa Let's GO
+ * (series_id=55, solo Juan Garcia). Fixture de referencia para el selector
+ * de copa de `SeasonInsightsPage`.
+ */
+export const seasonPanoramaMultiCupResponse: SeasonPanoramaResponse = {
+  season: 2026,
+  total_athletes: 2,
+  items: [
+    {
+      athlete_id: 144,
+      athlete_display_name: "Juan Garcia",
+      races_count: 3,
+      wins: 2,
+      podiums: 3,
+      best_position: 1,
+      total_points: 100,
+      by_series: [
+        {
+          series_id: 12,
+          series_name: "Copa Valle de Ciclomontañismo",
+          series_short_name: "Copa Valle",
+          series_kind: "cup",
+          races: 2,
+          points: 60,
+          podiums: 2,
+          wins: 1,
+          best_position: 1,
+        },
+        {
+          series_id: 55,
+          series_name: "Copa Let's GO",
+          series_short_name: "Let's GO",
+          series_kind: "cup",
+          races: 1,
+          points: 40,
+          podiums: 1,
+          wins: 1,
+          best_position: 1,
+        },
+      ],
+    },
+    {
+      athlete_id: 145,
+      athlete_display_name: "Maria Perez",
+      races_count: 1,
+      wins: 0,
+      podiums: 0,
+      best_position: 5,
+      total_points: 10,
+      by_series: [
+        {
+          series_id: 12,
+          series_name: "Copa Valle de Ciclomontañismo",
+          series_short_name: "Copa Valle",
+          series_kind: "cup",
+          races: 1,
+          points: 10,
+          podiums: 0,
+          wins: 0,
+          best_position: 5,
+        },
+      ],
+    },
+  ],
+};
+
+export const seasonPanoramaMultiCupHandler = http.get(
+  "*/api/race-analysis/insights/season/:year",
+  () => HttpResponse.json(seasonPanoramaMultiCupResponse),
 );
 
 export const emptySeasonPanoramaHandler = http.get(
@@ -1538,6 +1669,7 @@ export const mockRaceParticipationList = (
       label: "Válida I — Sevilla",
       series_id: 12,
       series_name: "Copa Valle de Ciclomontañismo",
+      series_short_name: "Copa Valle",
       series_level: "departmental",
     },
     {
@@ -1550,6 +1682,63 @@ export const mockRaceParticipationList = (
       label: "Cto. Dep. — Ginebra",
       series_id: 31,
       series_name: "Campeonato Departamental",
+      series_short_name: null,
+      series_level: "departmental",
+    },
+  ],
+  ...overrides,
+});
+
+/**
+ * Lista con DOS copas que comparten `sequence_number` (hotfix multicopa,
+ * 2026-09-16) — Copa Valle Válida IV (event_id=91) y Copa Let's GO Válida IV
+ * (event_id=95) caen en el mismo número de válida pero son carreras
+ * distintas. Fixture de referencia para `ComparatorPanel` (bloqueo de
+ * selección cross-copa) — mismo patrón que
+ * `groupedEvolutionBySeriesHandler` (arriba) para `EvolutionChart`.
+ */
+export const mockRaceParticipationMultiCup = (
+  overrides?: Partial<RaceParticipationResponseWithSeries>,
+): RaceParticipationResponseWithSeries => ({
+  season: 2026,
+  items: [
+    {
+      event_id: 91,
+      sequence_number: 4,
+      series_kind: "cup",
+      event_date: "2026-05-17",
+      event_name: "Copa Valle — Válida IV",
+      location: "Cali",
+      label: "Copa Valle · Válida IV — Cali",
+      series_id: 12,
+      series_name: "Copa Valle de Ciclomontañismo",
+      series_short_name: "Copa Valle",
+      series_level: "departmental",
+    },
+    {
+      event_id: 95,
+      sequence_number: 4,
+      series_kind: "cup",
+      event_date: "2026-09-13",
+      event_name: "Copa Let's GO — Cuarta Válida",
+      location: "Alcalá",
+      label: "Let's GO · Válida IV — Alcalá",
+      series_id: 55,
+      series_name: "Copa Let's GO",
+      series_short_name: "Let's GO",
+      series_level: "departmental",
+    },
+    {
+      event_id: 92,
+      sequence_number: 5,
+      series_kind: "cup",
+      event_date: "2026-08-01",
+      event_name: "Copa Valle — Válida V",
+      location: "Palmira",
+      label: "Copa Valle · Válida V — Palmira",
+      series_id: 12,
+      series_name: "Copa Valle de Ciclomontañismo",
+      series_short_name: "Copa Valle",
       series_level: "departmental",
     },
   ],

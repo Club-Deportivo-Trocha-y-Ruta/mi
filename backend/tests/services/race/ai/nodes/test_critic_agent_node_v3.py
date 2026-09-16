@@ -127,6 +127,40 @@ async def test_v3_branch_catalog_issue_sanitizes_draft_without_blocking(monkeypa
 
 
 @pytest.mark.asyncio
+async def test_v3_branch_race_status_precheck_forces_must_block_even_if_llm_approves(
+    monkeypatch,
+):
+    """Hotfix identidad de válida: la frase real del bug de producción
+    ("En la reprogramada Válida 4...") debe bloquear aunque el critic LLM
+    (stub) apruebe — el precheck determinista corre antes y gana."""
+    monkeypatch.setenv("RACE_AGENT_CRITIC_ENABLED", "true")
+    fake = _FakeCriticAgentV3(feedback=CriticFeedback(approved=True))
+    draft = _Draft(
+        headline="En la reprogramada Válida 4, el percentil subió de 18.8 a 40",
+        observations=[
+            _Observation(
+                claim="Bajó respecto al 50 logrado en la Válida 5",
+                evidence=["18.8", "40", "50"],
+            )
+        ],
+    )
+    state = {
+        "per_valida_drafts_v3": {4: draft},
+        "grounding_numbers": {4: ["18.8", "40", "50"]},
+        "event_conditions": {4: {}},
+        "_critic_agent": fake,
+    }
+
+    update = await critic_agent(state)
+
+    assert update["per_valida_verdicts"][4].must_block is True
+    assert update["confidence"][4] == InsightConfidence.low
+    # El precheck ya vio la verdad de campo antes de invocar el LLM.
+    _, ground_truth_seen, _ = fake.invoke_v3_calls[0]
+    assert "sin condiciones registradas" in ground_truth_seen
+
+
+@pytest.mark.asyncio
 async def test_v3_branch_skips_none_drafts(monkeypatch):
     monkeypatch.setenv("RACE_AGENT_CRITIC_ENABLED", "true")
     fake = _FakeCriticAgentV3()

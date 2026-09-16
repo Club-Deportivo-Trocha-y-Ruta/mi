@@ -302,6 +302,22 @@ async def test_coach_lista_todos_atletas_con_insights(client_factory):
 
 
 @pytest.mark.asyncio
+async def test_response_expone_series_id_name_short_name(client_factory):
+    """Hotfix "identidad de válida" (2026-09-16): la respuesta expone
+    ``series_id``/``series_name``/``series_short_name`` a nivel del wrapper
+    (toda la respuesta está scoped a un único race_event_id=5, series_id=1,
+    sembrado sin short_name por ``create_race_series``)."""
+    async with await client_factory(10, UserRole.coach, "coach1@test.com") as client:
+        r = await client.get("/api/races/5/club-insights?club_id=1")
+
+    assert r.status_code == 200
+    data = r.json()
+    assert data["series_id"] == 1
+    assert data["series_name"] == "Copa Valle de Ciclomontanismo"
+    assert data["series_short_name"] is None
+
+
+@pytest.mark.asyncio
 async def test_parent_ve_hijo_completo_y_otros_enmascarados(client_factory):
     """Parent: datos completos para su hijo (144); enmascarado para athlete_145."""
     async with await client_factory(20, UserRole.parent, "parent@test.com") as client:

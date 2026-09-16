@@ -107,7 +107,7 @@ describe("EditConditionsDialog — precarga de valores", () => {
 
     // Surface "seca" → el chip correspondiente debe estar marcado.
     const surfaceGroup = screen.getByRole("group", {
-      name: /Condición del terreno/i,
+      name: /Estado de la pista/i,
     });
     const secaChip = within(surfaceGroup).getByRole("radio", {
       name: /Seca/i,

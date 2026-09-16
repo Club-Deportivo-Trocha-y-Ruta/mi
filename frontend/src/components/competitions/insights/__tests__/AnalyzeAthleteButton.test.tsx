@@ -308,6 +308,49 @@ describe("AnalyzeAthleteButton — pista pre-lanzamiento de IA (T055)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// showBudgetHint (rediseño InsightsTab) — el llamador puede suprimir el hint
+// cuando ya se muestra una sola vez en un contenedor padre (ej. las cards
+// del tab Insights, con el panel grupal encima).
+// ---------------------------------------------------------------------------
+
+describe("AnalyzeAthleteButton — showBudgetHint", () => {
+  it("showBudgetHint=false oculta el hint aunque haya ETA, el botón sigue habilitado", () => {
+    mockAIStatusData = {
+      budget_status: "ok",
+      budget_remaining_pct: 80,
+      concurrency_available: true,
+      est_wait_seconds: 20,
+    };
+    renderButton({ showBudgetHint: false });
+    expect(screen.queryByTestId("ai-budget-hint-duration")).not.toBeInTheDocument();
+    expect(screen.getByTestId("ai-launch-btn-55")).not.toBeDisabled();
+  });
+
+  it("showBudgetHint por defecto (true) sigue mostrando el hint", () => {
+    mockAIStatusData = {
+      budget_status: "ok",
+      budget_remaining_pct: 80,
+      concurrency_available: true,
+      est_wait_seconds: 20,
+    };
+    renderButton();
+    expect(screen.getByTestId("ai-budget-hint-duration")).toBeInTheDocument();
+  });
+
+  it("showBudgetHint=false sigue deshabilitando el botón con presupuesto agotado", () => {
+    mockAIStatusData = {
+      budget_status: "exhausted",
+      budget_remaining_pct: 0,
+      concurrency_available: true,
+      est_wait_seconds: 0,
+    };
+    renderButton({ showBudgetHint: false });
+    expect(screen.queryByTestId("ai-budget-hint-exhausted")).not.toBeInTheDocument();
+    expect(screen.getByTestId("ai-launch-btn-55")).toBeDisabled();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // jest-axe adicional sobre estados con hint (feature 033 / T056)
 // ---------------------------------------------------------------------------
 

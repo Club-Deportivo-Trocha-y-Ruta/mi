@@ -47,6 +47,40 @@ async def test_weather_notes_scrubbed_before_prompt(configure_db_factory, fake_s
     assert forbidden not in block
 
 
+@pytest.mark.asyncio
+async def test_event_conditions_by_event_weather_notes_scrubbed_too(
+    configure_db_factory, fake_session
+):
+    """Multicopa (hotfix identidad de válida): la variante keyed por
+    event_id, poblada por load_race_data solo en runs de temporada, pasa por
+    el mismo scrub que ``event_conditions`` — de lo contrario un nombre real
+    en ``weather_notes`` llegaría intacto al resumen de temporada."""
+    configure_db_factory(fake_session)
+
+    forbidden = "Valentina Restrepo"
+    state = {
+        "athlete_id": 1,
+        "competitor_id": 22,
+        "run_id": "run-z",
+        "forbidden_names": [forbidden],
+        "raw_data": [],
+        "event_conditions_by_event": {
+            43: {
+                "climate": "Lluvioso",
+                "temperature_c": 18.0,
+                "surface_condition": "humeda",
+                "altitude_msnm": 1600,
+                "weather_notes": f"{forbidden} avisó del sector embarrado",
+            }
+        },
+    }
+
+    update = await mod.anonymize(state)
+    scrubbed = update["event_conditions_by_event"][43]["weather_notes"]
+    assert forbidden not in scrubbed
+    assert "sector embarrado" in scrubbed
+
+
 @settings(max_examples=25, suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(
     name=st.text(alphabet=st.characters(whitelist_categories=("Lu", "Ll")), min_size=3, max_size=12),

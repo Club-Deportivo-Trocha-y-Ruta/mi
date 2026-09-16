@@ -8,8 +8,11 @@
  *  - Cto. Departamental (valida_num===99) → borde amber + ícono Medal.
  *  - Carrera normal (válida 1..7) → card compacta sin borde de color ni Trophy/Medal.
  *
- * Privacidad: este componente no expone PII de menores; los snapshots de
- * fechas usan los valores del calendario Copa Valle 2026 (público).
+ * Privacidad: este componente no expone PII de menores.
+ *
+ * Wave 3 (hotfix multicopa, 2026-09-16): el tier del badge sale de
+ * `priority` en el fixture (`mockInsight`), no de un calendario Copa Valle
+ * hardcodeado por mes (`getCarreraTier`, retirado de `lib/insights.ts`).
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
@@ -91,7 +94,7 @@ describe("InsightsTimeline — agrupación temporal (Sprint 2 BB1)", () => {
     expect(screen.getByTestId("insight-card-12")).toBeInTheDocument();
   });
 
-  it("mes con tier 'Carrera A' (mayo 2026) → badge 'Carrera A' presente en el header del grupo", async () => {
+  it("insight con priority='A' → badge 'Carrera A' presente en el header del grupo", async () => {
     mswServer.use(
       http.get("*/api/athletes/:athleteId/race-analysis/insights", () =>
         HttpResponse.json({
@@ -100,6 +103,7 @@ describe("InsightsTimeline — agrupación temporal (Sprint 2 BB1)", () => {
               id: 20,
               valida_num: 4,
               generated_at: "2026-05-17T10:00:00Z",
+              priority: "A",
             }),
           ],
           total: 1,
@@ -112,11 +116,12 @@ describe("InsightsTimeline — agrupación temporal (Sprint 2 BB1)", () => {
     await waitFor(() => {
       expect(screen.getByTestId("insight-card-20")).toBeInTheDocument();
     });
-    // Badge del tier — el helper getCarreraTier mapea 2026-05 → "A".
+    // Badge del tier — Wave 3: tierFromPriority mapea priority='A' → tier "A"
+    // directo (real por evento, ya no un calendario hardcodeado por mes).
     expect(screen.getByText(/Carrera\s*A/i)).toBeInTheDocument();
   });
 
-  it("mes sin tier (sin válida en el calendario, ej. marzo 2026) → NO renderiza badge de tier", async () => {
+  it("insight con priority=null (UNKNOWN) → NO renderiza badge de tier", async () => {
     mswServer.use(
       http.get("*/api/athletes/:athleteId/race-analysis/insights", () =>
         HttpResponse.json({
@@ -125,6 +130,7 @@ describe("InsightsTimeline — agrupación temporal (Sprint 2 BB1)", () => {
               id: 21,
               valida_num: 1,
               generated_at: "2026-03-10T10:00:00Z",
+              priority: null,
             }),
           ],
           total: 1,
@@ -137,7 +143,7 @@ describe("InsightsTimeline — agrupación temporal (Sprint 2 BB1)", () => {
     await waitFor(() => {
       expect(screen.getByTestId("insight-card-21")).toBeInTheDocument();
     });
-    // No hay tier para 2026-03 → no debe renderizar "Carrera A/B/C/CD".
+    // priority null (UNKNOWN) → no debe renderizar "Carrera A/B/C/CD".
     expect(screen.queryByText(/Carrera\s*[ABC]/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Carrera\s*CD/i)).not.toBeInTheDocument();
   });
@@ -261,16 +267,19 @@ describe("InsightsTimeline — agrupación temporal (Sprint 2 BB1)", () => {
               id: 901,
               valida_num: 4,
               generated_at: "2026-05-17T10:00:00Z",
+              priority: "A",
             }),
             mockInsight({
               id: 902,
               valida_num: 3,
               generated_at: "2026-04-19T10:00:00Z",
+              priority: null,
             }),
             mockInsight({
               id: 903,
               valida_num: 99,
               generated_at: "2026-06-26T10:00:00Z",
+              priority: "CD",
             }),
           ],
           total: 3,
@@ -286,9 +295,9 @@ describe("InsightsTimeline — agrupación temporal (Sprint 2 BB1)", () => {
       expect(screen.getByTestId("insight-card-901")).toBeInTheDocument();
     });
     // Sanidad mínima: badge(s) de tier y agrupación renderizadas. El grupo
-    // de junio (Cto. Departamental, valida_num=99) también resuelve a tier
-    // "A" desde feature 033/T015 (getCarreraTier ya no distingue "CD"), así
-    // que hay 2 badges "Carrera A" (mayo + junio) — no 1.
+    // de junio (Cto. Departamental, priority="CD") también resuelve a tier
+    // "A" (Wave 3: `tierFromPriority` ya no distingue "CD"), así que hay 2
+    // badges "Carrera A" (mayo + junio) — no 1.
     expect(screen.getAllByText(/Carrera\s*A/i).length).toBe(2);
     const results = await axe(container);
     expect(results).toHaveNoViolations();

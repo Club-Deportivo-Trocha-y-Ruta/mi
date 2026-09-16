@@ -261,6 +261,52 @@ def test_case_data_blocks_render_times_as_hhmmss() -> None:
     assert "1800000" not in blocks
 
 
+def test_case_data_blocks_include_course_block() -> None:
+    """Un número del circuito citado por el modelo cuenta como respaldado."""
+    case = copy.deepcopy(_CASE)
+    case["input"]["course_meta"] = "- Desnivel positivo por vuelta: 137 m"
+    assert "### course_block" in case_data_blocks(case)
+    assert "137" in case_grounding_numbers(case)
+    assert "137" not in case_grounding_numbers(_CASE)
+
+
+def test_case_data_blocks_render_season_course_by_valida_per_valida() -> None:
+    """Compatibilidad legada: clave ``int`` (pre-hotfix multicopa) sigue
+    anteponiendo el literal "Válida "."""
+    case = copy.deepcopy(_CASE)
+    case["input"].update(
+        analysis_kind="season",
+        valida_num=0,
+        course_by_valida={3: "- Desnivel positivo por vuelta: 137 m"},
+    )
+    blocks = case_data_blocks(case)
+    assert "### course_by_valida\nVálida 3:\n- Desnivel positivo por vuelta: 137 m" in blocks
+    assert "{" not in blocks.split("### course_by_valida", 1)[1]
+
+
+def test_case_data_blocks_render_season_course_by_valida_with_cup_label_keys() -> None:
+    """Multicopa (hotfix identidad de válida): la clave real hoy es la
+    etiqueta completa con copa (``str``, ya incluye "Válida") — no se le
+    antepone el literal de nuevo, a diferencia de la clave ``int`` legada
+    del test anterior. Sin esta distinción, dos copas que comparten
+    ``valida_num`` (el bug real de plans/multicopa-identidad-valida.md)
+    renderizarían un "Válida Copa X · Válida IV" duplicado y confuso."""
+    case = copy.deepcopy(_CASE)
+    case["input"].update(
+        analysis_kind="season",
+        valida_num=0,
+        course_by_valida={
+            "Copa Let's Go Interdepartamental · Válida IV": "- Distancia por vuelta: 4,2 km",
+        },
+    )
+    blocks = case_data_blocks(case)
+    assert (
+        "### course_by_valida\nCopa Let's Go Interdepartamental · Válida IV:\n"
+        "- Distancia por vuelta: 4,2 km"
+    ) in blocks
+    assert "Válida Copa Let's Go" not in blocks
+
+
 # ---------------------------------------------------------------------------
 # Forbidden / LTAD (0.15) — delegado en prechecks
 # ---------------------------------------------------------------------------
@@ -320,6 +366,32 @@ def test_ltad_violation_detected_by_prechecks_zeroes_forbidden() -> None:
     )
     subs = rule_subscores_v3(draft, _CASE)
     assert subs["forbidden"] == 0.0
+
+
+def test_invented_race_status_detected_by_prechecks_zeroes_forbidden() -> None:
+    """Multicopa (hotfix identidad de válida): estado de carrera inventado
+    ("reprogramada" sin respaldo) es categoría ``factual`` de los
+    prechecks — no aparece en ``forbidden_terms`` del caso, así que solo se
+    detecta si ``_score_forbidden`` mira el mismo conjunto must-block que
+    usa el critic en producción (``prechecks.MUST_BLOCK_CATEGORIES``), no
+    un ``{"privacy", "ltad"}`` hardcodeado y ya desactualizado."""
+    draft = _draft(
+        observations=[
+            {
+                "claim": "En la reprogramada válida se sostuvo el ritmo de la ventana previa.",
+                "evidence": ["asistencia 81.8%", "RPE medio 4.2"],
+                "domain": "training",
+                "confidence": "high",
+            },
+            {
+                "claim": "La diferencia con el frente se juega en pocos segundos dentro de un pelotón parejo.",
+                "evidence": ["gap 3.45% al líder", "pelotón de 10"],
+                "domain": "field",
+                "confidence": "medium",
+            },
+        ]
+    )
+    assert rule_subscores_v3(draft, _CASE)["forbidden"] == 0.0
 
 
 def test_outcome_goal_zeroes_forbidden_even_without_case_term() -> None:

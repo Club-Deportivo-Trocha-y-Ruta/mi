@@ -40,6 +40,7 @@ from app.services.race.queries import (
     fetch_event_conditions,
     fetch_results_for_athlete,
 )
+from app.services.race.race_labels import series_display_name
 from app.services.race.schemas import ChatResponse
 
 logger = logging.getLogger(__name__)
@@ -79,12 +80,44 @@ async def _safe_close(db: Any) -> None:
 # ---------------------------------------------------------------------------
 
 
+async def _resolve_unambiguous_event_id(
+    db: AsyncSession, season: int, valida_num: int
+) -> Optional[int]:
+    """Resuelve ``(season, valida_num)`` a un ``event_id`` único, o ``None``.
+
+    Hotfix "identidad de válida" (2026-09-16): ``None`` cubre tanto "sin
+    evento" como "ambiguo" (dos copas comparten el mismo ``sequence_number``)
+    — en ambos casos el caller debe abstenerse de adivinar.
+    """
+    try:
+        result = await db.execute(
+            text(
+                """
+                SELECT re.id
+                FROM race_events re
+                JOIN race_series rs ON rs.id = re.series_id
+                WHERE rs.season_year = :season AND re.sequence_number = :vn
+                """
+            ),
+            {"season": season, "vn": valida_num},
+        )
+        rows = result.fetchall() if hasattr(result, "fetchall") else result.all()
+    except Exception as exc:  # pragma: no cover - defensa runtime
+        logger.warning("Error resolviendo event_id de (season, valida_num): %s", exc)
+        return None
+    ids = [
+        int(r._mapping["id"]) if hasattr(r, "_mapping") else int(r[0]) for r in rows
+    ]
+    return ids[0] if len(ids) == 1 else None
+
+
 def _build_obtener_insights_atleta_tool(
     db_factory: Optional[Callable[[], AsyncSession]] = None,
     *,
     scope_season: Optional[int] = None,
     scope_valida_num: Optional[int] = None,
     scope_athlete_id: Optional[int] = None,
+    scope_event_id: Optional[int] = None,
 ):
     """Fábrica del tool ``obtener_insights_atleta``.
 
@@ -99,6 +132,18 @@ def _build_obtener_insights_atleta_tool(
         scope_athlete_id: cuando se provee (chat con scope de atleta,
             feature 037 T203), la firma del tool NO pide ``athlete_id`` — el
             LLM no puede consultar a otro atleta desde este chat.
+        scope_event_id: hotfix "identidad de válida" (2026-09-16). Cuando el
+            chat trae un evento activo (``race_event_id`` en
+            :meth:`RaceChatAgent.chat`), el lookup filtra por
+            ``event_id`` exacto — nunca por (season, valida_num) a secas,
+            que colisiona entre dos copas con el mismo número de válida
+            (el bug real que motivó este hotfix: un insight de Copa Valle
+            V4 se filtraba en un chat sobre Copa Let's Go V4). Si no se
+            provee pero ``scope_season``/``scope_valida_num`` sí, el tool
+            intenta resolver un ``event_id`` único a partir de ellos antes
+            de consultar — si es ambiguo, cae al filtro histórico por
+            ``(season, valida_num)`` (ningún caller vivo hoy llega a esa
+            rama: el chat de evento siempre resuelve ``event_id``).
     """
     from langchain_core.tools import tool
 
@@ -108,46 +153,53 @@ def _build_obtener_insights_atleta_tool(
         n = max(1, min(int(n), 10))
         db = db_factory()
         try:
-            # Build query with optional event scope filter.
-            if scope_season is not None and scope_valida_num is not None:
-                # Constrained to a specific (season, valida_num) — the
-                # comparative context includes the same season broadly.
-                query_sql = text(
-                    """
-                    SELECT id, season, valida_num, use_case, summary_text,
-                           confidence, generated_at
-                    FROM athlete_ai_insights
-                    WHERE athlete_id = :aid
-                      AND coach_approved = 1
-                      AND archived_at IS NULL
-                      AND season = :season
-                      AND valida_num = :valida_num
-                    ORDER BY generated_at DESC
-                    LIMIT :n
-                    """
+            effective_event_id = scope_event_id
+            if (
+                effective_event_id is None
+                and scope_season is not None
+                and scope_valida_num is not None
+            ):
+                effective_event_id = await _resolve_unambiguous_event_id(
+                    db, scope_season, scope_valida_num
                 )
-                bind_params: dict[str, Any] = {
-                    "aid": athlete_id,
-                    "n": n,
-                    "season": scope_season,
-                    "valida_num": scope_valida_num,
-                }
+
+            base_select = """
+                SELECT i.id, i.season, i.valida_num, i.use_case, i.summary_text,
+                       i.confidence, i.generated_at,
+                       rs.name AS series_name, rs.short_name AS series_short_name
+                FROM athlete_ai_insights i
+                LEFT JOIN race_events re ON re.id = i.event_id
+                LEFT JOIN race_series rs ON rs.id = re.series_id
+                WHERE i.athlete_id = :aid
+                  AND i.coach_approved = 1
+                  AND i.archived_at IS NULL
+            """
+            bind_params: dict[str, Any] = {"aid": athlete_id, "n": n}
+            if effective_event_id is not None:
+                query_sql = text(
+                    base_select
+                    + " AND i.event_id = :eid ORDER BY i.generated_at DESC LIMIT :n"
+                )
+                bind_params["eid"] = effective_event_id
+            elif scope_season is not None and scope_valida_num is not None:
+                # Ambiguo: (season, valida_num) resolvió a 0 o >1 eventos.
+                # Se conserva el filtro histórico — puede mezclar copas —
+                # documentado en el docstring de la fábrica.
+                query_sql = text(
+                    base_select
+                    + " AND i.season = :season AND i.valida_num = :valida_num"
+                    + " ORDER BY i.generated_at DESC LIMIT :n"
+                )
+                bind_params["season"] = scope_season
+                bind_params["valida_num"] = scope_valida_num
             else:
                 query_sql = text(
-                    """
-                    SELECT id, season, valida_num, use_case, summary_text,
-                           confidence, generated_at
-                    FROM athlete_ai_insights
-                    WHERE athlete_id = :aid
-                      AND coach_approved = 1
-                      AND archived_at IS NULL
-                    ORDER BY season DESC, valida_num DESC, generated_at DESC
-                    LIMIT :n
-                    """
+                    base_select
+                    + " ORDER BY i.season DESC, i.valida_num DESC, i.generated_at DESC LIMIT :n"
                 )
-                bind_params = {"aid": athlete_id, "n": n}
-            # Query plana — el modelo AthleteAIInsight aún no existe (sprint
-            # F3 solo persiste schema vía migración); usamos SQL crudo.
+            # Query cruda — el modelo AthleteAIInsight tiene ORM completo,
+            # pero este tool nació con SQL crudo (sprint F3) y así se
+            # mantiene por consistencia con el resto de tools de este módulo.
             result = await db.execute(query_sql, bind_params)
             rows = result.fetchall() if hasattr(result, "fetchall") else result.all()
         except Exception as exc:  # pragma: no cover - defensa runtime
@@ -167,8 +219,12 @@ def _build_obtener_insights_atleta_tool(
             use_case = getattr(r, "use_case", "")
             summary = (getattr(r, "summary_text", "") or "")[:300]
             confidence = getattr(r, "confidence", "")
+            series_name = getattr(r, "series_name", None)
+            series_short_name = getattr(r, "series_short_name", None)
+            cup_label = series_display_name(series_name, series_short_name)
+            cup_prefix = f"{cup_label} · " if cup_label else ""
             out.append(
-                f"- {valida_str} {season} [{use_case}, conf={confidence}]: {summary}"
+                f"- {cup_prefix}{valida_str} {season} [{use_case}, conf={confidence}]: {summary}"
             )
         return "\n".join(out)
 
@@ -728,6 +784,10 @@ class RaceChatAgent:
                 scope_season=scope_season,
                 scope_valida_num=scope_valida_num,
                 scope_athlete_id=effective_athlete_scope,
+                # Hotfix "identidad de válida": cuando hay evento activo, el
+                # lookup de insights filtra por event_id exacto — nunca por
+                # (season, valida_num) a secas (colisiona entre copas).
+                scope_event_id=race_event_id,
             ),
             _build_fetch_results_tool(
                 db_factory,

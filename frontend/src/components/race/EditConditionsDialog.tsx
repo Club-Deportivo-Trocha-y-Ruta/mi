@@ -262,7 +262,7 @@ export function EditConditionsDialog({
             {/* Condición de superficie — ToggleGroup chips */}
             <div className="space-y-2">
               <span className="block text-xs font-medium text-mid-gray">
-                Condición del terreno
+                Estado de la pista
               </span>
               <Controller
                 name="surface_condition"
@@ -277,7 +277,7 @@ export function EditConditionsDialog({
                       )
                     }
                     className="flex flex-wrap gap-2"
-                    aria-label="Condición del terreno"
+                    aria-label="Estado de la pista"
                   >
                     {SURFACE_CONDITIONS.map((sc) => (
                       <ToggleGroupItem
@@ -344,7 +344,7 @@ export function EditConditionsDialog({
                 id="ec-weather-notes"
                 rows={3}
                 maxLength={2000}
-                placeholder="Condiciones generales del trazado y clima — evite incluir nombres de atletas o información médica"
+                placeholder="Clima y estado de la pista el día de la carrera — evite incluir nombres de atletas o información médica"
                 {...register("weather_notes")}
                 className={cn(
                   "w-full resize-y rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",

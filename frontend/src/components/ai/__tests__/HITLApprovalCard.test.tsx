@@ -233,6 +233,20 @@ describe("HITLApprovalCard", () => {
     });
   });
 
+  it("409 (el run ya no espera aprobación) muestra un mensaje claro, no el error crudo de axios", async () => {
+    vi.mocked(raceApi.submitHITLDecision).mockRejectedValue(
+      Object.assign(new Error("Request failed with status code 409"), {
+        response: { status: 409 },
+      }),
+    );
+    wrap(<HITLApprovalCard runId="r1" stepId="hitl_1" draftMarkdown="texto" />);
+    await userEvent.setup().click(screen.getByTestId("hitl-approve-button"));
+    expect(
+      await screen.findByText(/ya no está esperando aprobación/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/status code 409/i)).not.toBeInTheDocument();
+  });
+
   // ---------------------------------------------------------------------
   // T094 (feature 036, US6) — HITLApprovalCard es un componente con diálogo
   // y no tenía ningún chequeo jest-axe en ningún archivo de test. Cubrimos

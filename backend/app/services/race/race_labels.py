@@ -18,6 +18,12 @@ Contrato:
     - ``level`` es un parámetro con valor por defecto (``departmental``) —
       todo llamador previo a la feature 023 sigue compilando y produciendo
       el mismo resultado sin modificarse.
+    - ``series_label`` (multicopa, hotfix identidad de válida): cuando se
+      provee, antepone ``"{series_label} · "`` al resultado completo — p. ej.
+      ``"Copa Let's Go · Válida IV — Alcalá"``. ``None``/vacío (default) deja
+      el resultado sin cambios, byte a byte, frente a todo llamador previo.
+      Ver ``series_display_name`` para construir ese ``series_label`` a
+      partir de ``RaceSeries.name``/``short_name``.
 
 Reutilizado por:
     - ``GET /races`` (US2 — lista de carreras)
@@ -27,7 +33,7 @@ from __future__ import annotations
 
 from app.models.race_series import RaceSeriesKind, RaceSeriesLevel
 
-__all__ = ["build_race_label"]
+__all__ = ["build_race_label", "series_display_name"]
 
 # ---------------------------------------------------------------------------
 # Helper privado: numerales romanos
@@ -59,6 +65,7 @@ def build_race_label(
     sequence_number: int,
     location: str | None,
     level: RaceSeriesLevel = RaceSeriesLevel.departmental,
+    series_label: str | None = None,
 ) -> str:
     """Construye la etiqueta visible de una carrera.
 
@@ -72,17 +79,49 @@ def build_race_label(
                          o ``national``, spec 023). Ignorado para copas.
                          Por defecto ``departmental`` — mantiene compatible
                          a todo llamador anterior a la feature 023.
+        series_label:    Nombre de la copa/campeonato a anteponer (hotfix
+                         identidad de válida — ver ``series_display_name``).
+                         ``None``/vacío (default) no antepone nada; mantiene
+                         compatible a todo llamador previo a este cambio.
 
     Returns:
         Cadena en español neutro lista para la UI, p. ej.
-        ``"Válida IV — Cali"``, ``"Cto. Dep. — Ginebra"`` o
-        ``"Cto. Nal. — Pereira"``.
+        ``"Válida IV — Cali"``, ``"Cto. Dep. — Ginebra"``,
+        ``"Cto. Nal. — Pereira"`` o, con ``series_label="Copa Let's Go"``,
+        ``"Copa Let's Go · Válida IV — Cali"``.
     """
     city_part = f" — {location}" if location and location.strip() else ""
 
     if kind is RaceSeriesKind.championship:
         prefix = "Cto. Nal." if level is RaceSeriesLevel.national else "Cto. Dep."
-        return f"{prefix}{city_part}"
+        base = f"{prefix}{city_part}"
+    else:
+        # cup (predeterminado)
+        base = f"Válida {_to_roman(sequence_number)}{city_part}"
 
-    # cup (predeterminado)
-    return f"Válida {_to_roman(sequence_number)}{city_part}"
+    if series_label and series_label.strip():
+        return f"{series_label} · {base}"
+    return base
+
+
+def series_display_name(series_name: str | None, short_name: str | None) -> str | None:
+    """Nombre de copa/campeonato a mostrar: ``short_name`` si existe, si no ``series_name``.
+
+    Pensado para alimentar ``series_label`` en :func:`build_race_label`
+    (etiqueta larga) o para la etiqueta corta (``chip``) directamente.
+
+    Args:
+        series_name: ``RaceSeries.name`` (siempre presente en DB, pero el
+            llamador puede no tenerlo cargado).
+        short_name:  ``RaceSeries.short_name`` (nullable — feature de
+            hotfix multicopa).
+
+    Returns:
+        ``short_name`` si no es ``None``/vacío; si no, ``series_name`` en
+        las mismas condiciones; ``None`` si ambos faltan (nada que mostrar).
+    """
+    if short_name and short_name.strip():
+        return short_name
+    if series_name and series_name.strip():
+        return series_name
+    return None

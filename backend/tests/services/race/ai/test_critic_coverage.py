@@ -122,7 +122,7 @@ async def test_critic_ground_truth_finds_row_from_load_race_data_output(
     ]
     events = [_FakeEvent(id=14, series_id=1, sequence_number=4, event_date=date(2026, 5, 17))]
 
-    async def _fake_fetch_results(db, aid, season, valida_nums=None):
+    async def _fake_fetch_results(db, aid, season, valida_nums=None, series_id=None):
         return rs
 
     async def _fake_fetch_podium(db, cat, evt):
@@ -154,3 +154,116 @@ async def test_critic_ground_truth_finds_row_from_load_race_data_output(
     gt = stub.captured_ground_truth[0]
     assert "sin fila de resultado registrada" not in gt
     assert "Posición: 2" in gt
+
+
+# ---------------------------------------------------------------------------
+# Hotfix identidad de válida (multicopa): ancla por event_id + etiqueta de
+# copa + agrupación por evento en runs de temporada.
+# ---------------------------------------------------------------------------
+
+
+def test_ground_truth_picks_anchored_event_row_not_other_series_same_valida():
+    """Copa A y Copa B comparten valida_num=4 (spec 014) — sin ancla, el
+    lookup por valida_num tomaría la primera fila de la lista (Copa A) sin
+    importar cuál se está analizando. Con ``state["event_id"]`` anclado al
+    evento de Copa B, la fila resuelta debe ser la de Copa B."""
+    full_season = [
+        {
+            "event_id": 101,
+            "valida_num": 4,
+            "series_id": 1,
+            "series_name": "Copa A",
+            "position": 2,
+            "race_time_ms": 2_000_000,
+            "gap_to_winner_ms": 30_000,
+        },
+        {
+            "event_id": 202,
+            "valida_num": 4,
+            "series_id": 2,
+            "series_name": "Copa B",
+            "series_short_name": "Copa B corta",
+            "position": 7,
+            "race_time_ms": 2_300_000,
+            "gap_to_winner_ms": 90_000,
+        },
+    ]
+    state = {"event_id": 202, "full_season_results": full_season}
+    text = mod._build_ground_truth(state, 4)
+    assert "Posición: 7" in text
+    assert "Posición: 2" not in text
+    assert "- Copa: Copa B corta" in text
+
+
+def test_ground_truth_falls_back_to_valida_num_without_anchor():
+    full_season = [
+        {
+            "event_id": 101,
+            "valida_num": 4,
+            "series_name": "Copa A",
+            "position": 2,
+            "race_time_ms": 2_000_000,
+            "gap_to_winner_ms": 30_000,
+        }
+    ]
+    text = mod._build_ground_truth({"full_season_results": full_season}, 4)
+    assert "Posición: 2" in text
+    assert "- Copa: Copa A" in text
+
+
+def test_season_ground_truth_groups_conditions_by_event_across_two_cups():
+    full_season = [
+        {"event_id": 101, "valida_num": 4, "series_name": "Copa A"},
+        {"event_id": 202, "valida_num": 4, "series_name": "Copa B", "series_short_name": "Copa B corta"},
+    ]
+    state = {
+        "analysis_kind": "season",
+        "full_season_results": full_season,
+        "event_conditions_by_event": {
+            101: {
+                "climate": "Soleado",
+                "temperature_c": 28.0,
+                "surface_condition": "seca",
+                "altitude_msnm": 1200,
+                "weather_notes": None,
+            },
+            202: {
+                "climate": "Lluvia",
+                "temperature_c": 18.0,
+                "surface_condition": "humeda",
+                "altitude_msnm": 900,
+                "weather_notes": None,
+            },
+        },
+    }
+    text = mod._build_ground_truth(state, 0)
+    assert "Válida 4 · Copa A:" in text
+    assert "Válida 4 · Copa B corta:" in text
+    assert "Soleado" in text
+    assert "Lluvia" in text
+
+
+def test_season_ground_truth_course_groups_by_event_and_omits_missing():
+    course_entry = {
+        "lap_distance_m": 4200,
+        "elevation_gain_m": 110,
+        "laps": 3,
+        "terrain_type": "mixto",
+        "technical_difficulty": 4,
+        "key_sectors": ["subida_larga"],
+    }
+    full_season = [
+        {"event_id": 101, "valida_num": 3, "series_name": "Copa A"},
+        {"event_id": 202, "valida_num": 3, "series_name": "Copa B", "series_short_name": "Copa B corta"},
+    ]
+    state = {
+        "analysis_kind": "season",
+        "full_season_results": full_season,
+        "course_context_by_event": {101: course_entry, 202: None},
+    }
+    text = mod._build_ground_truth(state, 0, include_course=True)
+    assert "Válida 3 · Copa A:" in text
+    assert "Distancia por vuelta" in text
+    # Veto de ausencia (igual que el analista): sin dato de circuito, el
+    # evento de Copa B no aparece con encabezado propio.
+    assert "Válida 3 · Copa B corta:" not in text

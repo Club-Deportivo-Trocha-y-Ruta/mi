@@ -60,6 +60,14 @@ class RaceAnalystState(TypedDict, total=False):
     # evento MÁS TARDÍO que compartiera el número, filtrando carreras
     # posteriores dentro de un análisis retrospectivo.
     event_id: int | None
+    # Hotfix identidad de válida (multicopa, ver
+    # plans/multicopa-identidad-valida.md): PK de ``race_series`` de la
+    # copa/campeonato de ESTE run. La resuelve ``load_race_data`` desde el
+    # ancla ``event_id`` (o, sin ancla, desde ``(season, valida_num)`` SOLO
+    # cuando resuelve a un único evento sin ambigüedad). ``None`` en runs de
+    # temporada y en el fallback defensivo sin ancla — ahí ningún nodo debe
+    # "adivinar" la copa ni asomarse a otra que comparta ``sequence_number``.
+    series_id: int | None
     coach_id: int  # audit
     explain_mode: bool
     # Edad cronológica del atleta calculada en el router desde birth_date.
@@ -84,6 +92,15 @@ class RaceAnalystState(TypedDict, total=False):
     # Feature 043: perfil de circuito registrado por válida {valida_num: {...}}.
     # Producido por load_race_data; course_notes NUNCA viaja aquí (FR-020).
     course_context: dict[int, dict]
+    # Hotfix identidad de válida (multicopa): las mismas dos estructuras de
+    # arriba, pero keyed por ``event_id`` en vez de ``valida_num`` — sin
+    # ambigüedad entre copas que comparten ``sequence_number`` (spec 014).
+    # ``load_race_data`` las puebla SOLO en runs de temporada
+    # (``analysis_kind == "season"``); las versiones keyed por valida_num
+    # pueden seguir existiendo por compat, pero NUNCA deben alimentar los
+    # bloques de temporada (usa siempre estas dos ahí).
+    event_conditions_by_event: dict[int, dict]
+    course_context_by_event: dict[int, dict]
 
     memory: list[str]  # últimos 3 insights del atleta
     # Feature 037 (T104): últimos 3 insights v3 aprobados (con structured_json),

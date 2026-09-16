@@ -20,6 +20,7 @@ from typing import Any, AsyncGenerator, Optional
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -31,6 +32,7 @@ from sqlalchemy.pool import StaticPool
 from app.models import Base
 from app.models.race_course_category_setup import RaceCourseCategorySetup
 from app.models.race_course_variant import RaceCourseVariant
+from app.models.race_event import RaceEvent, RaceEventPriority
 from app.models.race_result import RaceResult
 from app.models.race_series import RaceSeriesKind, RaceSeriesLevel
 from app.models.user import UserRole
@@ -1090,6 +1092,87 @@ async def test_list_athlete_races_items_carry_series_fields(
     assert nat_item.series_id == scenario.national_series_id
     assert nat_item.series_name == scenario.national_series_name
     assert nat_item.series_level == "national"
+
+
+# ---------------------------------------------------------------------------
+# Hotfix "identidad de válida" (2026-09-16): RaceParticipationOption.priority
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_athlete_races_priority_null_by_default(session):
+    """Evento de copa sin ``priority`` asignada y sin campeonato → expone
+    ``None`` (tier UNKNOWN — sin prioridad asignada)."""
+    await _seed_athlete_in_event(
+        session,
+        event_id=1,
+        sequence_number=1,
+        event_date=date(2026, 3, 1),
+        name="V1",
+        athlete_position=3,
+        athlete_time_ms=1_810_000,
+        winner_time_ms=1_800_000,
+    )
+    await session.commit()
+
+    result = await list_athlete_races(session, athlete_id=144, season=2026)
+    item = next(i for i in result.items if i.event_id == 1)
+    assert item.priority is None
+
+
+@pytest.mark.asyncio
+async def test_list_athlete_races_priority_reflects_column_when_set(session):
+    """``priority='A'`` en la columna se expone tal cual (evento no es
+    campeonato, así que get_race_tier no lo sobreescribe con CD)."""
+    await _seed_athlete_in_event(
+        session,
+        event_id=1,
+        sequence_number=1,
+        event_date=date(2026, 3, 1),
+        name="V1",
+        athlete_position=3,
+        athlete_time_ms=1_810_000,
+        winner_time_ms=1_800_000,
+    )
+    evt = (
+        await session.execute(select(RaceEvent).where(RaceEvent.id == 1))
+    ).scalar_one()
+    evt.priority = RaceEventPriority.A
+    await session.commit()
+
+    result = await list_athlete_races(session, athlete_id=144, season=2026)
+    item = next(i for i in result.items if i.event_id == 1)
+    assert item.priority == "A"
+
+
+@pytest.mark.asyncio
+async def test_list_athlete_races_priority_cd_for_championship_even_when_column_null(
+    session,
+):
+    """Un evento de campeonato (``is_championship=True``) SIEMPRE expone
+    ``'CD'`` aunque la columna ``priority`` esté en NULL — get_race_tier
+    reutilizado, no una copia local de la regla (el bug que este hotfix
+    corrige: un dict hardcodeado que ya no existe)."""
+    await _seed_athlete_in_event(
+        session,
+        event_id=1,
+        sequence_number=1,
+        event_date=date(2026, 3, 1),
+        name="Cto. Departamental",
+        athlete_position=3,
+        athlete_time_ms=1_810_000,
+        winner_time_ms=1_800_000,
+    )
+    evt = (
+        await session.execute(select(RaceEvent).where(RaceEvent.id == 1))
+    ).scalar_one()
+    evt.is_championship = True
+    assert evt.priority is None  # columna sin asignar — sigue siendo CD igual
+    await session.commit()
+
+    result = await list_athlete_races(session, athlete_id=144, season=2026)
+    item = next(i for i in result.items if i.event_id == 1)
+    assert item.priority == "CD"
 
 
 # ---------------------------------------------------------------------------

@@ -38,7 +38,6 @@ from app.main import app
 from app.models import Base
 from app.models.audit_log import AuditAction, AuditLog
 from app.models.club import Club, ClubMember, ClubRole
-from app.models.race_event import RaceEvent, RaceEventStatus
 from app.models.race_import import RaceImport, RaceImportStatus
 from app.models.race_series import RaceSeries
 from app.models.user import User, UserRole
@@ -95,7 +94,6 @@ async def sqlite_engine() -> AsyncEngine:
     from app.models.race_category import RaceCategory as _C  # noqa: F401
     from app.models.race_competitor import RaceCompetitor as _Comp  # noqa: F401
     from app.models.race_event import RaceEvent as _E  # noqa: F401
-    from app.models.race_event_roster import RaceEventRoster as _RER  # noqa: F401
     from app.models.race_import import RaceImport as _I  # noqa: F401
     from app.models.race_competitor_link_audit import (  # noqa: F401
         RaceCompetitorLinkAudit as _RCLA,
@@ -128,7 +126,6 @@ async def sqlite_engine() -> AsyncEngine:
             "race_categories",
             "race_competitors",
             "race_results",
-            "race_event_roster",
             "race_competitor_link_audit",
             # Feature 043: RaceEvent.course_variants/course_setups cascade
             # "all, delete-orphan" — an ORM delete of a race_event now enumerates
@@ -328,7 +325,7 @@ class TestRaceSeriesAudit:
 
 
 # ---------------------------------------------------------------------------
-# race_events — POST /, PATCH /{id}, DELETE /{id}, roster CRUD
+# race_events — POST /, PATCH /{id}, DELETE /{id}
 # ---------------------------------------------------------------------------
 
 
@@ -460,98 +457,6 @@ class TestRaceEventAudit:
         assert update_rows[0].changed_fields == ["altitude_msnm", "climate"]
 
 
-class TestRaceEventRosterAudit:
-    @pytest_asyncio.fixture
-    async def event_and_athlete(self, db_session_factory):
-        from datetime import date
-
-        from app.models.athlete import Athlete, Sex
-
-        async with db_session_factory() as session:
-            event = RaceEvent(
-                series_id=1, sequence_number=2, name="V-II PALMIRA",
-                event_date=date(2026, 6, 1), location="Palmira",
-                status=RaceEventStatus.SCHEDULED, created_by_user_id=10,
-            )
-            session.add(event)
-            athlete_user = User(
-                id=600, email="atleta@test.com", hashed_password="x",
-                first_name="Atleta", last_name="Ficticio",
-                role=UserRole.parent, is_active=True, can_login=False,
-                created_at=datetime.now(timezone.utc),
-            )
-            session.add(athlete_user)
-            await session.flush()
-            athlete = Athlete(
-                id=600, user_id=600, first_name="Atleta", last_name="Ficticio",
-                birth_date=date(2013, 1, 1), sex=Sex.M, club_id=1,
-                created_by=10,
-            )
-            session.add(athlete)
-            await session.commit()
-            return event.id, athlete.id
-
-    @pytest.mark.asyncio
-    async def test_add_roster_entry_records_audit_row(
-        self, coach_client, db_session_factory, event_and_athlete
-    ):
-        event_id, athlete_id = event_and_athlete
-        r = await coach_client.post(
-            f"/api/race-analysis/race-events/{event_id}/roster",
-            json={"athlete_id": athlete_id, "status": "called_up"},
-        )
-        assert r.status_code == 201, r.text
-        entry_id = r.json()["id"]
-
-        rows = await _audit_rows(db_session_factory, "race_event_roster")
-        assert len(rows) == 1
-        assert rows[0].action == AuditAction.create
-        assert rows[0].entity_id == entry_id
-        assert rows[0].athlete_id == athlete_id
-
-    @pytest.mark.asyncio
-    async def test_update_roster_entry_records_audit_row(
-        self, coach_client, db_session_factory, event_and_athlete
-    ):
-        event_id, athlete_id = event_and_athlete
-        r = await coach_client.post(
-            f"/api/race-analysis/race-events/{event_id}/roster",
-            json={"athlete_id": athlete_id, "status": "called_up"},
-        )
-        entry_id = r.json()["id"]
-
-        r = await coach_client.patch(
-            f"/api/race-analysis/race-events/{event_id}/roster/{entry_id}",
-            json={"status": "confirmed"},
-        )
-        assert r.status_code == 200, r.text
-
-        rows = await _audit_rows(db_session_factory, "race_event_roster")
-        update_rows = [row for row in rows if row.action == AuditAction.update]
-        assert len(update_rows) == 1
-        assert update_rows[0].changed_fields == ["status"]
-
-    @pytest.mark.asyncio
-    async def test_delete_roster_entry_records_audit_row(
-        self, coach_client, db_session_factory, event_and_athlete
-    ):
-        event_id, athlete_id = event_and_athlete
-        r = await coach_client.post(
-            f"/api/race-analysis/race-events/{event_id}/roster",
-            json={"athlete_id": athlete_id, "status": "called_up"},
-        )
-        entry_id = r.json()["id"]
-
-        r = await coach_client.delete(
-            f"/api/race-analysis/race-events/{event_id}/roster/{entry_id}"
-        )
-        assert r.status_code == 204, r.text
-
-        rows = await _audit_rows(db_session_factory, "race_event_roster")
-        delete_rows = [row for row in rows if row.action == AuditAction.delete]
-        assert len(delete_rows) == 1
-        assert delete_rows[0].entity_id == entry_id
-        assert delete_rows[0].athlete_id == athlete_id
 
 
 # ---------------------------------------------------------------------------

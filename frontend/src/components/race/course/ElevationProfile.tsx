@@ -159,6 +159,17 @@ export function ElevationProfile({
   const minLabel = range ? Math.round(range.min) : 0;
   const maxLabel = range ? Math.round(range.max) : 0;
 
+  // Eje ajustado al rango real: desde 0 m, 30 m de desnivel a 1 300 msnm se
+  // ven como una línea plana. Margen mínimo de 10 m para rangos muy chicos.
+  const yDomain = useMemo<[number, number] | undefined>(() => {
+    if (!range) return undefined;
+    const pad = Math.max(10, (range.max - range.min) * 0.15);
+    return [
+      Math.floor((range.min - pad) / 10) * 10,
+      Math.ceil((range.max + pad) / 10) * 10,
+    ];
+  }, [range]);
+
   return (
     <div
       role="img"
@@ -179,6 +190,8 @@ export function ElevationProfile({
             tickFormatter={(v: number) => `${v.toFixed(1)} km`}
           />
           <YAxis
+            domain={yDomain ?? ["auto", "auto"]}
+            allowDecimals={false}
             tick={{ fontSize: 11, fill: "var(--color-mid-gray)" }}
             tickFormatter={(v: number) => `${Math.round(v)} m`}
             width={50}

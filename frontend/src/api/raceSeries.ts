@@ -4,8 +4,9 @@
  * Auth: JWT via interceptor en apiClient.
  *
  * Endpoints cubiertos:
- *   - GET  /api/race-analysis/race-series          → listRaceSeries  (coach+admin)
- *   - POST /api/race-analysis/race-series          → createRaceSeries (coach+admin)
+ *   - GET   /api/race-analysis/race-series          → listRaceSeries  (coach+admin)
+ *   - POST  /api/race-analysis/race-series          → createRaceSeries (coach+admin)
+ *   - PATCH /api/race-analysis/race-series/{id}     → updateRaceSeries (coach+admin)
  *
  * Spec 014 — Cup vs Championship:
  *   Reemplaza el hardcode COPA_VALLE_SERIES con carga dinámica desde el backend.
@@ -21,6 +22,7 @@ import type {
   RaceSeriesListFilters,
   RaceSeriesListResponse,
   RaceSeriesRead,
+  RaceSeriesUpdate,
 } from "@/types/raceSeries.types";
 
 const BASE = "/api/race-analysis/race-series";
@@ -78,5 +80,32 @@ export async function createRaceSeries(
   const response = await apiClient.post<RaceSeriesRead>(BASE + "/", body, {
     signal: options?.signal,
   });
+  return response.data;
+}
+
+// ---------------------------------------------------------------------------
+// PATCH /{id} — Actualizar serie (hotfix multicopa — identidad de válida)
+// ---------------------------------------------------------------------------
+
+/**
+ * PATCH /api/race-analysis/race-series/{id}
+ *
+ * Actualiza parcialmente una serie de competencias (nombre y/o nombre corto).
+ * RBAC: coach + admin, igual que la creación.
+ *
+ * @returns La serie actualizada.
+ * @throws 404 si la serie no existe.
+ * @throws 409 si el nuevo `name` colisiona con otra serie de la misma temporada.
+ */
+export async function updateRaceSeries(
+  seriesId: number,
+  body: RaceSeriesUpdate,
+  options?: { signal?: AbortSignal },
+): Promise<RaceSeriesRead> {
+  const response = await apiClient.patch<RaceSeriesRead>(
+    `${BASE}/${seriesId}`,
+    body,
+    { signal: options?.signal },
+  );
   return response.data;
 }

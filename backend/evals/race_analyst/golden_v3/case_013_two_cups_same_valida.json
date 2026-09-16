@@ -1,0 +1,292 @@
+{
+  "case_id": "013_two_cups_same_valida",
+  "description": "Regresión del hotfix de identidad de válida (plans/multicopa-identidad-valida.md): el atleta corrió Copa Valle V4/V5 antes en la temporada y ahora corre la Válida IV de una segunda copa distinta, Copa Let's Go Interdepartamental, que comparte número de válida con la primera. El input que llega al analista (ya filtrado por series_id por el pipeline) contiene ÚNICAMENTE datos de Copa Let's Go Interdepartamental — ninguna fila, condición ni referencia de Copa Valle. El análisis no debe mencionar la otra copa, inventar un estado de carrera (reprogramada/aplazada/cancelada/suspendida) ni tratar la Válida IV de esta copa como si fuera la misma carrera que la Válida IV/V de la otra.",
+  "input": {
+    "valida_num": 4,
+    "analysis_kind": "valida",
+    "athlete_ref": "el deportista",
+    "age": 13,
+    "ltad_group": "bambino",
+    "season": 2026,
+    "validas_count": 4,
+    "valida_label": "Copa Let's Go Interdepartamental · Válida IV",
+    "race_row": {
+      "valida_num": 4,
+      "event_date": "2026-09-06",
+      "category_code": "INF_B",
+      "position": 3,
+      "race_time_ms": 1920000,
+      "gap_to_winner_ms": 92000,
+      "gap_to_winner_pct": 4.8
+    },
+    "field_metrics": {
+      "event_id": 9143,
+      "valida_num": 4,
+      "event_date": "2026-09-06",
+      "series_id": 9,
+      "series_name": "Copa Let's Go Interdepartamental",
+      "series_short_name": null,
+      "series_kind": "cup",
+      "series_level": "departmental",
+      "is_championship": false,
+      "field_size": 16,
+      "position": 3,
+      "percentile": 81.3,
+      "race_time_ms": 1920000,
+      "gap_to_p1_ms": 92000,
+      "gap_pct": 4.8,
+      "gap_to_p3_ms": 0,
+      "category_median_time_ms": 1980000,
+      "gap_to_median_pct": -3.0,
+      "laps_behind": 0,
+      "prior_index": 4.0,
+      "expected_position": 4,
+      "delta_vs_expected": 1,
+      "field_strength": 5.0,
+      "coverage_with_prior": 0.6
+    },
+    "season_rows": [
+      {
+        "valida_num": 1,
+        "event_date": "2026-07-05",
+        "series_kind": "cup",
+        "series_id": 9,
+        "series_name": "Copa Let's Go Interdepartamental",
+        "is_championship": false,
+        "position": 6,
+        "field_size": 14,
+        "percentile": 57.1,
+        "gap_pct": 8.5,
+        "gap_to_p3_ms": 45000,
+        "expected_position": 6,
+        "delta_vs_expected": 0
+      },
+      {
+        "valida_num": 2,
+        "event_date": "2026-08-02",
+        "series_kind": "cup",
+        "series_id": 9,
+        "series_name": "Copa Let's Go Interdepartamental",
+        "is_championship": false,
+        "position": 5,
+        "field_size": 15,
+        "percentile": 66.7,
+        "gap_pct": 7.2,
+        "gap_to_p3_ms": 38000,
+        "expected_position": 6,
+        "delta_vs_expected": 1
+      },
+      {
+        "valida_num": 3,
+        "event_date": "2026-08-23",
+        "series_kind": "cup",
+        "series_id": 9,
+        "series_name": "Copa Let's Go Interdepartamental",
+        "is_championship": false,
+        "position": 4,
+        "field_size": 15,
+        "percentile": 73.3,
+        "gap_pct": 6.0,
+        "gap_to_p3_ms": 22000,
+        "expected_position": 5,
+        "delta_vs_expected": 1
+      },
+      {
+        "valida_num": 4,
+        "event_date": "2026-09-06",
+        "series_kind": "cup",
+        "series_id": 9,
+        "series_name": "Copa Let's Go Interdepartamental",
+        "is_championship": false,
+        "position": 3,
+        "field_size": 16,
+        "percentile": 81.3,
+        "gap_pct": 4.8,
+        "gap_to_p3_ms": 0,
+        "expected_position": 4,
+        "delta_vs_expected": 1
+      }
+    ],
+    "race_meta": "- Clima: nublado\n- Temperatura: 22 °C\n- Superficie de la pista: seca\n- Altitud: 980 msnm",
+    "anthro_context": {
+      "records_count": 3,
+      "latest": {
+        "evaluation_date": "2026-08-16",
+        "days_before_event": 21,
+        "maturity_offset_years": -1.8,
+        "age_at_phv": 14.8,
+        "maturation_status": "Pre-PHV",
+        "height_percentile": 55
+      },
+      "previous": {
+        "evaluation_date": "2026-05-18",
+        "maturity_offset_years": -2.0,
+        "maturation_status": "Pre-PHV"
+      },
+      "growth_velocity_cm_per_year": 5.5,
+      "months_from_phv": -21.6,
+      "flags": []
+    },
+    "training_window": {
+      "window_days": 28,
+      "date_from": "2026-08-09",
+      "date_to": "2026-09-06",
+      "sessions_in_window": 13,
+      "attended": 12,
+      "absent": 1,
+      "excused": 0,
+      "attendance_pct": 92.3,
+      "training_hours": 19.0,
+      "rpe_mean": 4.5,
+      "rpe_last7_mean": 4.3,
+      "rpe_prev21_mean": 4.6,
+      "rubric_effort_mean": 4.6,
+      "rubric_attitude_mean": 4.5,
+      "rubric_technique_mean": 4.2,
+      "technical_foci": [
+        "Ritmo sostenido en subida",
+        "Curvas cerradas en trocha"
+      ],
+      "interval_sessions": 2,
+      "days_since_last_session": 3,
+      "days_since_previous_race": 14,
+      "coach_feedback": [
+        "Sostiene el ritmo en subidas largas sin perder cadencia"
+      ],
+      "strava_load": null
+    },
+    "coach_dialogue": [
+      {
+        "generated_at": "2026-08-23",
+        "valida_label": "Copa Let's Go Interdepartamental · Válida III",
+        "headline": "Percentil 73.3 con gap de 6.0% al líder en la Copa Let's Go Interdepartamental",
+        "coach_question": "¿Cómo sintió el ritmo en la subida larga de esa válida?",
+        "coach_answer": "Sintió que podía sostener más el ritmo en la parte final",
+        "coach_rating": 1
+      }
+    ],
+    "catalog_context": {
+      "interval_templates": [
+        {
+          "id": 15,
+          "name": "Ritmo sostenido en subida",
+          "age_band": "12-14",
+          "mesocycle_phase": "competitive"
+        }
+      ]
+    },
+    "memory_recent_insights": [
+      "Percentil 73.3 con gap de 6.0% al líder en la Copa Let's Go Interdepartamental (válida III)",
+      "Percentil 66.7 sosteniendo la asistencia en la Copa Let's Go Interdepartamental (válida II)"
+    ]
+  },
+  "expected_themes": [
+    "Let's Go",
+    "percentil",
+    "asistencia"
+  ],
+  "forbidden_terms": [
+    "Copa Valle",
+    "otra copa",
+    "edición anterior",
+    "edición",
+    "reprogramad",
+    "reprogramaci",
+    "aplazad",
+    "cancelad",
+    "suspendid",
+    "pospuest",
+    "suplementos",
+    "creatina",
+    "diagnóstico",
+    "podio",
+    "ganar",
+    "Mariana",
+    "Thiago",
+    "Valentina"
+  ],
+  "expected_headline_keywords": [
+    "Let's Go",
+    "mejora"
+  ],
+  "must_reference_catalog": true,
+  "max_words": 450,
+  "ideal_output": {
+    "schema_version": "v3",
+    "headline": "Subió al tercer puesto en la Copa Let's Go Interdepartamental, cuarta mejora consecutiva desde la primera válida de esa copa.",
+    "field_reading": {
+      "percentile": 81.3,
+      "expected_position": 4,
+      "actual_position": 3,
+      "delta_vs_expected": 1,
+      "gap_to_p3_hhmmss": "0:00:00",
+      "series_label": "Copa Let's Go Interdepartamental · Válida IV",
+      "summary": "Un puesto por encima de lo esperado, cuarta válida consecutiva de mejora dentro de la Copa Let's Go Interdepartamental."
+    },
+    "trend": "improving",
+    "observations": [
+      {
+        "claim": "El percentil subió de 57.1 en la primera válida a 81.3 en esta cuarta válida de la Copa Let's Go Interdepartamental.",
+        "evidence": [
+          "percentil 57.1 en la válida I",
+          "percentil 81.3 en esta válida",
+          "gap 4.8% al líder"
+        ],
+        "domain": "field",
+        "confidence": "high"
+      },
+      {
+        "claim": "El tercer puesto queda un lugar por encima de lo esperado, sin diferencia frente al tercer clasificado de esta válida.",
+        "evidence": [
+          "esperada 4 frente a real 3",
+          "gap a P3 0:00:00",
+          "pelotón de 16"
+        ],
+        "domain": "field",
+        "confidence": "high"
+      },
+      {
+        "claim": "La ventana previa sostuvo una asistencia alta con foco en ritmo de subida, la misma exigencia de esta válida.",
+        "evidence": [
+          "asistencia 92.3%",
+          "12 sesiones asistidas de 13",
+          "RPE medio 4.5"
+        ],
+        "domain": "training",
+        "confidence": "medium"
+      }
+    ],
+    "actions": [
+      {
+        "text": "Sostener el bloque de ritmo sostenido en subida dos veces por semana durante cuatro semanas, buscando prolongar la racha de mejora.",
+        "category": "technique",
+        "priority": "high",
+        "horizon": "next_race",
+        "catalog_ref": {
+          "kind": "interval_template",
+          "code": "15",
+          "label": null
+        },
+        "derived_from": 0
+      },
+      {
+        "text": "Mantener la frecuencia actual de sesiones hasta la próxima válida de la Copa Let's Go Interdepartamental.",
+        "category": "volume",
+        "priority": "med",
+        "horizon": "next_race",
+        "catalog_ref": null,
+        "derived_from": 2
+      }
+    ],
+    "watch_signals": [
+      "Si el gap vuelve a subir por encima de 7% en la próxima válida de esta copa, revisar la carga de la semana previa."
+    ],
+    "coach_question": "¿Cómo sintió el ritmo en la subida larga de esta válida comparado con las anteriores de la misma copa?",
+    "data_gaps": [
+      "Sin registro individual de vueltas de la Copa Let's Go Interdepartamental para separar el tiempo perdido por sector."
+    ],
+    "principles_cited": [
+      "5. Periodización de la temporada"
+    ]
+  }
+}

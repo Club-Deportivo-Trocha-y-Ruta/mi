@@ -113,6 +113,28 @@ export interface RaceEventConditionsUpdate {
  */
 export type RaceEventStatus = "scheduled" | "completed" | "cancelled";
 
+// ---------------------------------------------------------------------------
+// Prioridad de la válida (hotfix multicopa — identidad de válida)
+// ---------------------------------------------------------------------------
+
+/**
+ * Prioridad de una válida. Mirror de `RaceEventPriority` enum del backend.
+ *
+ * `NULL` (ausente/`null`) es UNKNOWN → no envía correo a familias. Solo la
+ * prioridad `A` (y `CD`, reservada a campeonatos) dispara el correo tras un
+ * análisis de IA aprobado. El coach solo puede elegir A/B/C para una válida
+ * de copa; `CD` la fuerza el backend para campeonatos, nunca es seleccionable.
+ */
+export type RaceEventPriority = "A" | "B" | "C" | "CD";
+
+/** Etiquetas de la prioridad para chips/badges. */
+export const RACE_EVENT_PRIORITY_LABELS: Record<RaceEventPriority, string> = {
+  A: "A",
+  B: "B",
+  C: "C",
+  CD: "CD",
+};
+
 /**
  * Payload de creación de un evento de carrera.
  * Mirror de `RaceEventCreate` del backend.
@@ -150,6 +172,12 @@ export interface RaceEventCreate {
   surface_condition?: SurfaceCondition | null;
   altitude_msnm?: number | null;
   weather_notes?: string | null;
+  /**
+   * Prioridad de la válida. Omitida/`null` → UNKNOWN, no envía correo.
+   * Solo aplica a válidas de copa — para campeonatos el backend fuerza `CD`
+   * y este campo se ignora si se envía.
+   */
+  priority?: RaceEventPriority | null;
 }
 
 /**
@@ -184,6 +212,8 @@ export interface RaceEventUpdate {
   sequence_number?: number;
   status?: RaceEventStatus;
   is_championship?: boolean;
+  /** Ver nota en `RaceEventCreate.priority`. */
+  priority?: RaceEventPriority | null;
 }
 
 /**
@@ -199,6 +229,8 @@ export interface RaceEventRead {
   location: string | null;
   is_championship: boolean;
   status: RaceEventStatus;
+  /** `null` → UNKNOWN, no envía correo a familias (hotfix multicopa). */
+  priority: RaceEventPriority | null;
   // Condiciones (pueden ser null si aún no se han registrado)
   climate: string | null;
   /** Serializado como string por el backend (Decimal). */
@@ -235,6 +267,13 @@ export interface RaceEventListItem {
   /** true si tiene un calendar_event asociado. */
   has_calendar_event: boolean;
   conditions_completeness: "complete" | "partial" | "empty";
+  /**
+   * Wave 3 (hotfix multicopa, 2026-09-16) — reemplaza al calendario
+   * hardcodeado `getCarreraTier`/`CARRERA_TIER` (`lib/insights.ts`,
+   * retirado) como fuente del tier A/B/C/CD en `NextRaceTile.tsx`. `null` →
+   * UNKNOWN, sin badge de tier.
+   */
+  priority: RaceEventPriority | null;
 }
 
 // ---------------------------------------------------------------------------

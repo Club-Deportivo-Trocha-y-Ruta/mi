@@ -12,8 +12,12 @@
  *  - Delete admin → confirm → DELETE → navigate.
  *  - 0 violaciones a11y en tab Info.
  *
- * Mockeamos AthletesTab e InsightsTab para evitar la cascada de Suspense
- * lazy + las queries de useClubInsightsByRace (no son objeto de estos tests).
+ * Y (hotfix multicopa — identidad de válida, 2026-09-16):
+ *  - `matchedSeries.short_name` se pasa a InfoTab como `seriesShortName` →
+ *    la fila "Serie" muestra el nombre corto, no el completo.
+ *
+ * Mockeamos InsightsTab para evitar la cascada de Suspense lazy + las
+ * queries de useClubInsightsByRace (no son objeto de estos tests).
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
@@ -41,9 +45,6 @@ vi.mock("react-router-dom", async () => {
 });
 
 // Mock de tabs lazy para evitar cargar dependencias pesadas (insights IA).
-vi.mock("@/components/competitions/tabs/AthletesTab", () => ({
-  AthletesTab: () => <div data-testid="mock-athletes-tab">athletes</div>,
-}));
 vi.mock("@/components/competitions/tabs/InsightsTab", () => ({
   InsightsTab: () => <div data-testid="mock-insights-tab">insights</div>,
 }));
@@ -59,6 +60,7 @@ import {
   raceEventNotFoundHandler,
   raceEventsHandlers,
 } from "@/test/msw/raceEventsHandlers";
+import { makeRaceSeriesRead } from "@/test/msw/raceSeriesHandlers";
 import { CompetitionDetailPage } from "@/routes/competitions/CompetitionDetailPage";
 
 function mockAuthAs(role: "admin" | "coach") {
@@ -109,6 +111,37 @@ describe("CompetitionDetailPage — render", () => {
     );
     const subtitle = screen.getByText(/Sevilla/, { selector: "p" });
     expect(subtitle.textContent).toMatch(/Completada/);
+  });
+});
+
+describe("CompetitionDetailPage — hotfix multicopa (nombre corto de la copa)", () => {
+  it("pasa matchedSeries.short_name a InfoTab — la fila Serie muestra el nombre corto", async () => {
+    mockAuthAs("coach");
+    mswServer.use(
+      http.get("*/api/race-analysis/race-series", () =>
+        HttpResponse.json({
+          items: [
+            makeRaceSeriesRead({
+              id: 1,
+              name: "Copa Let's Go Interdepartamental XCO",
+              short_name: "Let's GO",
+            }),
+          ],
+          total: 1,
+        }),
+      ),
+    );
+    renderDetail(1);
+
+    await screen.findByRole("heading", {
+      level: 1,
+      name: "Copa Valle XCO — Válida I",
+    });
+
+    expect(await screen.findByText("Let's GO")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Copa Let's Go Interdepartamental XCO"),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -235,7 +268,7 @@ describe("CompetitionDetailPage — delete admin", () => {
 
     await user.click(screen.getByTestId("btn-delete"));
     expect(
-      await screen.findByRole("alertdialog", { name: /Eliminar competencia/i }),
+      await screen.findByRole("alertdialog", { name: /Eliminar válida/i }),
     ).toBeInTheDocument();
     // tone="danger": el foco inicial va a Cancelar, nunca a Eliminar válida.
     await waitFor(() =>

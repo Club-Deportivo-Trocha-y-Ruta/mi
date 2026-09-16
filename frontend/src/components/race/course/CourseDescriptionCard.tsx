@@ -225,7 +225,7 @@ export function CourseDescriptionCard({
       </div>
 
       <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3">
-        {showTerrainRow && <ConditionRow label="Terreno" value={terrainValue} />}
+        {showTerrainRow && <ConditionRow label="Tipo de superficie" value={terrainValue} />}
         {showDifficultyRow && (
           <ConditionRow label="Dificultad técnica" value={difficultyValue} />
         )}

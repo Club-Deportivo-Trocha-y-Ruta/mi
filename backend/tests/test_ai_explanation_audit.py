@@ -518,8 +518,13 @@ def test_persist_pre_selecciona_antes_de_ejecutar_el_upsert():
     invariante que protegía sigue siendo real y sigue viviendo en código:
     el pre-SELECT que decide `create`/`update` debe ocurrir SIEMPRE antes
     del upsert — invertir ese orden rompería la propia lógica de
-    `persisted_action` de `persist.py`, no solo la auditoría."""
-    fuente = inspect.getsource(persist_module.persist)
+    `persisted_action` de `persist.py`, no solo la auditoría.
+
+    Apunta a `_persist_once` (no a `persist`): desde el retry de conexión
+    muerta ante `OperationalError.connection_invalidated`, `persist` es solo
+    el wrapper que reintenta — el cuerpo real del upsert (y el invariante que
+    esta prueba protege) vive en `_persist_once`."""
+    fuente = inspect.getsource(persist_module._persist_once)
     primera_llamada = fuente.index("_cached_explanation_id(")
     llamada_execute = fuente.index("await db.execute(stmt)")
     assert primera_llamada < llamada_execute

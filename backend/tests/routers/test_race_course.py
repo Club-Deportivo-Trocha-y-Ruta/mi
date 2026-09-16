@@ -57,7 +57,6 @@ from app.models.race_competitor import RaceCompetitor
 from app.models.race_course_category_setup import RaceCourseCategorySetup
 from app.models.race_course_variant import RaceCourseVariant
 from app.models.race_event import RaceEvent, RaceEventStatus
-from app.models.race_event_roster import RaceEventRoster, RaceEventRosterStatus
 from app.models.race_result import RaceResult, ResultStatus
 from app.models.race_series import RaceSeries
 from app.models.user import User, UserRole
@@ -125,7 +124,6 @@ async def sqlite_engine() -> AsyncEngine:
     from app.models.athlete import Athlete as _A, ParentAthlete as _PA  # noqa: F401
     from app.models.race_competitor import RaceCompetitor as _Comp  # noqa: F401
     from app.models.race_result import RaceResult as _R  # noqa: F401
-    from app.models.race_event_roster import RaceEventRoster as _Ros  # noqa: F401
 
     tables = [
         Base.metadata.tables[t]
@@ -137,7 +135,6 @@ async def sqlite_engine() -> AsyncEngine:
             "parent_athlete",
             "race_series",
             "race_events",
-            "race_event_roster",
             "race_categories",
             "race_competitors",
             "race_results",
@@ -878,17 +875,11 @@ class TestDescriptionPatch:
 # Parent read (feature 043, User Story 5, T053)
 #
 # Contract: course-api.md §1 (`CourseRead.my_categories`, the "parent" bullets
-# right below the JSON block) and §7. `my_categories` is derived ONLY from
-# `RaceResult` rows of the caller's own athletes for this `race_event_id` —
-# NOT from `race_event_roster` (that table has no `category_id` column at
-# all, and there is no general age-band → category resolver in this codebase
-# to invent one from). The 200-vs-404 *visibility* gate is broader than
-# `my_categories`, though: a parent gets 200 whenever at least one of their
-# own athletes appears EITHER on the roster OR in the results of this event
-# (soft-deleted results excluded) — so a child called up for a still-SCHEDULED
-# válida with no results yet legitimately sees a populated course card with
-# an EMPTY `my_categories`. That is the deliberate, documented shape of this
-# task, not a bug to "fix" by deriving a category from the roster.
+# right below the JSON block) and §7. `my_categories` is derived from
+# `RaceResult` rows of the caller's own athletes for this `race_event_id`
+# (soft-deleted results excluded). The 200-vs-404 *visibility* gate matches
+# `my_categories` exactly: a parent gets 200 only when at least one of their
+# own athletes has a result in this event.
 #
 # TDD note: `GET /course`'s dependency is still
 # `require_role([UserRole.admin, UserRole.coach])`, so every parent-role
@@ -918,24 +909,24 @@ async def seed_parent_course(db_session_factory):
       the parent must never see that prefill (course-api.md §1: "For
       parents: `suggested_setups` is always `[]`").
     - ``event_unrelated`` (id=300, its own series id=3): exists, but no
-      roster row, no result row, nothing ties any seeded athlete to it —
-      the "truly unrelated válida" 404 case.
+      result row, nothing ties any seeded athlete to it — the "truly
+      unrelated válida" 404 case.
 
     Athletes / parents (athlete ids use an unusual 94xx range to make a
     cross-parent leakage assertion via plain substring search on the
     serialized JSON reliable — collision with category/event/variant ids is
     not plausible):
 
-    - parent 201 → athlete 9401: ONLY on ``event_main``'s roster, no
-      `RaceResult` row anywhere → the "roster-only, empty my_categories" case.
+    - parent 201 → athlete 9401: linked to the club but with no
+      `RaceResult` row anywhere → a second "no relation at all" 404 case.
     - parent 202 → athlete 9402: has a `RaceResult` row on ``event_main`` in
       category 12 (INF_M) → the "one category resolved" case.
     - parent 203 → athletes 9403 (category 12/INF_M) and 9404 (category
       13/INF_F): both via `RaceResult` rows on ``event_main`` → the
       "two children, two categories" case.
-    - parent 204 → athlete 9405: linked to the club but with NEITHER a
-      roster NOR a result row on ``event_main`` (nor on ``event_unrelated``)
-      → the "no relation at all" 404 case.
+    - parent 204 → athlete 9405: linked to the club but with no result row
+      on ``event_main`` (nor on ``event_unrelated``) → the "no relation at
+      all" 404 case.
     """
     async with db_session_factory() as session:
         coach = User(
@@ -1054,12 +1045,6 @@ async def seed_parent_course(db_session_factory):
             detection_method="single", recorded_laps=1,
             source_sha256="a" * 64, created_by_user_id=10,
         )
-        # Roster: athlete 9401 called up for `event_main`, no result anywhere.
-        roster_entry = RaceEventRoster(
-            race_event_id=200, athlete_id=9401,
-            status=RaceEventRosterStatus.called_up, created_by_user_id=10,
-        )
-
         # Results: athlete 9402 (event_main/cat 12), 9403 (event_main/cat 12),
         # 9404 (event_main/cat 13) — one RaceCompetitor per result row.
         comp_9402 = RaceCompetitor(
@@ -1099,7 +1084,7 @@ async def seed_parent_course(db_session_factory):
                 *links,
                 series, other_series, event_prev, event_main, event_unrelated,
                 cat_m, cat_f,
-                prev_variant, roster_entry,
+                prev_variant,
                 comp_9402, comp_9403, comp_9404,
                 result_9402, result_9403, result_9404,
             ]
@@ -1124,22 +1109,16 @@ class TestParentRead:
     """T053 — parent-scoped `GET /course`."""
 
     @pytest.mark.asyncio
-    async def test_child_only_on_roster_sees_empty_my_categories(
+    async def test_child_with_no_result_is_404_course_not_available(
         self, sqlite_engine, db_session_factory, seed_parent_course
     ):
-        """Design decision (not a bug): `my_categories` is derived only from
-        `RaceResult`, never from `race_event_roster` (which has no
-        `category_id`). A child called up but not yet raced therefore gets a
-        visible, but unhighlighted, course card."""
+        """A child with no `RaceResult` row on this event gets 404 —
+        visibility is derived solely from results, not from any separate
+        call-up concept."""
         async with _course_client_as(db_session_factory, UserRole.parent, 201) as ac:
             r = await ac.get(_course_url(200))
-        assert r.status_code == 200, r.text
-        body = r.json()
-        assert body["race_event_id"] == 200
-        assert body["my_categories"] == []
-        # `event_main` has no variant/description of its own — the roster
-        # call-up alone does not fabricate course data.
-        assert body["has_course_data"] is False
+        assert r.status_code == 404, r.text
+        assert r.json()["detail"]["code"] == "course_not_available"
 
     @pytest.mark.asyncio
     async def test_child_with_result_resolves_one_category(
@@ -1170,9 +1149,9 @@ class TestParentRead:
     async def test_no_related_athlete_on_event_is_404_course_not_available(
         self, sqlite_engine, db_session_factory, seed_parent_course
     ):
-        """Parent 204's only athlete (9405) is on neither the roster nor the
-        results of `event_main` — the event itself exists, so this must be
-        `course_not_available`, never `race_event_not_found`."""
+        """Parent 204's only athlete (9405) has no result on `event_main` —
+        the event itself exists, so this must be `course_not_available`,
+        never `race_event_not_found`."""
         async with _course_client_as(db_session_factory, UserRole.parent, 204) as ac:
             r = await ac.get(_course_url(200))
         assert r.status_code == 404, r.text
@@ -1183,9 +1162,9 @@ class TestParentRead:
         self, sqlite_engine, db_session_factory, seed_parent_course
     ):
         """Parent 202 *does* have visibility on `event_main` (200) via a
-        result, but `event_unrelated` (300) has no roster/result/anything
-        tying any seeded athlete to it — scoping is per-event, so this must
-        still 404, not leak visibility from the other event."""
+        result, but `event_unrelated` (300) has no result tying any seeded
+        athlete to it — scoping is per-event, so this must still 404, not
+        leak visibility from the other event."""
         async with _course_client_as(db_session_factory, UserRole.parent, 202) as ac:
             r = await ac.get(_course_url(300))
         assert r.status_code == 404, r.text
@@ -1196,7 +1175,7 @@ class TestParentRead:
         self, sqlite_engine, db_session_factory, seed_parent_course
     ):
         """Parent 203 (two own children, 9403/9404) must never see athlete
-        9401 (parent 201's child, roster-only), 9402 (parent 202's child) or
+        9401 (parent 201's child, no relation), 9402 (parent 202's child) or
         9405 (parent 204's child, unrelated) anywhere in the payload. The
         response is also confirmed to keep the plain `CourseRead` shape —
         no separate `results` key ever appears here (results are a

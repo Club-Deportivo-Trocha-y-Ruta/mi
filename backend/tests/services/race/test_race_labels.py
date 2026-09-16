@@ -6,7 +6,7 @@ ciudad None/vacía/whitespace y número fuera de rango.
 """
 
 from app.models.race_series import RaceSeriesKind, RaceSeriesLevel
-from app.services.race.race_labels import build_race_label
+from app.services.race.race_labels import build_race_label, series_display_name
 
 
 # ---------------------------------------------------------------------------
@@ -191,3 +191,62 @@ class TestChampionshipLevel:
         """Llamar sin `level` debe seguir produciendo el comportamiento departamental."""
         result = build_race_label(RaceSeriesKind.championship, 1, "Ginebra")
         assert result == "Cto. Dep. — Ginebra"
+
+
+# ---------------------------------------------------------------------------
+# series_label (hotfix identidad de válida) — prefijo "{series_label} · "
+# ---------------------------------------------------------------------------
+
+
+class TestSeriesLabelPrefix:
+    """Cobertura del parámetro ``series_label`` (hotfix multicopa)."""
+
+    def test_cup_with_series_label_prefixes(self):
+        result = build_race_label(
+            RaceSeriesKind.cup, 4, "Alcalá", series_label="Copa Let's Go"
+        )
+        assert result == "Copa Let's Go · Válida IV — Alcalá"
+
+    def test_championship_with_series_label_prefixes(self):
+        result = build_race_label(
+            RaceSeriesKind.championship, 1, "Ginebra", series_label="Cto. Depto. Valle"
+        )
+        assert result == "Cto. Depto. Valle · Cto. Dep. — Ginebra"
+
+    def test_cup_no_city_with_series_label(self):
+        result = build_race_label(RaceSeriesKind.cup, 4, None, series_label="Copa Let's Go")
+        assert result == "Copa Let's Go · Válida IV"
+
+    def test_series_label_none_is_output_unchanged(self):
+        """Omitir ``series_label`` (default ``None``) no debe cambiar nada
+        frente a todo llamador previo a este cambio."""
+        result = build_race_label(RaceSeriesKind.cup, 4, "Cali")
+        assert result == "Válida IV — Cali"
+
+    def test_series_label_empty_or_whitespace_omitted(self):
+        result_empty = build_race_label(RaceSeriesKind.cup, 4, "Cali", series_label="")
+        result_ws = build_race_label(RaceSeriesKind.cup, 4, "Cali", series_label="   ")
+        assert result_empty == "Válida IV — Cali"
+        assert result_ws == "Válida IV — Cali"
+
+
+# ---------------------------------------------------------------------------
+# series_display_name (hotfix identidad de válida)
+# ---------------------------------------------------------------------------
+
+
+class TestSeriesDisplayName:
+    def test_prefers_short_name_when_present(self):
+        assert series_display_name("Copa Let's Go Interdepartamental XCO", "Let's Go") == "Let's Go"
+
+    def test_falls_back_to_name_when_short_name_missing(self):
+        assert series_display_name("Copa Valle de Ciclomontañismo", None) == "Copa Valle de Ciclomontañismo"
+
+    def test_falls_back_to_name_when_short_name_blank(self):
+        assert series_display_name("Copa Valle de Ciclomontañismo", "   ") == "Copa Valle de Ciclomontañismo"
+
+    def test_none_when_both_missing(self):
+        assert series_display_name(None, None) is None
+
+    def test_none_when_both_blank(self):
+        assert series_display_name("  ", "") is None

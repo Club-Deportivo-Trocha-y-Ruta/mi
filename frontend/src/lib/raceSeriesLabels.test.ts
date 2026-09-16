@@ -7,7 +7,11 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { championshipLabel, championshipShortLabel } from "./raceSeriesLabels";
+import {
+  championshipLabel,
+  championshipShortLabel,
+  seriesChipLabel,
+} from "./raceSeriesLabels";
 
 // ---------------------------------------------------------------------------
 // championshipLabel — etiqueta larga
@@ -34,5 +38,35 @@ describe("championshipShortLabel", () => {
 
   it("devuelve 'Cto. Dep.' para level 'departmental'", () => {
     expect(championshipShortLabel("departmental")).toBe("Cto. Dep.");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// seriesChipLabel — hotfix multicopa (identidad de válida)
+// ---------------------------------------------------------------------------
+
+describe("seriesChipLabel", () => {
+  it("prefiere short_name cuando está presente", () => {
+    expect(seriesChipLabel("Copa Let's Go Interdepartamental XCO", "Let's GO")).toBe(
+      "Let's GO",
+    );
+  });
+
+  it("cae al name completo cuando short_name es null", () => {
+    expect(seriesChipLabel("Copa Valle de Ciclomontañismo", null)).toBe(
+      "Copa Valle de Ciclomontañismo",
+    );
+  });
+
+  it("cae al name completo cuando short_name es undefined", () => {
+    expect(seriesChipLabel("Copa Valle de Ciclomontañismo", undefined)).toBe(
+      "Copa Valle de Ciclomontañismo",
+    );
+  });
+
+  it("cae al name completo cuando short_name es una cadena en blanco", () => {
+    expect(seriesChipLabel("Copa Valle de Ciclomontañismo", "   ")).toBe(
+      "Copa Valle de Ciclomontañismo",
+    );
   });
 });

@@ -994,3 +994,27 @@ setups ∪ suggested_setups` union silently never populated; `CourseTab` now sou
 notes describe: `pytest -m mysql`, the golden eval + `baseline.json` regen, both
 `race-course.spec.ts` Playwright runs, and the post-deploy smoke — none of these have run against
 real infrastructure in any session of this feature.
+
+## Implementation status — Multi-cup Válida Identity Fix (hotfix, 2026-09-16)
+
+> Not a Spec Kit feature — owner decision, contract kept at
+> `~/.claude/plans/multicopa-identidad-valida.md`, not in this repo. A production incident
+> (2026-09-13): the race AI analysis of a Copa Let's GO Interdepartamental válida mixed in Copa
+> Valle data and invented a race status ("reprogramada") that was never in the source data;
+> approving it also deactivated the correct Copa Valle insight for the same athlete and triggered
+> an undue parent-email tier. Root cause: every válida lookup (results, conditions, course, AI
+> season-progress block, insight uniqueness, run de-duplication, parent-email tier) resolved by
+> `(season_year, sequence_number)` alone, with no notion of which cup (`race_series`) an event
+> belongs to — two cups can share the same sequence number in the same season. Full technical
+> detail in `docs/technical-notes.md`'s 2026-09-16 entry ("Multi-cup válida identity hotfix").
+
+| Area | Scope | Status |
+|---|---|---|
+| DB / models | `race_series.short_name`, `race_events.priority` (`RaceEventPriority` A/B/C/CD, nullable, Copa Valle 2026 backfilled), `athlete_ai_insights.insight_scope_key` + `uq_insights_active_scope`, migration `c2314ccd7927` (`down_revision=2c0097aa48b8`, current head) | ✅ Complete — verified against real MySQL 8.4 2026-09-16 |
+| Race data layer | `series_id` scoping on the three válida lookup functions, by-event variants for season runs, `series_id`/`series_name`/`series_short_name` on `compute_field_metrics` rows, `build_race_label(series_label=)` | ✅ Complete 2026-09-16 |
+| AI pipeline | Per-válida runs scoped to the anchor event's series (`state["event_id"]`/`state["series_id"]`), season block grouped by series, anonymize scrubs by-event conditions, prompt rules against cross-cup mixing, new must-block precheck against invented race status, golden case `case_013_two_cups_same_valida.json` | ✅ Complete 2026-09-16 |
+| Launch / persistence | `group_launch` passes `event_id` and resolves the privacy-scrubbing fields (`forbidden_names`/`athlete_sex`/`ltad_group`/`maturation_status`) it previously skipped; `find_active_run`/`deprecate_previous_active` scoped by `event_id`; `StartRunRequest.race_event_id`; explicit `409` on an ambiguous bare `valida_nums` launch | ✅ Complete 2026-09-16 |
+| API | `PATCH /api/race-analysis/race-series/{id}` (short_name), `priority` on race-event create/update/read/list, `event_id`/`series_id`/`series_name`/`series_short_name` on insight outputs, `event_id` filter on athlete insights list, `season_panorama.by_series` | ✅ Complete 2026-09-16 |
+| Frontend | `raceLabel`/`raceLabelForInsight` replace `validaLabel`, every hardcoded Copa Valle calendar removed, Comparator scoped by event with priority-mismatch banner, priority select on the event form, short-name dialog on InfoTab, cup selector on `SeasonInsightsPage`, `PanoramaView` scoped to the primary cup | ✅ Complete 2026-09-16 |
+| Verification | Throwaway MySQL 8.4 container (migration round-trip with legacy data, `pytest -m mysql` 27/27), full race suite 1278 passed, `vitest` 4351/4352 (pre-existing unrelated failure), `npm run build` clean, `data-privacy-guard` audit APPROVED with 0 findings | ✅ Complete 2026-09-16 |
+| Still owed | `pytest -m golden` with a real key (composite ≥ 0.75 incl. `case_013`) + baseline regen; manual production repair of the 3 bad insights already approved; deploy + post-deploy smoke; coach sets priority/short_name for cups other than Copa Valle; no two-cup season-summary golden case | ⏳ Pending |

@@ -26,7 +26,7 @@ import {
   confidenceVariant,
   extractSection,
   PROMPT_VERSION_V2,
-  validaLabel,
+  raceLabelForInsight,
 } from "@/lib/insights";
 import type { AthleteOut } from "@/types/athlete.types";
 
@@ -116,31 +116,25 @@ export function HeroLastInsightCard({
         <span className="text-xs font-medium uppercase tracking-wide text-mid-gray">
           {formatDateTimeCompact(insight.generated_at)}
         </span>
-        <Badge variant="secondary">
-          {validaLabel({
-            valida_num: insight.valida_num,
-            series_kind: insight.series_kind,
-            series_level: insight.series_level,
-          })}
-        </Badge>
+        <Badge variant="secondary">{raceLabelForInsight(insight, "chip")}</Badge>
         {/* T096c (feature 036, US6): "válida" es jerga del club (una fecha
-            de la Copa Valle que cuenta para la tabla de posiciones de la
-            temporada) sin explicación en la vista de padres. Se eligió un
+            de copa/campeonato que cuenta para la tabla de posiciones de esa
+            serie) sin explicación en la vista de padres. Se eligió un
             tooltip de primer uso en vez de renombrar la etiqueta a "Carrera
             N" para el rol parent: este mismo histórico ya usa "Carrera A/B/C"
             para el *tier* de dificultad de la carrera (`CarreraTierBadge`,
             `InsightsTimeline.tsx`) — reusar "Carrera" con un segundo
             significado (identidad de la carrera) habría creado una colisión
-            de vocabulario nueva. La etiqueta "Válida N" no cambia para
-            ningún rol; el helper compartido `validaLabel` (`lib/insights.ts`)
-            queda intacto. Un solo punto de explicación basta: Panorama es la
-            sub-pestaña por defecto, así que es el primer "Válida N" que ve
-            un padre. Patrón calcado de `ParentSessionCard.tsx`'s `InfoIcon`
-            (mismo ícono, mismo `TooltipTrigger asChild` + `<button
-            aria-label>`); `TooltipProvider` local porque este componente no
-            puede asumir que quien lo monte (p. ej. tests con
-            `renderWithProviders`) envuelva con el `TooltipProvider` global
-            de `App.tsx`. */}
+            de vocabulario nueva. La etiqueta ya nombra la copa cuando el
+            dato está disponible (`raceLabelForInsight`, hotfix multicopa
+            2026-09-16 — reemplaza al retirado `validaLabel`). Un solo punto
+            de explicación basta: Panorama es la sub-pestaña por defecto, así
+            que es el primer "Válida N" que ve un padre. Patrón calcado de
+            `ParentSessionCard.tsx`'s `InfoIcon` (mismo ícono, mismo
+            `TooltipTrigger asChild` + `<button aria-label>`);
+            `TooltipProvider` local porque este componente no puede asumir
+            que quien lo monte (p. ej. tests con `renderWithProviders`)
+            envuelva con el `TooltipProvider` global de `App.tsx`. */}
         {mode === "parent" && (
           <TooltipProvider delayDuration={200}>
             <Tooltip>
@@ -155,8 +149,8 @@ export function HeroLastInsightCard({
                 </button>
               </TooltipTrigger>
               <TooltipContent side="top" className="max-w-64">
-                Cada "válida" es una fecha de la Copa Valle. Cuenta para la
-                tabla de posiciones de la temporada.
+                Cada "válida" es una fecha de una copa o campeonato. Cuenta
+                para la tabla de posiciones de esa serie.
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>

@@ -35,9 +35,6 @@ vi.mock("react-router-dom", async () => {
 });
 
 // Mock de tabs lazy para evitar el árbol de dependencias de IA.
-vi.mock("@/components/competitions/tabs/AthletesTab", () => ({
-  AthletesTab: () => <div data-testid="mock-athletes-tab">athletes</div>,
-}));
 vi.mock("@/components/competitions/tabs/InsightsTab", () => ({
   InsightsTab: () => <div data-testid="mock-insights-tab">insights</div>,
 }));
@@ -251,7 +248,6 @@ describe("CompetitionDetailPage spec-014 — US4: badge campeonato CD", () => {
     expect(screen.getByRole("tab", { name: "Información" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Resultados" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Condiciones" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Atletas" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Insights IA" })).toBeInTheDocument();
   });
 

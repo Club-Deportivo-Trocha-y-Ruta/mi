@@ -121,6 +121,16 @@ async def anonymize(state: dict) -> dict[str, Any]:
         scrubbed_conditions = _scrub_event_conditions(event_conditions, forbidden_names)
         update["event_conditions"] = scrubbed_conditions
 
+    # Multicopa (hotfix identidad de válida): misma limpieza que arriba,
+    # aplicada a la variante keyed por event_id que load_race_data puebla
+    # SOLO en runs de temporada — sin esto, weather_notes de esa variante
+    # llegaría sin escrubear al resumen de temporada.
+    event_conditions_by_event = state.get("event_conditions_by_event")
+    if event_conditions_by_event:
+        update["event_conditions_by_event"] = _scrub_event_conditions(
+            event_conditions_by_event, forbidden_names
+        )
+
     # T020/T021 — scrub {valida_num: raw_coach_note} built by load_race_data.
     # Produces {valida_num: scrubbed_note} that analyst_agent reads from state.
     # Keys with None notes are preserved so analyst_agent can detect absence

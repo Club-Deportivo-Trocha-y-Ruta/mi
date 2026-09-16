@@ -135,6 +135,7 @@ export interface CourseSetup {
  */
 export interface SuggestedSetup {
   category_id: number;
+  category_label: string;
   laps: number;
   variant_label: string;
   source_event_id: number;

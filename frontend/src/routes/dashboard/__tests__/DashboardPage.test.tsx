@@ -842,7 +842,9 @@ describe("DashboardPage", () => {
         // Hero strip: both StatCard-based tiles still show their label with
         // a skeleton value — no resolved content yet.
         expect(screen.getByText("Próxima sesión")).toBeInTheDocument();
-        expect(screen.getByText("Próxima carrera Copa Valle")).toBeInTheDocument();
+        // Hotfix multicopa (2026-09-16): el tile ya no asume una única
+        // copa fija — ver `NextRaceTile.tsx`.
+        expect(screen.getByText("Próxima carrera")).toBeInTheDocument();
         expect(
           screen.getByRole("status", { name: "Cargando carga semanal" }),
         ).toBeInTheDocument();

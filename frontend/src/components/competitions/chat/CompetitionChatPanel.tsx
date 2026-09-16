@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useChatSession } from "@/hooks/ai/useChatSession";
+import { ChatMarkdown } from "@/components/ai/ChatMarkdown";
 import type { ChatMessage } from "@/types/raceAnalysis.types";
 
 // ---------------------------------------------------------------------------
@@ -61,13 +62,13 @@ export function MessageBubble({ message }: MessageBubbleProps) {
     >
       <div
         className={cn(
-          "max-w-[85%] rounded-xl px-3 py-2 text-sm leading-relaxed",
+          "rounded-xl px-3 py-2 text-sm leading-relaxed",
           isUser
-            ? "bg-charcoal text-white"
-            : "bg-gray-50 text-charcoal border border-gray-100",
+            ? "max-w-[85%] bg-charcoal text-white"
+            : "max-w-full bg-gray-50 text-charcoal border border-gray-100",
         )}
       >
-        {message.content}
+        {isUser ? message.content : <ChatMarkdown content={message.content} />}
       </div>
 
       {/* Metadata (assistant only) */}

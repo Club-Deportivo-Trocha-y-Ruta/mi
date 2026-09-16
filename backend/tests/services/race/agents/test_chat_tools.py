@@ -157,6 +157,62 @@ async def test_obtener_insights_atleta_clamps_n_to_max():
 
 
 # ---------------------------------------------------------------------------
+# Hotfix "identidad de válida" (2026-09-16): scope_event_id + cup label.
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _RowWithCup(_Row):
+    series_name: str | None = None
+    series_short_name: str | None = None
+
+
+async def test_obtener_insights_atleta_scoped_by_event_id_filters_exact_event():
+    """Con scope_event_id, el lookup filtra por event_id — no por (season, valida_num)."""
+    rows = [_RowWithCup(id=1, valida_num=4, summary_text="Progreso en Copa B")]
+    session = _FakeSession(rows=rows)
+    tool = _build_obtener_insights_atleta_tool(
+        db_factory=lambda: session, scope_event_id=200
+    )
+    out = await tool.ainvoke({"athlete_id": 42})
+    assert session.captured_params["eid"] == 200
+    assert "season" not in session.captured_params
+    assert "Progreso en Copa B" in out
+
+
+async def test_obtener_insights_atleta_scoped_by_event_id_includes_cup_label():
+    """La respuesta incluye la copa (short_name si existe) para que el coach
+    nunca confunda un insight de otra copa con el de la válida activa."""
+    rows = [
+        _RowWithCup(
+            id=1,
+            valida_num=4,
+            summary_text="Mejoró la cadencia",
+            series_name="Copa Let's Go Interdepartamental XCO",
+            series_short_name="Let's Go",
+        )
+    ]
+    session = _FakeSession(rows=rows)
+    tool = _build_obtener_insights_atleta_tool(
+        db_factory=lambda: session, scope_event_id=200
+    )
+    out = await tool.ainvoke({"athlete_id": 42})
+    assert "Let's Go" in out
+    assert "Mejoró la cadencia" in out
+
+
+async def test_obtener_insights_atleta_scoped_by_event_id_no_cup_label_when_missing():
+    """Sin series_name/short_name (fila sin evento resuelto), sin prefijo — no se inventa."""
+    rows = [_RowWithCup(id=1, valida_num=4, summary_text="Sin copa asociada")]
+    session = _FakeSession(rows=rows)
+    tool = _build_obtener_insights_atleta_tool(
+        db_factory=lambda: session, scope_event_id=200
+    )
+    out = await tool.ainvoke({"athlete_id": 42})
+    assert out.strip().startswith("- Válida 4")
+
+
+# ---------------------------------------------------------------------------
 # Tests fetch_results
 # ---------------------------------------------------------------------------
 

@@ -730,6 +730,49 @@ class TestGroupLaunchErrors:
         assert resp.status_code == 503, resp.text
 
 
+class TestGroupLaunchInitialStateContext:
+    """Hotfix "identidad de válida" (2026-09-16), Bug #2.
+
+    ``launch_group`` debe poblar ``event_id`` (ancla del run — un
+    lanzamiento grupal SIEMPRE nace desde un evento concreto) y
+    ``forbidden_names`` (antes ausente: un vacío real de privacidad, ya que
+    el scrub de ``coach_note`` en ``anonymize.py`` depende de esa lista) en
+    el ``initial_state`` de CADA atleta lanzado.
+    """
+
+    async def test_initial_state_carries_event_id_and_forbidden_names(
+        self, http_client, session_factory, monkeypatch, ai_on
+    ):
+        from app.services.race import group_launch as gl_mod
+
+        seed = await _seed_base(session_factory, n_athletes=1)
+
+        captured_states: list[dict] = []
+        _orig_submit = gl_mod.submit_run
+
+        async def _capture(run_id: str, state: dict, *, on_complete=None):
+            captured_states.append(state)
+            return await _orig_submit(run_id, state, on_complete=on_complete)
+
+        monkeypatch.setattr(gl_mod, "submit_run", _capture)
+
+        resp = await http_client.post(
+            f"/api/race-analysis/race-events/{seed['event_id']}/runs",
+            json={"explain_mode": False},
+        )
+
+        assert resp.status_code == 200, resp.text
+        assert len(captured_states) == 1
+        state = captured_states[0]
+
+        assert state["event_id"] == seed["event_id"]
+        assert "forbidden_names" in state
+        assert isinstance(state["forbidden_names"], list)
+        # sexo del atleta sembrado (Sex.M en _seed_base) — resuelto pese a no
+        # depender de birth_date.
+        assert state["athlete_sex"] == "M"
+
+
 class TestGroupLaunchRBAC:
     async def test_parent_returns_403(self, parent_http_client):
         resp = await parent_http_client.post(

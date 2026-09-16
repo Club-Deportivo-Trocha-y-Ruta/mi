@@ -6,10 +6,9 @@
  * completa (con encabezado propio) como panel embebido en el Import Wizard
  * (`compact`, sin encabezado — el wizard ya muestra "Circuito (opcional)").
  *
- * `CourseSummary` (T058) cierra la vista con la tarjeta de reconocimiento de
- * pista (mapa + perfil de elevación + recap de descripción); en esta pestaña
- * de coach nunca se pasa `athleteNamesById` (`myCategories` siempre `[]`
- * aquí — la resolución por atleta es exclusiva de las páginas de padres).
+ * `CourseSummary` se monta en modo `mapOnly` justo debajo de las variantes:
+ * cifras, vueltas y descripción ya están en las tarjetas editables, así que
+ * repetir la tarjeta completa de familias aquí duplicaba contenido.
  */
 import { useMemo, useState } from "react";
 
@@ -20,6 +19,7 @@ import { VariantsCard } from "@/components/race/course/VariantsCard";
 import { VariantUploadDialog } from "@/components/race/course/VariantUploadDialog";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ErrorState, isColdStartError } from "@/components/shared/ErrorState";
 import { useRaceCourse } from "@/hooks/race/useRaceCourse";
 import { useRaceResults } from "@/hooks/race/useRaceResults";
 import { cn } from "@/lib/utils";
@@ -60,19 +60,20 @@ function CourseTabSkeleton({ compact }: { compact?: boolean }) {
   );
 }
 
-function CourseTabError({ onRetry }: { onRetry: () => void }) {
+function CourseTabError({
+  onRetry,
+  isColdStart,
+}: {
+  onRetry: () => void;
+  isColdStart: boolean;
+}) {
   return (
-    <div
-      className="flex min-h-[20vh] flex-col items-center justify-center gap-3 rounded-xl bg-white p-6 shadow-card"
-      role="alert"
-      data-testid="course-tab-error"
-    >
-      <p className="text-sm text-mid-gray">
-        No se pudo cargar el circuito. Intenta de nuevo.
-      </p>
-      <Button variant="outline" size="lg" onClick={onRetry}>
-        Reintentar
-      </Button>
+    <div data-testid="course-tab-error">
+      <ErrorState
+        isColdStart={isColdStart}
+        onRetry={onRetry}
+        message={isColdStart ? undefined : "No se pudo cargar el circuito. Intenta de nuevo."}
+      />
     </div>
   );
 }
@@ -115,16 +116,22 @@ function CourseTabEmpty({ onAddVariant, readOnly }: CourseTabEmptyProps) {
 // ---------------------------------------------------------------------------
 
 export function CourseTab({ raceEventId, compact, readOnly }: CourseTabProps) {
-  const { data, isLoading, isError, refetch } = useRaceCourse(raceEventId);
+  const { data, isLoading, isError, error, refetch } = useRaceCourse(raceEventId);
   const [emptyStateUploadOpen, setEmptyStateUploadOpen] = useState(false);
 
   // Mismo query key que `ResultsTab` (sin filtros) — reutiliza su caché en
   // lugar de disparar una segunda request cuando ya se visitó esa pestaña.
-  // Alimenta la unión `resultCategoryIds ∪ setups ∪ suggested_setups` de
-  // `CategorySetupTable` (`ui-course.md` §2).
+  // Alimenta la unión `resultCategories ∪ setups ∪ suggested_setups` de
+  // `CategorySetupTable` (`ui-course.md` §2); se propaga el label real de
+  // la categoría (no solo el id) para que la tabla nunca muestre "Categoría
+  // #N" cuando ya se conoce el nombre desde los resultados.
   const { data: resultsData } = useRaceResults(raceEventId);
-  const resultCategoryIds = useMemo(
-    () => resultsData?.categories.map((c) => c.category_id) ?? [],
+  const resultCategories = useMemo(
+    () =>
+      resultsData?.categories.map((c) => ({
+        category_id: c.category_id,
+        label: c.label,
+      })) ?? [],
     [resultsData],
   );
 
@@ -136,7 +143,10 @@ export function CourseTab({ raceEventId, compact, readOnly }: CourseTabProps) {
       {isLoading && <CourseTabSkeleton compact={compact} />}
 
       {isError && !isLoading && (
-        <CourseTabError onRetry={() => void refetch()} />
+        <CourseTabError
+          onRetry={() => void refetch()}
+          isColdStart={isColdStartError(error)}
+        />
       )}
 
       {!isLoading && !isError && data && !data.has_course_data && (
@@ -163,12 +173,21 @@ export function CourseTab({ raceEventId, compact, readOnly }: CourseTabProps) {
             variants={data.variants}
             readOnly={readOnly}
           />
+          <CourseSummary
+            hasCourseData={data.has_course_data}
+            variants={data.variants}
+            setups={data.setups}
+            description={data.description}
+            myCategories={data.my_categories}
+            compact={compact}
+            mapOnly
+          />
           <CategorySetupTable
             raceEventId={raceEventId}
             setups={data.setups}
             suggestedSetups={data.suggested_setups}
             variants={data.variants}
-            resultCategoryIds={resultCategoryIds}
+            resultCategories={resultCategories}
           />
         </>
       )}
@@ -178,17 +197,6 @@ export function CourseTab({ raceEventId, compact, readOnly }: CourseTabProps) {
           raceEventId={raceEventId}
           description={data.description}
           readOnly={readOnly}
-        />
-      )}
-
-      {!isLoading && !isError && data && (
-        <CourseSummary
-          hasCourseData={data.has_course_data}
-          variants={data.variants}
-          setups={data.setups}
-          description={data.description}
-          myCategories={data.my_categories}
-          compact={compact}
         />
       )}
     </div>

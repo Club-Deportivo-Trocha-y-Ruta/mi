@@ -239,8 +239,10 @@ export function VariantsCard({
                 )}
               >
                 {variant.lap_distance_km} km ·{" "}
-                {variant.elevation_gain_m ?? "sin dato"} m D+ ·{" "}
-                {variant.point_count} puntos
+                {variant.elevation_gain_m != null
+                  ? `${variant.elevation_gain_m} m D+`
+                  : "D+ sin dato"}{" "}
+                · {variant.point_count} puntos
               </p>
             </li>
           ))}

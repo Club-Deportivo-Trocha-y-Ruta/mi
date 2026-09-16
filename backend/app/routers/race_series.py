@@ -27,7 +27,12 @@ from app.models.audit_log import AuditAction
 from app.models.race_event import RaceEvent
 from app.models.race_series import RaceSeries, RaceSeriesKind
 from app.models.user import User, UserRole
-from app.schemas.race_series import RaceSeriesCreate, RaceSeriesListResponse, RaceSeriesRead
+from app.schemas.race_series import (
+    RaceSeriesCreate,
+    RaceSeriesListResponse,
+    RaceSeriesRead,
+    RaceSeriesUpdate,
+)
 from app.services.audit import AuditEntityType, record_audit
 from app.services.request_context import AuditContext, get_request_context
 
@@ -106,6 +111,7 @@ async def list_race_series(
             organizer=series.organizer,
             kind=series.kind,
             level=series.level,
+            short_name=series.short_name,
             event_count=int(event_count or 0),
         )
         for series, event_count in rows
@@ -202,5 +208,105 @@ async def create_race_series(
         organizer=series.organizer,
         kind=series.kind,
         level=series.level,
+        short_name=series.short_name,
         event_count=0,
+    )
+
+
+# ---------------------------------------------------------------------------
+# PATCH /{series_id} — Editar name / short_name
+# ---------------------------------------------------------------------------
+
+
+@router.patch(
+    "/{series_id}",
+    response_model=RaceSeriesRead,
+    summary="Editar serie de competencias",
+)
+async def update_race_series(
+    series_id: int,
+    body: RaceSeriesUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(
+        require_role([UserRole.admin, UserRole.coach])
+    ),
+    ctx: AuditContext = Depends(get_request_context),
+) -> RaceSeriesRead:
+    """Actualización parcial de ``name`` / ``short_name`` de una serie.
+
+    Solo los campos enviados se aplican. ``short_name`` acepta ``null`` o
+    cadena vacía para limpiar el campo (vuelve a usar ``name`` completo en
+    los labels).
+
+    Códigos de respuesta:
+    - 200: actualización exitosa.
+    - 404: serie no existe.
+    - 409: nuevo ``name`` ya está tomado para la misma temporada.
+    - 422: valor fuera de rango.
+    - 403: usuario sin rol coach o admin.
+    """
+    result = await db.execute(select(RaceSeries).where(RaceSeries.id == series_id))
+    series: Optional[RaceSeries] = result.scalar_one_or_none()
+    if series is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Serie con id={series_id} no existe.",
+        )
+
+    campos = body.model_dump(exclude_unset=True)
+
+    new_name = campos.get("name")
+    if new_name is not None and new_name != series.name:
+        dup = await db.execute(
+            select(RaceSeries).where(
+                RaceSeries.name == new_name,
+                RaceSeries.season_year == series.season_year,
+                RaceSeries.id != series_id,
+            )
+        )
+        if dup.scalar_one_or_none() is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Ya existe una serie con ese nombre para la temporada.",
+            )
+
+    for campo, valor in campos.items():
+        setattr(series, campo, valor)
+
+    await db.flush()
+
+    if campos:
+        await record_audit(
+            db,
+            action=AuditAction.update,
+            entity_type=AuditEntityType.race_series,
+            entity_id=series.id,
+            actor=ctx.actor,
+            actor_kind=ctx.actor_kind,
+            club_id=None,
+            changed_fields=sorted(campos.keys()),
+            request_id=ctx.request_id,
+        )
+
+    logger.info(
+        "race_series_update series_id=%s campos=%s user_id=%s",
+        series.id,
+        sorted(campos.keys()),
+        current_user.id,
+    )
+
+    event_count_result = await db.execute(
+        select(func.count(RaceEvent.id)).where(RaceEvent.series_id == series.id)
+    )
+    event_count = int(event_count_result.scalar() or 0)
+
+    return RaceSeriesRead(
+        id=series.id,
+        name=series.name,
+        season_year=series.season_year,
+        organizer=series.organizer,
+        kind=series.kind,
+        level=series.level,
+        short_name=series.short_name,
+        event_count=event_count,
     )

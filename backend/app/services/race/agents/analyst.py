@@ -37,6 +37,7 @@ import time
 from dataclasses import dataclass, field as dc_field
 from typing import Any, Callable, NamedTuple, Optional
 
+from app.models.race_series import RaceSeriesKind
 from app.services.race.agents._llm import (
     LLMCallResult,
     build_chat_llm,
@@ -55,6 +56,7 @@ from app.services.race.insight_v3 import (
     extract_numeric_tokens,
 )
 from app.services.race.prompts import render_prompt
+from app.services.race.race_labels import build_race_label, series_display_name
 from app.services.race.schemas import (
     AnalysisInput,
     AnalysisOutput,
@@ -310,13 +312,27 @@ def _progression_series_label(record: dict[str, Any]) -> str:
     la tabla "Recorrido hasta acá" mostraba dos filas "1" indistinguibles e
     invitaba a compararlas puesto a puesto. Las filas previas a la feature
     039 no traen ``series_kind`` y caen a copa, que es lo que eran.
+
+    Multicopa (hotfix identidad de válida): cuando la fila trae
+    ``series_name``/``series_short_name`` (``series_display_name``), la copa
+    antepone su nombre real (vía ``build_race_label``) — así dos copas que
+    comparten ``valida_num`` no rinden el mismo texto ambiguo "Válida N ·
+    Copa". Sin esos campos (filas legadas) el literal genérico se mantiene
+    byte a byte, sin regresión.
     """
     kind = getattr(record.get("series_kind"), "value", record.get("series_kind"))
     if str(kind or "cup").lower() == "championship":
         level = getattr(record.get("series_level"), "value", record.get("series_level"))
         return "Cto. Nacional" if str(level or "").lower() == "national" else "Cto. Departamental"
     valida_num = record.get("valida_num")
-    return f"Válida {valida_num} · Copa" if valida_num is not None else "Copa"
+    cup_label = series_display_name(
+        record.get("series_name"), record.get("series_short_name")
+    )
+    if not cup_label:
+        return f"Válida {valida_num} · Copa" if valida_num is not None else "Copa"
+    return build_race_label(
+        RaceSeriesKind.cup, int(valida_num or 1), None, series_label=cup_label
+    )
 
 
 def _row_kind(record: dict[str, Any]) -> str:
@@ -541,7 +557,7 @@ def format_course_meta(course: dict[str, Any] | None) -> str | None:
       seis campos (``lap_distance_m``, ``elevation_gain_m``, ``laps``,
       ``terrain_type``, ``technical_difficulty``, ``key_sectors``) está
       presente — activa el veto "SIN DATO" del prompt (PROHIBIDO mencionar
-      distancia/vueltas/terreno/desnivel/dificultad).
+      distancia/vueltas/tipo de superficie/desnivel/dificultad).
     - Solo lista bullets de campos efectivamente registrados, en el orden
       fijo del contrato, nunca rellena con "—".
     """
@@ -577,7 +593,7 @@ def format_course_meta(course: dict[str, Any] | None) -> str | None:
         else:
             lines.append(f"- Vueltas de la categoría: {laps}")
     if terrain_type:
-        lines.append(f"- Terreno: {terrain_type}")
+        lines.append(f"- Tipo de superficie: {terrain_type}")
     if technical_difficulty is not None:
         label = _COURSE_DIFFICULTY_LABELS.get(
             int(technical_difficulty), str(technical_difficulty)
@@ -673,9 +689,13 @@ class AnalystV3Input:
     # format_course_meta. None → veto "Circuito — SIN DATO" en el prompt.
     course_meta: str | None = None
     # Feature 043 (US4): solo para analysis_kind="season" — un course_meta
-    # por válida que SÍ tiene dato de circuito (las que no, se omiten del
+    # por carrera que SÍ tiene dato de circuito (las que no, se omiten del
     # dict; dict vacío == veto de ausencia también a nivel de temporada).
-    course_by_valida: dict[int, str] | None = None
+    # Multicopa (hotfix identidad de válida): keyed por ETIQUETA con copa
+    # (p. ej. "Copa Let's Go · Válida IV"), NUNCA por número de válida — dos
+    # copas de la misma temporada pueden compartir sequence_number (spec
+    # 014); un dict int-keyed colisionaría y perdería una de las dos.
+    course_by_valida: dict[str, str] | None = None
     anthro_context: dict[str, Any] | None = None
     training_window: dict[str, Any] | None = None
     coach_dialogue: list[dict[str, Any]] = dc_field(default_factory=list)
@@ -711,6 +731,14 @@ def series_label_v3(field_metrics: dict[str, Any] | None) -> str:
 
     Campeonatos se rotulan como tales (AC-2.3: nunca se comparan puesto a
     puesto contra válidas de copa).
+
+    Multicopa (hotfix identidad de válida): cuando ``field_metrics`` trae
+    ``series_name``/``series_short_name`` (poblados por
+    ``compute_field_metrics`` desde feature 037+hotfix), la copa antepone su
+    nombre real vía ``series_display_name`` + ``build_race_label`` — evita
+    que dos copas que comparten ``valida_num`` (spec 014) rindan el mismo
+    "Válida N · Copa" ambiguo. Sin esos campos (filas legadas) el literal
+    genérico se mantiene byte a byte, sin regresión.
     """
     if not field_metrics:
         return ""
@@ -718,7 +746,14 @@ def series_label_v3(field_metrics: dict[str, Any] | None) -> str:
         level = str(field_metrics.get("series_level") or "").lower()
         return "Cto. Nacional" if level == "national" else "Cto. Departamental"
     valida_num = field_metrics.get("valida_num")
-    return f"Válida {valida_num} · Copa" if valida_num else "Copa"
+    cup_label = series_display_name(
+        field_metrics.get("series_name"), field_metrics.get("series_short_name")
+    )
+    if not cup_label:
+        return f"Válida {valida_num} · Copa" if valida_num else "Copa"
+    return build_race_label(
+        RaceSeriesKind.cup, int(valida_num or 1), None, series_label=cup_label
+    )
 
 
 def _v3_race_block(row: dict[str, Any] | None) -> str | None:

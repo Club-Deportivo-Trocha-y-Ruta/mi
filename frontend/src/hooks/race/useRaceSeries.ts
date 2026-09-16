@@ -8,6 +8,8 @@
  * Hooks exportados:
  *   - `useRaceSeriesList(filters?)` → lista de series con filtros opcionales
  *   - `useCreateRaceSeries()`       → mutation POST /race-series
+ *   - `useUpdateRaceSeries()`       → mutation PATCH /race-series/{id}
+ *     (hotfix multicopa — identidad de válida: edición de `short_name`)
  *
  * Query keys:
  *   - `raceSeriesKeys.all` → raíz del árbol
@@ -18,12 +20,14 @@
  * PII de menores (Ley 1581).
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createRaceSeries, listRaceSeries } from "@/api/raceSeries";
+import { createRaceSeries, listRaceSeries, updateRaceSeries } from "@/api/raceSeries";
+import { raceEventKeys } from "@/hooks/race/useRaceEvents";
 import type {
   RaceSeriesCreate,
   RaceSeriesListFilters,
   RaceSeriesListResponse,
   RaceSeriesRead,
+  RaceSeriesUpdate,
 } from "@/types/raceSeries.types";
 
 // ---------------------------------------------------------------------------
@@ -98,4 +102,76 @@ export function useCreateRaceSeries() {
       void queryClient.invalidateQueries({ queryKey: raceSeriesKeys.lists() });
     },
   });
+}
+
+// ---------------------------------------------------------------------------
+// useUpdateRaceSeries — PATCH /race-series/{id}
+// ---------------------------------------------------------------------------
+
+export interface UseUpdateRaceSeriesVariables {
+  id: number;
+  body: RaceSeriesUpdate;
+}
+
+/**
+ * Mutation para actualizar una serie existente (nombre y/o `short_name`).
+ *
+ * Hotfix multicopa — identidad de válida: permite al coach fijar el nombre
+ * corto de una copa (ej. "Let's GO") usado en chips/labels compactos.
+ *
+ * On success invalida:
+ *   - `raceSeriesKeys.all` → todos los pickers/listas de series se refrescan
+ *   - `raceEventKeys.all`  → las válidas de esa serie (InfoTab, listas)
+ *     vuelven a resolver el nombre/short_name actualizado.
+ */
+export function useUpdateRaceSeries() {
+  const queryClient = useQueryClient();
+
+  return useMutation<RaceSeriesRead, unknown, UseUpdateRaceSeriesVariables>({
+    mutationKey: ["raceSeries", "update"],
+    mutationFn: ({ id, body }) => updateRaceSeries(id, body),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: raceSeriesKeys.all });
+      void queryClient.invalidateQueries({ queryKey: raceEventKeys.all });
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Error message helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Extrae mensaje legible del error axios de `useUpdateRaceSeries` /
+ * `useCreateRaceSeries` para banners/toasts inline.
+ *
+ * 409 → colisión de (name, season_year) con otra serie.
+ * 404 → la serie fue eliminada en paralelo (edición concurrente).
+ */
+export function getRaceSeriesErrorMessage(
+  err: unknown,
+  fallback = "No se pudo actualizar la serie. Intenta de nuevo.",
+): string {
+  if (typeof err === "object" && err !== null) {
+    const e = err as {
+      response?: { data?: { detail?: unknown }; status?: number };
+      message?: string;
+    };
+    const status = e.response?.status;
+    if (status === 409) {
+      return "Ya existe una serie con ese nombre para la temporada.";
+    }
+    if (status === 404) {
+      return "La serie ya no existe. Recarga la página.";
+    }
+    if (status === 403) {
+      return "Sin permiso para realizar esta acción.";
+    }
+    const detail = e.response?.data?.detail;
+    if (typeof detail === "string") return detail;
+    if (e.message && !/status code \d+/i.test(e.message)) {
+      return e.message;
+    }
+  }
+  return fallback;
 }

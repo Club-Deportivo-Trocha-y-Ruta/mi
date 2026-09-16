@@ -18,6 +18,15 @@ la temporada completa sin recorte.
 Si no hay resultados → no es error fatal (validate_input ya verificó
 ``athlete_exists``), pero el state queda con ``raw_data=[]`` y nodos
 downstream lo gestionan.
+
+Multicopa (hotfix identidad de válida, ver
+plans/multicopa-identidad-valida.md): este nodo resuelve ``state["series_id"]``
+(la copa/campeonato del run) y lo pasa a ``fetch_results_for_athlete``/
+``fetch_event_conditions``/``fetch_course_context`` para que dos copas de la
+misma temporada que comparten ``sequence_number`` nunca se mezclen. En runs
+de temporada también puebla ``event_conditions_by_event``/
+``course_context_by_event`` (keyed por ``event_id``, sin esa ambigüedad) para
+que el resumen de temporada pueda agrupar por copa real.
 """
 
 from __future__ import annotations
@@ -31,7 +40,9 @@ from app.services.race.ai.retry import with_retry
 from app.services.race.queries import (
     fetch_all_results_for_season,
     fetch_course_context,
+    fetch_course_context_by_event,
     fetch_event_conditions,
+    fetch_event_conditions_by_event,
     fetch_podium_context,
     fetch_results_for_athlete,
     load_events,
@@ -218,13 +229,50 @@ async def load_race_data(state: dict) -> dict[str, Any]:
     event_id = state.get("event_id")
 
     async with get_session() as db:
+        # ---- Multicopa: identidad de válida (hotfix) ----
+        # Resuelve la copa/campeonato de ESTE lanzamiento para desambiguar
+        # ``sequence_number`` entre series (dos copas de la misma temporada
+        # pueden compartir "Válida 4" — el bug real que motiva este hotfix,
+        # ver plans/multicopa-identidad-valida.md). Con ancla, la serie es la
+        # del evento anclado. Sin ancla, solo se intenta resolver cuando el
+        # lanzamiento pide una única válida Y esa válida resuelve a un único
+        # evento en la temporada; en cualquier otro caso (temporada completa,
+        # válida ambigua entre copas, múltiples válidas sin ancla) se deja en
+        # ``None``. Cuando queda en ``None`` para un run NO de temporada, más
+        # abajo se calculan explícitamente los números de válida ambiguos
+        # (>1 evento en la temporada) y se excluyen de
+        # condiciones/circuito — sin eso, pasar ``series_id=None`` dejaría
+        # que ``fetch_event_conditions``/``fetch_course_context`` resolvieran
+        # first-match-wins entre copas, que es el bug original.
+        series_id: int | None = None
+        events_for_scope = await load_events(db)
+        series_in_season = {
+            s.id for s in await load_series(db) if s.season_year == season
+        }
+        if event_id is not None:
+            anchor_event = next((e for e in events_for_scope if e.id == event_id), None)
+            if anchor_event is not None:
+                series_id = anchor_event.series_id
+        elif valida_nums and len(valida_nums) == 1:
+            vn = valida_nums[0]
+            candidates = [
+                e
+                for e in events_for_scope
+                if e.series_id in series_in_season and e.sequence_number == vn
+            ]
+            if len(candidates) == 1:
+                series_id = candidates[0].series_id
+
         # ---- Set filtrado (para el análisis concreto) ----
         # ``fetch_results_for_athlete`` filtra por ``sequence_number``, que no
         # es único en la temporada (feature 014). Si el lanzamiento trae ancla
         # explícita, nos quedamos SOLO con el resultado de ese evento: de lo
         # contrario un análisis de "válida 1" mezclaría la válida 1 de copa
-        # con los campeonatos que comparten el mismo número.
-        results = await fetch_results_for_athlete(db, athlete_id, season, valida_nums)
+        # con los campeonatos que comparten el mismo número. ``series_id``
+        # (arriba) restringe además a la copa/campeonato de este lanzamiento.
+        results = await fetch_results_for_athlete(
+            db, athlete_id, season, valida_nums, series_id=series_id
+        )
         if event_id is not None:
             anchored_results = [
                 r for r in results if getattr(r, "event_id", None) == event_id
@@ -342,8 +390,42 @@ async def load_race_data(state: dict) -> dict[str, Any]:
                     and (seq := getattr(ev, "sequence_number", None)) is not None
                 }
             )
+        # ``series_id`` (resuelto arriba) desambigua entre copas que
+        # comparten válida — sin él, dos copas con la misma "Válida 4"
+        # colisionan (gana la primera en memoria, no determinístico).
+        #
+        # Multicopa (hotfix, gap señalado en revisión): cuando NO se resolvió
+        # ``series_id`` en un run que NO es de temporada, ``condition_validas``
+        # puede contener números de válida que resuelven a MÁS DE UN evento
+        # en la temporada (dos copas distintas). Pasarlos con
+        # ``series_id=None`` dejaría que ``fetch_event_conditions``/
+        # ``fetch_course_context`` resolvieran first-match-wins entre
+        # copas — el bug original. Se calculan explícitamente y se excluyen
+        # (nunca se "adivina" cuál copa). Los runs de temporada quedan fuera
+        # de este cálculo: usan las variantes by-event (más abajo), que no
+        # tienen esta ambigüedad.
+        ambiguous_validas: set[int] = set()
+        if series_id is None and state.get("analysis_kind") != "season":
+            seq_counts: dict[int, int] = {}
+            for e in events_for_scope:
+                if e.series_id in series_in_season:
+                    seq_counts[e.sequence_number] = seq_counts.get(e.sequence_number, 0) + 1
+            ambiguous_validas = {
+                vn for vn in condition_validas if seq_counts.get(vn, 0) > 1
+            }
+            if ambiguous_validas:
+                logger.warning(
+                    "load_race_data: válidas %s ambiguas entre copas en "
+                    "season=%s sin series_id resuelto; se omiten condiciones "
+                    "y circuito de esas válidas (no se adivina cuál copa).",
+                    sorted(ambiguous_validas), season,
+                )
+
         event_conditions = await fetch_event_conditions(
-            db, season, condition_validas
+            db,
+            season,
+            [vn for vn in condition_validas if vn not in ambiguous_validas],
+            series_id=series_id,
         )
         # ---- Perfil de circuito registrado por válida (feature 043) ----
         # category_id todavía no se conoce en este punto (se resuelve más
@@ -351,8 +433,10 @@ async def load_race_data(state: dict) -> dict[str, Any]:
         # valor real justo después de resolverlo, en el camino de retorno
         # tardío. Aquí queda en {} para toda válida (rama early-return).
         course_context = await fetch_course_context(
-            db, season, condition_validas, category_id=None
+            db, season, condition_validas, category_id=None, series_id=series_id
         )
+        for vn in ambiguous_validas:
+            course_context[vn] = {}
 
         # T019/T021 — build {valida_num: raw_coach_note} from the serialized
         # rows so that anonymize can scrub and analyst_agent can inject.
@@ -371,14 +455,41 @@ async def load_race_data(state: dict) -> dict[str, Any]:
                 if note is not None or seq not in coach_notes_by_valida:
                     coach_notes_by_valida[int(seq)] = note
 
+        # ---- Multicopa: contexto por-evento para el resumen de temporada ----
+        # SOLO en runs de temporada (analysis_kind == "season"): el resumen
+        # recorre TODAS las copas de la temporada, así que las versiones
+        # keyed por valida_num de arriba son ambiguas entre copas que
+        # comparten sequence_number. Estas dos SÍ distinguen (keyed por
+        # event_id, vía los helpers by-event de queries.py).
+        event_conditions_by_event: dict[int, dict[str, Any]] = {}
+        course_context_by_event: dict[int, dict[str, Any]] = {}
+        if state.get("analysis_kind") == "season":
+            season_event_ids = sorted(
+                {
+                    r["event_id"]
+                    for r in full_season_records
+                    if r.get("event_id") is not None
+                }
+            )
+            if season_event_ids:
+                event_conditions_by_event = await fetch_event_conditions_by_event(
+                    db, season_event_ids
+                )
+                course_context_by_event = await fetch_course_context_by_event(
+                    db, season_event_ids, category_id_for_season
+                )
+
         if not serialized:
             return {
                 "raw_data": [],
                 "competitor_id": None,
                 "category_id": None,
                 "podium_context": {},
+                "series_id": series_id,
                 "event_conditions": event_conditions,
                 "course_context": course_context,
+                "event_conditions_by_event": event_conditions_by_event,
+                "course_context_by_event": course_context_by_event,
                 "coach_notes_by_valida": coach_notes_by_valida,
                 "full_season_results": full_season_records,
                 "season_validas_count": season_validas_count,
@@ -391,8 +502,10 @@ async def load_race_data(state: dict) -> dict[str, Any]:
         # Re-consulta con la categoría real ya resuelta (feature 043) —
         # sobrescribe la versión all-{} calculada arriba con category_id=None.
         course_context = await fetch_course_context(
-            db, season, condition_validas, category_id
+            db, season, condition_validas, category_id, series_id=series_id
         )
+        for vn in ambiguous_validas:
+            course_context[vn] = {}
 
         # Evento foco: el último cronológico (results ya viene ordenado asc).
         focus_event_id = serialized[-1].get("event_id")
@@ -405,8 +518,11 @@ async def load_race_data(state: dict) -> dict[str, Any]:
         "competitor_id": competitor_id,
         "category_id": category_id,
         "podium_context": podium_ctx,
+        "series_id": series_id,
         "event_conditions": event_conditions,
         "course_context": course_context,
+        "event_conditions_by_event": event_conditions_by_event,
+        "course_context_by_event": course_context_by_event,
         "coach_notes_by_valida": coach_notes_by_valida,
         "full_season_results": full_season_records,
         "season_validas_count": season_validas_count,

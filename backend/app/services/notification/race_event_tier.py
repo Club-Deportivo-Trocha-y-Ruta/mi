@@ -9,15 +9,20 @@ genera email a padres. Solo las válidas de máxima prioridad (tier ``A`` y
 
 Fuente de verdad
 ================
-El calendario competitivo vive en ``CLAUDE.md`` (raíz del proyecto). El modelo
-``RaceEvent`` NO tiene un campo ``tier`` persistido — el único proxy parcial
-es ``is_championship`` (True ⇒ CD). Para el resto debemos derivarlo desde
-``(season, sequence_number)``.
+Hotfix "identidad de válida" (2026-09-16, ver
+``~/.claude/plans/multicopa-identidad-valida.md``): el tier ya NO se deriva
+de un dict hardcodeado por ``(season, sequence_number)`` — ese calendario
+solo conocía Copa Valle 2026 y colisionaba en cuanto otra copa (ej. Copa
+Let's Go) reutilizaba el mismo ``sequence_number`` en la misma temporada
+(exactamente el bug: una válida de Let's Go terminó heredando el tier ``A``
+de la Válida IV de Copa Valle y disparó email a padres indebidamente).
 
-Cuando se agreguen temporadas nuevas, basta con añadir una entrada al dict
-``_CALENDAR_TIERS`` con el mismo formato. Si una válida no está mapeada se
-retorna ``RaceTier.UNKNOWN`` y el dispatcher hace fallback conservador (no
-envía email).
+``RaceEvent.priority`` (``app.models.race_event.RaceEventPriority``, columna
+nullable) es ahora el dato por evento. ``NULL`` significa "sin prioridad
+asignada" → ``RaceTier.UNKNOWN`` → sin email (fallback conservador) hasta
+que el coach la asigne explícitamente vía ``PATCH /race-events/{id}``. Solo
+las válidas de Copa Valle 2026 vienen backfilleadas por la migración
+``c2314ccd7927``; el resto (incluida cualquier copa nueva) parte en NULL.
 
 Privacidad
 ==========
@@ -59,69 +64,39 @@ class RaceTier(str, enum.Enum):
 TIERS_WITH_PARENT_EMAIL: frozenset[RaceTier] = frozenset({RaceTier.A, RaceTier.CD})
 
 
-# ---------------------------------------------------------------------------
-# Calendario por (season_year, sequence_number) → tier
-# ---------------------------------------------------------------------------
-# Fuente: CLAUDE.md sección "Calendario Copa Valle 2026".
-# La convención `sequence_number=99` se reserva para Campeonato Departamental
-# en `race_event.py` (design §3.2). Aquí lo mapeamos a `CD` adicionalmente
-# por explicitud — el dict no es la única señal: `is_championship=True` también
-# lo fuerza (ver `_tier_from_event`).
-_CALENDAR_TIERS: dict[tuple[int, int], RaceTier] = {
-    # Temporada 2026 — Copa Valle
-    (2026, 1): RaceTier.UNKNOWN,  # I  31-ene Sevilla — ya completada, sin clasif
-    (2026, 2): RaceTier.UNKNOWN,  # II 28-feb Ginebra — ya completada, sin clasif
-    (2026, 3): RaceTier.C,        # III 19-abr La Cumbre (diagnóstica)
-    (2026, 4): RaceTier.A,        # IV  17-may Cali (A)
-    (2026, 99): RaceTier.CD,      # CD  12-jun Ginebra (Cto. Departamental)
-    (2026, 5): RaceTier.B,        # V   01-ago Palmira (B)
-    (2026, 6): RaceTier.A,        # VI  12-sep Roldanillo (A)
-    (2026, 7): RaceTier.B,        # VII 18-oct Yumbo (B)
-}
-
-
 def _tier_from_event(event: "RaceEvent", series: "RaceSeries | None" = None) -> RaceTier:
     """Deriva el tier desde un ``RaceEvent``.
 
-    Reglas (en orden de prioridad):
+    Reglas (en orden de prioridad — hotfix identidad de válida, 2026-09-16):
 
     1. ``is_championship=True`` ⇒ ``CD`` (señal explícita en DB).
     2. ``sequence_number == 99`` ⇒ ``CD`` (convención design §3.2).
-    3. Lookup en ``_CALENDAR_TIERS`` por ``(season_year, sequence_number)``.
-    4. Fallback ``UNKNOWN`` con log warning.
+    3. ``event.priority`` (``RaceEventPriority``) cuando está asignado.
+    4. Fallback ``UNKNOWN`` con log warning — sin prioridad asignada.
+
+    ``series`` se acepta por compatibilidad de firma con callers existentes
+    (evita un lazy-load si ya lo tienen a mano) pero ya no participa en la
+    derivación del tier — el antiguo lookup por ``(season_year,
+    sequence_number)`` colisionaba entre copas distintas con el mismo
+    ``sequence_number`` en la misma temporada.
     """
-    # Señal explícita: CD siempre tiene prioridad sobre el lookup numérico.
+    # Señal explícita: CD siempre tiene prioridad sobre `priority`.
     if getattr(event, "is_championship", False):
         return RaceTier.CD
     if event.sequence_number == 99:
         return RaceTier.CD
 
-    season_year: int | None = None
-    if series is not None:
-        season_year = getattr(series, "season_year", None)
-    elif getattr(event, "series", None) is not None:
-        season_year = getattr(event.series, "season_year", None)
-
-    if season_year is None:
+    priority = getattr(event, "priority", None)
+    if priority is None:
         logger.warning(
-            "race_event_tier: season_year no disponible para event_id=%s — "
-            "fallback UNKNOWN. ¿La relación 'series' fue cargada con selectinload?",
+            "race_event_tier: event_id=%s sin priority asignada — fallback "
+            "UNKNOWN (sin email a padres). Asignar vía PATCH /race-events/{id} "
+            "si esta válida debe notificar.",
             event.id,
         )
         return RaceTier.UNKNOWN
 
-    tier = _CALENDAR_TIERS.get((int(season_year), int(event.sequence_number)))
-    if tier is None:
-        logger.warning(
-            "race_event_tier: combinación (season=%s, valida=%s) no mapeada en "
-            "_CALENDAR_TIERS — fallback UNKNOWN. Añadir entrada al calendario "
-            "si es una temporada nueva.",
-            season_year,
-            event.sequence_number,
-        )
-        return RaceTier.UNKNOWN
-
-    return tier
+    return RaceTier(priority.value)
 
 
 def get_race_tier(event: "RaceEvent", series: "RaceSeries | None" = None) -> RaceTier:

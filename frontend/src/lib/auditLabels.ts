@@ -31,7 +31,6 @@ export const AUDIT_ENTITY_TYPE_LABELS: Record<AuditEntityType, string> = {
   race_import: "Importación de carrera",
   race_series: "Serie de carreras",
   race_event: "Evento de carrera",
-  race_event_roster: "Convocatoria de carrera",
   race_result: "Resultado de carrera",
   race_competitor: "Competidor",
   interval_structure: "Estructura de intervalos",

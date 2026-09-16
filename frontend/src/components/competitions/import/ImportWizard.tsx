@@ -1116,7 +1116,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
               {/* Fila 1 — Superficie (ToggleGroup chips) */}
               <div className="space-y-1">
                 <span className="block text-xs font-medium text-mid-gray">
-                  Condición del terreno
+                  Estado de la pista
                 </span>
                 <Controller
                   name="surface_condition"
@@ -1131,7 +1131,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                         )
                       }
                       className="flex flex-wrap gap-1.5"
-                      aria-label="Condición del terreno"
+                      aria-label="Estado de la pista"
                       data-testid="wizard-surface-condition"
                     >
                       {SURFACE_CONDITIONS.map((sc) => (
@@ -1231,7 +1231,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                 <textarea
                   id="wizard-weather-notes"
                   maxLength={2000}
-                  placeholder="Condiciones generales del trazado y clima — evite incluir nombres de atletas o información médica"
+                  placeholder="Clima y estado de la pista el día de la carrera — evite incluir nombres de atletas o información médica"
                   {...register("weather_notes")}
                   className="w-full resize-y rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
                   style={{

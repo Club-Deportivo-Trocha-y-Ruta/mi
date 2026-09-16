@@ -61,9 +61,10 @@ import {
 } from "@/components/ui/tooltip";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { formatDateTimeCompact } from "@/lib/datetime";
-import { confidenceStatus, validaLabel } from "@/lib/insights";
+import { findPendingHitlEvent } from "@/lib/hitlEvents";
+import { confidenceStatus, raceLabelForInsight } from "@/lib/insights";
 import { invalidateAthleteAiQueries } from "@/hooks/ai/invalidateAthleteAiQueries";
-import { useRunStatus } from "@/hooks/ai/useRaceRun";
+import { isTerminalState, useRunStatus } from "@/hooks/ai/useRaceRun";
 import { useAthleteInsights } from "@/hooks/athletes/useAthleteInsights";
 import { useAthleteRuns } from "@/hooks/athletes/useAthleteRuns";
 import { useAttachInsightsToNewsletter } from "@/api/athleteNewsletters";
@@ -278,16 +279,10 @@ export function AthleteAIAnalysisTab({
   // con step_id en su payload) — por eso una decisión ya tomada seguía
   // matcheando y la card quedaba pegada para siempre. Memoizado porque
   // recorre el array de eventos en cada evaluación.
-  const lastHitlEvent = useMemo(() => {
-    const events = statusQuery.data?.events;
-    if (!events) return undefined;
-    for (let i = events.length - 1; i >= 0; i -= 1) {
-      const e = events[i];
-      if (e.type === "hitl_response") return undefined;
-      if (e.type === "hitl_request" || e.type === "hitl_required") return e;
-    }
-    return undefined;
-  }, [statusQuery.data]);
+  const lastHitlEvent = useMemo(
+    () => findPendingHitlEvent(statusQuery.data?.events),
+    [statusQuery.data],
+  );
   // Autorreparación: el run está pausado esperando aprobación pero el
   // `hitl_request` —el único evento que transporta el `draft_markdown`— no
   // está en el buffer acumulado. Sin él la card le pide al coach que
@@ -320,6 +315,7 @@ export function AthleteAIAnalysisTab({
   // pausado esperando al coach y sigue vivo — un error transitorio de red
   // no debe borrarle la card de aprobación de la pantalla.
   const showHITL =
+    !isTerminalState(runState) &&
     (!statusQuery.isError || runState === "hitl_waiting") &&
     (runState === "hitl_waiting" || !!hitlStepIdFromEvent);
   const draftMarkdown =
@@ -419,11 +415,7 @@ export function AthleteAIAnalysisTab({
             </span>
             <div className="flex flex-wrap items-center gap-1.5">
               <Badge variant="secondary">
-                {validaLabel({
-                  valida_num: latest.valida_num,
-                  series_kind: latest.series_kind,
-                  series_level: latest.series_level,
-                })}
+                {raceLabelForInsight(latest, "chip")}
               </Badge>
               {mode === "coach" && (
                 <StatusBadge

@@ -34,7 +34,7 @@ from tests.services.race.ai.conftest import (
 def patched_pipeline(monkeypatch):
     """Patchea TODA la pipeline para evitar DB y LLM real."""
 
-    async def _fetch_results(db, aid, season, valida_nums=None):
+    async def _fetch_results(db, aid, season, valida_nums=None, series_id=None):
         class R:
             id = 1
             event_id = 10
@@ -129,7 +129,7 @@ async def test_graph_no_data_for_season_short_circuits(
 ):
     monkeypatch.setenv("NOTIFICATION_SEND_EMAILS", "false")
 
-    async def _no_results(db, aid, season, valida_nums=None):
+    async def _no_results(db, aid, season, valida_nums=None, series_id=None):
         return []
 
     monkeypatch.setattr(validate_node_mod, "fetch_results_for_athlete", _no_results)

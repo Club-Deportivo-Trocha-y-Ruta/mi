@@ -7,7 +7,9 @@
 {#   athlete_ref (str)            — "el deportista" | "la deportista"          #}
 {#   age (int|None)               — edad cronológica                           #}
 {#   ltad_group (str)             — mini-bambino|bambino|juvenil|junior        #}
-{#   valida_label (str|None)      — "Válida V · Copa Valle"                    #}
+{#   valida_label (str|None)      — "Copa Let's Go · Válida IV" (lleva el      #}
+{#                                   nombre real de LA copa de esta carrera,   #}
+{#                                   nunca uno hardcodeado — hotfix multicopa) #}
 {#   race_block (str|None)        — fila de la carrera analizada               #}
 {#   field_block (str|None)       — FieldMetrics del evento                    #}
 {#   season_block (str|None)      — tabla de temporada con field metrics       #}
@@ -51,6 +53,8 @@ El sujeto del análisis es {{ athlete_ref }}. Nunca uses un nombre propio, apodo
 8. Nada de relleno LTAD genérico: si una frase sirve igual para cualquier atleta de cualquier válida, bórrala.
 9. Registro profesional y respetuoso con un menor: sin juicios de valor sobre el esfuerzo ni expresiones coloquiales de sufrimiento ("a muerte", "reventarse", "vaciarse"); describe comportamientos observables ("salida por encima del ritmo sostenible").
 10. **Un campeonato (departamental o nacional) reúne un pelotón distinto al de la copa.** Nunca compares su puesto, su gap ni el tamaño de su pelotón con una válida de copa, ni digas que {{ athlete_ref }} "subió" o "cayó" posiciones respecto a una válida. Cualquier superlativo sobre tamaño de pelotón ("el más numeroso", "el más grande") debe declarar explícitamente el ámbito ("de copa" o "de campeonato") y nunca mezclar ambos universos en la misma comparación. Lee el campeonato por percentil, tamaño y fuerza del pelotón; el puesto solo se menciona dentro de esa misma carrera.
+11. Todas las carreras de los bloques pertenecen a la copa indicada en su etiqueta. No menciones, compares ni supongas carreras de otra copa o de otro campeonato.
+12. Nunca afirmes que una carrera fue reprogramada, aplazada, cancelada, suspendida o que es una "edición" anterior de otra, salvo que esa palabra aparezca literalmente en los bloques de datos.
 
 # Contexto
 
@@ -94,7 +98,7 @@ Estas son las **únicas** condiciones registradas. No agregues ninguna otra.
 {% else %}
 ## Condiciones registradas — SIN DATO
 
-PROHIBIDO mencionar clima, temperatura, superficie, terreno o altitud.
+PROHIBIDO mencionar clima, temperatura, altitud o el estado de la pista ese día (seca, húmeda, barro, lluvia).
 {% endif %}
 
 {% if course_block %}
@@ -106,7 +110,7 @@ Estas son las **únicas** características del circuito registradas. No agregues
 {% else %}
 ## Circuito — SIN DATO
 
-PROHIBIDO mencionar distancia, vueltas, terreno, desnivel, altimetría o dificultad técnica del circuito.
+PROHIBIDO mencionar distancia, vueltas, tipo de superficie o terreno, desnivel, altimetría o dificultad técnica del circuito.
 {% endif %}
 
 {% if anthro_block %}

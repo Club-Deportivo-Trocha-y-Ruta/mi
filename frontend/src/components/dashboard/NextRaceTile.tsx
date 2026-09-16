@@ -1,29 +1,37 @@
 /**
- * NextRaceTile — hero tile "Próxima carrera Copa Valle" del Inicio del
+ * NextRaceTile — hero tile "Próxima carrera" del Inicio del
  * coach (feature 031, US1, Tile 2 de `contracts/home-tiles.md`).
  *
  * Consume `useRaceEventsList({ season: currentSeason() })` (mismo fetch que
  * `PendingInbox`'s "Resultados por importar" — sin requests duplicados,
  * research.md R2) y selecciona el primer evento con `event_date >= hoy`
  * (zona horaria del club). El estado de urgencia (neutral/upcoming/
- * in_window) sale de `getCarreraTier` + `TAPER_GUIDANCE` (`lib/insights.ts`,
- * T024) comparando `daysUntil` contra los umbrales exactos por tier
+ * in_window) sale de `race_events.priority` (real por evento, ver
+ * `tierFromPriority`) + `TAPER_GUIDANCE` (`lib/insights.ts`, T024)
+ * comparando `daysUntil` contra los umbrales exactos por tier
  * (`warningAt`/`dangerAt`) — ya alineados con
  * `contracts/home-tiles.md`: A/CD → warning ≤10d, danger ≤7d;
  * B → warning ≤6d, danger ≤4d; C → siempre neutral.
  *
  * Estado vacío de fin de temporada: se muestra en texto plano vía
- * `EmptyState` sin acción (no hay "crear carrera" — el calendario Copa
- * Valle es fijo), distinto del loading (`undefined`).
+ * `EmptyState` sin acción (no hay "crear carrera" — el calendario de
+ * carreras lo administra el coach), distinto del loading (`undefined`).
  *
  * Privacidad: solo nombre/fecha/lugar de la carrera — sin resultados ni
  * nombres de atletas (contracts/home-tiles.md).
  *
  * Feature 035 (rediseño del Inicio) suma dos elementos al estado resuelto,
  * ambos derivados de datos que la tile ya tenía en mano — sin queries ni
- * lógica de urgencia nuevas: la insignia "Clase A/B/C" (`getCarreraTier`) y
- * la línea de guía de tapering (`TAPER_GUIDANCE`, que antes viajaba
- * comprimida dentro del hint junto a día y lugar).
+ * lógica de urgencia nuevas: la insignia "Clase A/B/C" y la línea de guía
+ * de tapering (`TAPER_GUIDANCE`, que antes viajaba comprimida dentro del
+ * hint junto a día y lugar).
+ *
+ * Wave 3 (hotfix multicopa, 2026-09-16): la insignia de clase ya NO sale de
+ * un calendario Copa Valle hardcodeado por mes (`getCarreraTier`/
+ * `CARRERA_TIER`, retirados de `lib/insights.ts`) — sale de
+ * `nextRace.priority` (`RaceEventListItem.priority`, real por evento,
+ * válido para cualquier copa). `priority === null` (UNKNOWN) → sin
+ * insignia de clase, nunca se adivina.
  */
 import { CalendarClock } from "lucide-react";
 
@@ -32,14 +40,25 @@ import { ErrorState, isColdStartError } from "@/components/shared/ErrorState";
 import { StatCard } from "@/components/shared/StatCard";
 import { StatusBadge, type Status } from "@/components/shared/StatusBadge";
 import { useRaceEventsList } from "@/hooks/race/useRaceEvents";
-import { TAPER_GUIDANCE, getCarreraTier, type TaperGuidance } from "@/lib/insights";
+import { TAPER_GUIDANCE, type TaperGuidance } from "@/lib/insights";
 import { currentSeason, diffDaysFromToday, formatRelativeDayCount } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
-import type { RaceEventListItem } from "@/types/raceEvents.types";
+import type { RaceEventListItem, RaceEventPriority } from "@/types/raceEvents.types";
 
 type Urgency = "neutral" | "upcoming" | "in_window";
 
 type CarreraTier = "A" | "B" | "C";
+
+/**
+ * `priority` de la válida → tier de tapering. `CD` (campeonato) lee como
+ * tier `A` — misma intensidad de tapering completo; la distinción de
+ * campeonato es un hecho ortogonal que no vive en esta escala (ver nota de
+ * `TAPER_GUIDANCE`, `lib/insights.ts`). `null` (UNKNOWN) → sin tier.
+ */
+function tierFromPriority(priority: RaceEventPriority | null): CarreraTier | null {
+  if (priority === null) return null;
+  return priority === "CD" ? "A" : priority;
+}
 
 /**
  * Tinte 10% + borde 30% del token ordinal del tier (`--color-tier-a/-b/-c`,
@@ -124,7 +143,7 @@ export function NextRaceTile() {
   const query = useRaceEventsList({ season: currentSeason() });
 
   if (query.isLoading) {
-    return <StatCard label="Próxima carrera Copa Valle" value="" isLoading />;
+    return <StatCard label="Próxima carrera" value="" isLoading />;
   }
 
   if (query.isError) {
@@ -132,7 +151,7 @@ export function NextRaceTile() {
     // loading, nunca un tono de error (FR-008, contracts/home-tiles.md
     // "Cold start"). Solo un error real muestra ErrorState con reintentar.
     if (isColdStartError(query.error)) {
-      return <StatCard label="Próxima carrera Copa Valle" value="" isLoading />;
+      return <StatCard label="Próxima carrera" value="" isLoading />;
     }
     return (
       <ErrorState
@@ -151,7 +170,7 @@ export function NextRaceTile() {
   }
 
   const daysUntil = diffDaysFromToday(nextRace.event_date) ?? 0;
-  const tier = getCarreraTier(nextRace.event_date);
+  const tier = tierFromPriority(nextRace.priority);
   const taperGuidance = tier ? TAPER_GUIDANCE[tier] : null;
   const urgency = taperGuidance
     ? resolveUrgency(daysUntil, taperGuidance.warningAt, taperGuidance.dangerAt)
@@ -168,7 +187,7 @@ export function NextRaceTile() {
 
   return (
     <StatCard
-      label="Próxima carrera Copa Valle"
+      label="Próxima carrera"
       value={nextRace.name}
       hint={hintParts.join(" · ")}
       href={`/competitions/${nextRace.id}`}

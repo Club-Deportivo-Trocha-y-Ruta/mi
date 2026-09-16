@@ -35,6 +35,7 @@ from app.schemas.race_event import (
     RaceEventListItem,
     RaceEventUpdate,
 )
+from app.services.notification.race_event_tier import RaceTier, get_race_tier
 
 logger = logging.getLogger(__name__)
 
@@ -407,6 +408,11 @@ async def list_race_events(
                 event.course_notes,
             ]
         )
+        # Tier expuesto: SIEMPRE vía get_race_tier (nunca la columna cruda) —
+        # un campeonato con priority=NULL igual expone 'CD'. UNKNOWN → None.
+        # event ya trae is_championship/sequence_number/priority cargados en
+        # la misma fila — sin query adicional.
+        tier = get_race_tier(event)
         items.append(
             RaceEventListItem(
                 id=event.id,
@@ -417,6 +423,7 @@ async def list_race_events(
                 location=event.location,
                 is_championship=event.is_championship,
                 status=event.status,
+                priority=None if tier is RaceTier.UNKNOWN else tier.value,
                 has_results=n_results > 0,
                 has_calendar_event=n_calendar > 0,
                 conditions_completeness=_completeness(event),

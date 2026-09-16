@@ -7,14 +7,19 @@
  *  - Empty state cuando no hay resultados.
  *  - Error state + reintentar.
  *  - Año inválido.
+ *  - Wave 3 (hotfix multicopa, 2026-09-16): con una sola copa la tabla se ve
+ *    igual que antes (sin selector, ver casos arriba); con 2+ copas aparece
+ *    un selector y las cifras nunca son la suma cross-copa deprecada.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { axe } from "jest-axe";
 
 import { mswServer } from "@/test/setup";
 import {
   seasonPanoramaHandler,
+  seasonPanoramaMultiCupHandler,
   emptySeasonPanoramaHandler,
   errorSeasonPanoramaHandler,
 } from "@/test/msw/athleteRaceAnalysisHandlers";
@@ -59,6 +64,57 @@ describe("SeasonInsightsPage", () => {
     // Primera fila de datos es el de más puntos (144 = 60pts).
     const rows = screen.getAllByTestId(/^season-row-/);
     expect(rows[0]).toHaveAttribute("data-testid", "season-row-144");
+
+    // Wave 3 — una sola copa (fixture `by_series` de una entrada): sin
+    // selector, se ve igual que antes del hotfix.
+    expect(
+      screen.queryByTestId("season-insights-series-select"),
+    ).not.toBeInTheDocument();
+  });
+
+  describe("Wave 3 — selector de copa (hotfix multicopa)", () => {
+    it("con 2+ copas muestra el selector y las cifras cambian según la copa elegida", async () => {
+      mswServer.use(seasonPanoramaMultiCupHandler);
+      const user = userEvent.setup();
+      renderWithProviders(<SeasonInsightsPage />, {
+        initialEntries: [SEASON_PATH],
+      });
+
+      await waitFor(() =>
+        expect(screen.getByTestId("season-insights-table")).toBeInTheDocument(),
+      );
+      const select = screen.getByTestId(
+        "season-insights-series-select",
+      ) as HTMLSelectElement;
+      expect(select).toBeInTheDocument();
+
+      // Default: primera copa vista (Copa Valle, series_id=12) — Juan Garcia
+      // corrió 2 válidas de esa copa, no las 3 de la suma cross-copa.
+      const rowJuan = screen.getByTestId("season-row-144");
+      expect(rowJuan).toHaveTextContent("2"); // races de Copa Valle
+      expect(rowJuan).not.toHaveTextContent("100"); // total_points (deprecado)
+
+      // Cambia a Copa Let's GO (series_id=55) — solo Juan Garcia la corrió.
+      await user.selectOptions(select, "55");
+      await waitFor(() => {
+        expect(screen.getByTestId("season-row-144")).toHaveTextContent("40");
+      });
+      // Maria Perez no disputó Let's GO — fila en ceros/— , no desaparece.
+      const rowMaria = screen.getByTestId("season-row-145");
+      expect(rowMaria).toHaveTextContent("—");
+    });
+
+    it("a11y: el selector de copa no introduce violaciones", async () => {
+      mswServer.use(seasonPanoramaMultiCupHandler);
+      const { container } = renderWithProviders(<SeasonInsightsPage />, {
+        initialEntries: [SEASON_PATH],
+      });
+      await waitFor(() =>
+        expect(screen.getByTestId("season-insights-table")).toBeInTheDocument(),
+      );
+      const results = await axe(container);
+      expect(results).toHaveNoViolations();
+    });
   });
 
   it("click en fila navega al detalle del deportista (tab ai_analysis)", async () => {

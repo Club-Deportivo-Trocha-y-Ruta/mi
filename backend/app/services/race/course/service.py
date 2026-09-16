@@ -9,15 +9,12 @@ T055):
 
 - ``None`` (coach/admin): sin restricción; incluye ``suggested_setups``
   (R-14) y ``my_categories=[]`` (no aplica a este rol).
-- ``set[int]`` (parent): ``my_categories`` se deriva SOLO de ``RaceResult``
-  de los propios hijos del padre en esta válida (``race_event_roster`` no
-  tiene ``category_id`` — no hay forma de resolver categoría desde ahí). La
-  visibilidad (200 vs 404 ``course_not_available``) es más amplia que
-  ``my_categories``: basta con que un hijo propio esté en la nómina O en los
-  resultados de la válida, aunque no se le pueda resolver categoría todavía
-  (p. ej. convocado a una válida futura sin resultados aún — tarjeta visible,
-  tabla de vueltas sin resaltar). ``suggested_setups`` siempre ``[]`` para
-  este rol (el prefill es una ayuda de flujo de trabajo del coach).
+- ``set[int]`` (parent): ``my_categories`` se deriva de ``RaceResult`` de
+  los propios hijos del padre en esta válida. La visibilidad (200 vs 404
+  ``course_not_available``) coincide con ``my_categories``: un hijo propio
+  necesita al menos un resultado en la válida para que la tarjeta sea
+  visible. ``suggested_setups`` siempre ``[]`` para este rol (el prefill es
+  una ayuda de flujo de trabajo del coach).
 
 Presupuesto de consultas de ``get_course`` (rama coach/admin): **<= 3
 sentencias** (event+variantes vía LEFT JOIN, setups+categoría+variante
@@ -41,7 +38,6 @@ from app.models.race_category import RaceCategory
 from app.models.race_course_category_setup import RaceCourseCategorySetup
 from app.models.race_course_variant import RaceCourseVariant
 from app.models.race_event import RaceEvent
-from app.models.race_event_roster import RaceEventRoster
 from app.models.race_result import RaceResult
 from app.schemas.race_course import (
     CourseDescriptionRead,
@@ -258,10 +254,12 @@ async def _suggested_setups(db: AsyncSession, event: RaceEvent) -> list[Suggeste
             RaceEvent.id,
             RaceEvent.sequence_number,
             RaceCourseCategorySetup.category_id,
+            RaceCategory.label,
             RaceCourseCategorySetup.laps,
             RaceCourseVariant.label,
         )
         .join(RaceCourseCategorySetup, RaceCourseCategorySetup.race_event_id == RaceEvent.id)
+        .join(RaceCategory, RaceCategory.id == RaceCourseCategorySetup.category_id)
         .join(RaceCourseVariant, RaceCourseVariant.id == RaceCourseCategorySetup.variant_id)
         .where(
             RaceEvent.series_id == event.series_id,
@@ -276,11 +274,12 @@ async def _suggested_setups(db: AsyncSession, event: RaceEvent) -> list[Suggeste
     return [
         SuggestedSetupRead(
             category_id=category_id,
+            category_label=category_label,
             laps=laps,
-            variant_label=label,
+            variant_label=variant_label,
             source_event_id=event_id,
         )
-        for event_id, sequence_number, category_id, laps, label in rows
+        for event_id, sequence_number, category_id, category_label, laps, variant_label in rows
         if sequence_number == top_sequence
     ]
 
@@ -305,8 +304,7 @@ async def _my_categories(
     db: AsyncSession, race_event_id: int, allowed_athlete_ids: set[int]
 ) -> list[MyCategoryRead]:
     """Pares ``{athlete_id, category_id}`` distintos de los propios hijos del
-    padre, derivados SOLO de ``RaceResult`` (``race_event_roster`` no tiene
-    ``category_id`` — ver el docstring del módulo)."""
+    padre, derivados de ``RaceResult`` (ver el docstring del módulo)."""
     if not allowed_athlete_ids:
         return []
     stmt = (
@@ -325,23 +323,6 @@ async def _my_categories(
     ]
 
 
-async def _has_roster_visibility(
-    db: AsyncSession, race_event_id: int, allowed_athlete_ids: set[int]
-) -> bool:
-    """``True`` si al menos uno de los propios hijos del padre está en la
-    nómina de esta válida — parte del gate de visibilidad, no de
-    ``my_categories`` (``race_event_roster`` no tiene categoría)."""
-    if not allowed_athlete_ids:
-        return False
-    stmt = select(
-        exists().where(
-            RaceEventRoster.race_event_id == race_event_id,
-            RaceEventRoster.athlete_id.in_(allowed_athlete_ids),
-        )
-    )
-    return bool((await db.execute(stmt)).scalar())
-
-
 async def _get_course_for_parent(
     db: AsyncSession,
     race_event_id: int,
@@ -351,17 +332,15 @@ async def _get_course_for_parent(
 
     Primero confirma que la válida exista (404 ``race_event_not_found``,
     igual que el resto de este módulo). Luego resuelve el gate de
-    visibilidad: propio hijo en resultados (``my_categories`` no vacío) O en
-    la nómina — lo que sea más amplio; si ninguno se cumple, 404
+    visibilidad: propio hijo con al menos un resultado en la válida
+    (``my_categories`` no vacío); si no se cumple, 404
     ``course_not_available`` lanzado directamente aquí (nunca ``None``, para
     no confundirlo con "válida inexistente" en el router).
     """
     await _assert_event_exists(db, race_event_id)
 
     my_categories = await _my_categories(db, race_event_id, allowed_athlete_ids)
-    visible = bool(my_categories) or await _has_roster_visibility(
-        db, race_event_id, allowed_athlete_ids
-    )
+    visible = bool(my_categories)
     if not visible:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

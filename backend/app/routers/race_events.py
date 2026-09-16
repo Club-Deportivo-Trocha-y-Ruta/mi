@@ -5,14 +5,10 @@ Endpoints implementados:
 - ``GET    /``                                       — listado filtrado con flags derivados.
 - ``GET    /{race_event_id}/results``                — resultados por categoría (coach/admin/parent).
 - ``GET    /{race_event_id}/standings``              — clasificación de temporada (coach/admin/parent).
-- ``GET    /{race_event_id}/roster``                 — nómina de convocados (coach/admin; parent → solo propios hijos).
 - ``POST   /``                                      — crea evento vacío (coach + admin).
-- ``POST   /{race_event_id}/roster``                — añade atleta a la nómina (coach + admin).
 - ``PATCH  /{race_event_id}``                       — edita metadata (coach + admin).
-- ``PATCH  /{race_event_id}/roster/{entry_id}``     — actualiza entrada de nómina (coach + admin).
 - ``DELETE /{race_event_id}``                       — borra evento limpio (admin only).
 - ``DELETE /{race_event_id}/cleanup``               — borra válida duplicada sin resultados + su calendario (coach only).
-- ``DELETE /{race_event_id}/roster/{entry_id}``     — elimina entrada de nómina (coach + admin).
 - ``PATCH  /{race_event_id}/conditions``            — actualiza condiciones de carrera (coach + admin).
 - ``PUT    /race-results/{result_id}/coach-note``   — escribe/reemplaza nota del entrenador (coach + admin).
 - ``DELETE /race-results/{result_id}/coach-note``   — elimina nota del entrenador (coach + admin).
@@ -45,8 +41,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, require_role
 from app.models.audit_log import AuditAction
-from app.models.race_event import RaceEvent, RaceEventStatus
-from app.models.race_event_roster import RaceEventRoster
+from app.models.race_event import RaceEvent, RaceEventPriority, RaceEventStatus
 from app.models.race_result import RaceResult
 from app.models.user import User, UserRole
 from app.schemas.race_course import CourseDescriptionUpdate, CourseRead, SetupsReplace, VariantRename
@@ -61,11 +56,9 @@ from app.schemas.race_event import (
 )
 from app.schemas.race_imports import RaceEventConditionsRead, RaceEventConditionsUpdate
 from app.schemas.race_results import CoachNoteUpdate, EventResultsRead, EventStandingsRead, ResultRow
-from app.schemas.race_roster import RosterEntryCreate, RosterEntryRead, RosterEntryUpdate, RosterRead
 import app.services.race_events as race_events_svc
 import app.services.race.course.service as course_svc
 import app.services.race.results_read as results_svc
-import app.services.race.roster as roster_svc
 import app.services.race.standings as standings_svc
 from app.models.race_series import RaceSeries, RaceSeriesKind
 from app.services.audit import AuditEntityType, record_audit
@@ -77,6 +70,26 @@ from app.services.request_context import AuditContext, get_request_context
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _assert_cd_priority_allowed(
+    priority: Optional[RaceEventPriority],
+    is_championship: Optional[bool],
+) -> None:
+    """Guard compartido por POST y PATCH: 'CD' es el tier de campeonato — no
+    tiene sentido en una válida regular de copa (hotfix "identidad de
+    válida", 2026-09-16). ``is_championship=None`` (estado desconocido, ej.
+    evento inexistente en PATCH) se deja pasar sin error — el caller es
+    responsable de resolver ese caso (404 real) por su cuenta.
+    """
+    if priority == RaceEventPriority.CD and is_championship is False:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "priority='CD' solo es válido para eventos de campeonato "
+                "(is_championship=True)."
+            ),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -243,223 +256,6 @@ async def get_race_event_standings(
 
 
 # ---------------------------------------------------------------------------
-# GET /{race_event_id}/roster — Nómina de convocados
-# ---------------------------------------------------------------------------
-
-
-@router.get(
-    "/{race_event_id}/roster",
-    response_model=RosterRead,
-    summary="Nómina de convocados para un evento de carrera",
-)
-async def get_race_event_roster(
-    race_event_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(
-        require_role([UserRole.admin, UserRole.coach, UserRole.parent])
-    ),
-) -> RosterRead:
-    """Retorna la nómina de convocados del evento con reconciliación.
-
-    La reconciliación compara la nómina contra los resultados ingestados:
-
-    - ``called_up_no_result``: atletas convocados sin resultado en la válida.
-    - ``result_not_called_up``: atletas con resultado pero no en la nómina.
-
-    Parent: solo ve las entradas de sus propios hijos; reconciliación vacía
-    (FR-030, Ley 1581 — no se expone información de otros menores).
-
-    Códigos de respuesta:
-    - 200: nómina (puede tener ``entries=[]`` si no hay convocados).
-    - 404: evento no existe.
-    - 403: usuario sin rol coach, admin o parent.
-    """
-    scoped = await allowed_athlete_ids_for(current_user, db)
-    payload = await roster_svc.get_roster(
-        db,
-        race_event_id,
-        allowed_athlete_ids=scoped,
-    )
-    logger.info(
-        "race_events_roster_get race_event_id=%s user_id=%s",
-        race_event_id,
-        current_user.id,
-    )
-    return payload
-
-
-# ---------------------------------------------------------------------------
-# POST /{race_event_id}/roster — Añadir atleta a la nómina
-# ---------------------------------------------------------------------------
-
-
-@router.post(
-    "/{race_event_id}/roster",
-    response_model=RosterEntryRead,
-    status_code=status.HTTP_201_CREATED,
-    summary="Añadir atleta a la nómina de convocados",
-)
-async def add_race_event_roster_entry(
-    race_event_id: int,
-    body: RosterEntryCreate,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
-    ctx: AuditContext = Depends(get_request_context),
-) -> RosterEntryRead:
-    """Añade un atleta del club a la nómina de convocados del evento.
-
-    El atleta debe existir en la tabla ``athletes`` (pertenecer a un club).
-    No puede añadirse el mismo atleta dos veces para el mismo evento.
-
-    Códigos de respuesta:
-    - 201: entrada creada.
-    - 404: evento no existe.
-    - 409: el atleta ya está en la nómina para este evento.
-    - 422: el atleta no existe o no pertenece a ningún club.
-    - 403: usuario sin rol coach o admin.
-    """
-    entry = await roster_svc.add_roster_entry(
-        db,
-        race_event_id,
-        payload=body,
-        created_by_user_id=current_user.id,
-    )
-    await record_audit(
-        db,
-        action=AuditAction.create,
-        entity_type=AuditEntityType.race_event_roster,
-        entity_id=entry.id,
-        actor=ctx.actor,
-        actor_kind=ctx.actor_kind,
-        club_id=None,
-        athlete_id=entry.athlete_id,
-        request_id=ctx.request_id,
-    )
-    logger.info(
-        "race_events_roster_add race_event_id=%s entry_id=%s user_id=%s",
-        race_event_id,
-        entry.id,
-        current_user.id,
-    )
-    return entry
-
-
-# ---------------------------------------------------------------------------
-# PATCH /{race_event_id}/roster/{entry_id} — Actualizar entrada de nómina
-# ---------------------------------------------------------------------------
-
-
-@router.patch(
-    "/{race_event_id}/roster/{entry_id}",
-    response_model=RosterEntryRead,
-    summary="Actualizar una entrada de la nómina",
-)
-async def update_race_event_roster_entry(
-    race_event_id: int,
-    entry_id: int,
-    body: RosterEntryUpdate,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
-    ctx: AuditContext = Depends(get_request_context),
-) -> RosterEntryRead:
-    """Actualización parcial del estado y/o nota de una entrada de nómina.
-
-    Solo los campos presentes en el body se aplican; los ausentes conservan
-    su valor.
-
-    Códigos de respuesta:
-    - 200: actualización exitosa.
-    - 404: entrada o evento no existe.
-    - 422: valor fuera de rango.
-    - 403: usuario sin rol coach o admin.
-    """
-    updated_fields = sorted(body.model_dump(exclude_unset=True).keys())
-    entry = await roster_svc.update_roster_entry(
-        db,
-        race_event_id,
-        entry_id=entry_id,
-        payload=body,
-    )
-    if updated_fields:
-        await record_audit(
-            db,
-            action=AuditAction.update,
-            entity_type=AuditEntityType.race_event_roster,
-            entity_id=entry.id,
-            actor=ctx.actor,
-            actor_kind=ctx.actor_kind,
-            club_id=None,
-            athlete_id=entry.athlete_id,
-            changed_fields=updated_fields,
-            request_id=ctx.request_id,
-        )
-    logger.info(
-        "race_events_roster_update race_event_id=%s entry_id=%s user_id=%s",
-        race_event_id,
-        entry_id,
-        current_user.id,
-    )
-    return entry
-
-
-# ---------------------------------------------------------------------------
-# DELETE /{race_event_id}/roster/{entry_id} — Eliminar entrada de nómina
-# ---------------------------------------------------------------------------
-
-
-@router.delete(
-    "/{race_event_id}/roster/{entry_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    summary="Eliminar entrada de la nómina",
-)
-async def delete_race_event_roster_entry(
-    race_event_id: int,
-    entry_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
-    ctx: AuditContext = Depends(get_request_context),
-) -> None:
-    """Elimina un atleta de la nómina de convocados del evento.
-
-    Coach y admin pueden eliminar entradas.
-
-    Códigos de respuesta:
-    - 204: eliminado correctamente (sin body).
-    - 404: entrada o evento no existe.
-    - 403: usuario sin rol coach o admin.
-    """
-    # Snapshot del athlete_id antes de borrar — la fila deja de existir tras
-    # `delete_roster_entry` y `roster_svc` no lo devuelve.
-    entry_result = await db.execute(
-        select(RaceEventRoster.athlete_id).where(RaceEventRoster.id == entry_id)
-    )
-    entry_athlete_id = entry_result.scalar_one_or_none()
-
-    await roster_svc.delete_roster_entry(
-        db,
-        race_event_id,
-        entry_id=entry_id,
-    )
-    await record_audit(
-        db,
-        action=AuditAction.delete,
-        entity_type=AuditEntityType.race_event_roster,
-        entity_id=entry_id,
-        actor=ctx.actor,
-        actor_kind=ctx.actor_kind,
-        club_id=None,
-        athlete_id=entry_athlete_id,
-        request_id=ctx.request_id,
-    )
-    logger.info(
-        "race_events_roster_delete race_event_id=%s entry_id=%s user_id=%s",
-        race_event_id,
-        entry_id,
-        current_user.id,
-    )
-
-
-# ---------------------------------------------------------------------------
 # GET /{race_event_id} — Detalle de un evento
 # ---------------------------------------------------------------------------
 
@@ -565,6 +361,11 @@ async def create_race_event(
         series.kind, body.sequence_number
     )
 
+    # Se valida contra is_championship DERIVADO (del kind de la serie), no
+    # contra el valor que el cliente haya enviado en is_championship (que el
+    # servidor ignora — ver derive_event_fields_for_series).
+    _assert_cd_priority_allowed(body.priority, derived_is_championship)
+
     # Build a modified payload with derived values — use model_copy to avoid mutating body
     derived_body = body.model_copy(
         update={
@@ -578,6 +379,12 @@ async def create_race_event(
         payload=derived_body,
         user_id=current_user.id,
     )
+    # priority no es un campo construido por race_events_svc.create_race_event
+    # (service list de campos explícita) — se fija aquí, igual patrón que el
+    # resto del router para columnas fuera del alcance del service de creación.
+    if body.priority is not None:
+        event.priority = body.priority
+        await db.flush()
     await record_audit(
         db,
         action=AuditAction.create,
@@ -647,10 +454,24 @@ async def update_race_event(
     - 200: actualización exitosa.
     - 404: evento no existe.
     - 409: nueva ``sequence_number`` ya está tomada en la misma serie.
-    - 422: valor fuera de rango.
+    - 422: valor fuera de rango, o ``priority='CD'`` en un evento que no es
+      campeonato (``is_championship=False``).
     - 403: usuario sin rol coach o admin.
     """
-    updated_fields = sorted(body.model_dump(exclude_unset=True).keys())
+    body_fields = body.model_dump(exclude_unset=True)
+
+    if body_fields.get("priority") == RaceEventPriority.CD:
+        effective_is_championship = body_fields.get("is_championship")
+        if effective_is_championship is None:
+            current = await db.execute(
+                select(RaceEvent.is_championship).where(RaceEvent.id == race_event_id)
+            )
+            effective_is_championship = current.scalar_one_or_none()
+        # None (evento inexistente) se deja pasar — el service de abajo
+        # lanza el 404 real.
+        _assert_cd_priority_allowed(body_fields["priority"], effective_is_championship)
+
+    updated_fields = sorted(body_fields.keys())
     event = await race_events_svc.update_race_event(
         db=db,
         race_event_id=race_event_id,

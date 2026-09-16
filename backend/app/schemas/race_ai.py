@@ -104,6 +104,18 @@ class StartRunRequest(BaseModel):
         max_length=12,
         description="Subset de válidas a analizar; None = todas.",
     )
+    race_event_id: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description=(
+            "Hotfix 'identidad de válida' (2026-09-16). Ancla el análisis a "
+            "una competencia concreta — necesario cuando dos copas comparten "
+            "el mismo número de válida en la temporada. Cuando se provee, "
+            "`valida_nums` se DERIVA del evento (se ignora el valor enviado) "
+            "y el evento debe pertenecer a `season`. Sin él, un lanzamiento "
+            "por `valida_nums` ambiguo entre copas responde 409."
+        ),
+    )
     explain_mode: bool = Field(
         default=False,
         description="Si True, agente narra '¿por qué hago X?' y HITL siempre activo.",

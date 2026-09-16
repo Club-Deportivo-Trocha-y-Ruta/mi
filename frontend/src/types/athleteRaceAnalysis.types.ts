@@ -17,6 +17,7 @@
  * backend (que tiene más campos opcionales). Si el snapshot llega sin
  * ``schema_version`` el backend lo entrega como dict puro.
  */
+import type { RaceEventPriority } from "@/types/raceEvents.types";
 
 // ---------------------------------------------------------------------------
 // Enums (compatibles con literal unions; backend usa Pydantic str-Enum)
@@ -141,6 +142,31 @@ export interface AthleteInsightOut {
    * previos a la feature).
    */
   series_level?: SeriesLevel | null;
+  /**
+   * Identidad de copa/campeonato (hotfix multicopa, 2026-09-16) — nombre y
+   * abreviación de `race_series` vinculada por `event_id`. Fuente para
+   * `lib/insights.ts#raceLabel`, que reemplaza a `validaLabel` como único
+   * punto de verdad para el rótulo de una válida: antes solo distinguía
+   * copa/campeonato/nacional-departamental sin nombrar NUNCA la copa
+   * concreta, lo que permitía que la Válida IV de una copa se leyera y
+   * agrupara junto a la Válida IV de otra (bug de identidad de válida).
+   * `null` en insights legacy (previos a esta columna) o sin evento
+   * vinculado (resumen de temporada) — `raceLabel` cae al rótulo sin copa
+   * en ese caso, nunca inventa un nombre.
+   */
+  series_id?: number | null;
+  /** Ver nota de `series_id`. Nombre completo, ej. "Copa Let's GO". */
+  series_name?: string | null;
+  /** Ver nota de `series_id`. Abreviación para chips, ej. "Let's GO". */
+  series_short_name?: string | null;
+  /**
+   * Wave 3 (hotfix multicopa, 2026-09-16) — prioridad del evento vinculado
+   * (`race_events.priority`). `null` → UNKNOWN. Fuente del banner de
+   * tapering-mismatch en `ComparatorPanel` — reemplaza la comparación por
+   * tipo-de-carrera hardcodeada que dependía de `lib/raceCalendar.ts`
+   * (retirado).
+   */
+  priority?: RaceEventPriority | null;
   use_case: string;
   summary_text: string;
   confidence: InsightConfidence;
@@ -387,6 +413,14 @@ export interface RaceParticipationOption {
   series_id?: number;
   series_name?: string;
   series_level?: SeriesLevel;
+  /**
+   * Hotfix multicopa (2026-09-16) — abreviación para chips (`raceLabel`,
+   * `lib/insights.ts`). Aditivo por el mismo motivo que el resto de campos
+   * de esta sección.
+   */
+  series_short_name?: string | null;
+  /** Wave 3 — ver nota de `priority` en `AthleteInsightOut`. */
+  priority?: RaceEventPriority | null;
 }
 
 export interface RaceParticipationResponse {
@@ -415,6 +449,11 @@ export interface ClubInsightByRaceItem {
   athlete_id: number;
   athlete_display_name: string;
   valida_num: number | null;
+  /** Hotfix multicopa (2026-09-16) — ver nota en `AthleteInsightOut`. */
+  event_id?: number | null;
+  series_id?: number | null;
+  series_name?: string | null;
+  series_short_name?: string | null;
   insight_id: number | null;
   summary_excerpt: string | null;
   generated_at: string | null;
@@ -436,6 +475,11 @@ export interface AthleteInsightsParams {
   season?: number;
   use_case?: string;
   valida_num?: number;
+  /**
+   * Hotfix multicopa (2026-09-16) — desambigua copa vs. campeonato con el
+   * mismo `valida_num` en la temporada, igual que `AthleteStartRunBody`.
+   */
+  event_id?: number;
   include_deprecated?: boolean;
   latest_only?: boolean;
   limit?: number;
@@ -455,14 +499,50 @@ export interface AthleteRunsParams {
 // Mirror de backend/app/schemas/season_panorama.py.
 // ---------------------------------------------------------------------------
 
+/**
+ * Wave 3 (hotfix multicopa, 2026-09-16) — desglose por copa de un atleta.
+ * Ordenado por fecha de la primera carrera disputada de esa copa. Los
+ * campeonatos NO aparecen acá (excluidos por el backend de este endpoint) —
+ * `series_kind` siempre es `"cup"` en la práctica, se mantiene tipado por
+ * completitud futura.
+ */
+export interface SeasonPanoramaSeriesItem {
+  series_id: number;
+  series_name: string;
+  series_short_name: string | null;
+  series_kind: "cup" | "championship";
+  races: number;
+  points: number;
+  podiums: number;
+  wins: number;
+  best_position: number | null;
+}
+
 export interface SeasonPanoramaAthleteItem {
   athlete_id: number;
   athlete_display_name: string;
+  /**
+   * @deprecated Suma cross-copa (hotfix multicopa, 2026-09-16) — mezcla
+   * copas distintas en un solo número, el mismo colapso de identidad que
+   * originó el bug. Usar `by_series`; se mantiene solo por compatibilidad
+   * de respuestas legacy en el período de transición del backend.
+   */
   races_count: number;
+  /** @deprecated Ver nota de `races_count` — usar `by_series`. */
   wins: number;
+  /** @deprecated Ver nota de `races_count` — usar `by_series`. */
   podiums: number;
+  /** @deprecated Ver nota de `races_count` — usar `by_series`. */
   best_position: number | null;
+  /** @deprecated Ver nota de `races_count` — usar `by_series`. */
   total_points: number;
+  /**
+   * Wave 3 — fuente única de verdad de este endpoint. Cada copa que el
+   * atleta disputó en la temporada, con sus propias cifras (nunca sumadas
+   * entre copas). Vacío si el atleta no disputó ninguna copa (solo
+   * campeonatos, o ningún resultado).
+   */
+  by_series: SeasonPanoramaSeriesItem[];
 }
 
 export interface SeasonPanoramaResponse {

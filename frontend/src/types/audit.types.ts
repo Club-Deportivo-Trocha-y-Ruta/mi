@@ -55,7 +55,6 @@ export type AuditEntityType =
   | "race_import"
   | "race_series"
   | "race_event"
-  | "race_event_roster"
   | "race_result"
   | "race_competitor"
   | "interval_structure"

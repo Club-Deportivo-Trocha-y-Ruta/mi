@@ -28,6 +28,7 @@ from typing import NamedTuple, Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.athlete import Athlete
 from app.models.athlete_ai_insight import AthleteAiInsight
@@ -156,9 +157,19 @@ async def get_race_event_or_none(
     db: AsyncSession,
     race_event_id: int,
 ) -> Optional[RaceEvent]:
-    """Carga el RaceEvent por PK. Retorna None si no existe."""
+    """Carga el RaceEvent por PK (con ``series`` eager-cargada). Retorna
+    None si no existe.
+
+    ``series`` se carga vía ``selectinload`` (1 query extra, no N+1) para
+    que el router pueda exponer ``series_id``/``series_name``/
+    ``series_short_name`` en la respuesta sin un lazy-load implícito, que
+    fallaría en contexto async con ``MissingGreenlet`` (hotfix 'identidad
+    de válida', 2026-09-16).
+    """
     result = await db.execute(
-        select(RaceEvent).where(RaceEvent.id == race_event_id)
+        select(RaceEvent)
+        .options(selectinload(RaceEvent.series))
+        .where(RaceEvent.id == race_event_id)
     )
     return result.scalar_one_or_none()
 

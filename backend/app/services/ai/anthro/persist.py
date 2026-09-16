@@ -85,6 +85,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from sqlalchemy import select
 from sqlalchemy.dialects.mysql import insert as mysql_insert
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ai_explanation import AthleteAIExplanation
@@ -164,9 +165,46 @@ async def persist(state: dict, config: Optional[dict] = None) -> dict[str, Any]:
     ``{"persisted_explanation_id": int, "persisted_action": "create" | "update"}``
     para que ``pipeline.py`` pueda, si lo necesita, correlacionar la respuesta con
     la fila escrita sin un segundo SELECT.
+
+    Reintento de un solo golpe ante conexión muerta: ``db`` es la sesión del
+    request completo (``pipeline.py``), checked-out desde ANTES de las llamadas
+    LLM de los pasos 2-4 (20-45s típico local, más con reanálisis) — ese tramo
+    queda ciego a ``pool_pre_ping``/``pool_recycle`` (ambos solo actúan en
+    checkout desde el pool, nunca sobre una conexión ya asignada a una sesión
+    viva) y a Hostinger cerrando conexiones inactivas por su cuenta. Si eso ya
+    pasó, ``OperationalError.connection_invalidated`` lo confirma; un
+    ``rollback()`` descarta la conexión muerta y el siguiente ``execute()``
+    la repone del pool con ``pool_pre_ping`` fresco. Reintentar sobre la MISMA
+    sesión (no una nueva) evita un snapshot REPEATABLE READ distinto al de las
+    lecturas tempranas del request (``_ensure_ai_consent``, ``priors``), que
+    haría invisible el commit para la lectura final del router.
+
+    ``Session.rollback()`` expira TODOS los objetos ORM de la sesión (efecto
+    estándar de SQLAlchemy, no algo que este módulo decida) — sin refrescarlos,
+    el retry de ``_persist_once`` vuelve a tocar ``athlete.id``/
+    ``target_record.id``/``actor.id`` como acceso síncrono de atributo, que
+    sobre un objeto expirado dispara un lazy-load síncrono; en una
+    ``AsyncSession`` eso revienta con ``MissingGreenlet`` (no hay puente async
+    en un getter de atributo) en vez de propagar el ``OperationalError`` real.
+    Se refrescan explícitamente vía ``db.refresh()`` (sí async-seguro) antes
+    de reintentar.
     """
     del config  # este paso no llama al LLM ni abre su propio span — ver docstring.
 
+    try:
+        return await _persist_once(state)
+    except OperationalError as exc:
+        if not exc.connection_invalidated:
+            raise
+        db: AsyncSession = state["db"]
+        await db.rollback()
+        await db.refresh(state["athlete"])
+        await db.refresh(state["target_record"])
+        await db.refresh(state["actor"])
+        return await _persist_once(state)
+
+
+async def _persist_once(state: dict) -> dict[str, Any]:
     db: AsyncSession = state["db"]
     athlete: "Athlete" = state["athlete"]
     target_record: Any = state["target_record"]

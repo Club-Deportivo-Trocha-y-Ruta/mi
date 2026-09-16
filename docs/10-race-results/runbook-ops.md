@@ -697,7 +697,7 @@ GPX" report:
 | 409 | `variant_label_taken` | Another variant of this válida already has that name. Ask for a different label, or confirm whether they meant to rename/replace the existing one instead of creating a new variant. |
 | 409 | `variant_in_use` | Attempted delete of a variant referenced by at least one category setup; the response names the categories. Point the coach at the setups table to reassign those categories to a different variant first. |
 | 422 | `variant_not_in_event` | A `PUT /course/setups` payload referenced a variant id from a different válida — almost always a stale client cache; a page reload before retrying usually resolves it. |
-| 404 | `course_not_available` | Normal for a parent whose child has no relation (roster or results) to this válida — not a bug to escalate. |
+| 404 | `course_not_available` | Normal for a parent whose child has no result in this válida — not a bug to escalate. |
 
 A generic `{"detail": {"code": ..., "message": ...}}` body backs all of
 these (same shape as the existing conditions `PATCH`); the `code` field is
@@ -721,3 +721,80 @@ baseline file — is still a **developer follow-up before this feature
 merges**: it has not been executed in the implementation environment (no
 `RACE_AI_API_KEY` available there; the eval module's own `_skip_no_api`
 guard skips it silently rather than failing).
+
+---
+
+## 11. Válida priority, cup short names, and multi-cup identity (hotfix, 2026-09-16)
+
+> Scope: fallout of a production incident where a Copa Let's GO válida's AI
+> analysis mixed in Copa Valle data and invented a race status, and
+> approving it deactivated the correct Copa Valle insight for the same
+> athlete. Full root-cause and fix detail: `docs/technical-notes.md`'s
+> 2026-09-16 entry ("Multi-cup válida identity hotfix"); contract at
+> `~/.claude/plans/multicopa-identidad-valida.md` (owner decision: no Spec
+> Kit folder for this fix).
+
+### 11.1 Válida priority — who sets it, and its effect on parent email
+
+Each `race_events` row now carries its own `priority` (`A` / `B` / `C` /
+`CD`, nullable) — set by the coach or admin via `PATCH
+/api/race-analysis/race-events/{race_event_id}` (same field as the event
+form's priority select). This **replaces** the old hardcoded Copa Valle
+calendar in `race_event_tier.py` (`_CALENDAR_TIERS`, removed) as the single
+source of truth for tiering.
+
+- `is_championship=True` or `sequence_number == 99` always resolves to
+  `CD`, regardless of `priority`.
+- Otherwise the tier is `event.priority` directly, when set.
+- `priority=NULL` (the default for any new event, including every cup
+  other than Copa Valle) resolves to `RaceTier.UNKNOWN` — a conservative
+  fallback that behaves like tier `B`/`C`: **no parent email**.
+- Only `A` and `CD` trigger the parent email on insight approval
+  (`TIERS_WITH_PARENT_EMAIL`); `B`, `C` and `UNKNOWN` stay in-app +
+  monthly-boletín only.
+- Only Copa Valle 2026 was backfilled by migration `c2314ccd7927` (III=C,
+  IV=A, V=B, VI=A, VII=B, 99=CD). **Any other cup — Copa Let's GO included —
+  starts with every válida `priority=NULL` until a coach sets it.** If a
+  parent reports a missing email for a non-Copa-Valle race, check
+  `race_events.priority` for that event first; `NULL` is expected, not a
+  bug, until someone assigns it.
+
+### 11.2 Cup short names
+
+`race_series.short_name` (nullable, ≤40 chars) is set via `PATCH
+/api/race-analysis/race-series/{series_id}` (same RBAC as series creation),
+or from the short-name dialog on the competition detail InfoTab. It feeds
+every race label (`raceLabel`/`raceLabelForInsight` on the frontend,
+`build_race_label(series_label=)` on the backend) — long form "Copa Let's
+GO · Válida IV — Alcalá", chip form "<short_name or name> · V4". Leaving it
+unset is safe: labels fall back to the full `race_series.name`.
+
+### 11.3 Two cups sharing a válida number
+
+Before this hotfix, a bare válida number (e.g. "Válida 4") could resolve to
+more than one event in the same season if two cups both had a round 4 —
+the platform picked whichever query matched first, silently mixing data
+between them. That is now blocked instead of guessed:
+
+- Launching an AI analysis with an explicit `race_event_id` (the normal
+  path — from a competition's Insights tab) always anchors to that one
+  event and its cup; never ambiguous.
+- Launching by a bare `valida_nums` list (`StartRunRequest`, no
+  `race_event_id`) now returns **`409`** for any entry that matches more
+  than one event in the season, both on `POST
+  /api/race-analysis/runs` and on the athlete-scoped launch endpoint. The
+  error message names the ambiguous válida number and the candidate event
+  ids — use that to pick the specific competition and relaunch with
+  `race_event_id` set instead.
+- A legacy `agent_runs` row (started before this hotfix) has no `event_id`
+  in its `input_json`; it is only treated as a duplicate/active run for a
+  new launch when `(season, valida_num)` is still unambiguous for that
+  season. If it's ambiguous, the new launch proceeds rather than risk
+  matching the wrong cup's in-flight run.
+- If you see a support report describing a race analysis that references
+  the wrong competition, distance, or a status word ("reprogramada",
+  "aplazada", "cancelada") not present in the source PDF: check whether
+  the insight predates this hotfix (`athlete_ai_insights.insight_scope_key`
+  is the legacy-shaped `valida:{season}:{n}` rather than `event:{id}`) —
+  those are the ones this fix cannot retroactively correct, and the owner
+  repairs them manually in production, not by re-running the analysis.

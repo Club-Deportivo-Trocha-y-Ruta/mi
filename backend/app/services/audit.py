@@ -83,7 +83,6 @@ class AuditEntityType(StrEnum):
     race_import = "race_import"
     race_series = "race_series"
     race_event = "race_event"
-    race_event_roster = "race_event_roster"
     race_result = "race_result"
     race_competitor = "race_competitor"
     interval_structure = "interval_structure"
@@ -1071,6 +1070,10 @@ _RACE_RESULTS: dict[tuple[str, str], AuditPolicy] = {
     ("POST", "/api/race-analysis/race-series/"): Audited(
         frozenset({AuditEntityType.race_series})
     ),
+    (
+        "PATCH",
+        "/api/race-analysis/race-series/{series_id}",
+    ): Audited(frozenset({AuditEntityType.race_series})),
     ("POST", "/api/race-analysis/imports/parse"): Audited(
         frozenset({AuditEntityType.race_import})
     ),
@@ -1124,18 +1127,6 @@ _RACE_RESULTS: dict[tuple[str, str], AuditPolicy] = {
     ): Audited(frozenset({AuditEntityType.race_event})),
     (
         "POST",
-        "/api/race-analysis/race-events/{race_event_id}/roster",
-    ): Audited(frozenset({AuditEntityType.race_event_roster})),
-    (
-        "PATCH",
-        "/api/race-analysis/race-events/{race_event_id}/roster/{entry_id}",
-    ): Audited(frozenset({AuditEntityType.race_event_roster})),
-    (
-        "DELETE",
-        "/api/race-analysis/race-events/{race_event_id}/roster/{entry_id}",
-    ): Audited(frozenset({AuditEntityType.race_event_roster})),
-    (
-        "POST",
         "/api/race-analysis/race-events/{race_event_id}/calendar-link",
     ): Audited(frozenset({AuditEntityType.race_event})),
     (
@@ -1154,6 +1145,34 @@ _RACE_RESULTS: dict[tuple[str, str], AuditPolicy] = {
         "DELETE",
         "/api/race-analysis/race-events/race-results/{result_id}/coach-note",
     ): Audited(frozenset({AuditEntityType.race_result})),
+    # Feature 043 (course profile) — los seis endpoints de circuito
+    # (routers/race_events.py) llaman record_audit con
+    # AuditEntityType.race_event (el circuito no es su propia entidad
+    # auditable; vive como columnas/tablas hijas del race_event).
+    (
+        "POST",
+        "/api/race-analysis/race-events/{race_event_id}/course/variants",
+    ): Audited(frozenset({AuditEntityType.race_event})),
+    (
+        "PUT",
+        "/api/race-analysis/race-events/{race_event_id}/course/variants/{variant_id}/file",
+    ): Audited(frozenset({AuditEntityType.race_event})),
+    (
+        "PATCH",
+        "/api/race-analysis/race-events/{race_event_id}/course/variants/{variant_id}",
+    ): Audited(frozenset({AuditEntityType.race_event})),
+    (
+        "DELETE",
+        "/api/race-analysis/race-events/{race_event_id}/course/variants/{variant_id}",
+    ): Audited(frozenset({AuditEntityType.race_event})),
+    (
+        "PUT",
+        "/api/race-analysis/race-events/{race_event_id}/course/setups",
+    ): Audited(frozenset({AuditEntityType.race_event})),
+    (
+        "PATCH",
+        "/api/race-analysis/race-events/{race_event_id}/course/description",
+    ): Audited(frozenset({AuditEntityType.race_event})),
     ("POST", "/api/race-competitors/{competitor_id}/link"): Audited(
         frozenset({AuditEntityType.race_competitor})
     ),
@@ -1348,7 +1367,6 @@ _AUDIT_STRICT_TABLES: dict[str, AuditEntityType] = {
     "race_imports": AuditEntityType.race_import,
     "race_series": AuditEntityType.race_series,
     "race_events": AuditEntityType.race_event,
-    "race_event_roster": AuditEntityType.race_event_roster,
     "race_results": AuditEntityType.race_result,
     "race_competitors": AuditEntityType.race_competitor,
     "interval_structures": AuditEntityType.interval_structure,
@@ -1466,7 +1484,6 @@ AUDIT_ENTITY_LABELS: dict[AuditEntityType, str] = {
     AuditEntityType.race_import: "la importación de resultados",
     AuditEntityType.race_series: "la serie de válidas",
     AuditEntityType.race_event: "la válida",
-    AuditEntityType.race_event_roster: "la convocatoria de la válida",
     AuditEntityType.race_result: "el resultado de carrera",
     AuditEntityType.race_competitor: "el competidor de la carrera",
     AuditEntityType.interval_structure: "la estructura de intervalos",
@@ -1654,8 +1671,6 @@ SENTENCE_TEMPLATES: dict[tuple[AuditEntityType, AuditAction], str] = {
     (AuditEntityType.race_event, AuditAction.create): "{actor} creó una válida.",
     (AuditEntityType.race_event, AuditAction.update): "{actor} actualizó una válida.",
     (AuditEntityType.race_event, AuditAction.cancel): "{actor} canceló una válida ({motivo}).",
-    (AuditEntityType.race_event_roster, AuditAction.create): "{actor} convocó a un deportista a una válida.",
-    (AuditEntityType.race_event_roster, AuditAction.delete): "{actor} retiró a un deportista de la convocatoria de una válida.",
     (AuditEntityType.race_result, AuditAction.create): "{actor} agregó un resultado al acta.",
     (AuditEntityType.race_result, AuditAction.update): "{actor} corrigió un resultado del acta.",
     (AuditEntityType.race_result, AuditAction.delete): "{actor} retiró un resultado del acta.",

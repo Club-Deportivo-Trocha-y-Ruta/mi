@@ -10,8 +10,18 @@
  *
  * Privacidad: el endpoint es coach/admin only; expone nombres reales porque
  * el caller está autorizado. NO se genera narrativa IA en esta vista.
+ *
+ * Wave 3 (hotfix multicopa, 2026-09-16): cada `item` trae `by_series` — un
+ * desglose por copa (nunca campeonatos, excluidos por el backend de este
+ * endpoint). Los campos planos legacy (`races_count`/`wins`/`podiums`/
+ * `best_position`/`total_points`) son sumas cross-copa deprecadas — esta
+ * página NUNCA los lee. Con una sola copa en toda la temporada, la tabla se
+ * ve igual que antes (mismas 4 columnas, ahora leídas de `by_series[0]`, sin
+ * selector). Con 2+ copas, un selector de copa sobre la tabla decide qué
+ * columnas se muestran — un coach compara una copa a la vez, nunca una suma
+ * mezclada (mismo criterio que `ComparatorPanel`/`raceLabel`).
  */
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Trophy } from "lucide-react";
 
@@ -24,6 +34,56 @@ import {
 } from "@/components/layout/SiblingViewTabs";
 import { useSeasonPanorama } from "@/hooks/athletes/useSeasonPanorama";
 import { currentSeason } from "@/lib/datetime";
+import { cn } from "@/lib/utils";
+import type {
+  SeasonPanoramaAthleteItem,
+  SeasonPanoramaSeriesItem,
+} from "@/types/athleteRaceAnalysis.types";
+
+// ---------------------------------------------------------------------------
+// Copas de la temporada — deriva la lista de selección a partir de
+// `by_series` de todos los atletas (Wave 3, hotfix multicopa).
+// ---------------------------------------------------------------------------
+
+interface SeriesOption {
+  seriesId: number;
+  label: string;
+}
+
+/**
+ * Lista deduplicada de copas presentes en la temporada, en el orden en que
+ * aparecen recorriendo los atletas (cada `by_series` individual ya viene
+ * ordenado por fecha de primera carrera — no hay una fecha "global" a nivel
+ * de respuesta para ordenar entre atletas, así que el primer atleta que
+ * trae una copa fija su posición en la lista).
+ */
+function resolveSeriesOptions(items: SeasonPanoramaAthleteItem[]): SeriesOption[] {
+  const seen = new Map<number, SeriesOption>();
+  for (const item of items) {
+    for (const s of item.by_series) {
+      if (!seen.has(s.series_id)) {
+        seen.set(s.series_id, {
+          seriesId: s.series_id,
+          label: s.series_short_name ?? s.series_name,
+        });
+      }
+    }
+  }
+  return Array.from(seen.values());
+}
+
+/** Cifras de un atleta para una copa — ceros/— cuando no la disputó. */
+function statsForSeries(
+  item: SeasonPanoramaAthleteItem,
+  seriesId: number | null,
+): Pick<SeasonPanoramaSeriesItem, "races" | "podiums" | "wins" | "best_position" | "points"> {
+  const EMPTY = { races: 0, podiums: 0, wins: 0, best_position: null, points: 0 } as const;
+  if (seriesId === null) {
+    // Camino de una sola copa (o ninguna) en toda la temporada.
+    return item.by_series[0] ?? EMPTY;
+  }
+  return item.by_series.find((s) => s.series_id === seriesId) ?? EMPTY;
+}
 
 // Vistas hermanas del área Competencias (data-model.md §2, navigation-model.md) —
 // compartidas con CompetitionsListPage y UnlinkedCompetitorsPage.
@@ -84,6 +144,32 @@ export function SeasonInsightsPage() {
 
   const items = useMemo(() => data?.items ?? [], [data]);
 
+  // Copas presentes en la temporada (Wave 3) — con 0 ó 1 copa no se muestra
+  // selector, la tabla se ve igual que antes de este hotfix.
+  const seriesOptions = useMemo(() => resolveSeriesOptions(items), [items]);
+  const [seriesId, setSeriesId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (seriesOptions.length === 0) {
+      setSeriesId(null);
+      return;
+    }
+    setSeriesId((current) => {
+      if (current !== null && seriesOptions.some((s) => s.seriesId === current)) {
+        return current;
+      }
+      return seriesOptions[0].seriesId;
+    });
+  }, [seriesOptions]);
+
+  const showSelector = seriesOptions.length > 1;
+  // Con 0 ó 1 copa, `statsForSeries(item, null)` lee `by_series[0]`
+  // directamente — comportamiento idéntico al de antes del hotfix.
+  const effectiveSeriesId = showSelector ? seriesId : null;
+  const selectedLabel = showSelector
+    ? (seriesOptions.find((s) => s.seriesId === seriesId)?.label ?? null)
+    : null;
+
   if (!validYear) {
     return (
       <div className="mx-auto max-w-5xl space-y-5 px-4 py-6">
@@ -133,12 +219,38 @@ export function SeasonInsightsPage() {
       )}
 
       {!isLoading && !isError && items.length > 0 && (
-        <div
-          className="overflow-hidden rounded-xl bg-white shadow-card"
-        >
+        <div className="space-y-3">
+          {showSelector && (
+            <div className="flex items-center justify-end gap-2">
+              <label
+                className="text-xs font-medium text-mid-gray"
+                htmlFor="season-insights-series-select"
+              >
+                Copa
+              </label>
+              <select
+                id="season-insights-series-select"
+                data-testid="season-insights-series-select"
+                value={seriesId ?? ""}
+                onChange={(e) => setSeriesId(Number(e.target.value))}
+                className={cn(
+                  "min-h-12 rounded-lg bg-white px-3 py-2 text-sm outline-none",
+                  "shadow-ring focus:ring-2 focus:ring-primary/40",
+                )}
+              >
+                {seriesOptions.map((s) => (
+                  <option key={s.seriesId} value={s.seriesId}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          <div className="overflow-hidden rounded-xl bg-white shadow-card">
           <table className="w-full text-sm" data-testid="season-insights-table">
             <caption className="sr-only">
               Panorama de la temporada {yearNum} por deportista
+              {selectedLabel ? ` — ${selectedLabel}` : ""}
             </caption>
             <thead>
               <tr className="border-b border-light-gray text-left text-xs text-mid-gray">
@@ -160,44 +272,48 @@ export function SeasonInsightsPage() {
               </tr>
             </thead>
             <tbody>
-              {items.map((it) => (
-                <tr
-                  key={it.athlete_id}
-                  className="cursor-pointer border-b border-light-gray/60 transition-colors last:border-0 hover:bg-light-gray/40"
-                  onClick={() =>
-                    navigate(`/athletes/${it.athlete_id}?tab=ai_analysis`)
-                  }
-                  data-testid={`season-row-${it.athlete_id}`}
-                >
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-charcoal">
-                        {it.athlete_display_name}
-                      </span>
-                      {it.wins > 0 && (
-                        <Badge variant="secondary" className="gap-1 text-xs">
-                          <Trophy size={10} aria-hidden="true" />
-                          {it.wins}
-                        </Badge>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-3 py-3 text-center text-mid-gray">
-                    {it.races_count}
-                  </td>
-                  <td className="px-3 py-3 text-center text-mid-gray">
-                    {it.podiums}
-                  </td>
-                  <td className="px-3 py-3 text-center text-mid-gray">
-                    {it.best_position ?? "—"}
-                  </td>
-                  <td className="px-4 py-3 text-right font-semibold text-charcoal">
-                    {it.total_points}
-                  </td>
-                </tr>
-              ))}
+              {items.map((it) => {
+                const stats = statsForSeries(it, effectiveSeriesId);
+                return (
+                  <tr
+                    key={it.athlete_id}
+                    className="cursor-pointer border-b border-light-gray/60 transition-colors last:border-0 hover:bg-light-gray/40"
+                    onClick={() =>
+                      navigate(`/athletes/${it.athlete_id}?tab=ai_analysis`)
+                    }
+                    data-testid={`season-row-${it.athlete_id}`}
+                  >
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-charcoal">
+                          {it.athlete_display_name}
+                        </span>
+                        {stats.wins > 0 && (
+                          <Badge variant="secondary" className="gap-1 text-xs">
+                            <Trophy size={10} aria-hidden="true" />
+                            {stats.wins}
+                          </Badge>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 text-center text-mid-gray">
+                      {stats.races}
+                    </td>
+                    <td className="px-3 py-3 text-center text-mid-gray">
+                      {stats.podiums}
+                    </td>
+                    <td className="px-3 py-3 text-center text-mid-gray">
+                      {stats.best_position ?? "—"}
+                    </td>
+                    <td className="px-4 py-3 text-right font-semibold text-charcoal">
+                      {stats.points}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>

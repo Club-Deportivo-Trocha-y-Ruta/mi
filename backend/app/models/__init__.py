@@ -44,7 +44,6 @@ from app.models.race_competitor_link_audit import (
     RaceCompetitorLinkAudit,
 )
 from app.models.race_event import RaceEvent, RaceEventStatus, SurfaceCondition
-from app.models.race_event_roster import RaceEventRoster, RaceEventRosterStatus
 from app.models.race_import import RaceImport, RaceImportKind, RaceImportStatus
 from app.models.race_points_scheme import RacePointsScheme
 from app.models.race_result import RaceResult, ResultStatus
@@ -150,8 +149,6 @@ __all__ = [
     "RaceEvent",
     "RaceEventStatus",
     "SurfaceCondition",
-    "RaceEventRoster",
-    "RaceEventRosterStatus",
     "RaceCompetitor",
     "CompetitorSex",
     "RaceCompetitorLinkAudit",

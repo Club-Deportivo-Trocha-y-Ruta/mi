@@ -78,6 +78,9 @@ export interface CourseSummaryProps {
    * del coach lo omite por completo. */
   athleteNamesById?: Record<number, string>;
   compact?: boolean;
+  /** Solo mapa + perfil de la primera variante: la pestaña del coach ya
+   * muestra cifras, vueltas y descripción en sus tarjetas editables. */
+  mapOnly?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -122,10 +125,15 @@ function VariantFigures({
   setups: CourseSetup[];
 }) {
   const laps = lapsForVariant(setups, variant.id);
-  const elevationText =
-    variant.elevation_gain_m != null ? `${variant.elevation_gain_m} m` : "Sin dato";
-
-  const parts = [`${variant.lap_distance_km} km`, `Desnivel: ${elevationText}`];
+  const parts = [`${variant.lap_distance_km} km`];
+  // `VariantBlock` ya muestra "Sin altimetría en la grabación" cuando
+  // `has_elevation` es false — repetir "Desnivel: sin dato" aquí sería
+  // redundante (dos avisos distintos para el mismo hecho).
+  if (variant.has_elevation) {
+    const elevationText =
+      variant.elevation_gain_m != null ? `${variant.elevation_gain_m} m` : "sin dato";
+    parts.push(`Desnivel: ${elevationText}`);
+  }
   if (laps.length > 0) {
     parts.push(`${laps.join("/")} vueltas`);
   }
@@ -144,10 +152,12 @@ function VariantBlock({
   variant,
   setups,
   showMap,
+  showFigures = true,
 }: {
   variant: CourseVariant;
   setups: CourseSetup[];
   showMap: boolean;
+  showFigures?: boolean;
 }) {
   return (
     <div
@@ -155,7 +165,7 @@ function VariantBlock({
       data-testid={`course-summary-variant-${variant.id}`}
     >
       <p className="text-sm font-semibold text-charcoal">{variant.label}</p>
-      <VariantFigures variant={variant} setups={setups} />
+      {showFigures && <VariantFigures variant={variant} setups={setups} />}
       {showMap && (
         <>
           <Suspense fallback={<Skeleton className="h-60 w-full rounded-xl" />}>
@@ -253,7 +263,7 @@ function DescriptionRecap({ description }: { description: CourseDescription }) {
       {terrain && (
         <p data-testid="course-summary-description-terrain">
           <span className="text-[11px] font-medium text-mid-gray">
-            Terreno:{" "}
+            Tipo de superficie:{" "}
           </span>
           <span className="text-sm text-charcoal">{terrain}</span>
         </p>
@@ -298,10 +308,27 @@ export function CourseSummary({
   myCategories,
   athleteNamesById,
   compact,
+  mapOnly = false,
 }: CourseSummaryProps) {
   // Nada que resumir todavía — nunca un CTA de estado vacío, eso es de
   // `VariantsCard`/`CourseDescriptionCard`.
   if (!hasCourseData) return null;
+
+  if (mapOnly) {
+    const first = variants[0];
+    if (!first) return null;
+    return (
+      <div className="space-y-2" data-testid="course-summary">
+        <h2 className="text-sm font-semibold text-charcoal">Mapa y altimetría</h2>
+        <VariantBlock
+          variant={first}
+          setups={setups}
+          showMap
+          showFigures={false}
+        />
+      </div>
+    );
+  }
 
   const myCategoryByCategoryId = new Map(
     myCategories.map((c) => [c.category_id, c]),

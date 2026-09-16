@@ -406,57 +406,22 @@ async def podium_gap(
 # ---------------------------------------------------------------------------
 
 
-async def club_ranking(db: AsyncSession, season: int) -> dict[str, Any]:
-    """Agregados del club TyR por temporada (categoría/tier).
+def _club_ranking_for_events(
+    events_in_scope: list[Any],
+    results: list[Any],
+    categories: list[Any],
+) -> dict[str, Any]:
+    """Agregado por categoría/tier para un conjunto YA delimitado de eventos.
 
-    Sólo cuenta resultados de competitors con ``athlete_id IS NOT NULL``
-    (matches confirmados → corredores que el coach validó como TyR).
-
-    Args:
-        db: Sesión async.
-        season: año de temporada (filtra vía ``RaceSeries.season_year``).
-
-    Returns:
-        ``dict`` con la siguiente estructura (JSON-serializable):
-
-        ```
-        {
-          'by_category': [
-            {
-              'category_code': str,
-              'total_points': int,
-              'podiums': int,        # P1..P3
-              'wins': int,           # P1
-              'active_riders': int,  # competitors únicos con ≥1 resultado en la cat
-            },
-            ...
-          ],
-          'total_points': int,             # sum de by_category.total_points
-          'total_podiums': int,            # sum de by_category.podiums
-          'total_wins': int,               # sum de by_category.wins
-          'active_riders': int,            # competitors únicos en TODA la temporada
-          'distribution_by_tier': {
-            'menores': int, 'juvenil': int, 'adulto': int, 'master': int
-          }
-        }
-        ```
-
-        Si no hay datos en la temporada, devuelve totales en 0 y listas vacías.
-        El agregado NO incluye identificadores individuales (privacidad).
+    Extraído de ``club_ranking`` (hotfix identidad de válida, 2026-09-16) para
+    poder correr el mismo cálculo una vez por copa cuando no se pasa
+    ``series_id`` — antes esta lógica sumaba TODAS las series de la temporada
+    en un solo total, mezclando puntos de copas distintas. Sin identificadores
+    individuales en el output (privacidad).
     """
-    results = await _load_results(db)
-    events = await _load_events(db)
-    categories = await _load_categories(db)
-
-    from app.services.race.queries import load_series
-
-    series_list = await load_series(db)
-    series_ids_in_season = {s.id for s in series_list if s.season_year == season}
-    events_in_season = [e for e in events if e.series_id in series_ids_in_season]
-
     empty_tier_distribution = {t.value: 0 for t in CategoryTier}
 
-    if not events_in_season:
+    if not events_in_scope:
         return {
             "by_category": [],
             "total_points": 0,
@@ -466,11 +431,11 @@ async def club_ranking(db: AsyncSession, season: int) -> dict[str, Any]:
             "distribution_by_tier": empty_tier_distribution,
         }
 
-    df_e = _events_df(events_in_season)
+    df_e = _events_df(events_in_scope)
     df_c = _categories_df(categories)
     df_r = _results_df(results)
 
-    # Filtrar: solo TyR (athlete_id NOT NULL) y solo eventos de la temporada.
+    # Filtrar: solo TyR (athlete_id NOT NULL) y solo eventos del scope.
     df_tyr = df_r[
         df_r["athlete_id"].notna()
         & df_r["event_id"].isin(df_e["event_id"])
@@ -537,6 +502,126 @@ async def club_ranking(db: AsyncSession, season: int) -> dict[str, Any]:
         "active_riders": active_riders,
         "distribution_by_tier": tier_distribution,
     }
+
+
+async def club_ranking(
+    db: AsyncSession,
+    season: int,
+    *,
+    series_id: int | None = None,
+) -> dict[str, Any]:
+    """Agregados del club TyR por temporada (categoría/tier), por copa.
+
+    Sólo cuenta resultados de competitors con ``athlete_id IS NOT NULL``
+    (matches confirmados → corredores que el coach validó como TyR).
+
+    Hotfix "identidad de válida" (2026-09-16, ver
+    ``~/.claude/plans/multicopa-identidad-valida.md`` bug #8): antes esta
+    función sumaba TODAS las series de la temporada (cualquier ``kind``) en
+    un único total — con dos copas activas eso mezcla los puntos de una
+    con los de la otra. Ahora el ranking por puntos es siempre acotado a UNA
+    copa: explícitamente vía ``series_id``, o agrupado por copa cuando no se
+    pasa ninguna.
+
+    Args:
+        db: Sesión async.
+        season: año de temporada (filtra vía ``RaceSeries.season_year``).
+            Ignorado cuando se pasa ``series_id`` (igual que en
+            ``queries.py._scoped_events`` — la serie ya fija la temporada).
+        series_id: PK opcional de ``RaceSeries``. Si se provee, el ranking se
+            limita a los eventos de ESA copa. Si es ``None``, el ranking se
+            agrupa por cada copa (``RaceSeriesKind.cup``) corrida en la
+            temporada — los campeonatos NUNCA participan del ranking por
+            puntos (no tienen ranking acumulado, ver ``RaceSeriesKind``).
+
+    Returns:
+        Si ``series_id`` se provee (o el caller sólo tiene una copa
+        concreta en mente), ``dict`` "plano" con la estructura de siempre:
+
+        ```
+        {
+          'series_id': int,
+          'series_name': str | None,
+          'series_short_name': str | None,
+          'by_category': [
+            {
+              'category_code': str,
+              'total_points': int,
+              'podiums': int,        # P1..P3
+              'wins': int,           # P1
+              'active_riders': int,  # competitors únicos con ≥1 resultado en la cat
+            },
+            ...
+          ],
+          'total_points': int,             # sum de by_category.total_points
+          'total_podiums': int,            # sum de by_category.podiums
+          'total_wins': int,               # sum de by_category.wins
+          'active_riders': int,            # competitors únicos en LA COPA
+          'distribution_by_tier': {
+            'menores': int, 'juvenil': int, 'adulto': int, 'master': int
+          }
+        }
+        ```
+
+        Si ``series_id`` es ``None``: ``{"by_series": [<dict de arriba, una
+        por copa>, ...]}`` ordenado por la fecha de la primera válida corrida
+        de cada copa. Lista vacía si el club no corrió ninguna copa en la
+        temporada.
+
+        Si no hay datos, los totales quedan en 0 y las listas vacías. El
+        agregado NO incluye identificadores individuales (privacidad).
+    """
+    results = await _load_results(db)
+    events = await _load_events(db)
+    categories = await _load_categories(db)
+
+    from app.services.race.queries import load_series
+
+    series_list = await load_series(db)
+
+    if series_id is not None:
+        target = next((s for s in series_list if s.id == series_id), None)
+        scoped_events = [e for e in events if e.series_id == series_id]
+        ranking = _club_ranking_for_events(scoped_events, results, categories)
+        ranking["series_id"] = series_id
+        ranking["series_name"] = target.name if target is not None else None
+        ranking["series_short_name"] = (
+            getattr(target, "short_name", None) if target is not None else None
+        )
+        return ranking
+
+    # ``kind is None`` se trata como copa: la columna es NOT NULL con
+    # default ``cup`` en MySQL, pero un ``RaceSeries`` construido en memoria
+    # sin flush (fixtures de test) puede llegar aquí sin ``kind`` asignado —
+    # tratarlo como copa preserva el comportamiento pre-existente en vez de
+    # excluir silenciosamente series legítimas.
+    cups_in_season = [
+        s
+        for s in series_list
+        if s.season_year == season and s.kind in (None, RaceSeriesKind.cup)
+    ]
+    if not cups_in_season:
+        return {"by_series": []}
+
+    events_by_series: dict[int, list[Any]] = {s.id: [] for s in cups_in_season}
+    for e in events:
+        if e.series_id in events_by_series:
+            events_by_series[e.series_id].append(e)
+
+    entries: list[tuple[str, dict[str, Any]]] = []
+    for s in cups_in_season:
+        scoped_events = events_by_series[s.id]
+        ranking = _club_ranking_for_events(scoped_events, results, categories)
+        ranking["series_id"] = s.id
+        ranking["series_name"] = s.name
+        ranking["series_short_name"] = getattr(s, "short_name", None)
+        first_date = min((e.event_date for e in scoped_events), default=None)
+        # str() de un date/str da 'YYYY-MM-DD' en ambos casos (portable entre
+        # el driver de sqlite/tests y MySQL en prod) → ordena cronológico.
+        entries.append((str(first_date) if first_date is not None else "", ranking))
+
+    entries.sort(key=lambda pair: pair[0])
+    return {"by_series": [ranking for _, ranking in entries]}
 
 
 # ---------------------------------------------------------------------------

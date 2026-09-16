@@ -2,8 +2,10 @@
  * MSW handlers para el módulo race-series (spec 014 — Cup vs Championship).
  *
  * Cubre los endpoints:
- *   - GET  /api/race-analysis/race-series   → listRaceSeries
- *   - POST /api/race-analysis/race-series   → createRaceSeries
+ *   - GET   /api/race-analysis/race-series       → listRaceSeries
+ *   - POST  /api/race-analysis/race-series       → createRaceSeries
+ *   - PATCH /api/race-analysis/race-series/:id   → updateRaceSeries
+ *     (hotfix multicopa — identidad de válida: edición de `short_name`)
  *
  * Uso en tests:
  * ```ts
@@ -32,6 +34,7 @@ export function makeRaceSeriesRead(
     kind: "cup",
     level: "departmental",
     event_count: 3,
+    short_name: null,
     ...overrides,
   };
 }
@@ -47,6 +50,7 @@ export function makeChampionshipSeriesRead(
     kind: "championship",
     level: "departmental",
     event_count: 1,
+    short_name: null,
     ...overrides,
   };
 }
@@ -107,7 +111,25 @@ const createHandler = http.post(`${BASE}`, async ({ request }) => {
   );
 });
 
-export const raceSeriesHandlers = [listHandler, createHandler];
+/**
+ * PATCH /race-series/:id → serie actualizada (200).
+ * Hotfix multicopa — identidad de válida: usado para editar `short_name`.
+ */
+const updateHandler = http.patch(`${BASE}/:id`, async ({ params, request }) => {
+  const id = Number(params.id);
+  const body = (await request.json()) as Partial<RaceSeriesRead>;
+  return HttpResponse.json(
+    makeRaceSeriesRead({
+      id,
+      ...(body?.name !== undefined ? { name: body.name } : {}),
+      ...(body?.short_name !== undefined
+        ? { short_name: body.short_name }
+        : {}),
+    }),
+  );
+});
+
+export const raceSeriesHandlers = [listHandler, createHandler, updateHandler];
 
 // ---------------------------------------------------------------------------
 // Handlers de error — importar por suite
@@ -148,4 +170,24 @@ export const raceSeriesErrorHandler = http.get(`${BASE}`, () =>
     { detail: "Error interno." },
     { status: 500 },
   ),
+);
+
+/** PATCH 409 — el nuevo `name`/`short_name` colisiona con otra serie. */
+export const raceSeriesUpdateConflictHandler = http.patch(
+  `${BASE}/:id`,
+  () =>
+    HttpResponse.json(
+      { detail: "Ya existe una serie con ese nombre para la temporada." },
+      { status: 409 },
+    ),
+);
+
+/** PATCH 404 — la serie no existe (eliminada en paralelo). */
+export const raceSeriesUpdateNotFoundHandler = http.patch(
+  `${BASE}/:id`,
+  () =>
+    HttpResponse.json(
+      { detail: "Serie de competencias no encontrada." },
+      { status: 404 },
+    ),
 );

@@ -44,7 +44,6 @@ if TYPE_CHECKING:
     from app.models.calendar_event import CalendarEvent
     from app.models.race_course_category_setup import RaceCourseCategorySetup
     from app.models.race_course_variant import RaceCourseVariant
-    from app.models.race_event_roster import RaceEventRoster
     from app.models.race_import import RaceImport
     from app.models.race_result import RaceResult
     from app.models.race_series import RaceSeries
@@ -83,6 +82,33 @@ class TerrainType(str, enum.Enum):
     mixto = "mixto"
     pista = "pista"
     pavimento = "pavimento"
+
+
+class RaceEventPriority(str, enum.Enum):
+    """Prioridad/tier planificada de la válida (hotfix "identidad de válida",
+    2026-09-16, ver `~/.claude/plans/multicopa-identidad-valida.md`).
+
+    Reemplaza el dict hardcodeado `_CALENDAR_TIERS` de
+    `services/notification/race_event_tier.py` — ahora es un dato por
+    evento, no un calendario global de una sola copa. `NULL` (columna
+    nullable) significa "sin prioridad asignada" → tier `UNKNOWN` → no
+    dispara email a padres (fallback conservador). El Campeonato
+    Departamental/Nacional sigue derivando `CD` de `is_championship` /
+    `sequence_number == 99`, nunca de esta columna.
+
+    - ``A``  → tapering completo 5-7 días. Email a padres.
+    - ``B``  → mini-tapering 3-4 días. Solo in-app.
+    - ``C``  → diagnóstica, sin tapering. Solo in-app.
+    - ``CD`` → equivalente al tier de campeonato para válidas que el club
+      quiera marcar igual de importantes sin ser el Campeonato Departamental
+      propiamente (ej. semifinal/definitoria de copa). Distinto del tier
+      derivado automáticamente de `is_championship`.
+    """
+
+    A = "A"
+    B = "B"
+    C = "C"
+    CD = "CD"
 
 
 class RaceEvent(Base):
@@ -151,6 +177,17 @@ class RaceEvent(Base):
     key_sectors: Mapped[list | None] = mapped_column(JSON, nullable=True)
     course_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     # --- Fin perfil de circuito ---
+    # --- Prioridad de válida (hotfix identidad de válida, 2026-09-16) ---
+    # NULL = sin prioridad asignada → tier UNKNOWN (ver RaceEventPriority).
+    priority: Mapped[RaceEventPriority | None] = mapped_column(
+        Enum(
+            RaceEventPriority,
+            name="raceeventpriority",
+            values_callable=lambda e: [x.value for x in e],
+        ),
+        nullable=True,
+    )
+    # --- Fin prioridad de válida ---
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
@@ -187,12 +224,6 @@ class RaceEvent(Base):
         primaryjoin="RaceEvent.id == RaceResult.event_id",
         secondaryjoin="RaceResult.imported_from_id == RaceImport.id",
         viewonly=True,
-    )
-    roster_entries: Mapped[list["RaceEventRoster"]] = relationship(
-        "RaceEventRoster",
-        back_populates="race_event",
-        foreign_keys="[RaceEventRoster.race_event_id]",
-        cascade="all, delete-orphan",
     )
     # Perfil de circuito (feature 043)
     course_variants: Mapped[list["RaceCourseVariant"]] = relationship(

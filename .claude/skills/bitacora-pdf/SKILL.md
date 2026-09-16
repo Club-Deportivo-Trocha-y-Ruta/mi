@@ -25,7 +25,7 @@ Output: `output/bitacora/<YYYY-MM>/athlete-<id>/{snapshot.json, brief.md}` plus 
 
 `brief.md` is the **only** input you read to write the narrative. It is anonymized (`su hijo` / `su hija`), redacts club names inside coach feedback, and is the grounding source: every number you write must appear verbatim in it. `snapshot.json` contains the real name — do not open it, do not quote it.
 
-Beyond the product's own metrics, the brief includes what the in-app newsletter ignores: the coach's per-session feedback, Strava volume (when connected), real race calendar and roster status, race coach notes and course conditions, and the season progression for context.
+Beyond the product's own metrics, the brief includes what the in-app newsletter ignores: the coach's per-session feedback, Strava volume (when connected), real race calendar, race coach notes and course conditions, and the season progression for context.
 
 ## Step 2 — Narrative (you)
 

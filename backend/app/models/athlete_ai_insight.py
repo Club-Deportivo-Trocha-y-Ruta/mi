@@ -51,6 +51,22 @@ migración ``d1e2f3a4b5c6`` agrega:
   ``routers/athlete_race_analysis.py::answer_insight``.
 - ``coach_answer_at`` (DATETIME NULL): timestamp de la respuesta.
 - ``coach_rating`` (SMALLINT NULL): ``1`` = útil, ``-1`` = no útil.
+
+Hotfix "identidad de válida" (2026-09-16, ver
+``~/.claude/plans/multicopa-identidad-valida.md``), migración a definir
+(``down_revision="2c0097aa48b8"``) agrega:
+
+- ``insight_scope_key`` (VARCHAR(40) NOT NULL): identifica sin ambigüedad
+  la "terna" de agrupación de un insight — antes el UNIQUE parcial
+  ``uq_insights_active_terna`` usaba ``(athlete_id, season, valida_num,
+  is_active)``, lo que colisionaba entre dos copas corriendo el mismo
+  ``valida_num`` en la misma temporada (bug real: Copa Valle V4 vs Copa
+  Let's Go V4 del mismo atleta se pisaban mutuamente al aprobar un
+  insight). Calculado por :func:`compute_insight_scope_key` y fijado
+  automáticamente por un listener ``before_insert``/``before_update`` —
+  ningún caller necesita setearlo a mano. Reemplaza a
+  ``uq_insights_active_terna`` con ``uq_insights_active_scope``
+  ``(athlete_id, insight_scope_key, is_active)``.
 """
 from __future__ import annotations
 
@@ -72,6 +88,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    event as sa_event,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -95,6 +112,40 @@ class InsightConfidence(str, enum.Enum):
     low = "low"
     medium = "medium"
     high = "high"
+
+
+def compute_insight_scope_key(
+    *, season: int, valida_num: int | None, event_id: int | None
+) -> str:
+    """Calcula la "terna" de agrupación real de un insight.
+
+    Antes del hotfix "identidad de válida" (2026-09-16), el UNIQUE parcial
+    de un-solo-activo usaba literalmente ``(athlete_id, season, valida_num,
+    is_active)``. Eso asume que ``valida_num`` identifica una carrera sin
+    ambigüedad — falso apenas hay más de una copa en la misma temporada: la
+    Válida 4 de Copa Valle y la Válida 4 de Copa Let's Go colisionaban.
+
+    Reglas (en orden):
+
+    1. ``valida_num == 0`` → agregado de temporada (``season_summary``,
+       una sola fila por atleta/temporada, sin importar copa) →
+       ``f"season:{season}"``.
+    2. ``event_id`` presente → la fila ya está anclada a una válida
+       concreta (columna FK, no ambigua) → ``f"event:{event_id}"``.
+    3. Si no — insight legado sin ``event_id`` (v1/v2 pre-hotfix) → cae al
+       comportamiento histórico por ``(season, valida_num)``, sentinel
+       ``"none"`` cuando ``valida_num`` es ``None`` (analíticas
+       multi-temporada futuras) → ``f"valida:{season}:{valida_num}"``.
+
+    Usado tanto por el listener ``before_insert``/``before_update`` de
+    :class:`AthleteAiInsight` (fija ``insight_scope_key`` automáticamente)
+    como por la migración (backfill de filas existentes con el mismo CASE).
+    """
+    if valida_num == 0:
+        return f"season:{season}"
+    if event_id is not None:
+        return f"event:{event_id}"
+    return f"valida:{season}:{valida_num if valida_num is not None else 'none'}"
 
 
 class AthleteAiInsight(Base):
@@ -121,12 +172,16 @@ class AthleteAiInsight(Base):
             name="ck_insights_valida_num_nonneg",
         ),
         # UNIQUE parcial emulado con sentinel NULL. Ver docstring migración.
+        # Hotfix identidad de válida (2026-09-16): reemplaza la antigua
+        # uq_insights_active_terna (athlete_id, season, valida_num,
+        # is_active), que colisionaba entre copas distintas con el mismo
+        # valida_num. insight_scope_key ya encapsula esa terna sin
+        # ambigüedad — ver compute_insight_scope_key.
         UniqueConstraint(
             "athlete_id",
-            "season",
-            "valida_num",
+            "insight_scope_key",
             "is_active",
-            name="uq_insights_active_terna",
+            name="uq_insights_active_scope",
         ),
         Index(
             "ix_insights_athlete_season",
@@ -169,6 +224,10 @@ class AthleteAiInsight(Base):
     # --- Contexto temporal -------------------------------------------------
     season: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     valida_num: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    # Hotfix identidad de válida (2026-09-16): terna de agrupación real,
+    # fijada automáticamente por el listener before_insert/before_update
+    # de más abajo — ver compute_insight_scope_key. Nunca se setea a mano.
+    insight_scope_key: Mapped[str] = mapped_column(String(40), nullable=False)
 
     # --- Contenido publicable ---------------------------------------------
     use_case: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -265,4 +324,29 @@ class AthleteAiInsight(Base):
         "AthleteAiInsight",
         foreign_keys="[AthleteAiInsight.superseded_by_insight_id]",
         remote_side="AthleteAiInsight.id",
+    )
+
+
+@sa_event.listens_for(AthleteAiInsight, "before_insert")
+@sa_event.listens_for(AthleteAiInsight, "before_update")
+def _set_insight_scope_key(mapper, connection, target: AthleteAiInsight) -> None:
+    """Fija ``insight_scope_key`` en cada INSERT/UPDATE, ORM-side.
+
+    Ningún caller (``persist_insight.py``, tests, seeds) necesita conocer
+    :func:`compute_insight_scope_key` — el listener lo recalcula siempre a
+    partir de ``season``/``valida_num``/``event_id`` para que quede
+    consistente incluso si un caller cambia ``event_id`` en un UPDATE
+    después de crear la fila.
+
+    Nota: esto solo dispara en el flush del ORM (``db.add(...)`` +
+    ``flush``/``commit``). Un INSERT vía ``Core`` (``sa.insert(...)``) o SQL
+    crudo NO pasaría por este listener — al momento de escribir este
+    hotfix no existe ningún camino así hacia ``athlete_ai_insights``
+    (verificado por grep); si se agrega uno en el futuro debe setear
+    ``insight_scope_key`` explícitamente.
+    """
+    target.insight_scope_key = compute_insight_scope_key(
+        season=target.season,
+        valida_num=target.valida_num,
+        event_id=target.event_id,
     )

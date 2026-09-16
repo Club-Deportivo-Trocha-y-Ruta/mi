@@ -2,7 +2,7 @@
  * CategorySetupTable — tabla de vueltas por categoría de una válida
  * (feature 043).
  *
- * Una fila por categoría en la unión `resultCategoryIds ∪ setups ∪
+ * Una fila por categoría en la unión `resultCategories ∪ setups ∪
  * suggested_setups` (`ui-course.md` §2). Cuando `setups` está vacío y hay
  * `suggested_setups`, se prellenan las filas desde la válida anterior de la
  * serie (R-14) y el botón de guardar cambia a "Confirmar vueltas".
@@ -32,13 +32,19 @@ import type {
 // Props
 // ---------------------------------------------------------------------------
 
+/** Categoría presente en los resultados de esta válida, con su label real. */
+export interface ResultCategoryRef {
+  category_id: number;
+  label: string;
+}
+
 export interface CategorySetupTableProps {
   raceEventId: number;
   setups: CourseSetup[];
   suggestedSetups: SuggestedSetup[];
   variants: CourseVariant[];
-  /** Ids de categoría presentes en los resultados de esta válida. */
-  resultCategoryIds?: number[];
+  /** Categorías presentes en los resultados de esta válida (id + label). */
+  resultCategories?: ResultCategoryRef[];
 }
 
 // ---------------------------------------------------------------------------
@@ -62,29 +68,28 @@ interface SetupsFormDraft {
   rows: SetupRowDraft[];
 }
 
-/** Unión best-effort de categorías a mostrar. Para ids que solo vienen de
- * `resultCategoryIds` o `suggestedSetups` no hay label/code disponible en
- * estos props — se renderiza un rótulo genérico por id en ese caso. */
+/** Unión best-effort de categorías a mostrar. `setups`, `resultCategories` y
+ * `suggestedSetups` traen el label real de la categoría. */
 function buildCategoryRows(
   setups: CourseSetup[],
   suggestedSetups: SuggestedSetup[],
-  resultCategoryIds: number[],
+  resultCategories: ResultCategoryRef[],
 ): CategoryRowMeta[] {
   const byId = new Map<number, CategoryRowMeta>();
   for (const s of setups) {
     byId.set(s.category_id, { category_id: s.category_id, label: s.category_label });
   }
+  for (const c of resultCategories) {
+    if (!byId.has(c.category_id)) {
+      byId.set(c.category_id, { category_id: c.category_id, label: c.label });
+    }
+  }
   for (const s of suggestedSetups) {
     if (!byId.has(s.category_id)) {
       byId.set(s.category_id, {
         category_id: s.category_id,
-        label: `Categoría #${s.category_id}`,
+        label: s.category_label,
       });
-    }
-  }
-  for (const id of resultCategoryIds) {
-    if (!byId.has(id)) {
-      byId.set(id, { category_id: id, label: `Categoría #${id}` });
     }
   }
   return Array.from(byId.values()).sort((a, b) => a.category_id - b.category_id);
@@ -136,12 +141,12 @@ export function CategorySetupTable({
   setups,
   suggestedSetups,
   variants,
-  resultCategoryIds = [],
+  resultCategories = [],
 }: CategorySetupTableProps) {
   const categoryRows = buildCategoryRows(
     setups,
     suggestedSetups,
-    resultCategoryIds,
+    resultCategories,
   );
   const labelById = new Map(categoryRows.map((r) => [r.category_id, r.label]));
   const useSuggestions = setups.length === 0 && suggestedSetups.length > 0;
@@ -167,9 +172,11 @@ export function CategorySetupTable({
 
   // Re-sincroniza las filas cuando cambian los datos del servidor (por
   // ejemplo tras guardar, al recibir la respuesta inicial, o cuando
-  // `resultCategoryIds` llega en una query separada y aporta una categoría
+  // `resultCategories` llega en una query separada y aporta una categoría
   // que no estaba en `setups`/`suggestedSetups`).
-  const resultCategoryIdsKey = resultCategoryIds.join(",");
+  const resultCategoriesKey = resultCategories
+    .map((c) => `${c.category_id}:${c.label}`)
+    .join(",");
   useEffect(() => {
     reset({
       rows: buildInitialRows(
@@ -183,7 +190,7 @@ export function CategorySetupTable({
     setSubmitError(null);
     setRowErrors({});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [setups, suggestedSetups, variants, resultCategoryIdsKey]);
+  }, [setups, suggestedSetups, variants, resultCategoriesKey]);
 
   const onSubmit = handleSubmit((values) => {
     setSubmitError(null);

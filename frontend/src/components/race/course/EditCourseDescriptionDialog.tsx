@@ -177,7 +177,7 @@ export function EditCourseDescriptionDialog({
             {/* Terreno — ToggleGroup chips */}
             <div className="space-y-2">
               <span className="block text-xs font-medium text-mid-gray">
-                Terreno
+                Tipo de superficie
               </span>
               <Controller
                 name="terrain_type"
@@ -192,7 +192,7 @@ export function EditCourseDescriptionDialog({
                       )
                     }
                     className="flex flex-wrap gap-2"
-                    aria-label="Terreno"
+                    aria-label="Tipo de superficie"
                   >
                     {TERRAIN_TYPES.map((t) => (
                       <ToggleGroupItem
@@ -341,7 +341,7 @@ export function EditCourseDescriptionDialog({
                 id="ecd-notes"
                 rows={4}
                 maxLength={1000}
-                placeholder="Descripción del trazado — evite incluir nombres de atletas o información médica"
+                placeholder="Características fijas del trazado (sombra, saltos, zonas de adelantamiento) — evite incluir nombres de atletas o información médica"
                 {...register("course_notes")}
                 className={cn(
                   "w-full resize-y rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",

@@ -5,11 +5,11 @@
  *   - Header: "← Competencias", título (nombre), badges, subtitle (sede · fecha)
  *   - Action bar: "Editar metadata", "Eliminar" (admin)
  *   - Acción primaria contextual (importar / ver insights)
- *   - Tabs URL-driven: info | results | conditions | athletes | insights
+ *   - Tabs URL-driven: info | results | conditions | insights
  *
  * Acceso: coach + admin. Configurado en App.tsx.
  *
- * URL: /competitions/:id?tab=info|results|conditions|athletes|insights
+ * URL: /competitions/:id?tab=info|results|conditions|insights
  */
 import { lazy, Suspense, useEffect, useState } from "react";
 import {
@@ -58,11 +58,6 @@ import type { RaceEventStatus } from "@/types/raceEvents.types";
 // Lazy-load de tabs pesados
 // ---------------------------------------------------------------------------
 
-const AthletesTab = lazy(() =>
-  import("@/components/competitions/tabs/AthletesTab").then((m) => ({
-    default: m.AthletesTab,
-  })),
-);
 const InsightsTab = lazy(() =>
   import("@/components/competitions/tabs/InsightsTab").then((m) => ({
     default: m.InsightsTab,
@@ -94,7 +89,6 @@ type TabValue =
   | "standings"
   | "conditions"
   | "circuito"
-  | "athletes"
   | "insights";
 
 const TAB_VALUES: TabValue[] = [
@@ -103,7 +97,6 @@ const TAB_VALUES: TabValue[] = [
   "standings",
   "conditions",
   "circuito",
-  "athletes",
   "insights",
 ];
 
@@ -113,7 +106,6 @@ const TAB_LABELS: Record<TabValue, string> = {
   standings: "Clasificación",
   conditions: "Condiciones",
   circuito: "Circuito",
-  athletes: "Atletas",
   insights: "Insights IA",
 };
 
@@ -240,18 +232,19 @@ export function CompetitionDetailPage() {
   const { data: event, isLoading, isError, refetch, isFetching, error } =
     useRaceEvent(Number.isNaN(raceEventId) ? null : raceEventId);
 
-  // Nivel de la serie (feature 023 — Campeonato Nacional). Solo se necesita
-  // para campeonatos (InfoTab usa el fallback "Departamental" en el resto de
-  // casos) — evita disparar el fetch en cada válida regular de copa.
-  // No existe GET /race-series/{id}; se resuelve filtrando la lista, igual
-  // que `useImportPrefill` (feature 015).
-  const seriesQuery = useRaceSeriesList(
-    {},
-    { enabled: event?.is_championship ?? false },
-  );
-  const seriesLevel = seriesQuery.data?.items.find(
+  // Lista de series — se habilita siempre que el evento ya cargó (InfoTab
+  // necesita el nombre de la serie para su fila "Serie", más allá del nivel
+  // que solo aplica a campeonatos). No existe GET /race-series/{id}; se
+  // resuelve filtrando la lista, igual que `useImportPrefill` (feature 015).
+  const seriesQuery = useRaceSeriesList({}, { enabled: event != null });
+  const matchedSeries = seriesQuery.data?.items.find(
     (s) => s.id === event?.series_id,
-  )?.level;
+  );
+  const seriesLevel = matchedSeries?.level;
+  const seriesName = matchedSeries?.name;
+  // Hotfix multicopa — identidad de válida: nombre corto de la copa, para
+  // el chip de InfoTab y el prefill del diálogo de edición.
+  const seriesShortName = matchedSeries?.short_name;
 
   // 404 → redirect en efecto (evita setState durante render en React 19)
   const is404 =
@@ -521,7 +514,7 @@ export function CompetitionDetailPage() {
                     setDeleteError(null);
                     setDeleteOpen(true);
                   }}
-                  className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
+                  className="inline-flex min-h-12 items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
                   data-testid="btn-delete"
                 >
                   Eliminar
@@ -583,7 +576,12 @@ export function CompetitionDetailPage() {
 
         {/* ── Tab: Información ─────────────────────────────────────── */}
         <TabsPrimitive.Content value="info" className="mt-4">
-          <InfoTab event={event} seriesLevel={seriesLevel} />
+          <InfoTab
+            event={event}
+            seriesLevel={seriesLevel}
+            seriesName={seriesName}
+            seriesShortName={seriesShortName}
+          />
         </TabsPrimitive.Content>
 
         {/* ── Tab: Resultados ──────────────────────────────────────── */}
@@ -616,13 +614,6 @@ export function CompetitionDetailPage() {
           </Suspense>
         </TabsPrimitive.Content>
 
-        {/* ── Tab: Atletas ─────────────────────────────────────────── */}
-        <TabsPrimitive.Content value="athletes" className="mt-4">
-          <Suspense fallback={<TabFallback />}>
-            <AthletesTab raceEventId={raceEventId} />
-          </Suspense>
-        </TabsPrimitive.Content>
-
         {/* ── Tab: Insights ────────────────────────────────────────── */}
         <TabsPrimitive.Content value="insights" className="mt-4">
           <Suspense fallback={<TabFallback />}>
@@ -640,7 +631,7 @@ export function CompetitionDetailPage() {
       {/* ── Dialog de confirmación de eliminación ─────────────────── */}
       <ConfirmDialog
         open={deleteOpen}
-        title="Eliminar competencia"
+        title="Eliminar válida"
         description={
           <>
             <span className="font-medium text-charcoal">{event.name}</span>

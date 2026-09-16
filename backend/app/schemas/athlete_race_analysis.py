@@ -169,6 +169,40 @@ class AthleteInsightOut(BaseModel):
             "el enum interno RaceSeriesLevel."
         ),
     )
+    series_id: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description=(
+            "PK de race_series, resuelto vía event_id. None si no hay "
+            "event_id (hotfix 'identidad de válida', 2026-09-16). Usado por "
+            "el cliente para agrupar/enlazar la copa, nunca para inferirla "
+            "de un calendario hardcodeado."
+        ),
+    )
+    series_name: Optional[str] = Field(
+        default=None,
+        max_length=150,
+        description="race_series.name, resuelto vía event_id. None si no hay event_id.",
+    )
+    series_short_name: Optional[str] = Field(
+        default=None,
+        max_length=40,
+        description=(
+            "race_series.short_name, resuelto vía event_id. None si no hay "
+            "event_id o si la serie no tiene short_name (el cliente cae a "
+            "series_name)."
+        ),
+    )
+    priority: Optional[Literal["A", "B", "C", "CD"]] = Field(
+        default=None,
+        description=(
+            "Tier planificado de la válida del evento anclado, resuelto vía "
+            "``race_event_tier.get_race_tier`` — NUNCA la columna cruda. "
+            "Para campeonatos siempre es ``'CD'`` aunque la columna esté en "
+            "``NULL``. ``None`` si no hay event_id o si el tier es "
+            "``UNKNOWN`` (sin prioridad asignada)."
+        ),
+    )
     use_case: str = Field(..., max_length=32)
     summary_text: str
     confidence: InsightConfidence
@@ -694,6 +728,18 @@ class RaceParticipationOption(BaseModel):
     series_level: Literal["departmental", "national"] = Field(
         ..., description="Ámbito territorial de la serie (``race_series.level``)."
     )
+    priority: Optional[Literal["A", "B", "C", "CD"]] = Field(
+        default=None,
+        description=(
+            "Tier planificado de la válida, resuelto vía "
+            "``race_event_tier.get_race_tier`` — NUNCA la columna "
+            "``RaceEvent.priority`` cruda. Para campeonatos siempre es "
+            "``'CD'`` aunque la columna esté en ``NULL`` (hotfix 'identidad "
+            "de válida', 2026-09-16). ``None`` = tier ``UNKNOWN`` (sin "
+            "prioridad asignada, sin email a padres). Serializa como "
+            "string; nunca expone el enum interno RaceTier/RaceEventPriority."
+        ),
+    )
 
 
 class RaceParticipationResponse(BaseModel):
@@ -801,6 +847,17 @@ class ClubInsightsByRaceResponse(BaseModel):
             "Formato: ``'Válida {N} — {location} {date}'`` o ``'{name} {date}'``."
         ),
     )
+    series_id: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description=(
+            "PK de race_series de la válida (hotfix 'identidad de válida', "
+            "2026-09-16). Toda la respuesta está scoped a un único "
+            "race_event_id, así que el valor es el mismo para todos los items."
+        ),
+    )
+    series_name: Optional[str] = Field(default=None, max_length=150)
+    series_short_name: Optional[str] = Field(default=None, max_length=40)
     total_athletes: int = Field(..., ge=0)
     items: list[ClubInsightByRaceItem]
 

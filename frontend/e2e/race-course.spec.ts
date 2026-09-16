@@ -571,74 +571,6 @@ async function loginAsParent(page: Page): Promise<void> {
     .toBe(true);
 }
 
-/** Login por API (fuera de la UI) — usado para obtener el token de un
- * segundo rol (padre) sin depender de que `page` ya esté en el origen del
- * front. */
-async function apiLogin(
-  page: Page,
-  email: string,
-  password: string,
-): Promise<string> {
-  const res = await page.request.post(`${BACKEND}/api/auth/login`, {
-    data: { email, password },
-  });
-  if (!res.ok()) {
-    throw new Error(`apiLogin: HTTP ${res.status()} para ${email}`);
-  }
-  const body = (await res.json()) as { access_token: string };
-  return body.access_token;
-}
-
-/**
- * Devuelve el `athlete_id` del primer (único, en el seed) atleta vinculado
- * al padre — mismo endpoint que consume `useMyAthletes` en el front
- * (`GET /api/parent-athletes/my-athletes`).
- */
-async function getMyAthleteId(
-  page: Page,
-  parentToken: string,
-): Promise<number> {
-  const res = await page.request.get(
-    `${BACKEND}/api/parent-athletes/my-athletes`,
-    { headers: { Authorization: `Bearer ${parentToken}` } },
-  );
-  if (!res.ok()) {
-    throw new Error(`getMyAthleteId: HTTP ${res.status()}`);
-  }
-  const athletes = (await res.json()) as { athlete_id: number }[];
-  if (athletes.length === 0) {
-    throw new Error(
-      "getMyAthleteId: el padre de seed no tiene ningún atleta vinculado — " +
-        "revisa el vínculo padre↔Santiago en backend/scripts/seed.py.",
-    );
-  }
-  return athletes[0].athlete_id;
-}
-
-/** Convoca (nómina) un atleta del club a una válida — coach/admin only,
- * `POST /{race_event_id}/roster`. Basta la convocatoria (sin resultado)
- * para que el padre tenga visibilidad sobre `GET /course` según T055 (roster
- * ∪ resultados); ver la nota de E2E-043-004 más abajo. */
-async function addAthleteToRoster(
-  page: Page,
-  coachToken: string,
-  raceEventId: number,
-  athleteId: number,
-): Promise<void> {
-  const res = await page.request.post(
-    `${BACKEND}/api/race-analysis/race-events/${raceEventId}/roster`,
-    {
-      headers: { Authorization: `Bearer ${coachToken}` },
-      data: { athlete_id: athleteId },
-    },
-  );
-  if (!res.ok()) {
-    throw new Error(
-      `addAthleteToRoster: HTTP ${res.status()} — ${await res.text()}`,
-    );
-  }
-}
-
 /**
  * Sube una variante de circuito directamente por API (multipart), sin pasar
  * por `VariantUploadDialog` — la UI de subida ya está cubierta por
@@ -882,22 +814,11 @@ test.describe("feature 043 — perfil de circuito (parte 2)", () => {
       "Tramo con raíces cerca de la meta; avisar en la charla técnica previa.",
     );
 
-    // Recap de solo lectura (`CourseSummary`, T058) — misma persistencia,
-    // verificada también en la superficie que ven las familias.
+    // La pestaña del coach monta `CourseSummary` en modo `mapOnly`: la
+    // descripción solo vive en la tarjeta editable, sin recap duplicado.
     await expect(
-      page.getByTestId("course-summary-description-terrain"),
-    ).toContainText("Trocha");
-    await expect(
-      page.getByTestId("course-summary-description-difficulty"),
-    ).toContainText("4 — Técnico");
-    await expect(
-      page.getByTestId("course-summary-description-sectors"),
-    ).toContainText("Rock garden");
-    await expect(
-      page.getByTestId("course-summary-description-notes"),
-    ).toContainText(
-      "Tramo con raíces cerca de la meta; avisar en la charla técnica previa.",
-    );
+      page.getByTestId("course-summary-description"),
+    ).toHaveCount(0);
   });
 
   test("E2E-043-003: la tabla de resultados muestra Distancia/Vel. prom. cuando la válida tiene circuito configurado", async ({
@@ -941,57 +862,12 @@ test.describe("feature 043 — perfil de circuito (parte 2)", () => {
     ).toBeVisible({ timeout: NAV_TIMEOUT });
   });
 
-  test("E2E-043-004: un padre ve la tarjeta de reconocimiento de pista en la válida de su hijo/a", async ({
-    page,
-    browser,
-  }) => {
-    // Setup (coach): válida propia + una variante de circuito + el hijo del
-    // padre de seed convocado en la nómina de esa válida. Basta la
-    // convocatoria (sin resultado) para que el backend resuelva visibilidad
-    // (T055: `my_categories` sale de roster ∪ resultados) — `my_categories`
-    // queda vacío en ese caso (sin fila resaltada en "Vueltas por
-    // categoría", que además no aplica aquí porque no hay `setups`), pero
-    // la tarjeta SÍ se muestra porque `has_course_data` es `true` por la
-    // variante subida. Esta prueba verifica "se ve la tarjeta", no "aparece
-    // resaltada" (ese detalle lo cubre `CourseSummary.test.tsx`, T054).
-    await loginAsCoach(page);
-    const coachToken = await getToken(page);
-
-    const parentToken = await apiLogin(page, PARENT_EMAIL, PARENT_PASSWORD);
-    const athleteId = await getMyAthleteId(page, parentToken);
-
-    const seriesId = await createCupSeries(page, coachToken);
-    const raceEventId = await createRaceEvent(page, coachToken, seriesId);
-    await uploadCourseVariantApi(
-      page,
-      coachToken,
-      raceEventId,
-      "Circuito completo",
-      COURSE_REDUCED_GPX,
-    );
-    await addAthleteToRoster(page, coachToken, raceEventId, athleteId);
-
-    // Sesión de padre en un contexto de navegador separado — evita
-    // cualquier interferencia de `sessionStorage` con la sesión de coach de
-    // `page` y refleja dos usuarios/dispositivos reales.
-    const parentContext = await browser.newContext();
-    try {
-      const parentPage = await parentContext.newPage();
-      await loginAsParent(parentPage);
-      await parentPage.goto(`/parents/competitions/${raceEventId}`);
-
-      await expect(parentPage.getByTestId("parent-results-page")).toBeVisible(
-        { timeout: COLD_START_TIMEOUT },
-      );
-      await expect(parentPage.getByTestId("course-summary")).toBeVisible({
-        timeout: NAV_TIMEOUT,
-      });
-      await expect(parentPage.getByText("Circuito completo")).toBeVisible();
-    } finally {
-      await parentContext.close();
-    }
-  });
-
+  // NOTA (limpieza de convocatoria): E2E-043-004 ("un padre ve la tarjeta
+  // vía convocatoria") se eliminó — la visibilidad ya no admite un camino
+  // sin resultado. Queda pendiente un E2E positivo (padre SÍ ve la tarjeta)
+  // seedeado con un `RaceResult` real; esta suite no tiene un helper liviano
+  // para crear uno por API (los resultados solo entran por el Import
+  // Wizard/PDF), así que ese caso queda sin cubrir por ahora.
   test("E2E-043-005: un padre NO ve tarjeta de circuito ni error en una válida donde su hijo/a no está registrado", async ({
     page,
     browser,

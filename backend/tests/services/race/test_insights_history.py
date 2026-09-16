@@ -650,3 +650,313 @@ async def test_deprecate_previous_active_idempotent_when_called_twice(session):
     )
     reloaded = rows.scalar_one()
     assert reloaded.superseded_by_insight_id == 9001
+
+
+# ---------------------------------------------------------------------------
+# Hotfix "identidad de válida" (2026-09-16) — deprecate_previous_active con
+# event_id no debe pisar la copa equivocada.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_deprecate_previous_active_with_event_id_only_deprecates_same_event(
+    session,
+):
+    """Reproduce el bug real: aprobar un nuevo insight de Copa Let's Go V4
+    (event_id=99) NO debe deprecar el insight activo de Copa Valle V4
+    (event_id=43) del mismo atleta, aunque ambos compartan
+    ``(season=2026, valida_num=4)``. Antes del hotfix, ``deprecate_previous_active``
+    filtraba solo por ``(season, valida_num)`` y apagaba la fila equivocada."""
+    await create_race_series(session, series_id=10, season_year=2026, name="Copa Valle de Ciclomontanismo")
+    await create_race_series(session, series_id=11, season_year=2026, name="Copa Let's Go Interdepartamental XCO")
+    copa_valle_event = await create_race_event(
+        session, event_id=43, series_id=10, sequence_number=4, name="Copa Valle V4"
+    )
+    lets_go_event = await create_race_event(
+        session, event_id=99, series_id=11, sequence_number=4, name="Copa Let's Go V4"
+    )
+
+    copa_valle_insight = await create_insight(
+        session,
+        athlete_id=144,
+        season=2026,
+        valida_num=4,
+        event_id=copa_valle_event.id,
+        coach_approved=True,
+        is_active=1,
+    )
+    await session.commit()
+    copa_valle_id = copa_valle_insight.id
+
+    # Aprobar un nuevo insight de Copa Let's Go V4 — deprecate_previous_active
+    # se llama con event_id=lets_go_event.id (la copa que se está publicando).
+    result = await deprecate_previous_active(
+        session,
+        athlete_id=144,
+        season=2026,
+        valida_num=4,
+        new_insight_id=9999,
+        event_id=lets_go_event.id,
+    )
+    await session.commit()
+
+    # No había activo previo PARA Copa Let's Go (event_id=99) — None.
+    assert result is None
+
+    # La fila de Copa Valle V4 sigue activa: NO fue tocada.
+    from sqlalchemy import select
+
+    rows = await session.execute(
+        select(AthleteAiInsight).where(AthleteAiInsight.id == copa_valle_id)
+    )
+    reloaded = rows.scalar_one()
+    assert reloaded.is_active == 1
+    assert reloaded.deprecated_at is None
+    assert reloaded.superseded_by_insight_id is None
+
+
+@pytest.mark.asyncio
+async def test_deprecate_previous_active_with_event_id_deprecates_same_event_row(
+    session,
+):
+    """Sanity: sí debe deprecar cuando el ``event_id`` coincide — el fix no
+    rompe el caso feliz, solo deja de colisionar entre copas distintas."""
+    await create_race_series(session, series_id=12, season_year=2026)
+    event = await create_race_event(session, event_id=50, series_id=12, sequence_number=4)
+
+    previous = await create_insight(
+        session,
+        athlete_id=144,
+        season=2026,
+        valida_num=4,
+        event_id=event.id,
+        coach_approved=True,
+        is_active=1,
+    )
+    await session.commit()
+    previous_id = previous.id
+
+    result = await deprecate_previous_active(
+        session,
+        athlete_id=144,
+        season=2026,
+        valida_num=4,
+        new_insight_id=8888,
+        event_id=event.id,
+    )
+    await session.commit()
+
+    assert result == previous_id
+
+    from sqlalchemy import select
+
+    rows = await session.execute(
+        select(AthleteAiInsight).where(AthleteAiInsight.id == previous_id)
+    )
+    reloaded = rows.scalar_one()
+    assert reloaded.is_active is None
+    assert reloaded.deprecated_at is not None
+    assert reloaded.superseded_by_insight_id == 8888
+
+
+# ---------------------------------------------------------------------------
+# Fallback a fila legada (event_id IS NULL, clave valida:{season}:{n})
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_deprecate_previous_active_also_deprecates_unambiguous_legacy_row(
+    session,
+):
+    """Solo una copa corre valida_num=6 en season=2027 — sin ambigüedad. Una
+    fila legada (pre-hotfix, event_id=NULL) para esa terna también debe
+    deprecarse cuando se aprueba con event_id resuelto, no solo la fila
+    event:{id} (que en este escenario ni siquiera existe todavía)."""
+    await create_race_series(session, series_id=20, season_year=2027, name="Copa Única 2027")
+    event = await create_race_event(
+        session, event_id=60, series_id=20, sequence_number=6, name="Única V6"
+    )
+
+    legacy = await create_insight(
+        session,
+        athlete_id=144,
+        season=2027,
+        valida_num=6,
+        event_id=None,  # fila pre-hotfix, nunca resolvió event_id
+        coach_approved=True,
+        is_active=1,
+    )
+    await session.commit()
+    legacy_id = legacy.id
+
+    result = await deprecate_previous_active(
+        session,
+        athlete_id=144,
+        season=2027,
+        valida_num=6,
+        new_insight_id=7000,
+        event_id=event.id,
+    )
+    await session.commit()
+
+    # No había fila event:{id} activa — el fallback a la legada es lo único
+    # que se deprecó, y su id es lo que se retorna.
+    assert result == legacy_id
+
+    from sqlalchemy import select
+
+    rows = await session.execute(
+        select(AthleteAiInsight).where(AthleteAiInsight.id == legacy_id)
+    )
+    reloaded = rows.scalar_one()
+    assert reloaded.is_active is None
+    assert reloaded.deprecated_at is not None
+    assert reloaded.superseded_by_insight_id == 7000
+
+
+@pytest.mark.asyncio
+async def test_deprecate_previous_active_leaves_ambiguous_legacy_row_untouched(
+    session,
+):
+    """DOS copas comparten valida_num=7 en season=2028 (ambiguo). Una fila
+    legada activa para esa terna NO debe tocarse — no hay forma segura de
+    saber a cuál de las dos copas pertenecía."""
+    await create_race_series(session, series_id=21, season_year=2028, name="Copa A 2028")
+    await create_race_series(session, series_id=22, season_year=2028, name="Copa B 2028")
+    event_a = await create_race_event(
+        session, event_id=61, series_id=21, sequence_number=7, name="Copa A V7"
+    )
+    await create_race_event(
+        session, event_id=62, series_id=22, sequence_number=7, name="Copa B V7"
+    )
+
+    legacy = await create_insight(
+        session,
+        athlete_id=144,
+        season=2028,
+        valida_num=7,
+        event_id=None,
+        coach_approved=True,
+        is_active=1,
+    )
+    await session.commit()
+    legacy_id = legacy.id
+
+    result = await deprecate_previous_active(
+        session,
+        athlete_id=144,
+        season=2028,
+        valida_num=7,
+        new_insight_id=7001,
+        event_id=event_a.id,
+    )
+    await session.commit()
+
+    # Ninguna fila event:{id} activa Y la legada es ambigua → nada que deprecar.
+    assert result is None
+
+    from sqlalchemy import select
+
+    rows = await session.execute(
+        select(AthleteAiInsight).where(AthleteAiInsight.id == legacy_id)
+    )
+    reloaded = rows.scalar_one()
+    assert reloaded.is_active == 1
+    assert reloaded.deprecated_at is None
+    assert reloaded.superseded_by_insight_id is None
+
+
+@pytest.mark.asyncio
+async def test_deprecate_previous_active_prefers_event_scoped_id_over_legacy(
+    session,
+):
+    """Si coexisten una fila event:{id} activa Y una legada activa
+    (unambiguous) para la misma terna, ambas se deprecian pero el ID
+    retornado es el de la fila event-scoped (documentado en el docstring)."""
+    await create_race_series(session, series_id=23, season_year=2029, name="Copa Única 2029")
+    event = await create_race_event(
+        session, event_id=63, series_id=23, sequence_number=3, name="Única V3"
+    )
+
+    event_scoped = await create_insight(
+        session,
+        athlete_id=144,
+        season=2029,
+        valida_num=3,
+        event_id=event.id,
+        coach_approved=True,
+        is_active=1,
+    )
+    legacy = await create_insight(
+        session,
+        athlete_id=144,
+        season=2029,
+        valida_num=3,
+        event_id=None,
+        coach_approved=True,
+        is_active=1,
+    )
+    await session.commit()
+    event_scoped_id = event_scoped.id
+    legacy_id = legacy.id
+
+    result = await deprecate_previous_active(
+        session,
+        athlete_id=144,
+        season=2029,
+        valida_num=3,
+        new_insight_id=7002,
+        event_id=event.id,
+    )
+    await session.commit()
+
+    assert result == event_scoped_id
+
+    from sqlalchemy import select
+
+    rows = await session.execute(
+        select(AthleteAiInsight).where(
+            AthleteAiInsight.id.in_([event_scoped_id, legacy_id])
+        )
+    )
+    reloaded = {row.id: row for row in rows.scalars().all()}
+    for insight_id in (event_scoped_id, legacy_id):
+        assert reloaded[insight_id].is_active is None
+        assert reloaded[insight_id].deprecated_at is not None
+        assert reloaded[insight_id].superseded_by_insight_id == 7002
+
+
+# ---------------------------------------------------------------------------
+# list_athlete_insights — filtro event_id (additivo)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_athlete_insights_filters_by_event_id(session):
+    """``event_id`` desambigua cuando ``valida_num`` por sí solo no basta —
+    dos copas con Válida 4 del mismo atleta, filtrar por event_id trae
+    solo la fila correspondiente a esa copa."""
+    await create_race_series(session, series_id=30, season_year=2030, name="Copa X 2030")
+    await create_race_series(session, series_id=31, season_year=2030, name="Copa Y 2030")
+    event_x = await create_race_event(
+        session, event_id=80, series_id=30, sequence_number=4, name="Copa X V4"
+    )
+    event_y = await create_race_event(
+        session, event_id=81, series_id=31, sequence_number=4, name="Copa Y V4"
+    )
+
+    insight_x = await create_insight(
+        session, athlete_id=144, season=2030, valida_num=4, event_id=event_x.id,
+        coach_approved=True, is_active=1,
+    )
+    await create_insight(
+        session, athlete_id=144, season=2030, valida_num=4, event_id=event_y.id,
+        coach_approved=True, is_active=1,
+    )
+    await session.commit()
+
+    items, total = await list_athlete_insights(
+        session, athlete_id=144, event_id=event_x.id, latest_only=False
+    )
+    assert total == 1
+    assert items[0].id == insight_x.id

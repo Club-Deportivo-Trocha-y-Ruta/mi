@@ -17,7 +17,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.services.race.agents.analyst import _format_ms_hhmmss, format_race_meta
+from app.services.race.agents.analyst import (
+    _format_ms_hhmmss,
+    format_course_meta,
+    format_race_meta,
+)
 from app.services.race.agents.critic import RaceCriticAgent
 from app.services.race.ai.confidence import (
     DataCompleteness,
@@ -27,6 +31,7 @@ from app.services.race.ai.confidence import (
 from app.services.race.ai.events import with_events
 from app.services.race.ai.prechecks import run_prechecks
 from app.services.race.ai.retry import with_retry
+from app.services.race.race_labels import series_display_name
 from app.services.race.schemas import CriticFeedback, CriticIssueSeverity
 
 NODE_NAME = "critic_agent"
@@ -50,24 +55,178 @@ def _accumulate(aggregate: dict, run_metrics: Any, *, prompt_key: str) -> dict:
     return aggregate
 
 
-def _build_ground_truth(state: dict, valida_num: int) -> str:
+def _event_ground_truth_label(full_season: list[dict], event_id: Any) -> str:
+    """``"Válida N · Copa"`` de un evento de la temporada, para encabezar
+    un bloque de verdad de campo agrupado por evento (runs de temporada,
+    hotfix identidad de válida). Cae a ``"Evento <id>"`` sin datos de fila.
+    """
+    row = next((r for r in full_season if r.get("event_id") == event_id), None)
+    if row is None:
+        return f"Evento {event_id}"
+    parts: list[str] = []
+    valida_num = row.get("valida_num")
+    if valida_num is not None:
+        parts.append(f"Válida {valida_num}")
+    copa = series_display_name(row.get("series_name"), row.get("series_short_name"))
+    if copa:
+        parts.append(copa)
+    return " · ".join(parts) if parts else f"Evento {event_id}"
+
+
+def _course_ground_truth(state: dict, valida_num: int) -> list[str]:
+    """Circuito registrado tal como lo vio el analista v3 (feature 043).
+
+    Reutiliza ``format_course_meta`` sobre ``course_context``, que nunca
+    trae ``course_notes`` — el critic no recibe nada que el analista no viera.
+    La temporada (``valida_num=0``) lista un bloque por válida con dato.
+
+    Hotfix identidad de válida: en temporada, ``course_context`` (keyed por
+    ``valida_num``) es ambiguo entre copas que comparten número — se prefiere
+    ``course_context_by_event`` (keyed por ``event_id``, provisto por
+    ``load_race_data`` en runs de temporada) cuando está presente, con
+    encabezado ``"Válida N · Copa"`` por evento. Sin esa clave (state viejo o
+    pipeline aún sin el fix) se cae al comportamiento previo, keyed por
+    válida.
+    """
+    lines = ["", "### Circuito registrado"]
+    if (state.get("analysis_kind") or "valida") == "season":
+        by_event: dict[Any, dict] | None = state.get("course_context_by_event")
+        if by_event:
+            full_season: list[dict] = state.get("full_season_results") or []
+            blocks = [
+                (event_id, block)
+                for event_id in by_event.keys()
+                if (block := format_course_meta(by_event.get(event_id)))
+            ]
+            if not blocks:
+                lines.append("sin circuito registrado")
+            for event_id, block in blocks:
+                lines.append(f"{_event_ground_truth_label(full_season, event_id)}:")
+                lines.append(block)
+            return lines
+
+        course_context: dict[int, dict] = state.get("course_context") or {}
+        blocks = [
+            (v, block)
+            for v in sorted(course_context.keys())
+            if (block := format_course_meta(course_context.get(v)))
+        ]
+        if not blocks:
+            lines.append("sin circuito registrado")
+        for v, block in blocks:
+            lines.append(f"Válida {v}:")
+            lines.append(block)
+        return lines
+
+    course_context: dict[int, dict] = state.get("course_context") or {}
+    block = format_course_meta(course_context.get(valida_num))
+    lines.append(block if block else "sin circuito registrado")
+    return lines
+
+
+def _season_conditions_ground_truth(state: dict) -> list[str]:
+    """Condiciones registradas por evento de temporada (hotfix multicopa).
+
+    Espejo de ``_course_ground_truth`` para el bloque de clima/superficie:
+    prefiere ``event_conditions_by_event`` (keyed por ``event_id``,
+    inequívoco entre copas) sobre ``event_conditions`` (keyed por
+    ``valida_num``, ambiguo si dos series comparten número) cuando está
+    presente.
+    """
+    by_event: dict[Any, dict] | None = state.get("event_conditions_by_event")
+    if by_event:
+        full_season: list[dict] = state.get("full_season_results") or []
+        blocks = [
+            (event_id, block)
+            for event_id in by_event.keys()
+            if (block := format_race_meta(by_event.get(event_id)))
+        ]
+        if not blocks:
+            return ["sin condiciones registradas"]
+        lines: list[str] = []
+        for event_id, block in blocks:
+            lines.append(f"{_event_ground_truth_label(full_season, event_id)}:")
+            lines.append(block)
+        return lines
+
+    event_conditions: dict[int, dict] = state.get("event_conditions") or {}
+    blocks = [
+        (v, block)
+        for v in sorted(event_conditions.keys())
+        if (block := format_race_meta(event_conditions.get(v)))
+    ]
+    if not blocks:
+        return ["sin condiciones registradas"]
+    lines = []
+    for v, block in blocks:
+        lines.append(f"Válida {v}:")
+        lines.append(block)
+    return lines
+
+
+def _resolve_athlete_row(
+    full_season: list[dict], valida_num: int, event_id: Any | None
+) -> dict | None:
+    """Fila de resultado del atleta para la carrera realmente analizada.
+
+    Hotfix identidad de válida: con ancla (``event_id``) se prefiere la fila
+    de ESE evento — evita mezclar, p.ej., Copa A V4 con Copa B V4 cuando
+    ambas comparten ``valida_num`` (spec 014). El ancla solo se usa si la
+    fila que identifica corresponde al mismo ``valida_num`` que se está
+    reportando: en un lanzamiento multi-válida (cap 4) el ancla identifica
+    una sola de las hasta 4 válidas del run — las demás siguen resolviéndose
+    por ``valida_num`` únicamente (limitación conocida: un solo ancla por
+    run no alcanza para desambiguar un cruce de copas en las otras filas;
+    lo cubre la escritura de datos de origen ya scoped por serie).
+    """
+    if event_id is not None:
+        anchored = next((r for r in full_season if r.get("event_id") == event_id), None)
+        if anchored is not None and anchored.get("valida_num") == valida_num:
+            return anchored
+    return next((r for r in full_season if r.get("valida_num") == valida_num), None)
+
+
+def _build_ground_truth(
+    state: dict,
+    valida_num: int,
+    *,
+    include_course: bool = False,
+    event_id: int | None = None,
+) -> str:
     """Construye el bloque de verdad de campo para una válida (feature 011).
 
     Incluye: condiciones registradas (o "sin condiciones registradas"), la fila
-    de resultado del atleta (posición, tiempo, gap al líder) y los tiempos de
-    podio del evento foco. Sirve para que el critic detecte contradicciones.
+    de resultado del atleta (posición, tiempo, gap al líder, copa) y los
+    tiempos de podio del evento foco. Sirve para que el critic detecte
+    contradicciones.
+
+    ``include_course`` solo lo activa la rama v3: el analista v2 nunca recibe
+    el bloque de circuito, así que su critic tampoco debe verlo.
+
+    ``event_id`` (hotfix identidad de válida, multicopa): ancla explícita al
+    evento analizado. Si no se pasa, se usa ``state["event_id"]`` — el ancla
+    que setean los lanzamientos por-válida. Con ella, la fila de resultado
+    del atleta se busca por evento (no solo por ``valida_num``, ambiguo
+    cuando dos copas comparten número — spec 014) y se agrega una línea
+    ``"- Copa: <nombre>"`` con el nombre corto (o largo) de la serie.
     """
-    event_conditions: dict[int, dict] = state.get("event_conditions") or {}
-    conditions_block = format_race_meta(event_conditions.get(valida_num))
+    is_season = (state.get("analysis_kind") or "valida") == "season"
 
     lines: list[str] = ["### Condiciones registradas"]
-    lines.append(conditions_block if conditions_block else "sin condiciones registradas")
+    if is_season:
+        lines.extend(_season_conditions_ground_truth(state))
+    else:
+        event_conditions: dict[int, dict] = state.get("event_conditions") or {}
+        conditions_block = format_race_meta(event_conditions.get(valida_num))
+        lines.append(conditions_block if conditions_block else "sin condiciones registradas")
+
+    if include_course:
+        lines.extend(_course_ground_truth(state, valida_num))
 
     # Fila de resultado del atleta para esta válida (desde full_season_results).
     full_season: list[dict] = state.get("full_season_results") or []
-    row = next(
-        (r for r in full_season if r.get("valida_num") == valida_num), None
-    )
+    resolved_event_id = event_id if event_id is not None else state.get("event_id")
+    row = _resolve_athlete_row(full_season, valida_num, resolved_event_id)
     lines.append("")
     lines.append(f"### Resultado del atleta (Válida {valida_num})")
     if row:
@@ -76,6 +235,9 @@ def _build_ground_truth(state: dict, valida_num: int) -> str:
         lines.append(
             f"- Gap al líder: {_format_ms_hhmmss(row.get('gap_to_winner_ms'))}"
         )
+        copa = series_display_name(row.get("series_name"), row.get("series_short_name"))
+        if copa:
+            lines.append(f"- Copa: {copa}")
     else:
         lines.append("- (sin fila de resultado registrada para esta válida)")
 
@@ -158,6 +320,11 @@ async def critic_agent(state: dict) -> dict[str, Any]:
             if draft is None:
                 continue
 
+            # Verdad de campo primero: la necesita tanto el precheck de
+            # invención de estado de carrera (hotfix identidad de válida)
+            # como la llamada al critic LLM más abajo.
+            ground_truth = _build_ground_truth(state, vn, include_course=True)
+
             precheck_result = run_prechecks(
                 draft,
                 grounding_numbers=grounding_by_valida.get(vn) or [],
@@ -166,11 +333,11 @@ async def critic_agent(state: dict) -> dict[str, Any]:
                 ltad_group=state.get("ltad_group"),
                 forbidden_names=forbidden_names,
                 previous_headlines=previous_headlines,
+                ground_truth=ground_truth,
             )
             sanitized_drafts[vn] = precheck_result.sanitized_draft
             precheck_issues_out[vn] = precheck_result.issues
 
-            ground_truth = _build_ground_truth(state, vn)
             llm_feedback, run_metrics = await agent.invoke_v3(
                 precheck_result.sanitized_draft, ground_truth, precheck_result.issues
             )

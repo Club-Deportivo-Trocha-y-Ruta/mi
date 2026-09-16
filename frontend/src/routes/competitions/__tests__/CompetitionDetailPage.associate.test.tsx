@@ -40,9 +40,6 @@ vi.mock("react-router-dom", async () => {
 });
 
 // ── Mock lazy tabs (evitan carga de deps pesadas) ────────────────────────────
-vi.mock("@/components/competitions/tabs/AthletesTab", () => ({
-  AthletesTab: () => <div data-testid="mock-athletes-tab">athletes</div>,
-}));
 vi.mock("@/components/competitions/tabs/InsightsTab", () => ({
   InsightsTab: () => <div data-testid="mock-insights-tab">insights</div>,
 }));

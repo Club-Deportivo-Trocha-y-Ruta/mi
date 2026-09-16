@@ -14,6 +14,13 @@ se excluyen del ranking acumulado de temporada. Ver specs/014-cup-vs-championshi
 Spec 023 (2026-07-08): agrega `RaceSeriesLevel` enum y columna `level`
 (departmental | national) para distinguir el Campeonato Departamental Valle del
 Campeonato Nacional Fedeciclismo. Ver specs/023-national-championship-level/.
+
+Hotfix "identidad de válida" (2026-09-16, ver
+`~/.claude/plans/multicopa-identidad-valida.md`): agrega `short_name`
+(ej. "Let's Go" para "Copa Let's Go Interdepartamental XCO") — usado por los
+labels de válida/insight (`raceLabel` en frontend, `series_label_v3` en el
+analista IA) para nunca mostrar el literal "Copa" genérico cuando hay más de
+una copa activa en la temporada.
 """
 from __future__ import annotations
 
@@ -74,6 +81,10 @@ class RaceSeries(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(150), nullable=False)
+    # Nombre corto para labels ("Let's Go" en vez de "Copa Let's Go
+    # Interdepartamental XCO"). NULL = usa `name` completo (ver
+    # `race_labels.series_display_name`).
+    short_name: Mapped[str | None] = mapped_column(String(40), nullable=True)
     season_year: Mapped[int] = mapped_column(Integer, nullable=False)
     organizer: Mapped[str | None] = mapped_column(String(150), nullable=True)
     points_scheme_code: Mapped[str] = mapped_column(String(50), nullable=False)

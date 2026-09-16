@@ -47,6 +47,7 @@ export function makeRaceEventRead(
     location: "Sevilla",
     is_championship: false,
     status: "completed",
+    priority: null,
     climate: "soleado",
     temperature_c: "22.5",
     surface_condition: "seca",
@@ -74,6 +75,7 @@ export function makeRaceEventListItem(
     has_results: true,
     has_calendar_event: true,
     conditions_completeness: "complete",
+    priority: null,
     ...overrides,
   };
 }

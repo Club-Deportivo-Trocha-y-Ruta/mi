@@ -239,6 +239,31 @@ class TestChampionshipLabel:
         assert out[1]["series_kind"] == "cup"
 
 
+class TestSeriesFields:
+    """``series_id``/``series_name``/``series_short_name`` (hotfix multicopa)."""
+
+    def test_rows_carry_series_id_and_name(self, dataset):
+        out = _call(dataset)
+        assert out[1]["series_id"] == 1
+        assert out[1]["series_name"] == "Copa Valle"
+        assert out[4]["series_id"] == 2
+        assert out[4]["series_name"] == "Cto. Departamental"
+
+    def test_series_short_name_none_when_column_absent(self, dataset):
+        """``RaceSeries.short_name`` puede no existir aún (worker paralelo) —
+        ``getattr`` con default no debe romper ni cuando el atributo falta."""
+        out = _call(dataset)
+        assert out[1]["series_short_name"] is None
+
+    def test_series_short_name_read_via_getattr_when_present(self, dataset):
+        """Cuando el atributo SÍ existe (columna ya aterrizada), se expone."""
+        for s in dataset["series"]:
+            if s.id == 1:
+                s.short_name = "Copa Valle CV"
+        out = _call(dataset)
+        assert out[1]["series_short_name"] == "Copa Valle CV"
+
+
 class TestPriorIndexAndExpectedPosition:
     def test_first_valida_has_no_prior_and_no_expected_position(self, dataset):
         out = _call(dataset)

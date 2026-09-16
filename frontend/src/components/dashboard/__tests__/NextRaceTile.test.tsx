@@ -1,6 +1,6 @@
 /**
  * Tests para NextRaceTile (specs/031-coach-home-mission-control, Tile 2
- * "Próxima carrera Copa Valle").
+ * "Próxima carrera").
  *
  * Cubre:
  *  - skeleton mientras `useRaceEventsList` está en `isLoading`.
@@ -9,10 +9,9 @@
  *      A → warning en daysUntil<=10, in_window en daysUntil<=7.
  *      B → warning en daysUntil<=6, in_window en daysUntil<=4.
  *      C → siempre neutral (sin ventana de tapering).
- *    El Campeonato Departamental (junio) ya no es un tier "CD" separado
- *    (feature 033, T015): `getCarreraTier` lo resuelve a "A", así que el
- *    mes de junio se cubre con el mismo caso `tier: "A"` (ver el caso
- *    dedicado más abajo que fija `month: 6` para probar ese mes puntual).
+ *    El Campeonato Departamental (`priority: "CD"`) ya no es un tier "CD"
+ *    separado (feature 033, T015): `tierFromPriority` lo resuelve a "A"
+ *    (misma disciplina de tapering) — ver el caso dedicado más abajo.
  *  - estado vacío de fin de temporada (sin eventos con event_date >= hoy).
  *  - estado de error real (no cold start): ErrorState con "Reintentar".
  *  - cold start (`isColdStartError`): siempre skeleton, nunca tono de error.
@@ -21,14 +20,16 @@
  * `NextSessionTile.test.tsx` mockeando el hook de datos en vez de la capa
  * HTTP), porque `NextRaceTile` consume únicamente `useRaceEventsList`.
  *
+ * Wave 3 (hotfix multicopa, 2026-09-16): el tier ya no sale de un
+ * calendario Copa Valle hardcodeado por mes (`getCarreraTier`, retirado de
+ * `lib/insights.ts`) — sale de `RaceEventListItem.priority`, así que los
+ * fixtures de este archivo fijan `priority` explícitamente en vez de
+ * depender del mes del `event_date`.
+ *
  * Fechas: cada caso fija "hoy" vía `vi.setSystemTime` y construye el
  * `event_date` del ítem como ISO datetime a mediodía UTC (`T12:00:00.000Z`,
- * = 07:00 America/Bogotá, sin cruce de día) para que tanto
- * `diffDaysFromToday` (usa `CLUB_TIMEZONE`) como `getCarreraTier` (usa
- * `Date.getMonth()` en la TZ local del proceso) resuelvan el mismo día
- * calendario sin ambigüedad. El día-del-mes del evento se fija en 20 (nunca
- * varía entre casos) para que el mes — y por lo tanto el tier — se mantenga
- * estable sin importar cuánto se reste al construir "hoy".
+ * = 07:00 America/Bogotá, sin cruce de día) para que `diffDaysFromToday`
+ * (usa `CLUB_TIMEZONE`) resuelva el mismo día calendario sin ambigüedad.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
@@ -72,6 +73,7 @@ function makeRaceEvent(overrides: Partial<RaceEventListItem> = {}): RaceEventLis
     has_results: false,
     has_calendar_event: false,
     conditions_completeness: "empty",
+    priority: null,
     ...overrides,
   } as RaceEventListItem;
 }
@@ -106,7 +108,7 @@ describe("NextRaceTile", () => {
 
     const { container } = renderTile();
 
-    expect(screen.getByText("Próxima carrera Copa Valle")).toBeInTheDocument();
+    expect(screen.getByText("Próxima carrera")).toBeInTheDocument();
     expect(container.querySelector('[aria-hidden="true"]')).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
@@ -116,36 +118,35 @@ describe("NextRaceTile", () => {
     const IN_WINDOW_LABEL = "En ventana de tapering";
 
     it.each<{
-      tier: "A" | "B" | "C";
-      month: number;
+      priority: "A" | "B" | "C" | "CD";
       taperLabel: string;
       daysUntil: number;
       expectedUrgency: "neutral" | "upcoming" | "in_window";
     }>([
-      // Tier A (mayo) — warning<=10, in_window<=7.
-      { tier: "A", month: 5, taperLabel: "A — Tapering completo", daysUntil: 11, expectedUrgency: "neutral" },
-      { tier: "A", month: 5, taperLabel: "A — Tapering completo", daysUntil: 10, expectedUrgency: "upcoming" },
-      { tier: "A", month: 5, taperLabel: "A — Tapering completo", daysUntil: 7, expectedUrgency: "in_window" },
-      { tier: "A", month: 5, taperLabel: "A — Tapering completo", daysUntil: 3, expectedUrgency: "in_window" },
-      // Tier B (agosto) — warning<=6, in_window<=4.
-      { tier: "B", month: 8, taperLabel: "B — Mini-tapering", daysUntil: 7, expectedUrgency: "neutral" },
-      { tier: "B", month: 8, taperLabel: "B — Mini-tapering", daysUntil: 6, expectedUrgency: "upcoming" },
-      { tier: "B", month: 8, taperLabel: "B — Mini-tapering", daysUntil: 4, expectedUrgency: "in_window" },
-      { tier: "B", month: 8, taperLabel: "B — Mini-tapering", daysUntil: 1, expectedUrgency: "in_window" },
-      // Tier C (enero) — sin ventana de tapering: siempre neutral.
-      { tier: "C", month: 1, taperLabel: "C — Diagnóstica", daysUntil: 20, expectedUrgency: "neutral" },
-      { tier: "C", month: 1, taperLabel: "C — Diagnóstica", daysUntil: 0, expectedUrgency: "neutral" },
-      // Junio (Campeonato Departamental) — feature 033/T015: getCarreraTier
-      // ya no devuelve "CD", resuelve a "A" (misma disciplina de tapering);
-      // la distinción de campeonato la sigue llevando el badge "CD" aparte
-      // en CompetitionDetailPage.tsx, no esta tile.
-      { tier: "A", month: 6, taperLabel: "A — Tapering completo", daysUntil: 11, expectedUrgency: "neutral" },
-      { tier: "A", month: 6, taperLabel: "A — Tapering completo", daysUntil: 10, expectedUrgency: "upcoming" },
-      { tier: "A", month: 6, taperLabel: "A — Tapering completo", daysUntil: 7, expectedUrgency: "in_window" },
+      // Tier A — warning<=10, in_window<=7.
+      { priority: "A", taperLabel: "A — Tapering completo", daysUntil: 11, expectedUrgency: "neutral" },
+      { priority: "A", taperLabel: "A — Tapering completo", daysUntil: 10, expectedUrgency: "upcoming" },
+      { priority: "A", taperLabel: "A — Tapering completo", daysUntil: 7, expectedUrgency: "in_window" },
+      { priority: "A", taperLabel: "A — Tapering completo", daysUntil: 3, expectedUrgency: "in_window" },
+      // Tier B — warning<=6, in_window<=4.
+      { priority: "B", taperLabel: "B — Mini-tapering", daysUntil: 7, expectedUrgency: "neutral" },
+      { priority: "B", taperLabel: "B — Mini-tapering", daysUntil: 6, expectedUrgency: "upcoming" },
+      { priority: "B", taperLabel: "B — Mini-tapering", daysUntil: 4, expectedUrgency: "in_window" },
+      { priority: "B", taperLabel: "B — Mini-tapering", daysUntil: 1, expectedUrgency: "in_window" },
+      // Tier C — sin ventana de tapering: siempre neutral.
+      { priority: "C", taperLabel: "C — Diagnóstica", daysUntil: 20, expectedUrgency: "neutral" },
+      { priority: "C", taperLabel: "C — Diagnóstica", daysUntil: 0, expectedUrgency: "neutral" },
+      // CD (campeonato) — Wave 3: tierFromPriority lo resuelve a "A" (misma
+      // disciplina de tapering); la distinción de campeonato la sigue
+      // llevando el badge "CD" aparte en CompetitionDetailPage.tsx, no esta
+      // tile.
+      { priority: "CD", taperLabel: "A — Tapering completo", daysUntil: 11, expectedUrgency: "neutral" },
+      { priority: "CD", taperLabel: "A — Tapering completo", daysUntil: 10, expectedUrgency: "upcoming" },
+      { priority: "CD", taperLabel: "A — Tapering completo", daysUntil: 7, expectedUrgency: "in_window" },
     ])(
-      "tier $tier, daysUntil=$daysUntil → $expectedUrgency",
-      ({ month, taperLabel, daysUntil, expectedUrgency }) => {
-        const eventDate = isoNoon(2026, month, 20);
+      "priority $priority, daysUntil=$daysUntil → $expectedUrgency",
+      ({ priority, taperLabel, daysUntil, expectedUrgency }) => {
+        const eventDate = isoNoon(2026, 5, 20);
         vi.useFakeTimers();
         vi.setSystemTime(subDays(eventDate, daysUntil));
 
@@ -154,6 +155,7 @@ describe("NextRaceTile", () => {
           name: "Copa Valle — Próxima Válida",
           event_date: eventDate,
           location: "Cancha Ginebra",
+          priority,
         });
         mockUseRaceEventsList.mockReturnValue(
           makeQueryResult({ data: { items: [race], total: 1 } }),
@@ -191,7 +193,7 @@ describe("NextRaceTile", () => {
 
   describe("insignia de clase y guía de tapering", () => {
     it("tier con ventana de tapering: chip 'Clase A' + rango real de TAPER_GUIDANCE", () => {
-      const eventDate = isoNoon(2026, 5, 20); // mayo → tier A
+      const eventDate = isoNoon(2026, 5, 20);
       vi.useFakeTimers();
       vi.setSystemTime(subDays(eventDate, 20));
 
@@ -204,6 +206,7 @@ describe("NextRaceTile", () => {
                 name: "Copa Valle — Cali",
                 event_date: eventDate,
                 location: "Cali",
+                priority: "A",
               }),
             ],
             total: 1,
@@ -221,14 +224,14 @@ describe("NextRaceTile", () => {
     });
 
     it("tier C (diagnóstica): chip 'Clase C' y copy de 'sin ventana de tapering'", () => {
-      const eventDate = isoNoon(2026, 1, 20); // enero → tier C
+      const eventDate = isoNoon(2026, 1, 20);
       vi.useFakeTimers();
       vi.setSystemTime(subDays(eventDate, 5));
 
       mockUseRaceEventsList.mockReturnValue(
         makeQueryResult({
           data: {
-            items: [makeRaceEvent({ id: 78, event_date: eventDate })],
+            items: [makeRaceEvent({ id: 78, event_date: eventDate, priority: "C" })],
             total: 1,
           },
         }),
@@ -240,15 +243,22 @@ describe("NextRaceTile", () => {
       expect(screen.getByText("C — Diagnóstica · sin ventana de tapering")).toBeInTheDocument();
     });
 
-    it("carrera fuera del calendario Copa Valle: sin chip ni línea de tapering", () => {
-      const eventDate = isoNoon(2026, 7, 20); // julio → sin tier en el calendario
+    it("priority null (UNKNOWN): sin chip ni línea de tapering", () => {
+      const eventDate = isoNoon(2026, 7, 20);
       vi.useFakeTimers();
       vi.setSystemTime(subDays(eventDate, 5));
 
       mockUseRaceEventsList.mockReturnValue(
         makeQueryResult({
           data: {
-            items: [makeRaceEvent({ id: 79, event_date: eventDate, location: "Ginebra" })],
+            items: [
+              makeRaceEvent({
+                id: 79,
+                event_date: eventDate,
+                location: "Ginebra",
+                priority: null,
+              }),
+            ],
             total: 1,
           },
         }),
@@ -282,6 +292,7 @@ describe("NextRaceTile", () => {
     const pastRace = makeRaceEvent({
       id: 5,
       event_date: isoNoon(2026, 6, 12), // Campeonato Departamental — ya pasado.
+      priority: "CD",
     });
     mockUseRaceEventsList.mockReturnValue(
       makeQueryResult({ data: { items: [pastRace], total: 1 } }),
@@ -328,7 +339,7 @@ describe("NextRaceTile", () => {
     const { container } = renderTile();
 
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(screen.getByText("Próxima carrera Copa Valle")).toBeInTheDocument();
+    expect(screen.getByText("Próxima carrera")).toBeInTheDocument();
     expect(container.querySelector('[aria-hidden="true"]')).toBeInTheDocument();
   });
 });
