@@ -26,7 +26,8 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.models.race_event import RaceEventStatus, SurfaceCondition
+from app.models.race_event import RaceEventStatus, SurfaceCondition, TerrainType
+from app.schemas.race_course import KeySector
 
 
 # ---------------------------------------------------------------------------
@@ -183,6 +184,22 @@ class RaceEventRead(BaseModel):
     surface_condition: Optional[SurfaceCondition] = None
     altitude_msnm: Optional[int] = None
     weather_notes: Optional[str] = None
+    # Perfil de circuito (feature 043)
+    terrain_type: Optional[TerrainType] = None
+    technical_difficulty: Optional[int] = None
+    key_sectors: list[KeySector] = []
+    course_notes: Optional[str] = None
+    # Flag derivado (calculado por el servicio que arma esta respuesta)
+    has_course_data: bool = False
+
+    @field_validator("key_sectors", mode="before")
+    @classmethod
+    def _key_sectors_none_to_empty(cls, v: list[KeySector] | None) -> list[KeySector]:
+        """La columna ``race_events.key_sectors`` es JSON nullable: una fila sin
+        sectores capturados llega como ``None`` vía ``from_attributes``, y el
+        default de Pydantic solo aplica cuando el campo está ausente, no cuando
+        llega explícitamente en ``None``. Se normaliza aquí a lista vacía."""
+        return v if v is not None else []
     # Trazabilidad
     created_by_user_id: int
     created_at: datetime
@@ -224,6 +241,9 @@ class RaceEventListItem(BaseModel):
     has_results: bool = False
     has_calendar_event: bool = False
     conditions_completeness: ConditionsCompleteness = "empty"
+    # Perfil de circuito (feature 043) — true si hay alguna variante de
+    # recorrido o algún campo de descripción capturado.
+    has_course_data: bool = False
 
 
 class RaceEventListResponse(BaseModel):

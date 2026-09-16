@@ -20,7 +20,7 @@ export function PageHeader({ title, subtitle, backTo, actions }: PageHeaderProps
       {backTo && (
         <Link
           to={backTo.to}
-          className="inline-flex items-center gap-1.5 text-sm text-mid-gray transition-colors hover:text-charcoal"
+          className="inline-flex min-h-12 items-center gap-1.5 text-sm text-mid-gray transition-colors hover:text-charcoal"
         >
           <ArrowLeft size={14} aria-hidden="true" />
           {backTo.label}
@@ -34,7 +34,9 @@ export function PageHeader({ title, subtitle, backTo, actions }: PageHeaderProps
         </div>
 
         {actions && (
-          <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:shrink-0">
+            {actions}
+          </div>
         )}
       </div>
     </div>

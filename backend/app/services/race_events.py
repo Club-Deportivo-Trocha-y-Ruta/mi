@@ -28,6 +28,7 @@ from app.models.calendar_event import CalendarEvent
 from app.models.race_event import RaceEvent, RaceEventStatus
 from app.models.race_result import RaceResult
 from app.models.race_series import RaceSeries
+from app.models.race_course_variant import RaceCourseVariant
 from app.schemas.race_event import (
     ConditionsCompleteness,
     RaceEventCreate,
@@ -308,6 +309,27 @@ async def cleanup_duplicate_race_event(db: AsyncSession, race_event_id: int) -> 
     )
 
 
+async def event_has_course_data(db: AsyncSession, event: RaceEvent) -> bool:
+    """Igual que ``race.course.service.has_course_data`` pero para los tres
+    sitios de construcción de ``RaceEventRead`` (detalle/POST/PATCH) donde
+    ``event.course_variants`` NO está eager-loaded — por eso este helper sí
+    consulta la BD (una sola vez, con ``EXISTS``) en vez de mirar la relación.
+    """
+    if any(
+        [
+            event.terrain_type,
+            event.technical_difficulty,
+            event.key_sectors,
+            event.course_notes,
+        ]
+    ):
+        return True
+    result = await db.execute(
+        select(exists().where(RaceCourseVariant.race_event_id == event.id))
+    )
+    return bool(result.scalar())
+
+
 async def list_race_events(
     db: AsyncSession,
     season: Optional[int] = None,
@@ -339,12 +361,22 @@ async def list_race_events(
         .correlate(RaceEvent)
         .scalar_subquery()
     )
+    # Subquery EXISTS para has_course_data (feature 043) — cuenta variantes
+    # de recorrido; el resto de la condición (campos de descripción) se lee
+    # directo de la fila de ``RaceEvent`` ya cargada, sin consulta adicional.
+    sq_course = (
+        select(func.count(RaceCourseVariant.id))
+        .where(RaceCourseVariant.race_event_id == RaceEvent.id)
+        .correlate(RaceEvent)
+        .scalar_subquery()
+    )
 
     stmt = (
         select(
             RaceEvent,
             sq_results.label("n_results"),
             sq_calendar.label("n_calendar"),
+            sq_course.label("n_course"),
         )
         .order_by(RaceEvent.event_date.asc())
     )
@@ -366,7 +398,15 @@ async def list_race_events(
 
     rows = await db.execute(stmt)
     items: list[RaceEventListItem] = []
-    for event, n_results, n_calendar in rows.all():
+    for event, n_results, n_calendar, n_course in rows.all():
+        has_course_data = (n_course > 0) or any(
+            [
+                event.terrain_type,
+                event.technical_difficulty,
+                event.key_sectors,
+                event.course_notes,
+            ]
+        )
         items.append(
             RaceEventListItem(
                 id=event.id,
@@ -380,6 +420,7 @@ async def list_race_events(
                 has_results=n_results > 0,
                 has_calendar_event=n_calendar > 0,
                 conditions_completeness=_completeness(event),
+                has_course_data=has_course_data,
             )
         )
 

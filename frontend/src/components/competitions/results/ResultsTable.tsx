@@ -38,6 +38,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TableScrollContainer,
 } from "@/components/ui/table";
 import {
   Tooltip,
@@ -93,6 +94,23 @@ function statusLabel(
     return `+${laps_behind} ${laps_behind === 1 ? "vuelta" : "vueltas"}`;
   }
   return "—";
+}
+
+/**
+ * Feature 043 (US2) — sufijo del encabezado de categoría con las cifras del
+ * circuito: "{laps} vueltas · {variant_label} · {lap_distance_km} km ·
+ * {elevation_gain_m} m D+". `lap_distance_km`/`elevation_gain_m` viven en
+ * `RaceResultRow` (no en `RaceResultCategory`, ver
+ * `results-derived-figures.md` §1) porque el backend los repite por fila
+ * desde el setup compartido — se toman de la primera fila de la categoría
+ * que los trae definidos, ya que son iguales para todas.
+ */
+function formatCourseHeaderSuffix(cat: RaceResultCategory): string {
+  const lapDistanceRow = cat.rows.find((r) => r.lap_distance_km != null);
+  const elevationRow = cat.rows.find((r) => r.elevation_gain_m != null);
+  const lapDistance = lapDistanceRow?.lap_distance_km ?? "—";
+  const elevation = elevationRow?.elevation_gain_m ?? "sin dato";
+  return `· ${cat.laps} vueltas · ${cat.variant_label} · ${lapDistance} km · ${elevation} m D+`;
 }
 
 // ---------------------------------------------------------------------------
@@ -151,7 +169,7 @@ function SortButton({
       type="button"
       onClick={() => onSort(field)}
       className={cn(
-        "inline-flex items-center gap-1 transition-colors hover:text-charcoal",
+        "inline-flex min-h-12 items-center gap-1 transition-colors hover:text-charcoal",
         isActive ? "text-charcoal" : "text-mid-gray",
       )}
       aria-label={`Ordenar por ${label} ${isActive ? (sort.dir === "asc" ? "descendente" : "ascendente") : "ascendente"}`}
@@ -251,6 +269,12 @@ export function ResultsTable({
   // Requires coach/admin role, plus season + validaNum to build the run body.
   const canLaunch = isCoachOrAdmin && season != null && validaNum != null;
 
+  // Feature 043 (US2) — columnas derivadas de circuito ("Distancia" /
+  // "Vel. prom.") solo cuando la válida tiene circuito configurado. Un
+  // coach viendo una válida sin datos de circuito ve exactamente las mismas
+  // columnas que antes de esta feature (SC-007).
+  const showCourseColumns = data.has_course_data === true;
+
   // ── Categorías únicas para el selector ──────────────────────────────────
   const categoryOptions = useMemo<{ id: number; label: string }[]>(
     () =>
@@ -320,7 +344,7 @@ export function ResultsTable({
               const val = e.target.value;
               setSelectedCategoryId(val === "all" ? "all" : Number(val));
             }}
-            className="h-9 rounded-lg border border-[rgba(34,42,53,0.12)] bg-white px-3 text-sm text-charcoal focus:outline-none focus:ring-2 focus:ring-primary/50"
+            className="h-12 rounded-lg border border-[rgba(34,42,53,0.12)] bg-white px-3 text-sm text-charcoal focus:outline-none focus:ring-2 focus:ring-primary/50"
             data-testid="results-category-select"
           >
             <option value="all">Todas</option>
@@ -338,11 +362,15 @@ export function ResultsTable({
             className="flex cursor-pointer items-center gap-2 text-sm text-charcoal"
             data-testid="results-club-only-label"
           >
+            {/* h-12 w-12 directo en el input (no un wrapper con padding): el
+                sweep e2e de target-size.spec.ts mide el boundingBox() real
+                del propio <input> — mismo patrón ya usado en
+                InsightsTimeline.tsx (checkbox de selección de insights). */}
             <input
               type="checkbox"
               checked={clubOnly}
               onChange={(e) => setClubOnly(e.target.checked)}
-              className="h-4 w-4 cursor-pointer rounded border-[rgba(34,42,53,0.2)] accent-primary"
+              className="h-12 w-12 cursor-pointer rounded border-[rgba(34,42,53,0.2)] accent-primary"
               data-testid="results-club-only-toggle"
               aria-label="Solo mi club"
             />
@@ -378,13 +406,18 @@ export function ResultsTable({
           .map((cat) => (
             <div
               key={cat.category_id}
-              className="overflow-hidden rounded-xl bg-white ring-1 ring-[rgba(34,42,53,0.08)]"
+              className="rounded-xl bg-white ring-1 ring-[rgba(34,42,53,0.08)]"
               data-testid={`results-category-section-${cat.category_id}`}
             >
               {/* Encabezado de categoría */}
               <div className="flex items-center justify-between border-b border-[rgba(34,42,53,0.06)] px-4 py-3">
                 <h3 className="text-sm font-semibold text-charcoal">
                   {cat.label}
+                  {cat.laps != null && (
+                    <span className="ml-2 text-xs font-normal text-mid-gray">
+                      {formatCourseHeaderSuffix(cat)}
+                    </span>
+                  )}
                 </h3>
                 <span className="text-xs text-mid-gray">
                   {cat.rows.length}{" "}
@@ -392,6 +425,10 @@ export function ResultsTable({
                 </span>
               </div>
 
+              {/* F-05: overflow-hidden recortaba la columna Puntos en
+                  t768/d1280 sin dejar forma de alcanzarla; el wrapper con
+                  scroll + indicador la deja visible o alcanzable. */}
+              <TableScrollContainer className="rounded-b-xl">
               <Table>
                 <TableCaption className="sr-only">
                   Resultados de la categoría {cat.label}
@@ -416,6 +453,18 @@ export function ResultsTable({
                         onSort={handleSort}
                       />
                     </TableHead>
+                    {/* Columnas derivadas de circuito (feature 043 US2) —
+                        solo cuando la válida tiene circuito configurado. */}
+                    {showCourseColumns && (
+                      <>
+                        <TableHead className="hidden sm:table-cell whitespace-nowrap text-right">
+                          Distancia
+                        </TableHead>
+                        <TableHead className="hidden sm:table-cell whitespace-nowrap text-right">
+                          Vel. prom.
+                        </TableHead>
+                      </>
+                    )}
                     <TableHead className="hidden md:table-cell text-right">
                       Puntos
                     </TableHead>
@@ -445,10 +494,12 @@ export function ResultsTable({
                       }
                       raceEventId={data.race_event_id}
                       activeFilters={activeFilters}
+                      showCourseColumns={showCourseColumns}
                     />
                   ))}
                 </TableBody>
               </Table>
+              </TableScrollContainer>
             </div>
           ))}
     </div>
@@ -470,6 +521,7 @@ function ResultRow({
   insightFreshness,
   raceEventId,
   activeFilters = {},
+  showCourseColumns = false,
 }: {
   row: RaceResultRow;
   sort: SortState;
@@ -481,6 +533,13 @@ function ResultRow({
   insightFreshness?: string | null;
   raceEventId: number;
   activeFilters?: RaceResultsFilters;
+  /**
+   * Feature 043 (US2) — refleja `data.has_course_data`; controla si esta
+   * fila renderiza las celdas "Distancia"/"Vel. prom." (deben coincidir
+   * 1:1 con las `<TableHead>` que pinta `ResultsTable`, o la tabla queda
+   * desalineada).
+   */
+  showCourseColumns?: boolean;
 }) {
   const isOurClub = row.is_our_club;
 
@@ -603,6 +662,27 @@ function ResultRow({
               </span>
             )}
         </TableCell>
+
+        {/* Distancia / Vel. prom. (feature 043 US2) — solo cuando la
+            válida tiene circuito configurado (showCourseColumns). */}
+        {showCourseColumns && (
+          <>
+            <TableCell className="hidden sm:table-cell whitespace-nowrap text-right font-mono text-xs">
+              {row.distance_km != null ? (
+                `${row.distance_km.toFixed(1)} km`
+              ) : (
+                <span className="text-mid-gray">sin dato</span>
+              )}
+            </TableCell>
+            <TableCell className="hidden sm:table-cell whitespace-nowrap text-right font-mono text-xs">
+              {row.avg_speed_kmh != null ? (
+                `${row.avg_speed_kmh.toFixed(1)} km/h`
+              ) : (
+                <span className="text-mid-gray">sin dato</span>
+              )}
+            </TableCell>
+          </>
+        )}
 
         {/* Puntos (desktop md+) */}
         <TableCell className="hidden md:table-cell text-right text-sm">

@@ -6,12 +6,15 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 vi.mock("@/hooks/parents/useMyAthletes");
 vi.mock("@/api/calendar");
+vi.mock("@/hooks/race/useRaceCourse");
 
 import { useMyAthletes } from "@/hooks/parents/useMyAthletes";
 import { useCalendarEvent, useRSVPEvent, useEventAttendances } from "@/api/calendar";
+import { useRaceCourse } from "@/hooks/race/useRaceCourse";
 import { ParentEventDetailPage } from "./ParentEventDetailPage";
 import type { MyAthleteOut } from "@/types/parent.types";
 import { makeCalendarEventRead } from "@/test/msw/calendarHandlers";
+import { makeCourseRead } from "@/test/msw/raceCourseHandlers";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -75,6 +78,15 @@ beforeEach(() => {
     isLoading: false,
     isError: false,
   } as unknown as ReturnType<typeof useEventAttendances>);
+  // Default: sin datos de circuito — la mayoría de los tests de este
+  // archivo no le conciernen a `useRaceCourse` (eventos sin
+  // `race_event_id`, entrenamientos, etc.). Los tests de la sección
+  // "Tarjeta de resumen del circuito" abajo sobreescriben esto.
+  vi.mocked(useRaceCourse).mockReturnValue({
+    data: undefined,
+    isLoading: false,
+    isError: false,
+  } as unknown as ReturnType<typeof useRaceCourse>);
 });
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -273,6 +285,106 @@ describe("ParentEventDetailPage", () => {
       expect(
         screen.queryByTestId("competition-results-link"),
       ).not.toBeInTheDocument();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Tarjeta de resumen del circuito (CourseSummary, feature 043 T054/US5)
+  //
+  // Se sirve de `useRaceCourse(event.race_event_id)` — mockeado directamente
+  // (como el resto de hooks de este archivo, sin MSW) para simular los
+  // escenarios 200/404. El gate por `race_event_id != null` debe mirror-ear
+  // exactamente al de "competition-results-link" (ver describe de arriba).
+  // ---------------------------------------------------------------------------
+
+  describe("Tarjeta de resumen del circuito (CourseSummary)", () => {
+    it("useRaceCourse 200 con has_course_data=true: muestra course-summary cuando race_event_id está presente", () => {
+      (useMyAthletes as any).mockReturnValue({
+        data: [makeAthlete(42)],
+        isLoading: false,
+        isError: false,
+      });
+      vi.mocked(useCalendarEvent).mockReturnValue({
+        data: makeCalendarEventRead({
+          id: 5,
+          event_type: "competition",
+          race_event_id: 7,
+        }),
+        isLoading: false,
+        isError: false,
+      } as ReturnType<typeof useCalendarEvent>);
+      vi.mocked(useRaceCourse).mockReturnValue({
+        data: makeCourseRead(),
+        isLoading: false,
+        isError: false,
+      } as unknown as ReturnType<typeof useRaceCourse>);
+
+      renderPage("5");
+      expect(screen.getByTestId("course-summary")).toBeInTheDocument();
+    });
+
+    it("useRaceCourse 404 course_not_available: NO muestra course-summary y NO aparece ningún toast/banner de error (tarjeta ausente = normal para este endpoint)", () => {
+      (useMyAthletes as any).mockReturnValue({
+        data: [makeAthlete(42)],
+        isLoading: false,
+        isError: false,
+      });
+      vi.mocked(useCalendarEvent).mockReturnValue({
+        data: makeCalendarEventRead({
+          id: 5,
+          event_type: "competition",
+          race_event_id: 7,
+        }),
+        isLoading: false,
+        isError: false,
+      } as ReturnType<typeof useCalendarEvent>);
+      vi.mocked(useRaceCourse).mockReturnValue({
+        data: undefined,
+        isLoading: false,
+        isError: true,
+        error: {
+          response: {
+            status: 404,
+            data: {
+              detail: {
+                code: "course_not_available",
+                message: "El circuito de esta válida no está disponible.",
+              },
+            },
+          },
+        },
+      } as unknown as ReturnType<typeof useRaceCourse>);
+
+      renderPage("5");
+      expect(screen.queryByTestId("course-summary")).not.toBeInTheDocument();
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+
+    it("sin race_event_id (evento sin competencia asociada): NO muestra course-summary aunque useRaceCourse resuelva datos — mismo gate que 'Ver resultados de la competencia'", () => {
+      (useMyAthletes as any).mockReturnValue({
+        data: [makeAthlete(42)],
+        isLoading: false,
+        isError: false,
+      });
+      vi.mocked(useCalendarEvent).mockReturnValue({
+        data: makeCalendarEventRead({
+          id: 5,
+          event_type: "club_event",
+          race_event_id: null,
+        }),
+        isLoading: false,
+        isError: false,
+      } as ReturnType<typeof useCalendarEvent>);
+      // Aunque el mock del hook "resuelva" datos felices, el gate es por
+      // `race_event_id`, no por lo que retorne `useRaceCourse`.
+      vi.mocked(useRaceCourse).mockReturnValue({
+        data: makeCourseRead(),
+        isLoading: false,
+        isError: false,
+      } as unknown as ReturnType<typeof useRaceCourse>);
+
+      renderPage("5");
+      expect(screen.queryByTestId("course-summary")).not.toBeInTheDocument();
     });
   });
 

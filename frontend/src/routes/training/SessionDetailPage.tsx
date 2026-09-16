@@ -336,14 +336,14 @@ export function SessionDetailPage() {
                 <>
                   <Link
                     to={`/training/sessions/${session.id}/edit`}
-                    className="rounded-lg px-3 py-2 text-sm font-medium text-charcoal shadow-ring transition-opacity hover:opacity-70"
+                    className="inline-flex min-h-12 items-center rounded-lg px-3 py-2 text-sm font-medium text-charcoal shadow-ring transition-opacity hover:opacity-70"
                   >
                     Editar
                   </Link>
                   <button
                     type="button"
                     onClick={() => setShowCancelModal(true)}
-                    className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700 shadow-ring transition-opacity hover:opacity-70"
+                    className="inline-flex min-h-12 items-center rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700 shadow-ring transition-opacity hover:opacity-70"
                     data-testid="cancel-session-button"
                   >
                     Cancelar sesión
@@ -352,7 +352,7 @@ export function SessionDetailPage() {
                     type="button"
                     onClick={() => executeMutation.mutate(sessionId)}
                     disabled={executeMutation.isPending}
-                    className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                    className="flex min-h-12 items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
                     data-testid="execute-session-button"
                   >
                     {executeMutation.isPending && (

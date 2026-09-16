@@ -9,6 +9,7 @@ import { useAuthStore } from "@/store/auth.store";
 import { warmUp } from "@/api/client";
 import { ServerWakingBanner } from "@/components/layout/ServerWakingBanner";
 import { landingPathForRole } from "@/lib/landing";
+import { authButtonClass, authInputClass, authLinkClass } from "@/routes/auth/authStyles";
 
 const loginSchema = z.object({
   email: z.string().email("Ingresa un correo válido"),
@@ -101,7 +102,7 @@ export function LoginPage() {
             <input
               id="email"
               type="email"
-              className="w-full rounded-lg bg-white px-3 py-2.5 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 shadow-ring"
+              className={authInputClass}
               {...form.register("email")}
             />
             {form.formState.errors.email && (
@@ -122,7 +123,7 @@ export function LoginPage() {
             <input
               id="password"
               type="password"
-              className="w-full rounded-lg bg-white px-3 py-2.5 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 shadow-ring"
+              className={authInputClass}
               {...form.register("password")}
             />
             {form.formState.errors.password && (
@@ -130,10 +131,10 @@ export function LoginPage() {
                 {form.formState.errors.password.message}
               </p>
             )}
-            <div className="mt-1.5 text-right">
+            <div className="text-right">
               <Link
                 to="/recuperar-contrasena"
-                className="text-xs font-medium text-link-blue hover:underline"
+                className={`${authLinkClass} text-xs`}
               >
                 ¿Olvidaste tu contraseña?
               </Link>
@@ -150,7 +151,7 @@ export function LoginPage() {
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full rounded-lg bg-charcoal px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50 shadow-button-highlight"
+            className={authButtonClass}
           >
             {isLoading ? "Ingresando..." : "Ingresar"}
           </button>

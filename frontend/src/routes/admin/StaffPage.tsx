@@ -27,6 +27,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TableScrollContainer,
 } from "@/components/ui/table";
 import { useStaff } from "@/hooks/admin/useStaff";
 import { useSetStaffActive } from "@/hooks/admin/useSetStaffActive";
@@ -176,72 +177,153 @@ export function StaffPage() {
       )}
 
       {!staffQuery.isLoading && !staffQuery.isError && items.length > 0 && (
-        <div className="rounded-xl bg-white shadow-card">
-          <Table data-testid="staff-table">
-            <caption className="sr-only">Personal del club</caption>
-            <TableHeader>
-              <TableRow>
-                <TableHead scope="col">Nombre</TableHead>
-                <TableHead scope="col">Rol</TableHead>
-                <TableHead scope="col">Estado</TableHead>
-                <TableHead scope="col">Creado el</TableHead>
-                <TableHead scope="col">Creado por</TableHead>
-                <TableHead scope="col" className="text-right">
-                  Acciones
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {items.map((user) => {
-                const fullName = `${user.first_name} ${user.last_name}`.trim();
-                const isSelf = currentUserId === user.id;
-                return (
-                  <TableRow key={user.id} data-testid={`staff-row-${user.id}`}>
-                    <TableCell>
-                      <div>{fullName}</div>
-                      <div className="text-xs text-mid-gray">{user.email}</div>
-                    </TableCell>
-                    <TableCell>
-                      {user.role === "admin" ? "Administrador" : "Entrenador"}
-                    </TableCell>
-                    <TableCell data-testid={`staff-row-state-${user.id}`}>
-                      {user.is_active ? (
-                        <StatusBadge status="success" label="Activo" />
-                      ) : (
-                        <StatusBadge status="neutral" label="Inactivo" />
-                      )}
-                    </TableCell>
-                    <TableCell>{formatDateMedium(user.created_at)}</TableCell>
-                    <TableCell data-testid={`staff-row-created-by-${user.id}`}>
-                      {user.created_by_display_name ?? "—"}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {!isSelf && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="min-h-12"
-                          data-testid={`staff-toggle-active-${user.id}`}
-                          aria-label={`${user.is_active ? "Desactivar" : "Reactivar"} a ${fullName}`}
-                          onClick={() => {
-                            setStateError(null);
-                            setStateTarget({
-                              user,
-                              action: user.is_active ? "deactivate" : "reactivate",
-                            });
-                          }}
-                        >
-                          {user.is_active ? "Desactivar" : "Reactivar"}
-                        </Button>
-                      )}
-                    </TableCell>
+        <>
+          {/* Cards móvil (<md) — F-10: la tabla no colapsaba y "Desactivar"
+              quedaba fuera de la franja visible en m390. */}
+          <ul role="list" className="flex flex-col gap-3 md:hidden">
+            {items.map((user) => {
+              const fullName = `${user.first_name} ${user.last_name}`.trim();
+              const isSelf = currentUserId === user.id;
+              return (
+                <li key={user.id}>
+                  <div
+                    className="rounded-xl bg-white p-4 space-y-2 shadow-card"
+                    data-testid={`staff-row-${user.id}`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-charcoal">
+                          {fullName}
+                        </p>
+                        <p className="truncate text-xs text-mid-gray">{user.email}</p>
+                      </div>
+                      <span data-testid={`staff-row-state-${user.id}`}>
+                        {user.is_active ? (
+                          <StatusBadge status="success" label="Activo" />
+                        ) : (
+                          <StatusBadge status="neutral" label="Inactivo" />
+                        )}
+                      </span>
+                    </div>
+                    <p className="text-xs text-mid-gray">
+                      {user.role === "admin" ? "Administrador" : "Entrenador"} · Creado
+                      el {formatDateMedium(user.created_at)}
+                    </p>
+                    <p
+                      className="text-xs text-mid-gray"
+                      data-testid={`staff-row-created-by-${user.id}`}
+                    >
+                      Creado por {user.created_by_display_name ?? "—"}
+                    </p>
+                    {!isSelf && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="min-h-12 w-full"
+                        data-testid={`staff-toggle-active-${user.id}`}
+                        aria-label={`${user.is_active ? "Desactivar" : "Reactivar"} a ${fullName}`}
+                        onClick={() => {
+                          setStateError(null);
+                          setStateTarget({
+                            user,
+                            action: user.is_active ? "deactivate" : "reactivate",
+                          });
+                        }}
+                      >
+                        {user.is_active ? "Desactivar" : "Reactivar"}
+                      </Button>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+
+          {/* Tabla desktop (≥md) */}
+          <div className="hidden rounded-xl bg-white shadow-card md:block">
+            <TableScrollContainer className="rounded-xl">
+              <Table data-testid="staff-table">
+                <caption className="sr-only">Personal del club</caption>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead scope="col">Nombre</TableHead>
+                    <TableHead scope="col">Rol</TableHead>
+                    <TableHead scope="col">Estado</TableHead>
+                    <TableHead scope="col">Creado el</TableHead>
+                    {/* Columna secundaria: se oculta entre md y lg (F-10) para
+                        que Acciones quede visible sin necesidad de scroll. */}
+                    <TableHead scope="col" className="hidden lg:table-cell">
+                      Creado por
+                    </TableHead>
+                    <TableHead
+                      scope="col"
+                      className="sticky right-0 z-10 bg-white text-right"
+                    >
+                      Acciones
+                    </TableHead>
                   </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </div>
+                </TableHeader>
+                <TableBody>
+                  {items.map((user) => {
+                    const fullName = `${user.first_name} ${user.last_name}`.trim();
+                    const isSelf = currentUserId === user.id;
+                    return (
+                      <TableRow
+                        key={user.id}
+                        className="group"
+                        data-testid={`staff-row-${user.id}`}
+                      >
+                        <TableCell>
+                          <div>{fullName}</div>
+                          <div className="text-xs text-mid-gray">{user.email}</div>
+                        </TableCell>
+                        <TableCell>
+                          {user.role === "admin" ? "Administrador" : "Entrenador"}
+                        </TableCell>
+                        <TableCell data-testid={`staff-row-state-${user.id}`}>
+                          {user.is_active ? (
+                            <StatusBadge status="success" label="Activo" />
+                          ) : (
+                            <StatusBadge status="neutral" label="Inactivo" />
+                          )}
+                        </TableCell>
+                        <TableCell>{formatDateMedium(user.created_at)}</TableCell>
+                        <TableCell
+                          className="hidden lg:table-cell"
+                          data-testid={`staff-row-created-by-${user.id}`}
+                        >
+                          {user.created_by_display_name ?? "—"}
+                        </TableCell>
+                        <TableCell className="sticky right-0 bg-white text-right group-hover:bg-light-gray/50">
+                          {!isSelf && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="min-h-12"
+                              data-testid={`staff-toggle-active-${user.id}`}
+                              aria-label={`${user.is_active ? "Desactivar" : "Reactivar"} a ${fullName}`}
+                              onClick={() => {
+                                setStateError(null);
+                                setStateTarget({
+                                  user,
+                                  action: user.is_active ? "deactivate" : "reactivate",
+                                });
+                              }}
+                            >
+                              {user.is_active ? "Desactivar" : "Reactivar"}
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </TableScrollContainer>
+          </div>
+        </>
       )}
 
       <StaffCreateSheet open={createOpen} onOpenChange={setCreateOpen} />

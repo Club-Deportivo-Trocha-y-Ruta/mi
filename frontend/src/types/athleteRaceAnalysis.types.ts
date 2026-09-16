@@ -323,6 +323,16 @@ export interface EvolutionPoint {
    */
   position?: number | null;
   gap_pct?: number | null;
+  /**
+   * Feature 043 (US2) — velocidad promedio derivada de esa válida (mismo
+   * cálculo que `RaceResultRow.avg_speed_kmh`, ver
+   * `results-derived-figures.md` §3), redondeada a 1 decimal. `null` sin
+   * circuito configurado o sin vueltas completadas calculables. No se usa
+   * para ningún agregado (media/mejor/tendencia) — es un valor por fila,
+   * mostrado solo en la vista de tabla de `EvolutionChart`. Opcional por el
+   * mismo motivo aditivo que el resto de campos de esta sección.
+   */
+  avg_speed_kmh?: number | null;
 }
 
 export interface EvolutionResponse {

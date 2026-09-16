@@ -3,8 +3,10 @@ import { MapPin, Clock, CalendarDays, ArrowLeft, Trophy } from "lucide-react";
 
 import { EventTypeChip } from "@/components/calendar/EventTypeChip";
 import { ParentRSVPInline } from "@/components/parents/ParentRSVPInline";
+import { CourseSummary } from "@/components/race/course/CourseSummary";
 import { useCalendarEvent, useEventAttendances } from "@/api/calendar";
 import { useMyAthletes } from "@/hooks/parents/useMyAthletes";
+import { useRaceCourse } from "@/hooks/race/useRaceCourse";
 import { formatFullDate, formatTime } from "@/lib/datetime";
 import type { MyAthleteOut } from "@/types/parent.types";
 import type { EventAttendanceRead, RSVPStatus } from "@/types/calendar.types";
@@ -113,6 +115,44 @@ function AthleteDetailSection({
   );
 }
 
+// ─── Course summary section (feature 043, US5) ─────────────────────────────────
+
+interface ParentEventCourseSummaryProps {
+  raceEventId: number;
+  athleteNamesById: Record<number, string>;
+}
+
+/**
+ * Solo se monta cuando `event.race_event_id != null` (mismo gate que el
+ * enlace "Ver resultados de la competencia"), así que `useRaceCourse` nunca
+ * dispara para eventos sin competencia asociada. Un 404
+ * (`course_not_available`) es un estado NORMAL aquí — el padre puede
+ * consultar una válida donde su hijo/a no compitió o el coach aún no
+ * registró el circuito — por lo que no se muestra ningún banner de error ni
+ * toast, solo se omite la tarjeta.
+ */
+function ParentEventCourseSummary({
+  raceEventId,
+  athleteNamesById,
+}: ParentEventCourseSummaryProps) {
+  const courseQuery = useRaceCourse(raceEventId);
+
+  if (courseQuery.isLoading || courseQuery.isError || !courseQuery.data) {
+    return null;
+  }
+
+  return (
+    <CourseSummary
+      hasCourseData={courseQuery.data.has_course_data}
+      variants={courseQuery.data.variants}
+      setups={courseQuery.data.setups}
+      description={courseQuery.data.description}
+      myCategories={courseQuery.data.my_categories}
+      athleteNamesById={athleteNamesById}
+    />
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export function ParentEventDetailPage() {
@@ -125,6 +165,14 @@ export function ParentEventDetailPage() {
   const event = eventQuery.data;
   const myAthletes: MyAthleteOut[] = athletesQuery.data ?? [];
   const myAthleteIds = new Set(myAthletes.map((a) => a.athlete_id));
+  // Circuito (feature 043, US5): resuelve nombres para resaltar la fila de
+  // categoría del propio hijo/a en la tarjeta de reconocimiento de pista.
+  const athleteNamesById: Record<number, string> = Object.fromEntries(
+    myAthletes.map((a) => [
+      a.athlete_id,
+      `${a.athlete_first_name} ${a.athlete_last_name}`,
+    ]),
+  );
 
   const isLoading = eventQuery.isLoading || athletesQuery.isLoading;
 
@@ -302,6 +350,15 @@ export function ParentEventDetailPage() {
             );
           })}
         </div>
+      )}
+
+      {/* Tarjeta de reconocimiento de pista (feature 043, US5) — mismo gate
+          que el enlace "Ver resultados de la competencia" arriba. */}
+      {event.race_event_id != null && (
+        <ParentEventCourseSummary
+          raceEventId={event.race_event_id}
+          athleteNamesById={athleteNamesById}
+        />
       )}
     </section>
   );

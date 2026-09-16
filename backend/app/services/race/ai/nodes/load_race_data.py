@@ -30,6 +30,7 @@ from app.services.race.ai.events import with_events
 from app.services.race.ai.retry import with_retry
 from app.services.race.queries import (
     fetch_all_results_for_season,
+    fetch_course_context,
     fetch_event_conditions,
     fetch_podium_context,
     fetch_results_for_athlete,
@@ -344,6 +345,14 @@ async def load_race_data(state: dict) -> dict[str, Any]:
         event_conditions = await fetch_event_conditions(
             db, season, condition_validas
         )
+        # ---- Perfil de circuito registrado por válida (feature 043) ----
+        # category_id todavía no se conoce en este punto (se resuelve más
+        # abajo, del primer resultado serializado) — se re-consulta con el
+        # valor real justo después de resolverlo, en el camino de retorno
+        # tardío. Aquí queda en {} para toda válida (rama early-return).
+        course_context = await fetch_course_context(
+            db, season, condition_validas, category_id=None
+        )
 
         # T019/T021 — build {valida_num: raw_coach_note} from the serialized
         # rows so that anonymize can scrub and analyst_agent can inject.
@@ -369,6 +378,7 @@ async def load_race_data(state: dict) -> dict[str, Any]:
                 "category_id": None,
                 "podium_context": {},
                 "event_conditions": event_conditions,
+                "course_context": course_context,
                 "coach_notes_by_valida": coach_notes_by_valida,
                 "full_season_results": full_season_records,
                 "season_validas_count": season_validas_count,
@@ -378,6 +388,11 @@ async def load_race_data(state: dict) -> dict[str, Any]:
         first = serialized[0]
         competitor_id = first.get("competitor_id")
         category_id = first.get("category_id")
+        # Re-consulta con la categoría real ya resuelta (feature 043) —
+        # sobrescribe la versión all-{} calculada arriba con category_id=None.
+        course_context = await fetch_course_context(
+            db, season, condition_validas, category_id
+        )
 
         # Evento foco: el último cronológico (results ya viene ordenado asc).
         focus_event_id = serialized[-1].get("event_id")
@@ -391,6 +406,7 @@ async def load_race_data(state: dict) -> dict[str, Any]:
         "category_id": category_id,
         "podium_context": podium_ctx,
         "event_conditions": event_conditions,
+        "course_context": course_context,
         "coach_notes_by_valida": coach_notes_by_valida,
         "full_season_results": full_season_records,
         "season_validas_count": season_validas_count,

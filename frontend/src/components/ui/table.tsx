@@ -165,6 +165,68 @@ const TableCaption = React.forwardRef<
 ));
 TableCaption.displayName = "TableCaption";
 
+// ---------------------------------------------------------------------------
+// TableScrollContainer — wrapper opcional con indicador de scroll horizontal
+// ---------------------------------------------------------------------------
+
+/**
+ * Envuelve una tabla ancha (`<Table>` de shadcn o un `<table>` plano) y agrega
+ * sombras degradadas en los bordes cuando hay columnas ocultas por overflow
+ * horizontal (criterio C5 de la auditoría responsive: "overflow-x-auto CON
+ * indicador"). Variante opcional — `<Table>` sigue funcionando igual sin este
+ * wrapper; no cambia el comportamiento por defecto de los demás consumidores.
+ */
+function TableScrollContainer({
+  className,
+  children,
+  ...props
+}: React.HTMLAttributes<HTMLDivElement>) {
+  const scrollRef = React.useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = React.useState(false);
+  const [canScrollRight, setCanScrollRight] = React.useState(false);
+
+  const updateScrollState = React.useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 1);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+  }, []);
+
+  React.useEffect(() => {
+    updateScrollState();
+    const el = scrollRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(updateScrollState);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [updateScrollState]);
+
+  return (
+    <div className="relative">
+      <div
+        ref={scrollRef}
+        onScroll={updateScrollState}
+        className={cn("overflow-x-auto", className)}
+        {...props}
+      >
+        {children}
+      </div>
+      {canScrollLeft && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-0 left-0 w-6 bg-gradient-to-r from-white to-transparent"
+        />
+      )}
+      {canScrollRight && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-0 right-0 w-6 bg-gradient-to-l from-white to-transparent"
+        />
+      )}
+    </div>
+  );
+}
+
 export {
   Table,
   TableHeader,
@@ -174,4 +236,5 @@ export {
   TableHead,
   TableCell,
   TableCaption,
+  TableScrollContainer,
 };

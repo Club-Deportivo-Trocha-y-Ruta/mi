@@ -51,10 +51,12 @@ describe("ParentsTable", () => {
   describe("cuando hay padres en la lista", () => {
     it("debería renderizar el nombre y email de cada padre", () => {
       renderTable([parentA, parentB]);
-      expect(screen.getByText("Carlos García")).toBeInTheDocument();
-      expect(screen.getByText("carlos.garcia@example.com")).toBeInTheDocument();
-      expect(screen.getByText("María Rodríguez")).toBeInTheDocument();
-      expect(screen.getByText("maria.rodriguez@example.com")).toBeInTheDocument();
+      // F-10: bajo `md` se renderiza además una lista de cards, así que
+      // estos textos ahora existen dos veces (card + tabla) en jsdom.
+      expect(screen.getAllByText("Carlos García").length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText("carlos.garcia@example.com").length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText("María Rodríguez").length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText("maria.rodriguez@example.com").length).toBeGreaterThanOrEqual(1);
     });
 
     it("el link 'Ver' de cada fila debe apuntar a /parents/{id}", () => {

@@ -887,4 +887,72 @@ describe("EvolutionChart", () => {
       ).toBeInTheDocument();
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Feature 043 (US2, R-11) — columna "Vel. prom." en el twin de tabla.
+  // Mirror de `results-derived-figures.md` §3: valor por válida derivado de
+  // `derive_figures`, sin ningún agregado. Solo visible en `EvolutionTable`
+  // (nunca en la gráfica/tooltip de recharts) — ver docstring de
+  // `EvolutionChartPoint.avg_speed_kmh` en el componente.
+  // ---------------------------------------------------------------------------
+
+  describe("feature 043 (US2) — avg_speed_kmh en el twin de tabla", () => {
+    it("muestra 'X.X km/h' en la columna 'Vel. prom.' cuando el punto trae avg_speed_kmh", async () => {
+      mswServer.use(
+        http.get(
+          "*/api/athletes/:athleteId/race-analysis/evolution",
+          () =>
+            HttpResponse.json(
+              mockEvolution({
+                series: [
+                  {
+                    valida_num: 1,
+                    event_id: 91,
+                    event_date: "2026-01-31",
+                    value: 120_000,
+                    unit: "ms",
+                    series_kind: "cup",
+                    label: "Válida I — Sevilla",
+                    avg_speed_kmh: 25.2,
+                  },
+                ],
+              }),
+            ),
+        ),
+      );
+      const user = userEvent.setup();
+      renderWithProviders(
+        <EvolutionChart athleteId={42} defaultSeason={2026} />,
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("line-chart")).toBeInTheDocument(),
+      );
+
+      await user.click(screen.getByTestId("evolution-tab-table"));
+      const table = await screen.findByTestId("evolution-table");
+
+      expect(
+        within(table).getByText("Vel. prom."),
+      ).toBeInTheDocument();
+      expect(within(table).getByText("25.2 km/h")).toBeInTheDocument();
+    });
+
+    it("muestra 'sin dato' en la columna 'Vel. prom.' cuando avg_speed_kmh es null (sin circuito configurado)", async () => {
+      const user = userEvent.setup();
+      renderWithProviders(
+        <EvolutionChart athleteId={42} defaultSeason={2026} />,
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("line-chart")).toBeInTheDocument(),
+      );
+
+      await user.click(screen.getByTestId("evolution-tab-table"));
+      const table = await screen.findByTestId("evolution-table");
+
+      // mockEvolution() default no trae avg_speed_kmh en ningún punto — las
+      // 4 filas de la tabla deben caer todas a "sin dato" (sin circuito).
+      const sinDatoCells = within(table).getAllByText("sin dato");
+      expect(sinDatoCells.length).toBe(4);
+    });
+  });
 });

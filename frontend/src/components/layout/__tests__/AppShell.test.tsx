@@ -772,14 +772,24 @@ describe("AppShell", () => {
       try {
         renderShell(UserRole.coach);
 
-        const date = within(getHeader()).getByTestId("header-today-date");
         // Sin la coma que es-CO inserta tras el día de semana: el mockup no
-        // la lleva, de ahí los dos formateos separados en AppShell.
-        expect(date.textContent).toBe("jueves 27 de agosto de 2026");
-        // El slot izquierdo lleva SÓLO la fecha: el nombre vive en la
-        // tarjeta de usuario del pie de la barra (el "Test User" que sí
-        // queda en el header es el del <UserMenu> móvil, bajo md).
-        expect(date.parentElement?.textContent).toBe("jueves 27 de agosto de 2026");
+        // la lleva, de ahí los dos formateos separados en AppShell. Desde el
+        // fix de RA-005/F-09 (auditoría responsive 2026-09-16) el mismo nodo
+        // lleva DOS formatos — largo (≥md) y corto (<md, evita el truncado a
+        // "miérco..." que competía con «Crear» y el menú de usuario) — sin
+        // duplicar el `data-testid`.
+        const date = within(getHeader()).getByTestId("header-today-date");
+        const longLabel = within(date).getByText("jueves 27 de agosto de 2026");
+        const shortLabel = within(date).getByText("jue 27 ago");
+        expect(longLabel.className).toMatch(/md:inline/);
+        expect(shortLabel.className).toMatch(/md:hidden/);
+        // El slot izquierdo lleva SÓLO la fecha (en sus dos formatos): el
+        // nombre vive en la tarjeta de usuario del pie de la barra (el "Test
+        // User" que sí queda en el header es el del <UserMenu> móvil, bajo
+        // md).
+        expect(date.parentElement?.textContent).toBe(
+          "jueves 27 de agosto de 2026jue 27 ago",
+        );
       } finally {
         vi.useRealTimers();
       }

@@ -69,6 +69,8 @@ import * as athletesApi from "@/api/athletes";
 import * as raceAnalysisApi from "@/api/raceAnalysis";
 import { ImportWizard } from "@/components/competitions/import/ImportWizard";
 import { Sex } from "@/types/enums";
+import { mswServer } from "@/test/setup";
+import { raceCourseEmptyHandler } from "@/test/msw/raceCourseHandlers";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -349,5 +351,27 @@ describe("ImportWizard — post-commit AI button (T020)", () => {
     expect(screen.getByTestId("wizard-step3-ai-error")).toHaveTextContent(
       /No se pudo lanzar el análisis/i,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Panel "Circuito (opcional)" (feature 043 — T029)
+// ---------------------------------------------------------------------------
+
+describe("ImportWizard — panel 'Circuito (opcional)' tras commit (feature 043)", () => {
+  it("muestra el encabezado y el panel CourseTab tras un commit exitoso", async () => {
+    // Fixture sin datos de circuito — determinista y suficiente: solo nos
+    // interesa que el panel se monte, no su contenido interno (ya cubierto
+    // por CourseTab.test.tsx).
+    mswServer.use(raceCourseEmptyHandler);
+
+    const user = userEvent.setup();
+    await reachSuccessPanel(user);
+
+    expect(
+      await screen.findByRole("heading", { name: "Circuito (opcional)" }),
+    ).toBeInTheDocument();
+    expect(await screen.findByTestId("course-tab")).toBeInTheDocument();
+    expect(screen.getByTestId("course-tab-empty")).toBeInTheDocument();
   });
 });

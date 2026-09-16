@@ -81,6 +81,9 @@ class RaceAnalystState(TypedDict, total=False):
     # Feature 011: condiciones registradas por válida {valida_num: {...}}.
     # Producido por load_race_data; weather_notes scrubeado por anonymize.
     event_conditions: dict[int, dict]
+    # Feature 043: perfil de circuito registrado por válida {valida_num: {...}}.
+    # Producido por load_race_data; course_notes NUNCA viaja aquí (FR-020).
+    course_context: dict[int, dict]
 
     memory: list[str]  # últimos 3 insights del atleta
     # Feature 037 (T104): últimos 3 insights v3 aprobados (con structured_json),

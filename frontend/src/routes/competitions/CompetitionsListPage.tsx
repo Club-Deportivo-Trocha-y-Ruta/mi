@@ -52,6 +52,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { TableScrollContainer } from "@/components/ui/table";
 import {
   getRaceEventErrorMessage,
   raceEventKeys,
@@ -274,54 +275,60 @@ export function CompetitionsListPage() {
       {/* Tabla desktop (≥md) */}
       {!isLoading && !isError && items.length > 0 && (
         <>
-          <div className="hidden md:block rounded-xl bg-white overflow-hidden shadow-card">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-[rgba(34,42,53,0.08)]">
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
-                    #
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
-                    Fecha
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
-                    Nombre
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
-                    Sede
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
-                    Estado
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
-                    Indicadores
-                  </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-mid-gray">
-                    Acciones
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[rgba(34,42,53,0.06)]">
-                {items.map((item) => (
-                  <CompetitionTableRow
-                    key={item.id}
-                    item={item}
-                    isAdmin={isAdmin}
-                    canDelete={canDelete(item)}
-                    deleteDisabledReason={deleteDisabledReason(item)}
-                    onDelete={() => {
-                      setDeleteError(null);
-                      setDeleteTarget(item);
-                    }}
-                    canCleanup={canCleanup(item)}
-                    onCleanup={() => {
-                      setCleanupError(null);
-                      setCleanupTarget(item);
-                    }}
-                  />
-                ))}
-              </tbody>
-            </table>
+          <div className="hidden md:block rounded-xl bg-white shadow-card">
+            <TableScrollContainer className="rounded-xl">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-[rgba(34,42,53,0.08)]">
+                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
+                      #
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
+                      Fecha
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
+                      Nombre
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
+                      Sede
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
+                      Estado
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
+                      Indicadores
+                    </th>
+                    {/* Sticky: en t768/t1024 la tabla excede el ancho del
+                        contenedor (F-01); fijar Acciones a la derecha la
+                        mantiene siempre alcanzable sin depender de que el
+                        coach descubra el scroll horizontal. */}
+                    <th className="sticky right-0 z-10 bg-white px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-mid-gray">
+                      Acciones
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[rgba(34,42,53,0.06)]">
+                  {items.map((item) => (
+                    <CompetitionTableRow
+                      key={item.id}
+                      item={item}
+                      isAdmin={isAdmin}
+                      canDelete={canDelete(item)}
+                      deleteDisabledReason={deleteDisabledReason(item)}
+                      onDelete={() => {
+                        setDeleteError(null);
+                        setDeleteTarget(item);
+                      }}
+                      canCleanup={canCleanup(item)}
+                      onCleanup={() => {
+                        setCleanupError(null);
+                        setCleanupTarget(item);
+                      }}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </TableScrollContainer>
           </div>
 
           {/* Cards mobile (<md) */}
@@ -440,7 +447,7 @@ function CompetitionTableRow({
     });
   return (
     <tr
-      className="hover:bg-[rgba(34,42,53,0.02)] transition-colors cursor-pointer"
+      className="group hover:bg-[rgba(34,42,53,0.02)] transition-colors cursor-pointer"
       onClick={() => navigate(`/competitions/${item.id}`)}
       onMouseEnter={prefetchDetail}
       onTouchStart={prefetchDetail}
@@ -469,8 +476,14 @@ function CompetitionTableRow({
       <td className="px-4 py-3">
         <CompetitionStatusBadges item={item} />
       </td>
-      {/* stopPropagation: interactuar con el kebab no debe navegar la fila */}
-      <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+      {/* stopPropagation: interactuar con el kebab no debe navegar la fila.
+          sticky + bg-white/group-hover: la celda flota sobre el resto de la
+          fila al hacer scroll horizontal y sigue el color de hover de la
+          fila (F-01). */}
+      <td
+        className="sticky right-0 bg-white px-4 py-3 text-right group-hover:bg-[rgba(34,42,53,0.02)]"
+        onClick={(e) => e.stopPropagation()}
+      >
         <ActionsKebab
           item={item}
           isAdmin={isAdmin}
@@ -579,7 +592,7 @@ function ActionsKebab({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-mid-gray transition-colors hover:bg-light-gray"
+          className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-lg text-mid-gray transition-colors hover:bg-light-gray"
           aria-label={`Acciones para ${item.name}`}
         >
           <MoreHorizontal size={16} aria-hidden="true" />

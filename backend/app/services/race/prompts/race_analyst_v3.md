@@ -12,6 +12,9 @@
 {#   field_block (str|None)       — FieldMetrics del evento                    #}
 {#   season_block (str|None)      — tabla de temporada con field metrics       #}
 {#   conditions_block (str|None)  — condiciones registradas                    #}
+{#   course_block (str|None)      — perfil de circuito registrado (feature 043;#}
+{#                                   veto "SIN DATO" si es None — no estimar    #}
+{#                                   distancia/vueltas/terreno/desnivel)        #}
 {#   anthro_block (str|None)      — maduración (sin peso/IMC/nutrición)        #}
 {#   training_block (str|None)    — ventana de entrenamiento                   #}
 {#   dialogue_block (str|None)    — preguntas/respuestas previas del coach     #}
@@ -92,6 +95,18 @@ Estas son las **únicas** condiciones registradas. No agregues ninguna otra.
 ## Condiciones registradas — SIN DATO
 
 PROHIBIDO mencionar clima, temperatura, superficie, terreno o altitud.
+{% endif %}
+
+{% if course_block %}
+## Circuito registrado
+
+Estas son las **únicas** características del circuito registradas. No agregues ninguna otra ni estimes distancias o desniveles no listados.
+
+{{ course_block }}
+{% else %}
+## Circuito — SIN DATO
+
+PROHIBIDO mencionar distancia, vueltas, terreno, desnivel, altimetría o dificultad técnica del circuito.
 {% endif %}
 
 {% if anthro_block %}

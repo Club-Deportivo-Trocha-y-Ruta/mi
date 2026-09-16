@@ -83,6 +83,8 @@ async def sqlite_engine() -> AsyncEngine:
     from app.models.club import Club as _Cl, ClubMember as _CM  # noqa: F401
     from app.models.race_category import RaceCategory as _Cat  # noqa: F401
     from app.models.race_competitor import RaceCompetitor as _Comp  # noqa: F401
+    from app.models.race_course_category_setup import RaceCourseCategorySetup as _RCS  # noqa: F401
+    from app.models.race_course_variant import RaceCourseVariant as _RCV  # noqa: F401
     from app.models.race_event import RaceEvent as _E  # noqa: F401
     from app.models.race_import import RaceImport as _I  # noqa: F401
     from app.models.race_result import RaceResult as _R  # noqa: F401
@@ -103,6 +105,8 @@ async def sqlite_engine() -> AsyncEngine:
             "race_categories",
             "race_competitors",
             "race_results",
+            "race_course_variants",
+            "race_course_category_setups",
             *AUDIT_TABLES,
         )
     ]
@@ -450,7 +454,8 @@ class TestResultsQueryCount:
     async def test_results_bounded_queries(
         self, sqlite_engine, db_session_factory, seed_full
     ):
-        """Results endpoint should use ≤3 SQL statements (event check + main query + commit)."""
+        """Results endpoint should use ≤3 SQL statements (event check +
+        course-setup query [feature 043, US2] + main query + commit)."""
         query_log: list[str] = []
 
         # SQLAlchemy sync event listener on the underlying sync engine.
@@ -477,5 +482,7 @@ class TestResultsQueryCount:
             app.dependency_overrides.clear()
             sa_event.remove(sync_engine, "before_cursor_execute", _capture)
 
-        # Should be ≤3: event-exists check + main join query + (optional) commit.
+        # Should be ≤3: event-exists check + course-setup query (feature 043,
+        # US2 — unconditional, exactly one, never a second fallback query) +
+        # main join query + (optional) commit.
         assert len(query_log) <= 3, f"Expected ≤3 queries, got {len(query_log)}: {query_log}"

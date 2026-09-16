@@ -100,6 +100,7 @@ from app.models.race_result import RaceResult, ResultStatus
 from app.models.race_series import RaceSeries
 from app.models.user import User, UserRole
 from tests.helpers.audit_tables import AUDIT_TABLES
+from tests.helpers.query_counting import count_selects
 
 
 # ---------------------------------------------------------------------------
@@ -176,6 +177,11 @@ async def sqlite_engine() -> AsyncEngine:
             "race_competitors",
             "race_results",
             "race_event_roster",
+            # Feature 043: RaceEvent.course_variants/course_setups cascade
+            # "all, delete-orphan" — an ORM delete of a race_event now enumerates
+            # these tables even when the row itself never uses course data.
+            "race_course_variants",
+            "race_course_category_setups",
             *AUDIT_TABLES,
         )
     ]
@@ -1110,6 +1116,93 @@ class TestListRaceEvents:
         """Padres no acceden al listado de eventos administrativos."""
         r = await parent_client.get(_COLLECTION_URL)
         assert r.status_code == 403
+
+
+class TestListRaceEventsQueryCount:
+    """T020 — el subquery correlacionado de ``has_course_data`` no debe
+    convertir el listado en un N+1: la cantidad de sentencias SQL no debe
+    escalar con la cantidad de eventos devueltos (mismo contador que
+    ``tests/routers/test_race_course.py::TestQueryCount``).
+    """
+
+    @pytest.mark.asyncio
+    async def test_statement_count_stable_across_event_count(
+        self, sqlite_engine, db_session_factory
+    ):
+        """1 evento vs. 3 eventos debe emitir el MISMO número de sentencias:
+        los tres subqueries (resultados, calendario, circuito) van dentro del
+        único ``SELECT`` sobre ``race_events``, así que agregar filas nunca
+        debería sumar sentencias adicionales.
+        """
+        async with db_session_factory() as session:
+            session.add_all(
+                [
+                    User(
+                        id=10, email="coach@test.com", hashed_password="x",
+                        first_name="Coach", last_name="Ten",
+                        role=UserRole.coach, is_active=True, can_login=True,
+                        created_at=datetime.now(timezone.utc),
+                    ),
+                    RaceSeries(
+                        id=1, name="Copa Valle de Ciclomontañismo",
+                        season_year=2026, organizer="Liga",
+                        points_scheme_code="copa_valle_2026",
+                    ),
+                    RaceEvent(
+                        id=100, series_id=1, sequence_number=1,
+                        name="VALIDA I", event_date=date(2026, 5, 17),
+                        location="Cali", is_championship=False,
+                        status=RaceEventStatus.SCHEDULED,
+                        created_by_user_id=10,
+                    ),
+                ]
+            )
+            await session.commit()
+
+        app.dependency_overrides[get_db] = _override_db_factory(db_session_factory)
+        app.dependency_overrides[get_current_user] = lambda: _make_user(
+            UserRole.coach, 10
+        )
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as ac:
+                async with count_selects(sqlite_engine) as counter_one:
+                    r1 = await ac.get(_COLLECTION_URL)
+                assert r1.status_code == 200, r1.text
+                assert len(r1.json()["items"]) == 1
+
+                async with db_session_factory() as session:
+                    session.add_all(
+                        [
+                            RaceEvent(
+                                id=101, series_id=1, sequence_number=2,
+                                name="VALIDA II", event_date=date(2026, 6, 1),
+                                location="Cali", is_championship=False,
+                                status=RaceEventStatus.SCHEDULED,
+                                created_by_user_id=10,
+                            ),
+                            RaceEvent(
+                                id=102, series_id=1, sequence_number=3,
+                                name="VALIDA III", event_date=date(2026, 7, 1),
+                                location="Cali", is_championship=False,
+                                status=RaceEventStatus.SCHEDULED,
+                                created_by_user_id=10,
+                            ),
+                        ]
+                    )
+                    await session.commit()
+
+                async with count_selects(sqlite_engine) as counter_three:
+                    r3 = await ac.get(_COLLECTION_URL)
+                assert r3.status_code == 200, r3.text
+                assert len(r3.json()["items"]) == 3
+        finally:
+            app.dependency_overrides.clear()
+
+        assert counter_three[0] == counter_one[0], (
+            f"1 evento -> {counter_one[0]} SELECTs, 3 eventos -> "
+            f"{counter_three[0]} SELECTs: el listado se volvió N+1."
+        )
 
 
 # ===========================================================================

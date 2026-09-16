@@ -249,7 +249,7 @@ describe("CompetitionFormPage spec-014 — US1: championship path", () => {
     );
 
     await waitFor(() =>
-      expect(mockNavigate).toHaveBeenCalledWith("/competitions/88"),
+      expect(mockNavigate).toHaveBeenCalledWith("/competitions/88?tab=circuito"),
     );
   });
 

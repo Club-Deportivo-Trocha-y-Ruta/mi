@@ -437,7 +437,11 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
         { body: buildCreatePayload(values) },
         {
           onSuccess: (created) => {
-            const dest = returnTo ?? `/competitions/${created.id}`;
+            // Feature 043 (T028): sin `returnTo` explícito, la nueva válida
+            // aterriza directo en su tab "Circuito" — el siguiente paso
+            // natural tras crearla. `returnTo` (cuando viene, ej. flujo
+            // "crear desde calendario") sigue ganando siempre.
+            const dest = returnTo ?? `/competitions/${created.id}?tab=circuito`;
             navigate(dest);
           },
           onError: handleSubmitError,

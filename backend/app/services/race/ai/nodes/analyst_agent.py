@@ -482,6 +482,14 @@ def _race_meta_for_valida(state: dict, valida_num: int) -> str | None:
     return race_meta
 
 
+def _course_meta_for_valida(state: dict, valida_num: int) -> str | None:
+    """Perfil de circuito registrado para esa válida (o ``None``) (feature 043)."""
+    from app.services.race.agents.analyst import format_course_meta
+
+    course_context: dict[int, dict] = state.get("course_context") or {}
+    return format_course_meta(course_context.get(valida_num))
+
+
 def _build_v3_inputs(state: dict, athlete_ref: str) -> list[AnalystV3Input]:
     """Construye una entrada v3 por válida (o una sola para la temporada)."""
     analysis_kind = state.get("analysis_kind") or "valida"
@@ -507,7 +515,27 @@ def _build_v3_inputs(state: dict, athlete_ref: str) -> list[AnalystV3Input]:
     if analysis_kind == "season":
         # La temporada no tiene fila de carrera ni lectura de pelotón propia:
         # la tabla de temporada es todo el insumo (spec §US5).
-        return [AnalystV3Input(valida_num=0, analysis_kind="season", **common)]
+        # Feature 043 (US4): un course_meta por válida que SÍ tiene dato de
+        # circuito — las que no, se omiten del dict (veto de ausencia).
+        # ``valida_nums`` está vacío en un lanzamiento global (spec §US5); las
+        # válidas reales de la temporada están en las claves de
+        # ``course_context`` (load_race_data las deriva de los resultados
+        # cuando no hay válidas explícitas), así que se itera sobre esas
+        # claves y no sobre ``valida_nums``.
+        course_context: dict[int, dict] = state.get("course_context") or {}
+        course_by_valida = {
+            v: b
+            for v in sorted(course_context.keys())
+            if (b := _course_meta_for_valida(state, v)) is not None
+        }
+        return [
+            AnalystV3Input(
+                valida_num=0,
+                analysis_kind="season",
+                course_by_valida=course_by_valida,
+                **common,
+            )
+        ]
 
     field_context: dict = state.get("field_context") or {}
     field_by_valida = _field_metrics_by_valida(state)
@@ -529,6 +557,7 @@ def _build_v3_inputs(state: dict, athlete_ref: str) -> list[AnalystV3Input]:
                 race_row=race_row,
                 field_metrics=field_metrics,
                 race_meta=_race_meta_for_valida(state, valida_num),
+                course_meta=_course_meta_for_valida(state, valida_num),
                 **common,
             )
         )

@@ -60,22 +60,26 @@ const focusRing =
  * grises y en modo de alto contraste.
  */
 const areaRowBase =
-  "relative flex min-h-11 flex-1 items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm transition-colors";
+  "relative flex min-h-12 flex-1 items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm transition-colors";
 const areaRowActive = "bg-nav-active-bg font-semibold text-charcoal";
 const areaRowInactive =
   "font-medium text-mid-gray hover:bg-light-gray hover:text-charcoal";
 
-// `min-h-11` (44px) y no los 36px del mockup: los sub-items son 12 destinos
-// de navegación reales y el piso táctil del proyecto manda sobre el ritmo
-// vertical dibujado (mismo criterio que las filas de `PendingInbox`).
+// `min-h-12` (48px, piso táctil de la constitución — Principio III): los
+// sub-items son 12 destinos de navegación reales, no decoración, así que no
+// pueden quedar por debajo del mínimo aunque el ritmo vertical dibujado en
+// el mockup fuera más apretado (mismo criterio que las filas de
+// `PendingInbox`). Bajaba a 44px hasta el hallazgo RC-004 de la auditoría
+// responsive de 2026-09-16 — 44 fue en su momento una decisión consciente
+// frente a los 36px del mockup, pero se quedó corta del piso real.
 const subItemBase =
-  "flex min-h-11 items-center rounded-lg px-2.5 py-2 text-[13px] transition-colors";
+  "flex min-h-12 items-center rounded-lg px-2.5 py-2 text-[13px] transition-colors";
 const subItemActive = "bg-nav-active-bg font-semibold text-charcoal";
 const subItemInactive =
   "font-medium text-mid-gray hover:bg-light-gray hover:text-charcoal";
 
 const railTileBase =
-  "relative flex h-11 w-11 items-center justify-center rounded-lg transition-colors";
+  "relative flex h-12 w-12 items-center justify-center rounded-lg transition-colors";
 const railTileActive = "bg-nav-active-bg text-nav-accent";
 const railTileInactive = "text-mid-gray hover:bg-light-gray hover:text-charcoal";
 
@@ -122,11 +126,11 @@ function areaLabelWithBadge(area: NavArea, badge: number | undefined): string {
  *  - Expandida (256px): marca + overlines de grupo («Operación» / «Club») +
  *    filas de área con disclosure, sub-items sobre riel de 2px e insignias de
  *    pendientes.
- *  - Riel (72px): sólo tiles de 44×44 con tooltip; la insignia se vuelve un
+ *  - Riel (72px): sólo tiles de 48×48 con tooltip; la insignia se vuelve un
  *    punto ámbar y el conteo pasa al tooltip.
  *
  * Se conservan intactos los contratos de la feature 030: cada área de varios
- * items expone DOS controles independientes de ≥44px — la etiqueta navega a
+ * items expone DOS controles independientes de ≥48px — la etiqueta navega a
  * `resolveAreaDefaultTo`, y un chevron aparte que sólo pliega/despliega
  * ("Expandir X"/"Contraer X") — el área activa se auto-expande desde el
  * pathname (`isAreaActive`) y el estado manual es transitorio (nunca se
@@ -212,7 +216,7 @@ export function SidebarNav({
                   aria-label="Expandir navegación"
                   onClick={onToggleCollapsed}
                   className={cn(
-                    "flex h-11 w-11 items-center justify-center rounded-lg text-mid-gray transition-colors hover:bg-light-gray hover:text-charcoal",
+                    "flex h-12 w-12 items-center justify-center rounded-lg text-mid-gray transition-colors hover:bg-light-gray hover:text-charcoal",
                     focusRing,
                   )}
                 >
@@ -248,16 +252,19 @@ export function SidebarNav({
             Club Ciclismo XCO
           </span>
         </div>
-        {/* 28px visibles (mockup) pero área táctil real de 44×44 vía
-            ::after — el control no puede quedar por debajo del mínimo
-            táctil aunque el ícono sea pequeño. */}
+        {/* Antes 28px visibles con un área táctil ampliada vía ::after: ese
+            pseudo-elemento no cuenta para `getBoundingClientRect()` del
+            propio botón, así que el hallazgo RC-004 de la auditoría
+            responsive de 2026-09-16 lo seguía midiendo en 28×28. El control
+            ahora es un cuadro real de 48×48 — el ícono se queda pequeño (el
+            mockup manda ahí) pero la caja que lo envuelve ya no depende de
+            un truco de hit-area. */}
         <button
           type="button"
           aria-label="Contraer navegación"
           onClick={onToggleCollapsed}
           className={cn(
-            "relative flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-mid-gray transition-colors hover:bg-light-gray hover:text-charcoal",
-            "after:absolute after:-inset-2 after:content-['']",
+            "flex h-12 w-12 shrink-0 items-center justify-center rounded-lg text-mid-gray transition-colors hover:bg-light-gray hover:text-charcoal",
             focusRing,
           )}
         >
@@ -370,7 +377,7 @@ export function SidebarNav({
                         open ? `Contraer ${area.label}` : `Expandir ${area.label}`
                       }
                       className={cn(
-                        "flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-mid-gray transition-colors hover:bg-light-gray hover:text-charcoal",
+                        "flex h-12 w-12 shrink-0 items-center justify-center rounded-lg text-mid-gray transition-colors hover:bg-light-gray hover:text-charcoal",
                         focusRing,
                       )}
                     >

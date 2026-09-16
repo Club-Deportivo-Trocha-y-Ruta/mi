@@ -317,25 +317,25 @@ describe("SidebarNav — separación label (navega) vs. chevron (solo disclosure
     expect(screen.getByTestId("location")).toHaveTextContent("/dashboard");
   });
 
-  it("los dos controles del área siguen siendo independientes y ≥44px", () => {
+  it("los dos controles del área siguen siendo independientes y ≥48px", () => {
     renderSidebar("coach", { initialPath: "/dashboard" });
 
     const label = screen.getByRole("link", { name: /Entrenamiento/ });
     const chevron = screen.getByRole("button", { name: "Expandir Entrenamiento" });
 
     expect(label).not.toBe(chevron);
-    expect(label.className).toMatch(/min-h-11/);
-    expect(chevron.className).toMatch(/h-11/);
-    expect(chevron.className).toMatch(/w-11/);
+    expect(label.className).toMatch(/min-h-12/);
+    expect(chevron.className).toMatch(/h-12/);
+    expect(chevron.className).toMatch(/w-12/);
   });
 
-  it("los sub-items también llegan a ≥44px — son destinos de navegación reales", () => {
+  it("los sub-items también llegan a ≥48px — son destinos de navegación reales", () => {
     // Área activa → auto-expandida, así que sus sub-items están montados.
     renderSidebar("coach", { initialPath: "/training/sessions" });
 
     for (const name of ["Calendario", "Sesiones", "Actividades"]) {
       const subItem = screen.getByRole("link", { name });
-      expect(subItem.className).toMatch(/min-h-11/);
+      expect(subItem.className).toMatch(/min-h-12/);
     }
   });
 });
@@ -409,10 +409,12 @@ describe("SidebarNav — control de colapso", () => {
     expect(onToggleCollapsed).toHaveBeenCalledTimes(1);
   });
 
-  it("el control de 28px mantiene un área táctil de 44px vía ::after", () => {
+  it("'Contraer navegación' es una caja real de 48×48, no un ícono con hit-area ampliada", () => {
     renderSidebar("coach");
     const toggle = screen.getByRole("button", { name: "Contraer navegación" });
-    expect(toggle.className).toMatch(/after:-inset-2/);
+    expect(toggle.className).toMatch(/h-12/);
+    expect(toggle.className).toMatch(/w-12/);
+    expect(toggle.className).not.toMatch(/after:/);
   });
 
   it("riel: ofrece 'Expandir navegación' y avisa al padre al pulsarlo", async () => {

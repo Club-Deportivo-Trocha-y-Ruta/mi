@@ -136,7 +136,7 @@ describe("CompetitionFormPage — FR-024 checkbox calendario", () => {
     // El frontend no llama a /api/calendar/events por separado
     expect(calendarCalled).toBe(false);
     await waitFor(() =>
-      expect(mockNavigate).toHaveBeenCalledWith("/competitions/555"),
+      expect(mockNavigate).toHaveBeenCalledWith("/competitions/555?tab=circuito"),
     );
   });
 
@@ -159,7 +159,7 @@ describe("CompetitionFormPage — FR-024 checkbox calendario", () => {
     await waitFor(() => expect(raceEventBody).not.toBeNull());
     expect(raceEventBody).toMatchObject({ create_calendar_event: false });
     await waitFor(() =>
-      expect(mockNavigate).toHaveBeenCalledWith("/competitions/555"),
+      expect(mockNavigate).toHaveBeenCalledWith("/competitions/555?tab=circuito"),
     );
   });
 
@@ -168,7 +168,7 @@ describe("CompetitionFormPage — FR-024 checkbox calendario", () => {
     await fillAndSubmit();
 
     await waitFor(() =>
-      expect(mockNavigate).toHaveBeenCalledWith("/competitions/555"),
+      expect(mockNavigate).toHaveBeenCalledWith("/competitions/555?tab=circuito"),
     );
   });
 });

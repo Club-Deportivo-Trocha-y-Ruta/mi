@@ -116,7 +116,7 @@ const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50";
 
 const navRowBase = cn(
-  "relative flex min-h-11 items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm transition-colors",
+  "relative flex min-h-12 items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm transition-colors",
   focusRing,
 );
 const navRowActive = "bg-nav-active-bg font-semibold text-charcoal";
@@ -157,7 +157,7 @@ function AthleteRow({ athlete, active, onSelect }: AthleteRowProps) {
       aria-current={active ? "true" : undefined}
       data-testid={`parent-sidebar-athlete-${athlete.athlete_id}`}
       className={cn(
-        "flex min-h-11 w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left transition-colors",
+        "flex min-h-12 w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left transition-colors",
         focusRing,
         active ? "bg-nav-active-bg" : "hover:bg-light-gray",
       )}
@@ -296,7 +296,7 @@ export function ParentSidebar({ onNavigate, onClose }: ParentSidebarProps) {
             aria-label="Cerrar menú"
             onClick={onClose}
             className={cn(
-              "flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-mid-gray transition-colors hover:bg-light-gray hover:text-charcoal md:hidden",
+              "flex h-12 w-12 shrink-0 items-center justify-center rounded-lg text-mid-gray transition-colors hover:bg-light-gray hover:text-charcoal md:hidden",
               focusRing,
             )}
           >
@@ -333,7 +333,7 @@ export function ParentSidebar({ onNavigate, onClose }: ParentSidebarProps) {
               aria-current={allAthletesActive ? "true" : undefined}
               data-testid="parent-sidebar-athlete-all"
               className={cn(
-                "flex min-h-11 w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm font-medium transition-colors",
+                "flex min-h-12 w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm font-medium transition-colors",
                 focusRing,
                 allAthletesActive
                   ? "bg-nav-active-bg text-charcoal"
@@ -387,7 +387,7 @@ export function ParentSidebar({ onNavigate, onClose }: ParentSidebarProps) {
           onClick={onNavigate}
           aria-current={pathname === "/perfil" ? "page" : undefined}
           className={cn(
-            "flex min-h-11 items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium text-mid-gray transition-colors hover:bg-light-gray hover:text-charcoal",
+            "flex min-h-12 items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium text-mid-gray transition-colors hover:bg-light-gray hover:text-charcoal",
             focusRing,
           )}
         >
@@ -398,7 +398,7 @@ export function ParentSidebar({ onNavigate, onClose }: ParentSidebarProps) {
           type="button"
           onClick={logout}
           className={cn(
-            "flex min-h-11 items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-mid-gray transition-colors hover:bg-light-gray hover:text-charcoal",
+            "flex min-h-12 items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-mid-gray transition-colors hover:bg-light-gray hover:text-charcoal",
             focusRing,
           )}
         >

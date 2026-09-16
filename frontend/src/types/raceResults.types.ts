@@ -68,6 +68,35 @@ export interface RaceResultRow {
    * null cuando coach_note es null.
    */
   coach_note_updated_at: string | null;
+  /**
+   * Feature 043 (US2) — distancia recorrida derivada (vueltas completadas ×
+   * distancia de la variante del circuito), redondeada a 1 decimal. `null`
+   * cuando no hay circuito/setup para la categoría o el corredor no tiene
+   * vueltas completadas calculables (DNF/DNS/DSQ, `minus_laps` sin dato).
+   * Opcional — ausente en respuestas/fixtures previas a esta feature
+   * (mirror de `results-derived-figures.md` §1, aditivo).
+   */
+  distance_km?: number | null;
+  /**
+   * Feature 043 (US2) — velocidad promedio derivada (distance_km / horas de
+   * carrera), redondeada a 1 decimal. Mismas condiciones de `null` que
+   * `distance_km`. Opcional por el mismo motivo aditivo.
+   */
+  avg_speed_kmh?: number | null;
+  /**
+   * Feature 043 (US2) — distancia de una vuelta de la variante de circuito
+   * asignada a la categoría de este corredor, redondeada a 1 decimal. Se
+   * repite en cada fila de la categoría (viene del setup compartido) para
+   * que la tabla pueda armar el encabezado de categoría sin una consulta
+   * adicional. `null` sin circuito. Opcional por el mismo motivo aditivo.
+   */
+  lap_distance_km?: number | null;
+  /**
+   * Feature 043 (US2) — desnivel positivo (m) de la variante de circuito
+   * asignada. `null` sin circuito o sin altimetría en la grabación GPX.
+   * Opcional por el mismo motivo aditivo.
+   */
+  elevation_gain_m?: number | null;
 }
 
 /**
@@ -80,6 +109,19 @@ export interface RaceResultCategory {
   /** Etiqueta legible (ej. "Infantil Masculino"). */
   label: string;
   rows: RaceResultRow[];
+  /**
+   * Feature 043 (US2) — vueltas configuradas para esta categoría en el
+   * circuito de la válida (`RaceCourseCategorySetup.laps`). `null`/ausente
+   * cuando no hay setup para la categoría. Opcional — aditivo, mirror de
+   * `results-derived-figures.md` §1.
+   */
+  laps?: number | null;
+  /**
+   * Feature 043 (US2) — etiqueta de la variante de circuito asignada a esta
+   * categoría (ej. "Recorrido reducido"). Mismas condiciones de `null` que
+   * `laps`. Opcional por el mismo motivo aditivo.
+   */
+  variant_label?: string | null;
 }
 
 /**
@@ -100,6 +142,15 @@ export interface RaceEventResultsResponse {
   location?: string;
   /** Estado del evento (ej. "completed", "scheduled"). */
   status?: string;
+  /**
+   * Feature 043 (US2) — `true` cuando la válida tiene al menos un circuito
+   * (variante de recorrido) configurado, en cuyo caso las columnas
+   * derivadas "Distancia"/"Vel. prom." se muestran en `ResultsTable`.
+   * Opcional/`undefined` en respuestas y fixtures previas a esta feature
+   * (mirror de `results-derived-figures.md` §1 y `ui-course.md` §5) — se
+   * trata igual que `false` (columnas ocultas, SC-007).
+   */
+  has_course_data?: boolean;
 }
 
 /**

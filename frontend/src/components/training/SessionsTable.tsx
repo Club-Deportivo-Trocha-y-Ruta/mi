@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 
 import { fetchTrainingSession } from "@/api/trainingSessions";
 import { SessionStatusBadge } from "@/components/training/SessionStatusBadge";
+import { TableScrollContainer } from "@/components/ui/table";
 import { usePrefetchOnIntent } from "@/hooks/usePrefetchOnIntent";
 import { isToday } from "@/lib/datetime";
 import { useAuthStore } from "@/store/auth.store";
@@ -152,7 +153,8 @@ export function SessionsTable({
       </ul>
 
       {/* Vista desktop: tabla */}
-      <div className="hidden overflow-x-auto rounded-xl bg-white md:block shadow-card">
+      <div className="hidden rounded-xl bg-white md:block shadow-card">
+        <TableScrollContainer className="rounded-xl">
         <table className="min-w-full text-sm">
           <caption className="sr-only">Lista de sesiones de entrenamiento</caption>
           <thead
@@ -169,10 +171,12 @@ export function SessionsTable({
               <th scope="col" className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-mid-gray">
                 Foco técnico
               </th>
-              <th scope="col" className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-mid-gray">
+              {/* Columnas secundarias: se ocultan entre md y lg (F-10) para
+                  que Asistencia y Acciones queden visibles sin scroll. */}
+              <th scope="col" className="hidden lg:table-cell px-4 py-3 text-xs font-medium uppercase tracking-wide text-mid-gray">
                 Lugar
               </th>
-              <th scope="col" className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-mid-gray">
+              <th scope="col" className="hidden lg:table-cell px-4 py-3 text-xs font-medium uppercase tracking-wide text-mid-gray">
                 Entrenadores a cargo
               </th>
               <th scope="col" className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-mid-gray">
@@ -207,10 +211,10 @@ export function SessionsTable({
                 <td className="max-w-[200px] truncate px-4 py-3 font-medium text-charcoal">
                   {session.technical_focus}
                 </td>
-                <td className="max-w-[160px] truncate px-4 py-3 text-mid-gray">
+                <td className="hidden lg:table-cell max-w-[160px] truncate px-4 py-3 text-mid-gray">
                   {session.location}
                 </td>
-                <td className="max-w-[180px] truncate px-4 py-3 text-mid-gray">
+                <td className="hidden lg:table-cell max-w-[180px] truncate px-4 py-3 text-mid-gray">
                   {formatCoaches(session)}
                 </td>
                 <td className="px-4 py-3">
@@ -222,17 +226,22 @@ export function SessionsTable({
                     : "—"}
                 </td>
                 <td className="px-4 py-3">
-                  <div className="flex gap-2">
+                  {/* min-h-12 min-w-12: el sweep e2e de target-size.spec.ts
+                      mide el boundingBox() real de cada <a>/<button> — la
+                      celda "Acciones" es la más densa de la tabla, así que
+                      estos targets crecen en vez de agruparse en un kebab
+                      (mantiene el texto visible, sin rediseñar la columna). */}
+                  <div className="flex flex-wrap gap-2">
                     <Link
                       to={`/training/sessions/${session.id}`}
-                      className="rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
+                      className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-lg bg-white px-3 text-xs font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
                     >
                       Ver
                     </Link>
                     {session.status !== "cancelled" && (
                       <Link
                         to={`/training/sessions/${session.id}/edit`}
-                        className="rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
+                        className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-lg bg-white px-3 text-xs font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
                       >
                         Editar
                       </Link>
@@ -242,7 +251,7 @@ export function SessionsTable({
                         type="button"
                         onClick={() => onExecute(session.id)}
                         disabled={executePendingId === session.id}
-                        className="rounded-lg bg-green-50 px-3 py-1.5 text-xs font-medium text-green-700 transition-opacity hover:opacity-70 disabled:opacity-40 shadow-ring"
+                        className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-lg bg-green-50 px-3 text-xs font-medium text-green-700 transition-opacity hover:opacity-70 disabled:opacity-40 shadow-ring"
                       >
                         Ejecutar
                       </button>
@@ -252,7 +261,7 @@ export function SessionsTable({
                         type="button"
                         onClick={() => onCancel(session.id)}
                         disabled={cancelPendingId === session.id}
-                        className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600 transition-opacity hover:opacity-70 disabled:opacity-40 shadow-ring"
+                        className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-lg bg-red-50 px-3 text-xs font-medium text-red-600 transition-opacity hover:opacity-70 disabled:opacity-40 shadow-ring"
                       >
                         Cancelar
                       </button>
@@ -263,6 +272,7 @@ export function SessionsTable({
             ))}
           </tbody>
         </table>
+        </TableScrollContainer>
       </div>
     </>
   );

@@ -126,9 +126,11 @@ describe("ArchivedAthletesPage", () => {
     renderPage();
 
     expect(await screen.findByTestId("archived-athletes-table")).toBeInTheDocument();
-    expect(screen.getByText("Sebastián García Ficticio")).toBeInTheDocument();
-    expect(await screen.findByText("Se retiró del club")).toBeInTheDocument();
-    expect(screen.getByText("Ana Coach")).toBeInTheDocument();
+    // F-10: bajo `md` se renderiza además una lista de cards, así que estos
+    // textos ahora existen dos veces (card + tabla) en el DOM de jsdom.
+    expect(screen.getAllByText("Sebastián García Ficticio").length).toBeGreaterThanOrEqual(1);
+    expect((await screen.findAllByText("Se retiró del club")).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Ana Coach").length).toBeGreaterThanOrEqual(1);
   });
 
   it("empty state: 'No hay atletas archivados.'", () => {
@@ -175,7 +177,9 @@ describe("ArchivedAthletesPage", () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.click(await screen.findByTestId("restore-athlete-button"));
+    // F-10: el botón existe tanto en la card móvil como en la fila de tabla.
+    const restoreButtons = await screen.findAllByTestId("restore-athlete-button");
+    await user.click(restoreButtons[0]);
     await screen.findByTestId("restore-athlete-dialog");
 
     await screen.findByText("Archivado por error");

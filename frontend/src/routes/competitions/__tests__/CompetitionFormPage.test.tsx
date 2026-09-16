@@ -141,7 +141,7 @@ describe("CompetitionFormPage — mode=create", () => {
       location: "Cali",
     });
     await waitFor(() =>
-      expect(mockNavigate).toHaveBeenCalledWith("/competitions/555"),
+      expect(mockNavigate).toHaveBeenCalledWith("/competitions/555?tab=circuito"),
     );
   });
 

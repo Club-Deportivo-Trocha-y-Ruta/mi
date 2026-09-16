@@ -738,10 +738,18 @@ class TestCoachNotePrivacy:
         event_result = MagicMock()
         event_result.mappings.return_value.one_or_none.return_value = event_mapping
 
+        # feature 043 (US2): get_event_results now also queries course setups
+        # (exactly once, unconditionally) — not exercised by this coach_note
+        # test, so it comes back empty.
+        setup_rows_result = MagicMock()
+        setup_rows_result.scalars.return_value.all.return_value = []
+
         result_rows = MagicMock()
         result_rows.mappings.return_value.all.return_value = [result_mapping]
 
-        db.execute = AsyncMock(side_effect=[event_result, result_rows])
+        db.execute = AsyncMock(
+            side_effect=[event_result, setup_rows_result, result_rows]
+        )
 
         # Call with parent scope (allowed_athlete_ids is a set, not None).
         payload = await get_event_results(
@@ -814,10 +822,16 @@ class TestCoachNotePrivacy:
         event_result = MagicMock()
         event_result.mappings.return_value.one_or_none.return_value = event_mapping
 
+        # feature 043 (US2): same extra course-data query as above.
+        setup_rows_result = MagicMock()
+        setup_rows_result.scalars.return_value.all.return_value = []
+
         result_rows = MagicMock()
         result_rows.mappings.return_value.all.return_value = [result_mapping]
 
-        db.execute = AsyncMock(side_effect=[event_result, result_rows])
+        db.execute = AsyncMock(
+            side_effect=[event_result, setup_rows_result, result_rows]
+        )
 
         # Coach scope: allowed_athlete_ids=None.
         payload = await get_event_results(

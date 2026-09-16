@@ -1,0 +1,283 @@
+{
+  "case_id": "011_course_absent",
+  "description": "Mismo escenario base que case_010 (bambino 12 años, válida de copa, gap más alto que en las cuatro válidas previas) pero SIN perfil de circuito registrado para esta válida — el análisis debe declarar el vacío y no puede mencionar distancia, vueltas, terreno, desnivel ni dificultad técnica del recorrido (feature 043, User Story 4, veto SIN DATO).",
+  "input": {
+    "valida_num": 5,
+    "analysis_kind": "valida",
+    "athlete_ref": "el deportista",
+    "age": 12,
+    "ltad_group": "bambino",
+    "season": 2026,
+    "validas_count": 5,
+    "valida_label": "Válida 5 · Copa Valle",
+    "race_row": {
+      "valida_num": 5,
+      "event_date": "2026-06-14",
+      "category_code": "INF_B",
+      "position": 4,
+      "race_time_ms": 2004000,
+      "gap_to_winner_ms": 178000,
+      "gap_to_winner_pct": 9.8
+    },
+    "field_metrics": {
+      "event_id": 5205,
+      "valida_num": 5,
+      "event_date": "2026-06-14",
+      "series_kind": "cup",
+      "series_level": "departmental",
+      "is_championship": false,
+      "field_size": 12,
+      "position": 4,
+      "percentile": 72.7,
+      "race_time_ms": 2004000,
+      "gap_to_p1_ms": 178000,
+      "gap_pct": 9.8,
+      "gap_to_p3_ms": 52000,
+      "category_median_time_ms": 1930000,
+      "gap_to_median_pct": 3.8,
+      "laps_behind": 0,
+      "prior_index": 4.3,
+      "expected_position": 3,
+      "delta_vs_expected": -1,
+      "field_strength": 5.2,
+      "coverage_with_prior": 0.68
+    },
+    "season_rows": [
+      {
+        "valida_num": 1,
+        "event_date": "2026-01-31",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 5,
+        "field_size": 12,
+        "percentile": 58.3,
+        "gap_pct": 6.5,
+        "gap_to_p3_ms": 31000,
+        "expected_position": 5,
+        "delta_vs_expected": 0
+      },
+      {
+        "valida_num": 2,
+        "event_date": "2026-02-28",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 4,
+        "field_size": 12,
+        "percentile": 66.7,
+        "gap_pct": 5.9,
+        "gap_to_p3_ms": 24000,
+        "expected_position": 5,
+        "delta_vs_expected": 1
+      },
+      {
+        "valida_num": 3,
+        "event_date": "2026-04-19",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 4,
+        "field_size": 11,
+        "percentile": 63.6,
+        "gap_pct": 6.2,
+        "gap_to_p3_ms": 27000,
+        "expected_position": 4,
+        "delta_vs_expected": 0
+      },
+      {
+        "valida_num": 4,
+        "event_date": "2026-05-17",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 3,
+        "field_size": 12,
+        "percentile": 75,
+        "gap_pct": 5.1,
+        "gap_to_p3_ms": 0,
+        "expected_position": 4,
+        "delta_vs_expected": 1
+      },
+      {
+        "valida_num": 5,
+        "event_date": "2026-06-14",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 4,
+        "field_size": 12,
+        "percentile": 72.7,
+        "gap_pct": 9.8,
+        "gap_to_p3_ms": 52000,
+        "expected_position": 3,
+        "delta_vs_expected": -1
+      }
+    ],
+    "race_meta": "- Clima: nublado\n- Temperatura: 19 °C\n- Superficie de la pista: húmeda\n- Altitud: 1650 msnm",
+    "anthro_context": {
+      "records_count": 3,
+      "latest": {
+        "evaluation_date": "2026-05-25",
+        "days_before_event": 20,
+        "maturity_offset_years": -2.1,
+        "age_at_phv": 13.9,
+        "maturation_status": "Pre-PHV",
+        "height_percentile": 58
+      },
+      "previous": {
+        "evaluation_date": "2026-02-20",
+        "maturity_offset_years": -2.4,
+        "maturation_status": "Pre-PHV"
+      },
+      "growth_velocity_cm_per_year": 5.8,
+      "months_from_phv": -25.2,
+      "flags": []
+    },
+    "training_window": {
+      "window_days": 28,
+      "date_from": "2026-05-17",
+      "date_to": "2026-06-14",
+      "sessions_in_window": 12,
+      "attended": 11,
+      "absent": 1,
+      "excused": 0,
+      "attendance_pct": 91.7,
+      "training_hours": 17.0,
+      "rpe_mean": 4.2,
+      "rpe_last7_mean": 4.4,
+      "rpe_prev21_mean": 4.1,
+      "rubric_effort_mean": 4.6,
+      "rubric_attitude_mean": 4.5,
+      "rubric_technique_mean": 4.0,
+      "technical_foci": [
+        "Descensos técnicos",
+        "Subidas con cambios de ritmo"
+      ],
+      "interval_sessions": 1,
+      "days_since_last_session": 4,
+      "days_since_previous_race": 28,
+      "coach_feedback": [
+        "Mantiene la línea en bajadas con raíces sin frenar en exceso"
+      ],
+      "strava_load": null
+    },
+    "coach_dialogue": [],
+    "catalog_context": {
+      "interval_templates": [
+        {
+          "id": 8,
+          "name": "Bloque de subida con cambios de ritmo",
+          "age_band": "10-12",
+          "mesocycle_phase": "build"
+        }
+      ]
+    },
+    "memory_recent_insights": [
+      "Válida 4 · Copa: mejor percentil de la temporada con tres sesiones semanales sostenidas",
+      "Válida 3 · Copa: gap estable en 6.2% con foco técnico en curvas"
+    ]
+  },
+  "expected_themes": [
+    "gap",
+    "asistencia",
+    "percentil"
+  ],
+  "forbidden_terms": [
+    "suplementos",
+    "creatina",
+    "potenciómetro",
+    "test de FC máxima",
+    "podio",
+    "ganar",
+    "diagnóstico",
+    "Mariana",
+    "Thiago",
+    "Valentina",
+    "km",
+    "vuelta",
+    "vueltas",
+    "terreno",
+    "desnivel",
+    "técnico",
+    "dificultad"
+  ],
+  "expected_headline_keywords": [
+    "gap",
+    "circuito"
+  ],
+  "must_reference_catalog": true,
+  "max_words": 450,
+  "ideal_output": {
+    "schema_version": "v3",
+    "headline": "El gap subió a 9.8% frente al 5.1% de la válida anterior, sin datos de circuito registrados que expliquen el cambio.",
+    "field_reading": {
+      "percentile": 72.7,
+      "expected_position": 3,
+      "actual_position": 4,
+      "delta_vs_expected": -1,
+      "gap_to_p3_hhmmss": "0:00:52",
+      "series_label": "Válida 5 · Copa Valle",
+      "summary": "Un puesto por debajo de lo esperado en un pelotón de fuerza media; esta válida no tiene perfil de circuito registrado."
+    },
+    "trend": "mixed",
+    "observations": [
+      {
+        "claim": "El gap sube a 9.8% tras cuatro válidas seguidas entre 5.1% y 6.5%, un salto que no tiene una explicación de circuito disponible en los datos.",
+        "evidence": [
+          "gap 9.8% al líder",
+          "gap 5.1% en la válida anterior",
+          "gap 6.5% en la primera válida de la temporada"
+        ],
+        "domain": "field",
+        "confidence": "medium"
+      },
+      {
+        "claim": "El retroceso de un puesto respecto de lo esperado se lee en esta única carrera, sin poder contrastarlo contra ninguna característica del recorrido.",
+        "evidence": [
+          "esperada 3 frente a real 4",
+          "gap a P3 0:00:52"
+        ],
+        "domain": "field",
+        "confidence": "medium"
+      },
+      {
+        "claim": "La ventana previa sostuvo una asistencia alta, así que el salto en el gap no se explica por una caída de carga de entrenamiento.",
+        "evidence": [
+          "asistencia 91.7%",
+          "11 sesiones asistidas de 12",
+          "RPE medio 4.2"
+        ],
+        "domain": "training",
+        "confidence": "medium"
+      }
+    ],
+    "actions": [
+      {
+        "text": "Sostener el bloque de subidas con cambios de ritmo dos veces por semana durante cuatro semanas, aprovechando la base de descensos trabajada en la ventana previa.",
+        "category": "technique",
+        "priority": "high",
+        "horizon": "next_race",
+        "catalog_ref": {
+          "kind": "interval_template",
+          "code": "8",
+          "label": null
+        },
+        "derived_from": 2
+      },
+      {
+        "text": "Pedir que se registre el perfil del próximo recorrido antes de la carrera, para poder explicar variaciones de gap con datos y no solo con hipótesis.",
+        "category": "tactics",
+        "priority": "med",
+        "horizon": "next_race",
+        "catalog_ref": null,
+        "derived_from": 0
+      }
+    ],
+    "watch_signals": [
+      "Si el gap se mantiene sobre 8% en las próximas dos válidas, revisar si hay un patrón de pista que el club no está registrando."
+    ],
+    "coach_question": "¿Notó algo distinto en la salida o en el pulso de la carrera esta vez comparado con las válidas anteriores?",
+    "data_gaps": [
+      "Sin perfil de circuito registrado para esta válida, así que no se puede descartar que el recorrido explique el salto del gap."
+    ],
+    "principles_cited": [
+      "3. Progresión técnica en MTB/XCO"
+    ]
+  }
+}

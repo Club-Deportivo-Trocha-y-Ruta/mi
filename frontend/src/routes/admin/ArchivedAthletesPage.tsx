@@ -99,54 +99,98 @@ export function ArchivedAthletesPage() {
       )}
 
       {!archivedQuery.isLoading && !archivedQuery.isError && items.length > 0 && (
-        <div className="rounded-xl bg-white shadow-card">
-          <Table data-testid="archived-athletes-table">
-            <TableHeader>
-              <TableRow>
-                <TableHead>Deportista</TableHead>
-                <TableHead>Motivo</TableHead>
-                <TableHead>Archivado por</TableHead>
-                <TableHead>Fecha</TableHead>
-                <TableHead className="text-right">Acción</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {items.map((athlete) => (
-                <TableRow key={athlete.id} data-testid="archived-athlete-row">
-                  <TableCell>
+        <>
+          {/* Cards móvil (<md) — F-10: la tabla mostraba solo 2-3 de 5
+              columnas en m390 y "Restaurar" quedaba fuera sin indicador. */}
+          <ul role="list" className="flex flex-col gap-3 md:hidden">
+            {items.map((athlete) => (
+              <li key={athlete.id}>
+                <div
+                  className="rounded-xl bg-white p-4 space-y-2 shadow-card"
+                  data-testid="archived-athlete-row"
+                >
+                  <p className="text-sm font-medium text-charcoal">
                     {athlete.first_name} {athlete.last_name}
-                  </TableCell>
-                  <TableCell>
+                  </p>
+                  <p className="text-xs text-mid-gray">
                     {(athlete.deleted_reason_code &&
                       reasonLabelByCode.get(athlete.deleted_reason_code)) ??
                       athlete.deleted_reason_code ??
                       "—"}
-                  </TableCell>
-                  <TableCell>{athlete.deleted_by?.display_name ?? "—"}</TableCell>
-                  <TableCell>
-                    {athlete.deleted_at ? formatDate(athlete.deleted_at) : "—"}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="min-h-12"
-                      data-testid="restore-athlete-button"
-                      onClick={() => {
-                        setRestoreError(null);
-                        setRestoreTarget(athlete);
-                      }}
-                    >
-                      <ArchiveRestore size={14} className="mr-1.5" aria-hidden="true" />
-                      Restaurar
-                    </Button>
-                  </TableCell>
+                  </p>
+                  <p className="text-xs text-mid-gray">
+                    Archivado por {athlete.deleted_by?.display_name ?? "—"}
+                    {athlete.deleted_at ? ` · ${formatDate(athlete.deleted_at)}` : ""}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="min-h-12 w-full"
+                    data-testid="restore-athlete-button"
+                    onClick={() => {
+                      setRestoreError(null);
+                      setRestoreTarget(athlete);
+                    }}
+                  >
+                    <ArchiveRestore size={14} className="mr-1.5" aria-hidden="true" />
+                    Restaurar
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          {/* Tabla desktop (≥md) — cabe entera desde t768, sin cambios. */}
+          <div className="hidden rounded-xl bg-white shadow-card md:block">
+            <Table data-testid="archived-athletes-table">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Deportista</TableHead>
+                  <TableHead>Motivo</TableHead>
+                  <TableHead>Archivado por</TableHead>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead className="text-right">Acción</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+              </TableHeader>
+              <TableBody>
+                {items.map((athlete) => (
+                  <TableRow key={athlete.id} data-testid="archived-athlete-row">
+                    <TableCell>
+                      {athlete.first_name} {athlete.last_name}
+                    </TableCell>
+                    <TableCell>
+                      {(athlete.deleted_reason_code &&
+                        reasonLabelByCode.get(athlete.deleted_reason_code)) ??
+                        athlete.deleted_reason_code ??
+                        "—"}
+                    </TableCell>
+                    <TableCell>{athlete.deleted_by?.display_name ?? "—"}</TableCell>
+                    <TableCell>
+                      {athlete.deleted_at ? formatDate(athlete.deleted_at) : "—"}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="min-h-12"
+                        data-testid="restore-athlete-button"
+                        onClick={() => {
+                          setRestoreError(null);
+                          setRestoreTarget(athlete);
+                        }}
+                      >
+                        <ArchiveRestore size={14} className="mr-1.5" aria-hidden="true" />
+                        Restaurar
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </>
       )}
 
       <RestoreAthleteDialog

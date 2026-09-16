@@ -45,7 +45,7 @@ export function AthleteInfoCard({
           {backUrl !== null ? (
             <Link
               to={backUrl}
-              className="flex items-center gap-1.5 text-sm text-mid-gray transition-colors hover:text-charcoal"
+              className="inline-flex min-h-12 items-center gap-1.5 text-sm text-mid-gray transition-colors hover:text-charcoal"
             >
               <ArrowLeft size={16} />
               Volver a lista
@@ -56,7 +56,7 @@ export function AthleteInfoCard({
           {resolvedEditUrl !== null && (
             <Link
               to={resolvedEditUrl}
-              className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
+              className="inline-flex min-h-12 items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
             >
               <Pencil size={14} />
               Editar

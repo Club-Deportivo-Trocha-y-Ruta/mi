@@ -920,3 +920,77 @@ SC-002 was (tracked in `docs/20-traceable-growth-ai/qa.md`, owned by another pas
 > `45cd705c6b54`) — `CLAUDE.md`'s active-work summary is corrected to this value in the same
 > pass that added this table; do not rely on any earlier draft naming `2a8baa967cc6` as the
 > current head, that value is stale (feature 040, superseded by 041 and now by 042).
+
+## Implementation status — Race Course Profile (specs/043-race-course-profile)
+
+> Adds an optional per-válida **course profile** on top of the existing race-results module
+> (Phase 1.7 above): one or more route **variants** extracted server-side from a coach-recorded
+> GPX (position + elevation only — the recording is the coach's personal data, never persisted
+> or logged), a **laps-per-category table** with prefill from the previous válida of the series,
+> and a **structured track description** (terrain, difficulty, key sectors, free notes). Distance
+> and average speed are derived at read time from stored integers and never stored or estimated
+> ("sin dato" when an input is missing). The race analyst receives a `course_block` under the same
+> present/SIN-DATO veto as race conditions (`course_notes` structurally excluded from the query
+> that builds it). A read-only reconnaissance card (map, elevation profile, figures, laps) is
+> reused on the coach tab and on both parent-facing pages, scoped to the family's own athletes.
+> GPX only (FIT deferred), no new runtime dependency. Full technical detail in
+> `docs/10-race-results/course-profile-design.md`; privacy audit in
+> `specs/043-race-course-profile/privacy-audit.md` (APPROVED, no blocking finding). Cross-cutting
+> facts in `docs/technical-notes.md`'s 2026-09-16 entry.
+
+| Phase | Scope | Status |
+|---|---|---|
+| 1 — Setup | Package roots (`services/race/course/`, `components/race/course/`), dependency check (`gpxpy`, `defusedxml`, `leaflet`, `recharts` — all already pinned, none added), synthetic-fixture README | ✅ Complete — verified in-sandbox 2026-09-15 |
+| 2 — Foundational | `RaceCourseVariant` + `RaceCourseCategorySetup` models, four new `race_events` columns (`terrain_type`, `technical_difficulty`, `key_sectors`, `course_notes`), Alembic revision (new head `5ba077132b3b`, `down_revision=d5b125474e2b`), base schemas, synthetic GPX builder, MSW fixtures | 🚧 Implemented — needs real-infra verification (MySQL round-trip) 2026-09-15 |
+| 3 — US1: coach attaches the circuit, sets laps per category | `gpx_processing.py` (strip/detect/simplify pipeline), `course/service.py`, 6 REST endpoints on the race-events router, `VariantUploadDialog`/`VariantsCard`/`CategorySetupTable`/`CourseTab`, wiring into the competition tab and the import wizard | 🚧 Implemented — needs real-infra verification (Playwright e2e) 2026-09-15 |
+| 4 — US2: results show real distance and average speed | `derive_figures` pure function (`Decimal`/`ROUND_HALF_UP`), wired into `get_event_results` (+1 query, unconditional) and into `EvolutionPoint`/`EvolutionTable` (season view — no aggregate, per FR-016/R-11); `ResultsTable` conditional columns | ✅ Complete — verified in-sandbox 2026-09-15 |
+| 5 — US3: coach describes the track | `PATCH /course/description` (`exclude_unset` semantics), `CourseDescriptionCard` (tri-state, mirrors `RaceConditionsCard`) + `EditCourseDescriptionDialog`, UX/copy review applied directly to the components | ✅ Complete — verified in-sandbox 2026-09-15 |
+| 6 — US4: AI analysis uses the circuit only when it exists | `course_context` on `RaceAnalystState`, `fetch_course_context` (`services/race/queries.py` — corrected from the plan's `ai/queries.py`), `format_course_meta`, course block in `race_analyst_v3.md`/`race_season_summary_v3.md` under the present/SIN-DATO veto (`course_notes` never selected), two new golden cases | 🚧 Implemented — needs real-infra verification (golden eval ≥ 0.75 + baseline regen) 2026-09-16 |
+| 7 — US5: coach and families recognise the circuit | Parent branch of `get_course` (`my_categories` derived from `RaceResult` only — `race_event_roster` has no `category_id`), `CourseSummary`/`CourseMap`/`ElevationProfile` (lazy, progressive rendering), cards on both parent pages | 🚧 Implemented — needs real-infra verification (Playwright e2e, bundle-size check) 2026-09-16 |
+| 8 — Polish | `data-privacy-guard` audit (T063, APPROVED, no code change required) and `course-profile-design.md` + runbook §10 (T064) done; this status/technical-notes update (T065) done in this pass | 🚧 Partial — `CLAUDE.md` update, consolidated verification-lane recording, upload-timing measurement, and post-deploy smoke still pending 2026-09-16 |
+
+**What "verified in-sandbox" vs. "needs real-infra verification" means here**, since this
+implementation environment has no Docker, no local MySQL and no Playwright browser install:
+
+- **Phases 4 and 5** needed nothing beyond the offline default `pytest`/`ruff`/`vitest`/`tsc`
+  lanes, which ran green (backend course-package suites: 73 passed across
+  `test_gpx_processing.py` + `test_course_block.py` + `test_race_course.py`; frontend:
+  targeted vitest runs green across every touched area, e.g. 6 files / 38 tests for
+  `src/components/race/course` alone after Phase 5+6). Nothing further is owed for these two.
+- **Phase 2** (migration + `-m mysql` model test) was verified with an isolated sqlite/ORM
+  harness (upgrade→downgrade→upgrade against a scratch DB), not against real MySQL 8.4 — a
+  developer must run `docker compose up mysql` and `pytest -m mysql tests/mysql/test_race_course_models.py`
+  before merge.
+- **Phase 3** (`race-course.spec.ts` part 1) and **Phase 7** (`race-course.spec.ts` part 2, plus
+  the T060 bundle-size check) were authored but never executed — no Docker/isolated Playwright
+  stack in this sandbox. A developer must run `npm run test:e2e -- race-course.spec.ts` against
+  a real or isolated stack.
+- **Phase 6**'s golden eval (two new `golden_v3/` cases) is gated by `pytest -m golden` and needs
+  a real `RACE_AI_API_KEY`; the module's own `_skip_no_api` guard skips it silently without one.
+  A developer must run it, confirm composite ≥ 0.75 with both new cases, and regenerate
+  `baseline.json` per `docs/10-race-results/runbook-ops.md` §3.3/§10.3.
+- Phase 7's own tests (parent scoping inside `test_race_course.py`; `CourseSummary`/`CourseMap`/
+  `ElevationProfile`; both parent pages) did run green offline as part of the T063 privacy audit's
+  re-verification (the 73-test backend course-package run above includes the parent-scoping
+  class; frontend: 30 tests for the three new components, 33 for both parent pages) — only the
+  Playwright leg and the bundle-size measurement are outstanding.
+
+> No deploy yet; Phase 7's code (parent branch, `CourseSummary`/`CourseMap`/`ElevationProfile`,
+> both parent pages) is present in the working tree but not yet committed as of this pass. Alembic
+> head for this feature is `5ba077132b3b` (`down_revision=d5b125474e2b`, feature 042's head) —
+> pending the real-MySQL round-trip above before it is treated as production-ready.
+
+**Update, 2026-09-16 (post-closure)**: everything through Phase 7 landed as 5 commits on
+`feat/043-race-course-profile` (no PR yet); the note above about uncommitted Phase 7 code and a
+"🚧 Partial" Phase 8 predates that landing. Since then, two more items closed: (1) the Phase 8
+upload-timing measurement (T068) ran — a synthetic 60,000-point/2.92 MB GPX measured p95 ≈ 3.18 s
+against the 1 500 ms budget (`plan.md` §Complexity Tracking) — and its previously-open mitigation
+decision is now implemented (`MAX_RAW_POINTS = 20_000` raw-point pre-check in `gpx_processing.py`,
+rejecting as `too_many_points` before the expensive path, regression-tested); (2) a real gap
+against Phase 3's own `CategorySetupTable` acceptance criteria was found and fixed — `CourseTab`
+never fetched race results, so the "categories from results" half of its `resultCategoryIds ∪
+setups ∪ suggested_setups` union silently never populated; `CourseTab` now sources it from
+`useRaceResults` (cache-shared with `ResultsTab`). Still pending exactly as this table's per-phase
+notes describe: `pytest -m mysql`, the golden eval + `baseline.json` regen, both
+`race-course.spec.ts` Playwright runs, and the post-deploy smoke — none of these have run against
+real infrastructure in any session of this feature.

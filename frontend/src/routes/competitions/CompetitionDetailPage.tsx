@@ -73,6 +73,11 @@ const StandingsTab = lazy(() =>
     default: m.StandingsTab,
   })),
 );
+const CourseTab = lazy(() =>
+  import("@/components/race/course/CourseTab").then((m) => ({
+    default: m.CourseTab,
+  })),
+);
 
 // Tabs livianos — importados directamente (no lazy)
 import { InfoTab } from "@/components/competitions/tabs/InfoTab";
@@ -88,6 +93,7 @@ type TabValue =
   | "results"
   | "standings"
   | "conditions"
+  | "circuito"
   | "athletes"
   | "insights";
 
@@ -96,6 +102,7 @@ const TAB_VALUES: TabValue[] = [
   "results",
   "standings",
   "conditions",
+  "circuito",
   "athletes",
   "insights",
 ];
@@ -105,6 +112,7 @@ const TAB_LABELS: Record<TabValue, string> = {
   results: "Resultados",
   standings: "Clasificación",
   conditions: "Condiciones",
+  circuito: "Circuito",
   athletes: "Atletas",
   insights: "Insights IA",
 };
@@ -164,7 +172,7 @@ function TabTrigger({
   return (
     <TabsPrimitive.Trigger
       value={value}
-      className="flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium text-mid-gray transition-colors data-[state=active]:bg-white data-[state=active]:text-charcoal data-[state=active]:shadow-sm"
+      className="flex min-h-12 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium text-mid-gray transition-colors data-[state=active]:bg-white data-[state=active]:text-charcoal data-[state=active]:shadow-sm"
     >
       {label}
     </TabsPrimitive.Trigger>
@@ -430,7 +438,7 @@ export function CompetitionDetailPage() {
 
               <Link
                 to={`/competitions/${raceEventId}/edit`}
-                className={buttonVariants({ variant: "outline", size: "sm" })}
+                className={cn(buttonVariants({ variant: "outline", size: "sm" }), "min-h-12")}
                 data-testid="btn-edit"
               >
                 <Edit2 size={14} aria-hidden="true" />
@@ -529,7 +537,7 @@ export function CompetitionDetailPage() {
             {showImportCTA && (
               <Link
                 to={`/competitions/${raceEventId}/import`}
-                className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-charcoal px-5 py-2.5 text-sm font-semibold text-white shadow-button-highlight transition-opacity hover:opacity-90"
+                className="inline-flex min-h-12 items-center gap-2 rounded-lg bg-charcoal px-5 py-2.5 text-sm font-semibold text-white shadow-button-highlight transition-opacity hover:opacity-90"
                 data-testid="cta-import"
               >
                 <Upload size={16} aria-hidden="true" />
@@ -540,7 +548,7 @@ export function CompetitionDetailPage() {
               <button
                 type="button"
                 onClick={() => handleTabChange("insights")}
-                className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-charcoal px-5 py-2.5 text-sm font-semibold text-white shadow-button-highlight transition-opacity hover:opacity-90"
+                className="inline-flex min-h-12 items-center gap-2 rounded-lg bg-charcoal px-5 py-2.5 text-sm font-semibold text-white shadow-button-highlight transition-opacity hover:opacity-90"
                 data-testid="cta-insights"
               >
                 <BarChart2Icon size={16} aria-hidden="true" />
@@ -562,7 +570,7 @@ export function CompetitionDetailPage() {
         data-testid="competition-tabs"
       >
         <TabsPrimitive.List
-          className="flex gap-1 overflow-x-auto rounded-xl bg-light-gray p-1 scrollbar-none"
+          className="flex flex-wrap gap-1 rounded-xl bg-light-gray p-1"
           aria-label="Secciones de la competencia"
         >
           {TAB_VALUES.filter(
@@ -599,6 +607,13 @@ export function CompetitionDetailPage() {
         {/* ── Tab: Condiciones ─────────────────────────────────────── */}
         <TabsPrimitive.Content value="conditions" className="mt-4">
           <ConditionsTab raceEventId={raceEventId} event={event} />
+        </TabsPrimitive.Content>
+
+        {/* ── Tab: Circuito ────────────────────────────────────────── */}
+        <TabsPrimitive.Content value="circuito" className="mt-4">
+          <Suspense fallback={<TabFallback />}>
+            <CourseTab raceEventId={raceEventId} />
+          </Suspense>
         </TabsPrimitive.Content>
 
         {/* ── Tab: Atletas ─────────────────────────────────────────── */}

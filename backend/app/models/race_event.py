@@ -22,12 +22,14 @@ from typing import TYPE_CHECKING
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     Enum,
     ForeignKey,
     Index,
     Integer,
+    JSON,
     Numeric,
     SmallInteger,
     String,
@@ -40,6 +42,8 @@ from app.models.base import Base
 
 if TYPE_CHECKING:
     from app.models.calendar_event import CalendarEvent
+    from app.models.race_course_category_setup import RaceCourseCategorySetup
+    from app.models.race_course_variant import RaceCourseVariant
     from app.models.race_event_roster import RaceEventRoster
     from app.models.race_import import RaceImport
     from app.models.race_result import RaceResult
@@ -68,6 +72,19 @@ class SurfaceCondition(str, enum.Enum):
     mixta = "mixta"
 
 
+class TerrainType(str, enum.Enum):
+    """Tipo de terreno predominante del circuito (perfil de circuito, feature 043).
+
+    Convención `data-model.md` — valor `NULL` permitido cuando no se capturó.
+    """
+
+    sendero = "sendero"
+    trocha = "trocha"
+    mixto = "mixto"
+    pista = "pista"
+    pavimento = "pavimento"
+
+
 class RaceEvent(Base):
     """Válida individual de una serie (ej. Válida IV Cali 2026-05-17).
 
@@ -80,6 +97,10 @@ class RaceEvent(Base):
     __table_args__ = (
         UniqueConstraint("series_id", "sequence_number", name="uq_race_events_series_sequence"),
         Index("ix_race_events_event_date", "event_date"),
+        CheckConstraint(
+            "technical_difficulty IS NULL OR technical_difficulty BETWEEN 1 AND 5",
+            name="ck_race_events_difficulty_range",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -121,6 +142,15 @@ class RaceEvent(Base):
     pdf_results_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
     pdf_general_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # --- Fin delta ---
+    # --- Perfil de circuito (feature 043) ---
+    terrain_type: Mapped[TerrainType | None] = mapped_column(
+        Enum(TerrainType, name="terraintype", values_callable=lambda e: [x.value for x in e]),
+        nullable=True,
+    )
+    technical_difficulty: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    key_sectors: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    course_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # --- Fin perfil de circuito ---
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
@@ -163,4 +193,16 @@ class RaceEvent(Base):
         back_populates="race_event",
         foreign_keys="[RaceEventRoster.race_event_id]",
         cascade="all, delete-orphan",
+    )
+    # Perfil de circuito (feature 043)
+    course_variants: Mapped[list["RaceCourseVariant"]] = relationship(
+        "RaceCourseVariant",
+        back_populates="event",
+        cascade="all, delete-orphan",
+        foreign_keys="[RaceCourseVariant.race_event_id]",
+    )
+    course_setups: Mapped[list["RaceCourseCategorySetup"]] = relationship(
+        "RaceCourseCategorySetup",
+        cascade="all, delete-orphan",
+        foreign_keys="[RaceCourseCategorySetup.race_event_id]",
     )

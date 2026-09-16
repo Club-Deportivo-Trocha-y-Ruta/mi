@@ -86,7 +86,7 @@ export function MeasurementAlerts() {
     // siendo el canal que dice "esto es un enlace".
     <Link
       to="/athletes"
-      className="inline-flex min-h-11 shrink-0 items-center text-sm font-medium text-charcoal underline transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2"
+      className="inline-flex min-h-12 shrink-0 items-center text-sm font-medium text-charcoal underline transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2"
     >
       Ver todos los atletas
     </Link>
@@ -200,7 +200,7 @@ export function MeasurementAlerts() {
             return (
               <li
                 key={a.athlete_id}
-                className="relative flex min-h-11 items-center gap-3 py-3"
+                className="relative flex min-h-12 items-center gap-3 py-3"
                 style={idx > 0 ? { borderTop: "1px solid rgba(34, 42, 53, 0.06)" } : undefined}
               >
                 <span
@@ -218,9 +218,16 @@ export function MeasurementAlerts() {
                       porque su `overflow:hidden` recortaría el ::after.
                       El nombre accesible del enlace sigue siendo sólo el
                       nombre del atleta. */}
+                  {/* min-h-12: el sweep e2e de target-size.spec.ts mide el
+                      boundingBox() real del propio <a>, no el de su `::after`
+                      (que solo amplía el área de clic del `<li>` visualmente,
+                      sin contar para la medición) — mismo gotcha que el
+                      checkbox de InsightsTimeline.tsx. min-w-0 deja que el
+                      `truncate` del span interior siga funcionando dentro de
+                      un enlace ahora `flex`. */}
                   <AthleteLink
                     athleteId={a.athlete_id}
-                    className="block text-[13px] font-semibold text-charcoal transition-opacity after:absolute after:inset-0 after:content-[''] hover:opacity-70"
+                    className="flex min-h-12 min-w-0 items-center text-[13px] font-semibold text-charcoal transition-opacity after:absolute after:inset-0 after:content-[''] hover:opacity-70"
                   >
                     <span className="block truncate">{a.athlete_name}</span>
                   </AthleteLink>
@@ -242,7 +249,7 @@ export function MeasurementAlerts() {
         canViewAthletesList ? (
           <Link
             to="/athletes"
-            className="inline-flex min-h-11 items-center self-start text-sm font-medium text-charcoal underline transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2"
+            className="inline-flex min-h-12 items-center self-start text-sm font-medium text-charcoal underline transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2"
           >
             Ver todas ({remainingCount})
           </Link>

@@ -12,6 +12,13 @@
  *  - Fixture de campo completo (26 categorías, 260 filas) — renderiza sin
  *    errores y el filtro de categoría lo limita a 1 sección
  *  - axe: 0 violaciones a11y en ResultsTab con datos
+ *  - Columnas derivadas de circuito (feature 043 US2): "Distancia" y
+ *    "Vel. prom." solo con `has_course_data=true`, celdas "sin dato" (muted)
+ *    para figuras `null`, y el encabezado de categoría con
+ *    "{laps} vueltas · {variant_label} · {lap_distance_km} km · {elevation_gain_m} m D+"
+ *    — ver `specs/043-race-course-profile/contracts/results-derived-figures.md`
+ *    §1 y `contracts/ui-course.md` §5. Estos tests dependen de campos que
+ *    T037 aún no agrega a `ResultsTable.tsx` / `raceResults.types.ts`.
  *
  * NO se testea directamente `useRaceResults` aquí — los tests de hooks
  * viven en hooks/race/__tests__/. Este test usa MSW para los tests de tab.
@@ -33,6 +40,7 @@ import {
   raceResultsEmptyHandler,
   raceResultsErrorHandler,
 } from "@/test/msw/raceResultsHandlers";
+import type { RaceEventResultsResponse } from "@/types/raceResults.types";
 
 // ---------------------------------------------------------------------------
 // Store mock — useAuthStore
@@ -429,6 +437,170 @@ describe("ResultsTable — hideClubFilter", () => {
     expect(
       screen.getByTestId("results-category-select"),
     ).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Columnas derivadas de circuito (feature 043, User Story 2)
+//
+// NOTA: `distance_km` / `avg_speed_kmh` (ResultRow), `laps` / `variant_label`
+// (CategoryResults) y `has_course_data` (EventResultsRead) son campos nuevos
+// del contrato `specs/043-race-course-profile/contracts/results-derived-figures.md`
+// §1. Hasta que la tarea hermana (T037) los agregue a
+// `types/raceResults.types.ts` y a `ResultsTable.tsx`, estos tests fallan
+// (columnas ausentes / TS marca las propiedades como desconocidas) — ver
+// docstring de la suite y el reporte de la tarea T032.
+// ---------------------------------------------------------------------------
+
+describe("ResultsTable — columnas de circuito derivado (feature 043)", () => {
+  it("muestra las columnas 'Distancia' y 'Vel. prom.' cuando has_course_data=true", () => {
+    renderResultsTable({ has_course_data: true });
+
+    expect(
+      screen.getAllByRole("columnheader", { name: "Distancia" }).length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getAllByRole("columnheader", { name: "Vel. prom." }).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("NO muestra las columnas de circuito cuando has_course_data=false", () => {
+    renderResultsTable({ has_course_data: false });
+
+    expect(
+      screen.queryByRole("columnheader", { name: "Distancia" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("columnheader", { name: "Vel. prom." }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("NO muestra las columnas de circuito cuando has_course_data está ausente (campo opcional)", () => {
+    // Fixture sin el campo en absoluto — SC-007: los consumidores existentes
+    // (fixtures sin datos de circuito) siguen funcionando sin cambios.
+    renderResultsTable();
+
+    expect(
+      screen.queryByRole("columnheader", { name: "Distancia" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("columnheader", { name: "Vel. prom." }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renderiza 'sin dato' (estilo muted) cuando distance_km/avg_speed_kmh son null en una fila DNF", () => {
+    const data: RaceEventResultsResponse = {
+      race_event_id: 1,
+      has_course_data: true,
+      categories: [
+        {
+          category_id: 1,
+          code: "INF_M",
+          label: "Infantil Masculino",
+          rows: [
+            {
+              result_id: 1001,
+              coach_note: null,
+              coach_note_updated_at: null,
+              position: 1,
+              competitor_id: 101,
+              display_name: "Corredor A",
+              club_text: "Club Trocha y Ruta",
+              athlete_id: 55,
+              is_our_club: true,
+              status: "finished",
+              race_time_ms: 1_800_000,
+              laps_behind: null,
+              points_awarded: 25,
+              bib_number: 7,
+              distance_km: 12.6,
+              avg_speed_kmh: 25.2,
+            },
+            {
+              result_id: 1002,
+              coach_note: null,
+              coach_note_updated_at: null,
+              position: null,
+              competitor_id: 202,
+              display_name: "Corredor B",
+              club_text: "Club Rival XCO",
+              athlete_id: null,
+              is_our_club: false,
+              status: "dnf",
+              race_time_ms: null,
+              laps_behind: null,
+              points_awarded: null,
+              bib_number: 12,
+              distance_km: null,
+              avg_speed_kmh: null,
+            },
+          ],
+        },
+      ],
+    };
+
+    render(
+      <MemoryRouter>
+        <ResultsTable data={data} />
+      </MemoryRouter>,
+    );
+
+    const dnfRow = screen.getByTestId("results-row-202");
+    const sinDatoCells = within(dnfRow).getAllByText("sin dato");
+    // Una celda por cada columna derivada (Distancia + Vel. prom.)
+    expect(sinDatoCells.length).toBeGreaterThanOrEqual(2);
+    sinDatoCells.forEach((el) => {
+      expect(el).toHaveClass("text-mid-gray");
+    });
+  });
+
+  it("el encabezado de categoría incluye vueltas · variante · distancia de vuelta · desnivel cuando el setup existe", () => {
+    const data: RaceEventResultsResponse = {
+      race_event_id: 1,
+      has_course_data: true,
+      categories: [
+        {
+          category_id: 1,
+          code: "INF_M",
+          label: "Infantil Masculino",
+          laps: 3,
+          variant_label: "Recorrido reducido",
+          rows: [
+            {
+              result_id: 1001,
+              coach_note: null,
+              coach_note_updated_at: null,
+              position: 1,
+              competitor_id: 101,
+              display_name: "Corredor A",
+              club_text: "Club Trocha y Ruta",
+              athlete_id: 55,
+              is_our_club: true,
+              status: "finished",
+              race_time_ms: 1_800_000,
+              laps_behind: null,
+              points_awarded: 25,
+              bib_number: 7,
+              distance_km: 12.6,
+              avg_speed_kmh: 25.2,
+              lap_distance_km: 4.2,
+              elevation_gain_m: 110,
+            },
+          ],
+        },
+      ],
+    };
+
+    render(
+      <MemoryRouter>
+        <ResultsTable data={data} />
+      </MemoryRouter>,
+    );
+
+    const section = screen.getByTestId("results-category-section-1");
+    expect(section.textContent).toContain(
+      "3 vueltas · Recorrido reducido · 4.2 km · 110 m D+",
+    );
   });
 });
 

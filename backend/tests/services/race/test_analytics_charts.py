@@ -14,6 +14,7 @@ el payload del servicio.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date
 from typing import Any, AsyncGenerator, Optional
 
@@ -28,6 +29,8 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.pool import StaticPool
 
 from app.models import Base
+from app.models.race_course_category_setup import RaceCourseCategorySetup
+from app.models.race_course_variant import RaceCourseVariant
 from app.models.race_result import RaceResult
 from app.models.race_series import RaceSeriesKind, RaceSeriesLevel
 from app.models.user import UserRole
@@ -41,6 +44,7 @@ from app.services.race.analytics_charts import (
     build_evolution,
     list_athlete_races,
 )
+from app.services.race.course.derived import derive_figures
 from app.services.race.race_labels import build_race_label
 
 from tests.fixtures.race_history_fixtures import (
@@ -80,6 +84,8 @@ async def engine() -> AsyncGenerator[AsyncEngine, None]:
             "race_categories",
             "race_competitors",
             "race_results",
+            "race_course_variants",
+            "race_course_category_setups",
             *AUDIT_TABLES,
         )
     ]
@@ -454,6 +460,113 @@ async def test_build_evolution_field_size_counts_finished_without_time(session):
     # aunque field_size ya sea 5.
     assert pct_point.field_size == 5
     assert pct_point.value is None
+
+
+# ---------------------------------------------------------------------------
+# T036 (feature 043, R-11) — avg_speed_kmh en EvolutionPoint
+#
+# Duplica los duck-types livianos de tests/services/race/test_results_derived.py
+# en vez de importarlos: derive_figures es una función pura sin dependencia de
+# la ORM, y estos tests solo necesitan reproducir su cálculo de forma
+# independiente al camino real (RaceCourseVariant/RaceCourseCategorySetup +
+# selectinload) que ejercita build_evolution.
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _Variant:
+    lap_distance_m: int
+    elevation_gain_m: int | None = None
+
+
+@dataclass
+class _Setup:
+    laps: int
+    variant: _Variant
+
+
+@pytest.mark.asyncio
+async def test_build_evolution_avg_speed_kmh_present_when_course_setup_exists(session):
+    """Con RaceCourseCategorySetup configurado para (event, category),
+    ``avg_speed_kmh`` es un float positivo que coincide exactamente con el
+    cálculo independiente de ``derive_figures`` para el mismo insumo."""
+    athlete_time_ms = 30 * 60 * 1000  # 30 minutos
+    await _seed_athlete_in_event(
+        session,
+        event_id=1,
+        sequence_number=1,
+        event_date=date(2026, 1, 31),
+        name="V1",
+        athlete_position=2,
+        athlete_time_ms=athlete_time_ms,
+        winner_time_ms=athlete_time_ms - 5_000,
+    )
+    variant = RaceCourseVariant(
+        id=1,
+        race_event_id=1,
+        label="Circuito Test",
+        lap_distance_m=4200,
+        elevation_gain_m=110,
+        has_elevation=True,
+        point_count=2,
+        geometry=[[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+        detection_method="manual",
+        recorded_laps=1,
+        source_sha256="a" * 64,
+        created_by_user_id=10,
+    )
+    session.add(variant)
+    await session.flush()
+    session.add(
+        RaceCourseCategorySetup(
+            id=1,
+            race_event_id=1,
+            category_id=100,
+            variant_id=variant.id,
+            laps=3,
+        )
+    )
+    await session.commit()
+
+    result = await build_evolution(
+        session, athlete_id=144, season=2026, metric=EvolutionMetric.RANKING
+    )
+    assert len(result.series) == 1
+    point = result.series[0]
+
+    expected = derive_figures(
+        _Setup(laps=3, variant=_Variant(lap_distance_m=4200, elevation_gain_m=110)),
+        "finished",
+        athlete_time_ms,
+        None,
+    )
+    assert expected.avg_speed_kmh is not None
+    assert point.avg_speed_kmh == expected.avg_speed_kmh
+    assert point.avg_speed_kmh > 0
+
+
+@pytest.mark.asyncio
+async def test_build_evolution_avg_speed_kmh_none_without_course_setup(session):
+    """Sin ningún ``RaceCourseCategorySetup`` para (event, category),
+    ``avg_speed_kmh`` es ``None`` (R-11: sin agregado, solo valor por
+    válida — y aquí ni siquiera hay valor porque no hay recorrido)."""
+    await _seed_athlete_in_event(
+        session,
+        event_id=1,
+        sequence_number=1,
+        event_date=date(2026, 1, 31),
+        name="V1",
+        athlete_position=2,
+        athlete_time_ms=1_810_000,
+        winner_time_ms=1_800_000,
+    )
+    await session.commit()
+
+    result = await build_evolution(
+        session, athlete_id=144, season=2026, metric=EvolutionMetric.RANKING
+    )
+    assert len(result.series) == 1
+    assert result.series[0].avg_speed_kmh is None
 
 
 # ---------------------------------------------------------------------------

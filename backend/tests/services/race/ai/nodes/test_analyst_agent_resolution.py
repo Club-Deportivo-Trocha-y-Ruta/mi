@@ -87,6 +87,58 @@ def test_build_v3_inputs_without_anchor_resolves_only_cup_rows():
 
 
 # ---------------------------------------------------------------------------
+# v3 — _build_v3_inputs, temporada: course_by_valida en lanzamiento global
+# (feature 043, US4) — ``state["valida_nums"]`` viene vacío en un
+# lanzamiento global (spec §US5); las válidas reales de la temporada solo
+# están en las claves de ``state["course_context"]``.
+# ---------------------------------------------------------------------------
+
+
+def test_build_v3_inputs_season_course_by_valida_uses_course_context_keys_not_valida_nums():
+    """En lanzamiento global (``valida_nums`` vacío), ``course_by_valida`` debe
+    poblarse desde las claves de ``course_context`` — de lo contrario el
+    bloque de circuito de temporada queda inerte (SIN DATO) aunque haya
+    perfiles de circuito registrados."""
+    state = {
+        "analysis_kind": "season",
+        "valida_nums": [],
+        "metrics": {"progression": []},
+        "field_context": {},
+        "season": 2026,
+        "season_validas_count": 2,
+        "course_context": {
+            4: {"terrain_type": "mixto", "technical_difficulty": 4},
+            7: {"laps": 3},
+        },
+    }
+    inputs = _build_v3_inputs(state, "la deportista")
+
+    assert len(inputs) == 1
+    assert inputs[0].course_by_valida == {
+        4: "- Terreno: mixto\n- Dificultad técnica: 4/5 (técnico)",
+        7: "- Vueltas de la categoría: 3",
+    }
+
+
+def test_build_v3_inputs_season_course_by_valida_omits_validas_without_course_data():
+    """Una válida presente en ``course_context`` pero con los seis campos en
+    ``None``/ausentes (dict vacío) se omite del mapping — veto de ausencia
+    por válida, no un bloque vacío."""
+    state = {
+        "analysis_kind": "season",
+        "valida_nums": [],
+        "metrics": {"progression": []},
+        "field_context": {},
+        "season": 2026,
+        "season_validas_count": 1,
+        "course_context": {5: {}},
+    }
+    inputs = _build_v3_inputs(state, "la deportista")
+
+    assert inputs[0].course_by_valida == {}
+
+
+# ---------------------------------------------------------------------------
 # v2 — records_for_vn (dentro de _analyst_agent_v2)
 # ---------------------------------------------------------------------------
 
