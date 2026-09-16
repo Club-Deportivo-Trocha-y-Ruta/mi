@@ -152,8 +152,10 @@ describe("StaffPage", () => {
     expect(await screen.findByTestId("staff-table")).toBeInTheDocument();
     expect(screen.getAllByText("Laura Méndez").length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByText("Entrenador").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("Activo")).toBeInTheDocument();
-    expect(screen.getByText("Inactivo")).toBeInTheDocument();
+    // F-10: bajo `md` se renderiza además una lista de cards, así que estos
+    // textos ahora existen dos veces (card + tabla) en el DOM de jsdom.
+    expect(screen.getAllByText("Activo").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Inactivo").length).toBeGreaterThanOrEqual(1);
   });
 
   it("estado vacío: 'Aún no hay personal registrado.'", () => {
@@ -246,7 +248,10 @@ describe("StaffPage", () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.click(await screen.findByTestId(`staff-toggle-active-${coach.id}`));
+    // F-10: el botón existe tanto en la card móvil como en la fila de tabla;
+    // ambas acciones son equivalentes, se usa la primera coincidencia.
+    const toggleButtons = await screen.findAllByTestId(`staff-toggle-active-${coach.id}`);
+    await user.click(toggleButtons[0]);
     await screen.findByTestId("staff-state-dialog");
 
     await user.click(screen.getByRole("button", { name: "Desactivar" }));
@@ -279,7 +284,10 @@ describe("StaffPage", () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.click(await screen.findByTestId(`staff-toggle-active-${inactiveCoach.id}`));
+    const toggleButtons = await screen.findAllByTestId(
+      `staff-toggle-active-${inactiveCoach.id}`,
+    );
+    await user.click(toggleButtons[0]);
     await screen.findByTestId("staff-state-dialog");
     await user.click(screen.getByRole("button", { name: "Reactivar" }));
 

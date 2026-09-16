@@ -227,7 +227,7 @@ export function WeekStrip() {
             sigue señalando que es un enlace. */}
         <Link
           to="/calendar"
-          className="inline-flex min-h-11 items-center text-sm font-medium text-charcoal underline transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2"
+          className="inline-flex min-h-12 items-center text-sm font-medium text-charcoal underline transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2"
         >
           Abrir calendario
         </Link>

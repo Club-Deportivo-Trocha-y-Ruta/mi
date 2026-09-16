@@ -51,7 +51,7 @@ class RaceCourseCategorySetup(ActorTimestampMixin, Base):
         autoincrement=True,
     )
     race_event_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("race_events.id", ondelete="CASCADE"), nullable=False
+        Integer, ForeignKey("race_events.id", ondelete="CASCADE"), nullable=False
     )
     category_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("race_categories.id", ondelete="RESTRICT"), nullable=False

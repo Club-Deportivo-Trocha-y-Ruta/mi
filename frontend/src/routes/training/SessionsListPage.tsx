@@ -113,14 +113,14 @@ export function SessionsListPage() {
           <>
             <Link
               to="/training/sessions/assistant"
-              className="inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
+              className="inline-flex min-h-12 items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
             >
               <Sparkles size={14} aria-hidden="true" />
               Crear con IA
             </Link>
             <Link
               to="/training/sessions/new"
-              className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 shadow-button-highlight"
+              className="inline-flex min-h-12 items-center rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 shadow-button-highlight"
             >
               + Nueva sesión
             </Link>

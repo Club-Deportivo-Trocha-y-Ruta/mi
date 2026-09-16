@@ -61,8 +61,13 @@ const SheetContent = React.forwardRef<
         )}
         {...props}
       >
+        {/* h-12 w-12 en la esquina (right-0 top-0, sin margen): SheetHeader
+            reserva pr-12 exactamente para este botón — un inset (right-4
+            top-4) con el tamaño anterior (28×28, p-1.5) sobre ese hueco
+            dejaba el <button> real por debajo del piso de 48×48px que mide
+            target-size.spec.ts. */}
         <DialogPrimitive.Close
-          className="absolute right-4 top-4 rounded-lg p-1.5 text-mid-gray transition-colors hover:bg-light-gray focus:outline-none focus-visible:outline-2 focus-visible:outline-charcoal focus-visible:outline-offset-2"
+          className="absolute right-0 top-0 inline-flex h-12 w-12 items-center justify-center rounded-lg text-mid-gray transition-colors hover:bg-light-gray focus:outline-none focus-visible:outline-2 focus-visible:outline-charcoal focus-visible:outline-offset-2"
           aria-label="Cerrar panel"
         >
           <X size={16} aria-hidden="true" />

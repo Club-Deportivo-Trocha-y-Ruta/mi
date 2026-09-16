@@ -121,27 +121,32 @@ export function EffortProfile({ weeks }: EffortProfileProps) {
         </ResponsiveContainer>
       </div>
 
-      {/* Alternativa textual WCAG 2.1 AA — incluye RPE, ausente del gráfico */}
-      <table className="sr-only" aria-label="Datos de perfil de esfuerzo semanal">
-        <thead>
-          <tr>
-            <th scope="col">Semana</th>
-            <th scope="col">Sesiones planificadas</th>
-            <th scope="col">Sesiones asistidas</th>
-            <th scope="col">RPE promedio</th>
-          </tr>
-        </thead>
-        <tbody>
-          {weeks.map((w, idx) => (
-            <tr key={idx}>
-              <td>{w.week_label}</td>
-              <td>{w.sessions_planned}</td>
-              <td>{w.sessions_attended}</td>
-              <td>{w.mean_rpe !== null ? w.mean_rpe.toFixed(1) : "Sin dato"}</td>
+      {/* Alternativa textual WCAG 2.1 AA — incluye RPE, ausente del gráfico.
+          `sr-only` va en el <div> contenedor, no en la <table>: el ancho
+          intrínseco de una tabla (table-layout: auto) ignora el width:1px
+          de `sr-only` y sigue empujando el scrollWidth del documento. */}
+      <div className="sr-only">
+        <table aria-label="Datos de perfil de esfuerzo semanal">
+          <thead>
+            <tr>
+              <th scope="col">Semana</th>
+              <th scope="col">Sesiones planificadas</th>
+              <th scope="col">Sesiones asistidas</th>
+              <th scope="col">RPE promedio</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {weeks.map((w, idx) => (
+              <tr key={idx}>
+                <td>{w.week_label}</td>
+                <td>{w.sessions_planned}</td>
+                <td>{w.sessions_attended}</td>
+                <td>{w.mean_rpe !== null ? w.mean_rpe.toFixed(1) : "Sin dato"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }

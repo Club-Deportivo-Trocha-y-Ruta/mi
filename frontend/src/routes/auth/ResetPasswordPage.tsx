@@ -5,6 +5,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { z } from "zod";
 
 import { confirmPasswordReset, validateResetToken } from "@/api/auth";
+import { authButtonClass, authInputClass, authLinkClass } from "@/routes/auth/authStyles";
 
 const resetSchema = z
   .object({
@@ -101,11 +102,8 @@ export function ResetPasswordPage() {
               El enlace ha expirado o ya fue utilizado. Solicita uno nuevo para
               continuar.
             </p>
-            <div className="mt-6 text-center">
-              <Link
-                to="/recuperar-contrasena"
-                className="text-sm font-medium text-link-blue hover:underline"
-              >
+            <div className="mt-2 text-center">
+              <Link to="/recuperar-contrasena" className={`${authLinkClass} text-sm`}>
                 Solicitar un nuevo enlace
               </Link>
             </div>
@@ -120,11 +118,8 @@ export function ResetPasswordPage() {
             >
               Tu contraseña fue actualizada. Ya puedes iniciar sesión.
             </p>
-            <div className="mt-6 text-center">
-              <Link
-                to="/login"
-                className="text-sm font-medium text-link-blue hover:underline"
-              >
+            <div className="mt-2 text-center">
+              <Link to="/login" className={`${authLinkClass} text-sm`}>
                 Ir a iniciar sesión
               </Link>
             </div>
@@ -148,7 +143,7 @@ export function ResetPasswordPage() {
                 id="password"
                 type="password"
                 autoComplete="new-password"
-                className="w-full rounded-lg bg-white px-3 py-2.5 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 shadow-ring"
+                className={authInputClass}
                 {...form.register("password")}
               />
               {form.formState.errors.password && (
@@ -169,7 +164,7 @@ export function ResetPasswordPage() {
                 id="confirm"
                 type="password"
                 autoComplete="new-password"
-                className="w-full rounded-lg bg-white px-3 py-2.5 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 shadow-ring"
+                className={authInputClass}
                 {...form.register("confirm")}
               />
               {form.formState.errors.confirm && (
@@ -188,7 +183,7 @@ export function ResetPasswordPage() {
             <button
               type="submit"
               disabled={form.formState.isSubmitting}
-              className="w-full rounded-lg bg-charcoal px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50 shadow-button-highlight"
+              className={authButtonClass}
             >
               {form.formState.isSubmitting
                 ? "Actualizando..."

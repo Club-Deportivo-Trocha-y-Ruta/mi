@@ -177,7 +177,9 @@ describe("StaffPage — accesibilidad", () => {
     const user = userEvent.setup();
     const { container } = renderPage();
 
-    await user.click(await screen.findByTestId(`staff-toggle-active-${coach.id}`));
+    // F-10: el botón existe tanto en la card móvil como en la fila de tabla.
+    const toggleButtons = await screen.findAllByTestId(`staff-toggle-active-${coach.id}`);
+    await user.click(toggleButtons[0]);
     await screen.findByTestId("staff-state-dialog");
 
     expect(await axe(container)).toHaveNoViolations();

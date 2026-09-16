@@ -55,6 +55,31 @@ function clubTodayLongLabel(): string {
   return `${weekday} ${dayMonthYear}`;
 }
 
+/**
+ * "jue 27 ago" — versión corta de `clubTodayLongLabel` para <768px
+ * (hallazgo RA-005/F-09: la frase larga competía por espacio con «Crear» y
+ * el menú de usuario del header y se truncaba a un fragmento ilegible tipo
+ * "miérco..."). `formatToParts` en vez del formateo directo de
+ * `day: "numeric", month: "short"` para descartar el literal " de " que
+ * Intl inserta entre día y mes — el mockup no lo lleva y aquí sobra espacio
+ * aún menos que en la versión larga.
+ */
+function clubTodayShortLabel(): string {
+  const now = new Date();
+  const weekday = new Intl.DateTimeFormat(CLUB_LOCALE, {
+    weekday: "short",
+    timeZone: CLUB_TIMEZONE,
+  }).format(now);
+  const parts = new Intl.DateTimeFormat(CLUB_LOCALE, {
+    day: "numeric",
+    month: "short",
+    timeZone: CLUB_TIMEZONE,
+  }).formatToParts(now);
+  const day = parts.find((part) => part.type === "day")?.value ?? "";
+  const month = parts.find((part) => part.type === "month")?.value ?? "";
+  return `${weekday} ${day} ${month}`;
+}
+
 export function AppShell({ children }: AppShellProps) {
   const user = useAuthStore((state) => state.user);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -201,8 +226,12 @@ export function AppShell({ children }: AppShellProps) {
           style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 1px 0px 0px" }}
         >
           {/* Left: hamburger (mobile, parent only) + nombre de usuario
-              (parent) / fecha de hoy (coach/admin) */}
-          <div className="flex min-w-0 items-center gap-3">
+              (parent) / fecha de hoy (coach/admin). `flex-1 min-w-0` para que
+              este slot absorba el espacio libre y no compita en igualdad con
+              el lado derecho (RA-005/F-09: bajo md la fecha se truncaba
+              porque left/right se repartían el encogimiento por partes
+              iguales). */}
+          <div className="flex min-w-0 flex-1 items-center gap-3">
             {/* Hamburger — parent role only; coach/admin use <BottomNav>/<MoreSheet> instead (feature 030, US3). */}
             {!navRole && (
               <button
@@ -210,7 +239,7 @@ export function AppShell({ children }: AppShellProps) {
                 aria-label="Abrir menú"
                 aria-expanded={sidebarOpen}
                 onClick={() => setSidebarOpen(true)}
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-charcoal transition-colors hover:bg-light-gray md:hidden"
+                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg text-charcoal transition-colors hover:bg-light-gray md:hidden"
               >
                 <svg
                   width="18"
@@ -230,13 +259,18 @@ export function AppShell({ children }: AppShellProps) {
             )}
             {/* Coach/admin: el nombre vive en la tarjeta de usuario del pie de
                 la barra lateral (feature 035) — este slot lo ocupa la fecha
-                de hoy, como en el mockup. Parent: el nombre, como siempre. */}
+                de hoy, como en el mockup. Bajo md conviven dos formateos del
+                mismo dato en el mismo nodo (RA-005/F-09): la frase larga
+                queda oculta y sólo se muestra la corta, sin duplicar el
+                `data-testid` ni perder el texto accesible. Parent: el
+                nombre, como siempre. */}
             {navRole ? (
               <p
-                className="truncate text-[13px] text-mid-gray"
+                className="min-w-0 flex-1 truncate text-[13px] text-mid-gray"
                 data-testid="header-today-date"
               >
-                {clubTodayLongLabel()}
+                <span className="hidden md:inline">{clubTodayLongLabel()}</span>
+                <span className="md:hidden">{clubTodayShortLabel()}</span>
               </p>
             ) : (
               <p className="truncate text-sm font-medium text-mid-gray">
@@ -250,8 +284,10 @@ export function AppShell({ children }: AppShellProps) {
                 de la barra). El <UserMenu> del header sólo se muestra bajo md,
                 donde no hay barra lateral. Parent: selector de atleta — «Mi
                 perfil» y «Cerrar sesión» viven ahora en <ParentSidebar> y en
-                la barra inferior. */}
-          <div className="flex items-center gap-2">
+                la barra inferior. `shrink-0`: este lado se queda con su
+                tamaño natural y es el slot de la fecha el que cede espacio
+                (ver nota arriba, RA-005/F-09). */}
+          <div className="flex shrink-0 items-center gap-2">
             {navRole ? (
               <>
                 <QuickCreate role={navRole} />

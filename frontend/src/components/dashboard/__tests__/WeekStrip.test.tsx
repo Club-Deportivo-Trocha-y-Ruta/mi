@@ -157,8 +157,8 @@ describe("WeekStrip", () => {
 
     const link = screen.getByRole("link", { name: "Abrir calendario" });
     expect(link).toHaveAttribute("href", "/calendar");
-    // Objetivo táctil ≥44px (Constitution III).
-    expect(link.className).toMatch(/min-h-11/);
+    // Objetivo táctil ≥48px (Constitution III).
+    expect(link.className).toMatch(/min-h-12/);
     // Tinta legible: el turquesa de marca sobre la tarjeta blanca da 2.42:1.
     expect(link.className).toMatch(/text-charcoal/);
     expect(link.className).toMatch(/underline/);

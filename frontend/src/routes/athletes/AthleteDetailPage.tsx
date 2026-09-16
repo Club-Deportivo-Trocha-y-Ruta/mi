@@ -552,7 +552,7 @@ export function AthleteDetailPage() {
 
   const tabClasses = (tab: Tab) =>
     cn(
-      "flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
+      "flex min-h-12 items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
       activeTab === tab
         ? "bg-charcoal text-white"
         : "bg-white text-mid-gray shadow-ring hover:text-charcoal",
@@ -685,13 +685,13 @@ export function AthleteDetailPage() {
 
         {/* TODO: Este botón será eliminado cuando se implemente el cron job mensual automático.
             Ver: backend/app/routers/reports.py - POST /athletes/{id}/report/email */}
-        <div className="ml-auto flex flex-col items-end gap-1">
+        <div className="ml-auto flex scroll-mb-24 flex-col items-end gap-1">
           <button
             type="button"
             disabled={sendReportMutation.isPending || reportSent}
             onClick={() => sendReportMutation.mutate()}
             className={cn(
-              "flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium shadow-button-highlight transition-opacity",
+              "scroll-mb-24 flex min-h-12 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium shadow-button-highlight transition-opacity",
               reportSent
                 ? "bg-green-600 text-white"
                 : "bg-charcoal text-white hover:opacity-70",

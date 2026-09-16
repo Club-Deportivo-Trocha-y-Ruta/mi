@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { z } from "zod";
 
 import { requestPasswordReset } from "@/api/auth";
+import { authButtonClass, authInputClass, authLinkClass } from "@/routes/auth/authStyles";
 
 const forgotSchema = z.object({
   email: z.string().email("Ingresa un correo válido"),
@@ -61,11 +62,8 @@ export function ForgotPasswordPage() {
             >
               {NEUTRAL_MESSAGE}
             </p>
-            <div className="mt-6 text-center">
-              <Link
-                to="/login"
-                className="text-sm font-medium text-link-blue hover:underline"
-              >
+            <div className="mt-2 text-center">
+              <Link to="/login" className={`${authLinkClass} text-sm`}>
                 Volver a iniciar sesión
               </Link>
             </div>
@@ -92,7 +90,7 @@ export function ForgotPasswordPage() {
                 id="email"
                 type="email"
                 autoComplete="email"
-                className="w-full rounded-lg bg-white px-3 py-2.5 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 shadow-ring"
+                className={authInputClass}
                 {...form.register("email")}
               />
               {form.formState.errors.email && (
@@ -111,7 +109,7 @@ export function ForgotPasswordPage() {
             <button
               type="submit"
               disabled={form.formState.isSubmitting}
-              className="w-full rounded-lg bg-charcoal px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50 shadow-button-highlight"
+              className={authButtonClass}
             >
               {form.formState.isSubmitting
                 ? "Enviando..."
@@ -119,10 +117,7 @@ export function ForgotPasswordPage() {
             </button>
 
             <div className="text-center">
-              <Link
-                to="/login"
-                className="text-sm font-medium text-link-blue hover:underline"
-              >
+              <Link to="/login" className={`${authLinkClass} text-sm`}>
                 Volver a iniciar sesión
               </Link>
             </div>

@@ -7,6 +7,7 @@ import { z } from "zod";
 
 import { validateInviteToken, registerParent } from "@/api/auth";
 import type { ParentInviteTokenValidation } from "@/types/parent.types";
+import { authButtonClass, authInputClass } from "@/routes/auth/authStyles";
 
 // ---------------------------------------------------------------------------
 // Schema
@@ -20,13 +21,6 @@ const schema = z.object({
 });
 
 type RegisterForm = z.infer<typeof schema>;
-
-// ---------------------------------------------------------------------------
-// Shared style constants (mirror LoginPage)
-// ---------------------------------------------------------------------------
-
-const inputClassName =
-  "w-full rounded-lg bg-white px-3 py-2.5 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50";
 
 // ---------------------------------------------------------------------------
 // Page component
@@ -193,10 +187,7 @@ export function ParentRegisterPage() {
               <span className="font-medium">{successName}</span>.
             </p>
           </div>
-          <Link
-            to="/login"
-            className="mt-6 block w-full rounded-lg bg-charcoal px-4 py-2.5 text-center text-sm font-medium text-white transition-opacity hover:opacity-70 shadow-button-highlight"
-          >
+          <Link to="/login" className={`${authButtonClass} mt-6`}>
             Ir al inicio de sesión
           </Link>
         </div>
@@ -247,7 +238,7 @@ export function ParentRegisterPage() {
               type="email"
               readOnly
               value={tokenData?.email ?? ""}
-              className="w-full cursor-not-allowed rounded-lg bg-surface px-3 py-2.5 text-sm text-mid-gray outline-none shadow-ring"
+              className="min-h-12 w-full cursor-not-allowed rounded-lg bg-surface px-3 py-2.5 text-sm text-mid-gray outline-none shadow-ring"
             />
           </div>
 
@@ -262,7 +253,7 @@ export function ParentRegisterPage() {
             <input
               id="first_name"
               type="text"
-              className={`${inputClassName} shadow-ring`}
+              className={authInputClass}
               {...form.register("first_name")}
             />
             {form.formState.errors.first_name && (
@@ -283,7 +274,7 @@ export function ParentRegisterPage() {
             <input
               id="last_name"
               type="text"
-              className={`${inputClassName} shadow-ring`}
+              className={authInputClass}
               {...form.register("last_name")}
             />
             {form.formState.errors.last_name && (
@@ -304,7 +295,7 @@ export function ParentRegisterPage() {
             <input
               id="password"
               type="password"
-              className={`${inputClassName} shadow-ring`}
+              className={authInputClass}
               {...form.register("password")}
             />
             {form.formState.errors.password && (
@@ -327,7 +318,7 @@ export function ParentRegisterPage() {
               id="phone"
               type="tel"
               placeholder="Ej: +57 300 123 4567"
-              className={`${inputClassName} shadow-ring`}
+              className={authInputClass}
               {...form.register("phone")}
             />
           </div>
@@ -343,7 +334,7 @@ export function ParentRegisterPage() {
           <button
             type="submit"
             disabled={form.formState.isSubmitting}
-            className="w-full rounded-lg bg-charcoal px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50 shadow-button-highlight"
+            className={authButtonClass}
           >
             {form.formState.isSubmitting ? "Creando cuenta..." : "Crear cuenta"}
           </button>

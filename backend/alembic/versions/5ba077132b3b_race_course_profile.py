@@ -58,7 +58,7 @@ def upgrade() -> None:
     op.create_table(
         "race_course_variants",
         sa.Column("id", sa.BigInteger(), autoincrement=True, nullable=False),
-        sa.Column("race_event_id", sa.BigInteger(), nullable=False),
+        sa.Column("race_event_id", sa.Integer(), nullable=False),
         sa.Column("label", sa.String(length=60), nullable=False),
         sa.Column("lap_distance_m", sa.Integer(), nullable=False),
         sa.Column("elevation_gain_m", sa.SmallInteger(), nullable=True),
@@ -118,7 +118,7 @@ def upgrade() -> None:
     op.create_table(
         "race_course_category_setups",
         sa.Column("id", sa.BigInteger(), autoincrement=True, nullable=False),
-        sa.Column("race_event_id", sa.BigInteger(), nullable=False),
+        sa.Column("race_event_id", sa.Integer(), nullable=False),
         sa.Column("category_id", sa.Integer(), nullable=False),
         sa.Column("variant_id", sa.BigInteger(), nullable=False),
         sa.Column("laps", sa.SmallInteger(), nullable=False),

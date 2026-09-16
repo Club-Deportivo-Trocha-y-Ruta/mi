@@ -2,7 +2,7 @@ import { useTrainingFiltersStore } from "@/store/trainingFiltersStore";
 import type { SessionStatus } from "@/types/trainingSession.types";
 
 const inputSelectClass =
-  "rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 shadow-ring";
+  "min-h-12 rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 shadow-ring";
 
 export function SessionFiltersBar() {
   const {
@@ -57,14 +57,14 @@ export function SessionFiltersBar() {
         <button
           type="button"
           onClick={setToday}
-          className="self-end rounded-lg bg-charcoal px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 shadow-button-highlight"
+          className="inline-flex min-h-12 items-center self-end rounded-lg bg-charcoal px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 shadow-button-highlight"
         >
           Hoy
         </button>
         <button
           type="button"
           onClick={resetToCurrentMonth}
-          className="self-end rounded-lg bg-white px-3 py-2 text-sm font-medium text-mid-gray transition-opacity hover:opacity-70 shadow-ring"
+          className="inline-flex min-h-12 items-center self-end rounded-lg bg-white px-3 py-2 text-sm font-medium text-mid-gray transition-opacity hover:opacity-70 shadow-ring"
         >
           Mes actual
         </button>

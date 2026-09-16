@@ -917,6 +917,17 @@ test.describe("Feature 028 (T023) — target-size sweep (>=48x48px)", () => {
 
     await page.getByTestId("session-section-tab-asistencia").click();
 
+    // Spec drift repair (Lote E, responsive audit 2026-09-16): since the
+    // 2026-09-11 rubric redesign (AttendanceTable.tsx / EvaluateToggleButton),
+    // a row's RPE ToggleGroup is collapsed by default and only renders once
+    // the coach expands that row via "Evaluar"/"Editar" (or "Expandir todo").
+    // This spec pre-dates that redesign and used to find the radio right
+    // after switching tabs — that assumption is no longer correct, not a
+    // rubric bug, so the fix belongs here rather than in AttendanceTable.
+    // "Expandir todo" is used (over the per-row "Editar evaluación de …"
+    // button) so this doesn't depend on the fixture's athlete name.
+    await page.getByTestId("toggle-expand-all-button").click();
+
     // Confirm the T018 rewrite actually rendered: a discrete ToggleGroup
     // option with this exact accessible name only exists post-rewrite (the
     // pre-rewrite <input type="range"> exposed no such control at all).

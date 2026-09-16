@@ -38,6 +38,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TableScrollContainer,
 } from "@/components/ui/table";
 import {
   Tooltip,
@@ -168,7 +169,7 @@ function SortButton({
       type="button"
       onClick={() => onSort(field)}
       className={cn(
-        "inline-flex items-center gap-1 transition-colors hover:text-charcoal",
+        "inline-flex min-h-12 items-center gap-1 transition-colors hover:text-charcoal",
         isActive ? "text-charcoal" : "text-mid-gray",
       )}
       aria-label={`Ordenar por ${label} ${isActive ? (sort.dir === "asc" ? "descendente" : "ascendente") : "ascendente"}`}
@@ -343,7 +344,7 @@ export function ResultsTable({
               const val = e.target.value;
               setSelectedCategoryId(val === "all" ? "all" : Number(val));
             }}
-            className="h-9 rounded-lg border border-[rgba(34,42,53,0.12)] bg-white px-3 text-sm text-charcoal focus:outline-none focus:ring-2 focus:ring-primary/50"
+            className="h-12 rounded-lg border border-[rgba(34,42,53,0.12)] bg-white px-3 text-sm text-charcoal focus:outline-none focus:ring-2 focus:ring-primary/50"
             data-testid="results-category-select"
           >
             <option value="all">Todas</option>
@@ -361,11 +362,15 @@ export function ResultsTable({
             className="flex cursor-pointer items-center gap-2 text-sm text-charcoal"
             data-testid="results-club-only-label"
           >
+            {/* h-12 w-12 directo en el input (no un wrapper con padding): el
+                sweep e2e de target-size.spec.ts mide el boundingBox() real
+                del propio <input> — mismo patrón ya usado en
+                InsightsTimeline.tsx (checkbox de selección de insights). */}
             <input
               type="checkbox"
               checked={clubOnly}
               onChange={(e) => setClubOnly(e.target.checked)}
-              className="h-4 w-4 cursor-pointer rounded border-[rgba(34,42,53,0.2)] accent-primary"
+              className="h-12 w-12 cursor-pointer rounded border-[rgba(34,42,53,0.2)] accent-primary"
               data-testid="results-club-only-toggle"
               aria-label="Solo mi club"
             />
@@ -401,7 +406,7 @@ export function ResultsTable({
           .map((cat) => (
             <div
               key={cat.category_id}
-              className="overflow-hidden rounded-xl bg-white ring-1 ring-[rgba(34,42,53,0.08)]"
+              className="rounded-xl bg-white ring-1 ring-[rgba(34,42,53,0.08)]"
               data-testid={`results-category-section-${cat.category_id}`}
             >
               {/* Encabezado de categoría */}
@@ -420,6 +425,10 @@ export function ResultsTable({
                 </span>
               </div>
 
+              {/* F-05: overflow-hidden recortaba la columna Puntos en
+                  t768/d1280 sin dejar forma de alcanzarla; el wrapper con
+                  scroll + indicador la deja visible o alcanzable. */}
+              <TableScrollContainer className="rounded-b-xl">
               <Table>
                 <TableCaption className="sr-only">
                   Resultados de la categoría {cat.label}
@@ -490,6 +499,7 @@ export function ResultsTable({
                   ))}
                 </TableBody>
               </Table>
+              </TableScrollContainer>
             </div>
           ))}
     </div>

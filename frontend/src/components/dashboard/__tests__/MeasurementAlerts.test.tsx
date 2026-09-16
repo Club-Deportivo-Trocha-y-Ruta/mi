@@ -158,8 +158,8 @@ describe("MeasurementAlerts", () => {
     const link = screen.getByRole("link", { name: "Ver todas (40)" });
     expect(link).toHaveAttribute("href", "/athletes");
     // Única vía a las alertas más allá del tope de 8: objetivo táctil real
-    // (≥44px) y tinta legible — el turquesa de marca da 2.42:1 sobre blanco.
-    expect(link.className).toMatch(/min-h-11/);
+    // (≥48px) y tinta legible — el turquesa de marca da 2.42:1 sobre blanco.
+    expect(link.className).toMatch(/min-h-12/);
     expect(link.className).toMatch(/text-charcoal/);
     expect(link.className).toMatch(/underline/);
   });
@@ -336,8 +336,8 @@ describe("MeasurementAlerts — tarjeta rediseñada (feature 035)", () => {
 
     const link = screen.getByRole("link", { name: "Ver todos los atletas" });
     expect(link).toHaveAttribute("href", "/athletes");
-    // Objetivo táctil ≥44px (Constitution III).
-    expect(link.className).toMatch(/min-h-11/);
+    // Objetivo táctil ≥48px (Constitution III).
+    expect(link.className).toMatch(/min-h-12/);
     // Tinta legible: el turquesa de marca sobre blanco da 2.42:1 (falla AA).
     expect(link.className).toMatch(/text-charcoal/);
     expect(link.className).toMatch(/underline/);

@@ -12,7 +12,7 @@ export function NotFoundPage() {
         <p className="mt-3 text-sm text-mid-gray">Ruta no encontrada.</p>
         <Link
           to="/dashboard"
-          className="mt-6 inline-block rounded-lg bg-charcoal px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-70 shadow-button-highlight"
+          className="mt-6 inline-flex min-h-12 items-center justify-center rounded-lg bg-charcoal px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-70 shadow-button-highlight"
         >
           Volver al dashboard
         </Link>

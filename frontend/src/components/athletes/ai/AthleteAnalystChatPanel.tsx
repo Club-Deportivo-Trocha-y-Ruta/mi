@@ -86,7 +86,7 @@ export function AthleteAnalystChatPanel({
             <button
               key={suggestion}
               type="button"
-              className="rounded-full border border-gray-200 px-3 py-1.5 text-xs text-charcoal hover:bg-gray-50 transition-colors"
+              className="inline-flex min-h-12 items-center rounded-full border border-gray-200 px-3 py-1.5 text-xs text-charcoal hover:bg-gray-50 transition-colors"
               onClick={() => setQuery(suggestion)}
               disabled={inputDisabled}
               data-testid="athlete-analyst-chat-suggestion-chip"
@@ -168,7 +168,7 @@ export function AthleteAnalystChatPanel({
               disabled={inputDisabled || !query.trim()}
               aria-label="Enviar consulta"
               data-testid="athlete-analyst-chat-send"
-              className="shrink-0"
+              className="min-h-12 min-w-12 shrink-0"
             >
               <Send size={14} aria-hidden="true" />
               <span className="sr-only">Enviar</span>

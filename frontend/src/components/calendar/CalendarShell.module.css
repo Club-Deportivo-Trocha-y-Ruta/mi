@@ -33,6 +33,15 @@
   font-size: 0.8125rem !important;
   font-weight: 500 !important;
   transition: opacity 0.15s !important;
+  min-height: 48px !important;
+}
+
+/* Botones sólo-ícono (flechas mes anterior/siguiente): necesitan ancho
+   mínimo aparte del alto — el texto "Hoy" ya alcanza 48px de ancho con su
+   propio padding. */
+.wrapper :global(.fc-prev-button),
+.wrapper :global(.fc-next-button) {
+  min-width: 48px !important;
 }
 
 .wrapper :global(.fc-button:hover) {
@@ -72,9 +81,21 @@
 }
 
 .wrapper :global(.fc-daygrid-day-number) {
+  position: relative;
   color: #2f2f2f;
   font-size: 0.8rem;
   padding: 4px 8px;
+}
+
+/* Área de toque ampliada a 48×48 sin agrandar visualmente el número del día
+   (grilla mensual densa: no hay espacio para hacerlo crecer de verdad). */
+.wrapper :global(.fc-daygrid-day-number::after) {
+  content: "";
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: 48px;
+  height: 48px;
+  transform: translate(-50%, -50%);
 }
 
 .wrapper :global(.fc-col-header-cell) {
@@ -90,6 +111,7 @@
 /* ─── Events ──────────────────────────────────────────────────────────────── */
 
 .wrapper :global(.fc-event) {
+  position: relative;
   border-radius: 6px !important;
   border: none !important;
   cursor: pointer;
@@ -104,6 +126,18 @@
 
 .wrapper :global(.fc-event-title) {
   font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Chips de la grilla mensual: área de toque ampliada verticalmente (hasta
+   ~48px) sin agrandar el chip visible — en `dayMaxEvents=3` agrandarlo de
+   verdad empujaría los renglones vecinos. */
+.wrapper :global(.fc-daygrid-event::after) {
+  content: "";
+  position: absolute;
+  inset: -13px 0;
 }
 
 /* ─── Time grid ───────────────────────────────────────────────────────────── */
@@ -132,6 +166,17 @@
 .wrapper :global(.fc-list-event:hover td) {
   background-color: #f5f5f5;
   cursor: pointer;
+}
+
+.wrapper :global(.fc-list-event td) {
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+.wrapper :global(.fc-list-event-title a) {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
 }
 
 /* ─── Scrollbars ─────────────────────────────────────────────────────────── */

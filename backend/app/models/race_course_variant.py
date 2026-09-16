@@ -70,7 +70,7 @@ class RaceCourseVariant(ActorTimestampMixin, Base):
         autoincrement=True,
     )
     race_event_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("race_events.id", ondelete="CASCADE"), nullable=False
+        Integer, ForeignKey("race_events.id", ondelete="CASCADE"), nullable=False
     )
     label: Mapped[str] = mapped_column(String(60), nullable=False)
     lap_distance_m: Mapped[int] = mapped_column(Integer, nullable=False)
