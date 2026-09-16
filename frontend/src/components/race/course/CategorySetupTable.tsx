@@ -166,7 +166,10 @@ export function CategorySetupTable({
   const { fields } = useFieldArray({ control, name: "rows" });
 
   // Re-sincroniza las filas cuando cambian los datos del servidor (por
-  // ejemplo tras guardar, o al recibir la respuesta inicial).
+  // ejemplo tras guardar, al recibir la respuesta inicial, o cuando
+  // `resultCategoryIds` llega en una query separada y aporta una categoría
+  // que no estaba en `setups`/`suggestedSetups`).
+  const resultCategoryIdsKey = resultCategoryIds.join(",");
   useEffect(() => {
     reset({
       rows: buildInitialRows(
@@ -180,7 +183,7 @@ export function CategorySetupTable({
     setSubmitError(null);
     setRowErrors({});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [setups, suggestedSetups, variants]);
+  }, [setups, suggestedSetups, variants, resultCategoryIdsKey]);
 
   const onSubmit = handleSubmit((values) => {
     setSubmitError(null);

@@ -979,3 +979,18 @@ implementation environment has no Docker, no local MySQL and no Playwright brows
 > both parent pages) is present in the working tree but not yet committed as of this pass. Alembic
 > head for this feature is `5ba077132b3b` (`down_revision=d5b125474e2b`, feature 042's head) —
 > pending the real-MySQL round-trip above before it is treated as production-ready.
+
+**Update, 2026-09-16 (post-closure)**: everything through Phase 7 landed as 5 commits on
+`feat/043-race-course-profile` (no PR yet); the note above about uncommitted Phase 7 code and a
+"🚧 Partial" Phase 8 predates that landing. Since then, two more items closed: (1) the Phase 8
+upload-timing measurement (T068) ran — a synthetic 60,000-point/2.92 MB GPX measured p95 ≈ 3.18 s
+against the 1 500 ms budget (`plan.md` §Complexity Tracking) — and its previously-open mitigation
+decision is now implemented (`MAX_RAW_POINTS = 20_000` raw-point pre-check in `gpx_processing.py`,
+rejecting as `too_many_points` before the expensive path, regression-tested); (2) a real gap
+against Phase 3's own `CategorySetupTable` acceptance criteria was found and fixed — `CourseTab`
+never fetched race results, so the "categories from results" half of its `resultCategoryIds ∪
+setups ∪ suggested_setups` union silently never populated; `CourseTab` now sources it from
+`useRaceResults` (cache-shared with `ResultsTab`). Still pending exactly as this table's per-phase
+notes describe: `pytest -m mysql`, the golden eval + `baseline.json` regen, both
+`race-course.spec.ts` Playwright runs, and the post-deploy smoke — none of these have run against
+real infrastructure in any session of this feature.

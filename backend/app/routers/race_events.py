@@ -1051,6 +1051,7 @@ _COURSE_GPX_ERROR_MESSAGES: dict[str, str] = {
     "too_short": "El recorrido es demasiado corto para ser una vuelta (menos de 300 m).",
     "too_long": "La vuelta supera los 15 km; indica cuántas vueltas contiene la grabación.",
     "too_few_points": "La grabación tiene muy pocos puntos para dibujar el circuito.",
+    "too_many_points": "La grabación tiene demasiados puntos; verifica que sea una sola vuelta.",
     "compressed_not_allowed": "No se aceptan archivos comprimidos; sube el GPX sin comprimir.",
 }
 

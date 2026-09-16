@@ -11,7 +11,7 @@
  * de coach nunca se pasa `athleteNamesById` (`myCategories` siempre `[]`
  * aquí — la resolución por atleta es exclusiva de las páginas de padres).
  */
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { CategorySetupTable } from "@/components/race/course/CategorySetupTable";
 import { CourseDescriptionCard } from "@/components/race/course/CourseDescriptionCard";
@@ -21,6 +21,7 @@ import { VariantUploadDialog } from "@/components/race/course/VariantUploadDialo
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRaceCourse } from "@/hooks/race/useRaceCourse";
+import { useRaceResults } from "@/hooks/race/useRaceResults";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -117,6 +118,16 @@ export function CourseTab({ raceEventId, compact, readOnly }: CourseTabProps) {
   const { data, isLoading, isError, refetch } = useRaceCourse(raceEventId);
   const [emptyStateUploadOpen, setEmptyStateUploadOpen] = useState(false);
 
+  // Mismo query key que `ResultsTab` (sin filtros) — reutiliza su caché en
+  // lugar de disparar una segunda request cuando ya se visitó esa pestaña.
+  // Alimenta la unión `resultCategoryIds ∪ setups ∪ suggested_setups` de
+  // `CategorySetupTable` (`ui-course.md` §2).
+  const { data: resultsData } = useRaceResults(raceEventId);
+  const resultCategoryIds = useMemo(
+    () => resultsData?.categories.map((c) => c.category_id) ?? [],
+    [resultsData],
+  );
+
   return (
     <div
       className={cn(compact ? "space-y-3" : "space-y-4")}
@@ -157,6 +168,7 @@ export function CourseTab({ raceEventId, compact, readOnly }: CourseTabProps) {
             setups={data.setups}
             suggestedSetups={data.suggested_setups}
             variants={data.variants}
+            resultCategoryIds={resultCategoryIds}
           />
         </>
       )}

@@ -46,6 +46,13 @@ SIMPLIFY_EPSILON_M = 3.0
 MAX_POINTS = 800
 MIN_POINTS = 20
 MAX_DISTANCE_ERROR = 0.01
+# T068 (plan.md §Complexity Tracking): una vuelta real a 1 Hz nunca se acerca
+# a este orden de magnitud (~2 000-4 000 puntos incluso al límite de
+# MAX_LAP_M); un GPX con más puntos crudos que esto es defectuoso o
+# corrupto, y dejarlo llegar a la distancia acumulada / extracción de vuelta
+# / RDP es lo que produjo el p95 ≈ 3.18 s medido con un archivo sintético de
+# 60 000 puntos, muy por encima del presupuesto de 1 500 ms.
+MAX_RAW_POINTS = 20_000
 
 _GZIP_MAGIC = b"\x1f\x8b"
 _ZIP_MAGIC = b"\x50\x4b"
@@ -154,9 +161,12 @@ def _process_gpx_inner(
     points = _strip_and_flatten(gpx)
     del gpx
 
-    # Paso 4 — sanidad.
+    # Paso 4 — sanidad. La cota de puntos crudos corta aquí, antes de la
+    # distancia acumulada / extracción de vuelta / RDP (T068).
     if not points:
         raise CourseProcessingError("no_track_points")
+    if len(points) > MAX_RAW_POINTS:
+        raise CourseProcessingError("too_many_points")
     for point in points:
         if not _is_valid_position(point.latitude, point.longitude):
             raise CourseProcessingError("no_position")

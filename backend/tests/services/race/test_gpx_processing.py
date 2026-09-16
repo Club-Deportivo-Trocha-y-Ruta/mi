@@ -24,6 +24,7 @@ import pytest
 from app.services.race.course.gpx_processing import (
     MAX_LAP_M,
     MAX_POINTS,
+    MAX_RAW_POINTS,
     MIN_LAP_M,
     MIN_POINTS,
     CourseProcessingError,
@@ -154,6 +155,25 @@ def test_too_few_points_after_simplify_raises():
     with pytest.raises(CourseProcessingError) as exc_info:
         process_gpx(content)
     assert exc_info.value.code == "too_few_points"
+
+
+def test_too_many_raw_points_raises_before_expensive_processing():
+    """T068 mitigation: a raw point count over MAX_RAW_POINTS=20,000 must be
+    rejected with `too_many_points` well before the cumulative-distance/lap
+    extraction/RDP path that made a 60,000-point synthetic GPX take
+    p95 ~= 3.18s (`plan.md` §Complexity Tracking) -- this asserts the fast
+    rejection itself, not just the error code."""
+    content = circle_gpx(radius_m=2000, points=25_000, laps=1)
+
+    start = time.perf_counter()
+    with pytest.raises(CourseProcessingError) as exc_info:
+        process_gpx(content)
+    elapsed = time.perf_counter() - start
+
+    assert exc_info.value.code == "too_many_points"
+    assert elapsed <= 1.5, (
+        f"rejection took {elapsed:.3f}s -- precheck should skip the expensive path"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -354,3 +374,4 @@ def test_module_constants_match_contract():
     assert MAX_LAP_M == 15_000
     assert MAX_POINTS == 800
     assert MIN_POINTS == 20
+    assert MAX_RAW_POINTS == 20_000

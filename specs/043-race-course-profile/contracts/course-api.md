@@ -124,6 +124,7 @@ Full replace. Validation: `laps` 1–20; every `variant_id` belongs to this vál
 | 422 | `too_short` | El recorrido es demasiado corto para ser una vuelta (menos de 300 m). |
 | 422 | `too_long` | La vuelta supera los 15 km; indica cuántas vueltas contiene la grabación. |
 | 422 | `too_few_points` | La grabación tiene muy pocos puntos para dibujar el circuito. |
+| 422 | `too_many_points` | La grabación tiene demasiados puntos; verifica que sea una sola vuelta. |
 | 409 | `duplicate_recording` | Ya subiste esta misma grabación como "{label}". |
 | 409 | `variant_label_taken` | Ya existe una variante con ese nombre en esta válida. |
 | 409 | `variant_in_use` | No se puede eliminar: la usan {categorías}. |
