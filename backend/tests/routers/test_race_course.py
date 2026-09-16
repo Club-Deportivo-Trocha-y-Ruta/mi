@@ -1,21 +1,28 @@
 """Tests for the course-profile router endpoints (feature 043, User Story 1).
 
 Contract: `specs/043-race-course-profile/contracts/course-api.md` (read it —
-this file covers exactly its §7 COACH-ONLY cases: uploads, setups, rename,
-delete, and the negative/privacy/query-count assertions). Parent-scoped
-reads (`my_categories`, `suggested_setups`, the 404 `course_not_available`
-case) are a later task (T052/T053) and are deliberately NOT covered here.
+this file covers its §7 COACH-ONLY cases: uploads, setups, rename, delete,
+and the negative/privacy/query-count assertions) PLUS, in `TestParentRead`
+(T053, User Story 5), the parent-scoped reads (`my_categories`,
+`suggested_setups`, the 404 `course_not_available` case) per §1 and §7's
+"parent" bullets.
 
 Pattern: same in-memory aiosqlite harness as
 `tests/routers/test_race_event_conditions.py` — an explicit
 `Base.metadata.create_all(conn, tables=[...])` subset, a `get_current_user`
 override with a stub `SimpleNamespace` user (no JWT), and the shared
-`AUDIT_TABLES` so `record_audit` calls do not error.
+`AUDIT_TABLES` so `record_audit` calls do not error. `TestParentRead`'s
+seeding (User(role=parent) + Athlete + ParentAthlete + RaceCompetitor +
+RaceResult) mirrors `tests/routers/test_race_results_privacy.py`.
 
-TDD note: `POST/PUT/PATCH/DELETE .../course/*` and `GET .../course` do not
-exist on the router yet (T018-T020 land later); every request below either
-404s (no matching route) or fails its assertion until then. That is the
-expected state — do not skip, xfail, or mock the missing service/router.
+TDD note (`TestParentRead` only): the router's `GET /course` dependency is
+still `require_role([UserRole.admin, UserRole.coach])` (T055 is the sibling
+task that adds `UserRole.parent` there and wires the parent branch of
+`app/services/race/course/service.py::get_course`, which today raises
+`NotImplementedError` for that branch). Every parent-role request below
+therefore 403s today instead of asserting its real expectation — that is the
+expected red state; do not skip, xfail, or mock the missing service/router
+change.
 """
 from __future__ import annotations
 
@@ -23,6 +30,7 @@ import json
 import logging
 import math
 import re
+from contextlib import asynccontextmanager
 from datetime import date, datetime, timezone
 from types import SimpleNamespace
 
@@ -41,10 +49,16 @@ from sqlalchemy.pool import StaticPool
 from app.dependencies import get_current_user, get_db
 from app.main import app
 from app.models import Base
+from app.models.athlete import Athlete, ParentAthlete
 from app.models.audit_log import AuditLog
+from app.models.club import Club
 from app.models.race_category import CategoryGender, RaceCategory
+from app.models.race_competitor import RaceCompetitor
+from app.models.race_course_category_setup import RaceCourseCategorySetup
 from app.models.race_course_variant import RaceCourseVariant
 from app.models.race_event import RaceEvent, RaceEventStatus
+from app.models.race_event_roster import RaceEventRoster, RaceEventRosterStatus
+from app.models.race_result import RaceResult, ResultStatus
 from app.models.race_series import RaceSeries
 from app.models.user import User, UserRole
 from app.services.audit import AuditEntityType
@@ -105,14 +119,28 @@ async def sqlite_engine() -> AsyncEngine:
     from app.models.race_course_category_setup import (  # noqa: F401
         RaceCourseCategorySetup as _CS,
     )
+    # Parent-read domain (TestParentRead, T053) — mirrors the table subset of
+    # `tests/routers/test_race_results_privacy.py`.
+    from app.models.club import Club as _Cl, ClubMember as _CM  # noqa: F401
+    from app.models.athlete import Athlete as _A, ParentAthlete as _PA  # noqa: F401
+    from app.models.race_competitor import RaceCompetitor as _Comp  # noqa: F401
+    from app.models.race_result import RaceResult as _R  # noqa: F401
+    from app.models.race_event_roster import RaceEventRoster as _Ros  # noqa: F401
 
     tables = [
         Base.metadata.tables[t]
         for t in (
             "users",
+            "clubs",
+            "club_members",
+            "athletes",
+            "parent_athlete",
             "race_series",
             "race_events",
+            "race_event_roster",
             "race_categories",
+            "race_competitors",
+            "race_results",
             "race_course_variants",
             "race_course_category_setups",
             *AUDIT_TABLES,
@@ -228,6 +256,26 @@ async def anon_client(sqlite_engine, db_session_factory, seed_course_event):
     app.dependency_overrides.clear()
 
 
+@asynccontextmanager
+async def _course_client_as(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    role: UserRole,
+    user_id: int,
+):
+    """Ad-hoc client builder for `TestParentRead`, which needs many distinct
+    parent identities against the same seeded DB — one dedicated fixture per
+    identity (the `coach_client`/`athlete_client`/`anon_client` pattern above)
+    would not scale here. Same override wiring as those fixtures."""
+    app.dependency_overrides[get_db] = _override_db_factory(db_session_factory)
+    app.dependency_overrides[get_current_user] = lambda: _make_user(role, user_id)
+    transport = ASGITransport(app=app)
+    try:
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            yield ac
+    finally:
+        app.dependency_overrides.clear()
+
+
 # ===========================================================================
 # RBAC
 # ===========================================================================
@@ -252,6 +300,17 @@ class TestRbac:
             data={"label": "Circuito completo"},
             files=_gpx_files(content),
         )
+        assert r.status_code in (401, 403)
+
+    @pytest.mark.asyncio
+    async def test_athlete_forbidden_on_get_course(self, athlete_client):
+        """GET /course is coach/admin/parent (T053) — athlete stays rejected."""
+        r = await athlete_client.get(_course_url(100))
+        assert r.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_anon_unauthorized_on_get_course(self, anon_client):
+        r = await anon_client.get(_course_url(100))
         assert r.status_code in (401, 403)
 
 
@@ -813,3 +872,374 @@ class TestDescriptionPatch:
         )
         assert r.status_code == 404
         assert r.json()["detail"]["code"] == "race_event_not_found"
+
+
+# ===========================================================================
+# Parent read (feature 043, User Story 5, T053)
+#
+# Contract: course-api.md §1 (`CourseRead.my_categories`, the "parent" bullets
+# right below the JSON block) and §7. `my_categories` is derived ONLY from
+# `RaceResult` rows of the caller's own athletes for this `race_event_id` —
+# NOT from `race_event_roster` (that table has no `category_id` column at
+# all, and there is no general age-band → category resolver in this codebase
+# to invent one from). The 200-vs-404 *visibility* gate is broader than
+# `my_categories`, though: a parent gets 200 whenever at least one of their
+# own athletes appears EITHER on the roster OR in the results of this event
+# (soft-deleted results excluded) — so a child called up for a still-SCHEDULED
+# válida with no results yet legitimately sees a populated course card with
+# an EMPTY `my_categories`. That is the deliberate, documented shape of this
+# task, not a bug to "fix" by deriving a category from the roster.
+#
+# TDD note: `GET /course`'s dependency is still
+# `require_role([UserRole.admin, UserRole.coach])`, so every parent-role
+# request below gets a 403 today (T055 wires `UserRole.parent` in and
+# implements the parent branch of `course_svc.get_course`, which currently
+# raises `NotImplementedError`). That 403 is the expected red state.
+# ===========================================================================
+
+
+@pytest_asyncio.fixture
+async def seed_parent_course(db_session_factory):
+    """Seeds the parent-read domain for this event, mirroring the seeding
+    style of `tests/routers/test_race_results_privacy.py` (User(role=parent)
+    + Athlete + ParentAthlete + RaceCompetitor + RaceResult), not a new one.
+
+    Events (own series, id=2, distinct from `seed_course_event`'s series 1
+    used by the coach-only classes above — this fixture is independent and
+    never combined with `seed_course_event` in the same test):
+
+    - ``event_prev`` (id=199, sequence_number=4): an earlier válida of the
+      series that already has its own category setup + variant — this is
+      the "previous válida" R-14 looks at for `suggested_setups` prefill.
+    - ``event_main`` (id=200, sequence_number=5): the válida under test.
+      Deliberately has NO own setups/variants/description, so
+      `has_course_data=False` for it and a coach/admin GET would still show
+      a *non-empty* `suggested_setups` sourced from ``event_prev`` (R-14) —
+      the parent must never see that prefill (course-api.md §1: "For
+      parents: `suggested_setups` is always `[]`").
+    - ``event_unrelated`` (id=300, its own series id=3): exists, but no
+      roster row, no result row, nothing ties any seeded athlete to it —
+      the "truly unrelated válida" 404 case.
+
+    Athletes / parents (athlete ids use an unusual 94xx range to make a
+    cross-parent leakage assertion via plain substring search on the
+    serialized JSON reliable — collision with category/event/variant ids is
+    not plausible):
+
+    - parent 201 → athlete 9401: ONLY on ``event_main``'s roster, no
+      `RaceResult` row anywhere → the "roster-only, empty my_categories" case.
+    - parent 202 → athlete 9402: has a `RaceResult` row on ``event_main`` in
+      category 12 (INF_M) → the "one category resolved" case.
+    - parent 203 → athletes 9403 (category 12/INF_M) and 9404 (category
+      13/INF_F): both via `RaceResult` rows on ``event_main`` → the
+      "two children, two categories" case.
+    - parent 204 → athlete 9405: linked to the club but with NEITHER a
+      roster NOR a result row on ``event_main`` (nor on ``event_unrelated``)
+      → the "no relation at all" 404 case.
+    """
+    async with db_session_factory() as session:
+        coach = User(
+            id=10, email="coach_parent_read@test.com", hashed_password="x",
+            first_name="Coach", last_name="Ten",
+            role=UserRole.coach, is_active=True, can_login=True,
+            created_at=datetime.now(timezone.utc),
+        )
+        parent_roster = User(
+            id=201, email="parent_roster@test.com", hashed_password="x",
+            first_name="Padre", last_name="Roster",
+            role=UserRole.parent, is_active=True, can_login=True,
+            created_at=datetime.now(timezone.utc),
+        )
+        parent_result = User(
+            id=202, email="parent_result@test.com", hashed_password="x",
+            first_name="Padre", last_name="Result",
+            role=UserRole.parent, is_active=True, can_login=True,
+            created_at=datetime.now(timezone.utc),
+        )
+        parent_two = User(
+            id=203, email="parent_two@test.com", hashed_password="x",
+            first_name="Padre", last_name="Two",
+            role=UserRole.parent, is_active=True, can_login=True,
+            created_at=datetime.now(timezone.utc),
+        )
+        parent_unrelated = User(
+            id=204, email="parent_unrelated@test.com", hashed_password="x",
+            first_name="Padre", last_name="Unrelated",
+            role=UserRole.parent, is_active=True, can_login=True,
+            created_at=datetime.now(timezone.utc),
+        )
+        athlete_users = [
+            User(
+                id=uid, email=f"athlete{uid}@test.com", hashed_password="x",
+                first_name="Atleta", last_name=str(uid),
+                role=UserRole.parent, is_active=True, can_login=False,
+                created_at=datetime.now(timezone.utc),
+            )
+            for uid in (9401, 9402, 9403, 9404, 9405)
+        ]
+
+        club = Club(id=1, name="Club TyR", code="TYR-PARENT-READ")
+
+        athlete_roster = Athlete(
+            id=9401, user_id=9401, first_name="Atleta", last_name="Roster",
+            birth_date=date(2013, 1, 1), sex="M", club_id=1, created_by=10,
+        )
+        athlete_result = Athlete(
+            id=9402, user_id=9402, first_name="Atleta", last_name="Result",
+            birth_date=date(2013, 2, 2), sex="M", club_id=1, created_by=10,
+        )
+        athlete_two_a = Athlete(
+            id=9403, user_id=9403, first_name="Atleta", last_name="TwoA",
+            birth_date=date(2013, 3, 3), sex="M", club_id=1, created_by=10,
+        )
+        athlete_two_b = Athlete(
+            id=9404, user_id=9404, first_name="Atleta", last_name="TwoB",
+            birth_date=date(2013, 4, 4), sex="F", club_id=1, created_by=10,
+        )
+        athlete_unrelated = Athlete(
+            id=9405, user_id=9405, first_name="Atleta", last_name="Unrelated",
+            birth_date=date(2013, 5, 5), sex="M", club_id=1, created_by=10,
+        )
+
+        links = [
+            ParentAthlete(parent_id=201, athlete_id=9401, relationship_type="madre"),
+            ParentAthlete(parent_id=202, athlete_id=9402, relationship_type="padre"),
+            ParentAthlete(parent_id=203, athlete_id=9403, relationship_type="madre"),
+            ParentAthlete(parent_id=203, athlete_id=9404, relationship_type="madre"),
+            ParentAthlete(parent_id=204, athlete_id=9405, relationship_type="padre"),
+        ]
+
+        series = RaceSeries(
+            id=2, name="Copa Valle Parent Read", season_year=2026,
+            organizer="Liga Vallecaucana", points_scheme_code="copa_valle_2026",
+        )
+        other_series = RaceSeries(
+            id=3, name="Serie sin relacion", season_year=2026,
+            organizer="Liga Vallecaucana", points_scheme_code="copa_valle_2026",
+        )
+        event_prev = RaceEvent(
+            id=199, series_id=2, sequence_number=4, name="VALIDA III PARENT",
+            event_date=date(2026, 4, 12), location="CALI",
+            is_championship=False, status=RaceEventStatus.COMPLETED,
+            created_by_user_id=10,
+        )
+        event_main = RaceEvent(
+            id=200, series_id=2, sequence_number=5, name="VALIDA IV PARENT",
+            event_date=date(2026, 5, 17), location="CALI",
+            is_championship=False, status=RaceEventStatus.COMPLETED,
+            created_by_user_id=10,
+        )
+        event_unrelated = RaceEvent(
+            id=300, series_id=3, sequence_number=1, name="VALIDA SIN RELACION",
+            event_date=date(2026, 6, 1), location="CALI",
+            is_championship=False, status=RaceEventStatus.SCHEDULED,
+            created_by_user_id=10,
+        )
+
+        cat_m = RaceCategory(
+            id=12, code="INF_M", label="Infantil masculino", sex=CategoryGender.M
+        )
+        cat_f = RaceCategory(
+            id=13, code="INF_F", label="Infantil femenino", sex=CategoryGender.F
+        )
+
+        # `event_prev` has its own setup + variant so R-14's `suggested_setups`
+        # has something to prefill onto `event_main` (which has none of its
+        # own) — this is what a coach/admin GET on `event_main` would surface,
+        # and what a parent's GET on the same event must NOT surface.
+        prev_variant = RaceCourseVariant(
+            id=50, race_event_id=199, label="Circuito válida anterior",
+            lap_distance_m=4200, elevation_gain_m=90, has_elevation=True,
+            point_count=400, geometry=[[3.45, -76.53, 1000.0]],
+            detection_method="single", recorded_laps=1,
+            source_sha256="a" * 64, created_by_user_id=10,
+        )
+        # Roster: athlete 9401 called up for `event_main`, no result anywhere.
+        roster_entry = RaceEventRoster(
+            race_event_id=200, athlete_id=9401,
+            status=RaceEventRosterStatus.called_up, created_by_user_id=10,
+        )
+
+        # Results: athlete 9402 (event_main/cat 12), 9403 (event_main/cat 12),
+        # 9404 (event_main/cat 13) — one RaceCompetitor per result row.
+        comp_9402 = RaceCompetitor(
+            id=9402, normalized_name="atleta result", display_name="Atleta Result",
+            club_text="Club TyR", athlete_id=9402,
+        )
+        comp_9403 = RaceCompetitor(
+            id=9403, normalized_name="atleta twoa", display_name="Atleta TwoA",
+            club_text="Club TyR", athlete_id=9403,
+        )
+        comp_9404 = RaceCompetitor(
+            id=9404, normalized_name="atleta twob", display_name="Atleta TwoB",
+            club_text="Club TyR", athlete_id=9404,
+        )
+        result_9402 = RaceResult(
+            event_id=200, category_id=12, competitor_id=9402, athlete_id=9402,
+            position=1, status=ResultStatus.FINISHED,
+            race_time_ms=200_000, points_awarded=40, created_by_user_id=10,
+        )
+        result_9403 = RaceResult(
+            event_id=200, category_id=12, competitor_id=9403, athlete_id=9403,
+            position=2, status=ResultStatus.FINISHED,
+            race_time_ms=205_000, points_awarded=35, created_by_user_id=10,
+        )
+        result_9404 = RaceResult(
+            event_id=200, category_id=13, competitor_id=9404, athlete_id=9404,
+            position=1, status=ResultStatus.FINISHED,
+            race_time_ms=210_000, points_awarded=40, created_by_user_id=10,
+        )
+
+        session.add_all(
+            [
+                coach, parent_roster, parent_result, parent_two, parent_unrelated,
+                *athlete_users, club,
+                athlete_roster, athlete_result, athlete_two_a, athlete_two_b,
+                athlete_unrelated,
+                *links,
+                series, other_series, event_prev, event_main, event_unrelated,
+                cat_m, cat_f,
+                prev_variant, roster_entry,
+                comp_9402, comp_9403, comp_9404,
+                result_9402, result_9403, result_9404,
+            ]
+        )
+        await session.flush()
+
+        # `RaceCourseCategorySetup` needs `prev_variant`'s id — it's set
+        # explicitly above (id=50), but flushing first keeps this symmetric
+        # with how the other fixtures order inserts and guarantees the FK
+        # target row exists before this insert.
+        session.add(
+            RaceCourseCategorySetup(
+                race_event_id=199, category_id=12, variant_id=50, laps=3,
+                updated_by_user_id=10,
+            )
+        )
+        await session.commit()
+    yield
+
+
+class TestParentRead:
+    """T053 — parent-scoped `GET /course`."""
+
+    @pytest.mark.asyncio
+    async def test_child_only_on_roster_sees_empty_my_categories(
+        self, sqlite_engine, db_session_factory, seed_parent_course
+    ):
+        """Design decision (not a bug): `my_categories` is derived only from
+        `RaceResult`, never from `race_event_roster` (which has no
+        `category_id`). A child called up but not yet raced therefore gets a
+        visible, but unhighlighted, course card."""
+        async with _course_client_as(db_session_factory, UserRole.parent, 201) as ac:
+            r = await ac.get(_course_url(200))
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["race_event_id"] == 200
+        assert body["my_categories"] == []
+        # `event_main` has no variant/description of its own — the roster
+        # call-up alone does not fabricate course data.
+        assert body["has_course_data"] is False
+
+    @pytest.mark.asyncio
+    async def test_child_with_result_resolves_one_category(
+        self, sqlite_engine, db_session_factory, seed_parent_course
+    ):
+        async with _course_client_as(db_session_factory, UserRole.parent, 202) as ac:
+            r = await ac.get(_course_url(200))
+        assert r.status_code == 200, r.text
+        assert r.json()["my_categories"] == [
+            {"athlete_id": 9402, "category_id": 12}
+        ]
+
+    @pytest.mark.asyncio
+    async def test_two_children_two_categories_both_resolved(
+        self, sqlite_engine, db_session_factory, seed_parent_course
+    ):
+        async with _course_client_as(db_session_factory, UserRole.parent, 203) as ac:
+            r = await ac.get(_course_url(200))
+        assert r.status_code == 200, r.text
+        my_categories = r.json()["my_categories"]
+        assert len(my_categories) == 2
+        assert {(c["athlete_id"], c["category_id"]) for c in my_categories} == {
+            (9403, 12),
+            (9404, 13),
+        }
+
+    @pytest.mark.asyncio
+    async def test_no_related_athlete_on_event_is_404_course_not_available(
+        self, sqlite_engine, db_session_factory, seed_parent_course
+    ):
+        """Parent 204's only athlete (9405) is on neither the roster nor the
+        results of `event_main` — the event itself exists, so this must be
+        `course_not_available`, never `race_event_not_found`."""
+        async with _course_client_as(db_session_factory, UserRole.parent, 204) as ac:
+            r = await ac.get(_course_url(200))
+        assert r.status_code == 404, r.text
+        assert r.json()["detail"]["code"] == "course_not_available"
+
+    @pytest.mark.asyncio
+    async def test_truly_unrelated_valida_is_also_404_course_not_available(
+        self, sqlite_engine, db_session_factory, seed_parent_course
+    ):
+        """Parent 202 *does* have visibility on `event_main` (200) via a
+        result, but `event_unrelated` (300) has no roster/result/anything
+        tying any seeded athlete to it — scoping is per-event, so this must
+        still 404, not leak visibility from the other event."""
+        async with _course_client_as(db_session_factory, UserRole.parent, 202) as ac:
+            r = await ac.get(_course_url(300))
+        assert r.status_code == 404, r.text
+        assert r.json()["detail"]["code"] == "course_not_available"
+
+    @pytest.mark.asyncio
+    async def test_response_never_leaks_other_athletes_or_results_key(
+        self, sqlite_engine, db_session_factory, seed_parent_course
+    ):
+        """Parent 203 (two own children, 9403/9404) must never see athlete
+        9401 (parent 201's child, roster-only), 9402 (parent 202's child) or
+        9405 (parent 204's child, unrelated) anywhere in the payload. The
+        response is also confirmed to keep the plain `CourseRead` shape —
+        no separate `results` key ever appears here (results are a
+        completely different endpoint)."""
+        async with _course_client_as(db_session_factory, UserRole.parent, 203) as ac:
+            r = await ac.get(_course_url(200))
+        assert r.status_code == 200, r.text
+        body = r.json()
+        raw = json.dumps(body)
+
+        assert "results" not in body
+        assert set(body.keys()) <= {
+            "race_event_id", "has_course_data", "variants", "setups",
+            "suggested_setups", "description", "my_categories",
+        }
+
+        for foreign_athlete_id in (9401, 9402, 9405):
+            assert str(foreign_athlete_id) not in raw, (
+                f"athlete_id={foreign_athlete_id} (another family's child) "
+                "must never appear in a parent-scoped course response."
+            )
+
+    @pytest.mark.asyncio
+    async def test_suggested_setups_always_empty_for_parent_even_when_coach_sees_entries(
+        self, sqlite_engine, db_session_factory, seed_parent_course
+    ):
+        """`event_main` (200) has no setups of its own, so R-14 prefill from
+        `event_prev` (199) applies — course-api.md §1 confirms a coach/admin
+        GET surfaces that as `suggested_setups`. §1 also states parents
+        always get `suggested_setups: []`, regardless. Proven on the exact
+        same event so the only variable is the caller's role."""
+        async with _course_client_as(db_session_factory, UserRole.coach, 10) as ac:
+            coach_resp = await ac.get(_course_url(200))
+        assert coach_resp.status_code == 200, coach_resp.text
+        coach_suggested = coach_resp.json()["suggested_setups"]
+        assert coach_suggested != [], (
+            "test setup error: expected the coach view of event_main to show "
+            "the R-14 prefill from event_prev's setup — fixture drifted."
+        )
+        assert coach_suggested[0]["category_id"] == 12
+        assert coach_suggested[0]["source_event_id"] == 199
+
+        async with _course_client_as(db_session_factory, UserRole.parent, 202) as ac:
+            parent_resp = await ac.get(_course_url(200))
+        assert parent_resp.status_code == 200, parent_resp.text
+        assert parent_resp.json()["suggested_setups"] == []

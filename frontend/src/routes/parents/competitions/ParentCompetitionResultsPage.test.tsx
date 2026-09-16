@@ -35,6 +35,10 @@ import {
   standingsEmptyHandler,
 } from "@/test/msw/raceResultsHandlers";
 import { http, HttpResponse } from "msw";
+import {
+  raceCourseHandlers,
+  raceCourseParentNotFoundHandler,
+} from "@/test/msw/raceCourseHandlers";
 
 // ---------------------------------------------------------------------------
 // Auth mock
@@ -270,6 +274,51 @@ describe("ParentCompetitionResultsPage — estado de error", () => {
       { timeout: 4000 },
     );
     expect(errorBanner).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — circuito (CourseSummary, feature 043 T054/US5)
+//
+// Bug fix (T059): estas dos pruebas originalmente sobreescribían el
+// endpoint de circuito vía `mswServer.use(...)` — el servidor MSW GLOBAL de
+// `src/test/setup.ts` — asumiendo que podía coexistir con el `server` local
+// de este archivo (que sólo registra resultados/standings). En la práctica,
+// dos instancias `setupServer` escuchando a la vez en el mismo entorno
+// jsdom NO se combinan: la instancia registrada más recientemente
+// (`server`, aquí) decide sola si una petición sin handler propio se
+// intercepta o se deja pasar, así que las peticiones a `.../course`
+// (solo registradas en `mswServer`) escapaban como una petición de red
+// real fallida en vez de resolver el fixture — dejando estas dos pruebas
+// en rojo sin importar cómo se cableara la página. Confirmado
+// reproduciendo el hang/network-error con `useRaceCourse` en aislamiento.
+// Arreglo: registrar los handlers de circuito en el `server` LOCAL de este
+// archivo (igual que resultados/standings), no en el `mswServer` global.
+//
+// `course_not_available` (404) es un estado NORMAL para este endpoint (el
+// padre puede consultar una válida sin circuito registrado aún) — a
+// diferencia de los 500 de resultados/standings, NO debe mostrarse ningún
+// banner de error ni toast; simplemente no hay tarjeta.
+// ---------------------------------------------------------------------------
+
+describe("ParentCompetitionResultsPage — circuito (CourseSummary)", () => {
+  it("useRaceCourse 200 con has_course_data=true: muestra la tarjeta de resumen del circuito", async () => {
+    server.use(...raceCourseHandlers);
+    renderPage();
+
+    await screen.findByTestId("results-row-101", {}, { timeout: 4000 });
+    expect(
+      await screen.findByTestId("course-summary", {}, { timeout: 4000 }),
+    ).toBeInTheDocument();
+  });
+
+  it("GET .../course 404 course_not_available: NO renderiza la tarjeta de circuito y NO aparece ningún toast/banner de error", async () => {
+    server.use(raceCourseParentNotFoundHandler);
+    renderPage();
+
+    await screen.findByTestId("results-row-101", {}, { timeout: 4000 });
+    expect(screen.queryByTestId("course-summary")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });
 

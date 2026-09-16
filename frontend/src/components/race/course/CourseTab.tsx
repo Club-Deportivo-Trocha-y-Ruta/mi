@@ -6,14 +6,16 @@
  * completa (con encabezado propio) como panel embebido en el Import Wizard
  * (`compact`, sin encabezado — el wizard ya muestra "Circuito (opcional)").
  *
- * La descripción cualitativa (T041-T043) y el resumen visual con mapa +
- * perfil de elevación (`CourseSummary`, T058) son fases posteriores — se
- * dejan marcadas con placeholders para no bloquear esta tarea.
+ * `CourseSummary` (T058) cierra la vista con la tarjeta de reconocimiento de
+ * pista (mapa + perfil de elevación + recap de descripción); en esta pestaña
+ * de coach nunca se pasa `athleteNamesById` (`myCategories` siempre `[]`
+ * aquí — la resolución por atleta es exclusiva de las páginas de padres).
  */
 import { useState } from "react";
 
 import { CategorySetupTable } from "@/components/race/course/CategorySetupTable";
 import { CourseDescriptionCard } from "@/components/race/course/CourseDescriptionCard";
+import { CourseSummary } from "@/components/race/course/CourseSummary";
 import { VariantsCard } from "@/components/race/course/VariantsCard";
 import { VariantUploadDialog } from "@/components/race/course/VariantUploadDialog";
 import { Button } from "@/components/ui/button";
@@ -166,7 +168,17 @@ export function CourseTab({ raceEventId, compact, readOnly }: CourseTabProps) {
           readOnly={readOnly}
         />
       )}
-      {/* CourseSummary — T058 */}
+
+      {!isLoading && !isError && data && (
+        <CourseSummary
+          hasCourseData={data.has_course_data}
+          variants={data.variants}
+          setups={data.setups}
+          description={data.description}
+          myCategories={data.my_categories}
+          compact={compact}
+        />
+      )}
     </div>
   );
 }

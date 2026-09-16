@@ -5,8 +5,10 @@
  * variantes de circuito (GPX sintético → detección de vueltas →
  * confirmación), configurar vueltas por categoría y verificar que ambas
  * cosas persisten tras recargar la página. La parte 2 (descripción
- * cualitativa, tab Resultados, vista del padre) es una fase posterior
- * (T043+, T058+) — no cubierta aquí.
+ * cualitativa, columnas de distancia/velocidad en la tabla de resultados,
+ * vista del padre) se agregó más abajo en este mismo archivo (T061) — ver
+ * el segundo `test.describe` de este archivo, con su propio encabezado de
+ * documentación.
  *
  * VITE_API_BASE_URL — nota VERBATIM de `playwright.config.ts` (léela ahí
  * antes de tocar esta spec o ese archivo):
@@ -75,6 +77,7 @@
  * real de un coach) — ver `frontend/e2e/fixtures/README.md`.
  */
 import { fileURLToPath } from "node:url";
+import fs from "node:fs";
 import path from "node:path";
 
 import { test, expect, type Page } from "@playwright/test";
@@ -452,5 +455,588 @@ test.describe("feature 043 — perfil de circuito (parte 1)", () => {
     await expect(
       page.getByTestId(`course-setup-laps-${categoryId}`),
     ).toHaveValue("3", { timeout: NAV_TIMEOUT });
+  });
+});
+
+/**
+ * E2E spec — feature 043 (race course profile), Playwright PARTE 2 (T061).
+ *
+ * Cubre lo que la parte 1 (arriba) deja explícitamente fuera: `ui-course.md`
+ * §8 (parte 2) — ronda de descripción cualitativa vía UI, columnas
+ * "Distancia"/"Vel. prom." derivadas de circuito en la tabla de resultados
+ * (feature 043 US2, `ResultsTable.tsx`), y la tarjeta de reconocimiento de
+ * pista (`CourseSummary`, US5) desde la sesión de un padre — tanto cuando SÍ
+ * corresponde mostrarla como cuando NO.
+ *
+ * Testids/aria-labels usados abajo se tomaron leyendo directamente los
+ * componentes ya aterrizados (no se adivinó ninguno):
+ *   - `CourseDescriptionCard.tsx` / `EditCourseDescriptionDialog.tsx` (US3,
+ *     ya en `main` antes de esta tarea) — `course-description-card-empty`,
+ *     `course-description-describe-btn`, `course-description-card-complete`,
+ *     radios/checkboxes por `aria-label` (`TERRAIN_TYPE_LABELS` /
+ *     `KEY_SECTOR_LABELS` / `DIFFICULTY_LABELS` de
+ *     `src/types/raceCourse.types.ts`), textarea vía `getByLabel("Notas")`.
+ *   - `CourseSummary.tsx` (T058, landed junto con esta tarea) —
+ *     `course-summary`, `course-summary-description-{terrain,difficulty,
+ *     sectors,notes}`.
+ *   - `ResultsTable.tsx` (US2, ya en `main`) — `results-category-section-
+ *     {categoryId}`, encabezados `role="columnheader"` con texto exacto
+ *     "Distancia" / "Vel. prom." (mismo criterio que
+ *     `ResultsTable.test.tsx`).
+ *   - `ParentCompetitionResultsPage.tsx` (T059, landed junto con esta
+ *     tarea) — `parent-results-page`.
+ *
+ * Diferencia deliberada con la parte 1: las funciones de setup de abajo usan
+ * `page.request.*` (el cliente HTTP de Playwright, fuera del navegador) en
+ * vez de `page.evaluate(() => fetch(...))`. La parte 1 necesitaba el fetch
+ * DENTRO de la página porque ya había navegado con una sesión de coach
+ * cargada; varias de las llamadas de setup de aquí (login de un segundo rol,
+ * lectura del propio atleta del padre) ocurren ANTES de cualquier
+ * `page.goto` para ese rol, así que `page.request` evita depender de CORS
+ * entre el origen del front (`:5173`) y el backend (`:8000`) para trabajo
+ * que es puramente de datos, no de UI.
+ *
+ * GAP DE DATOS CONOCIDO Y EFECTO SECUNDARIO DELIBERADO (léase antes de correr
+ * esta parte por primera vez contra un entorno compartido): el caso
+ * "columnas Distancia/Vel. prom." (E2E-043-003) solo puede ejercitarse sobre
+ * una válida que YA tenga resultados reales importados — no existe un
+ * endpoint para crear un `RaceResult` fuera del pipeline de importación de
+ * PDF (`routers/race_imports.py`), y ese pipeline no tiene atajo por API
+ * (CLAUDE.md: "Operated through the web Import Wizard ... there is no CLI
+ * path"). La spec por tanto DESCUBRE una válida completada existente con
+ * resultados (mismo patrón que `discoverCategoryId` de la parte 1, extendido
+ * para devolver también el `race_event_id`) y le AGREGA datos de circuito
+ * (una variante + una fila de `setups` para una categoría que ya tiene
+ * resultados) si todavía no los tiene — un efecto secundario real y
+ * persistente sobre esa válida del entorno compartido, no reversible por
+ * esta misma spec. Se mitiga así:
+ *   - Es idempotente: si ya corrió antes (la variante con la misma etiqueta
+ *     ya existe), reutiliza esa variante en vez de volver a subir el mismo
+ *     GPX (que devolvería `409 duplicate_recording`, ver `course-api.md`
+ *     §2), y si la fila de `setups` ya apunta a esa variante no vuelve a
+ *     hacer `PUT`.
+ *   - Nunca destruye datos de otras categorías: `PUT /course/setups`
+ *     reemplaza la tabla COMPLETA, así que el merge conserva toda fila
+ *     existente cuyo `category_id` no sea el que esta spec necesita.
+ *   - No toca `description` ni ninguna otra válida del entorno.
+ * Aun así, cualquier otra spec que asuma "ninguna válida completada tiene
+ * circuito configurado" podría verse afectada al correr después de esta —
+ * no se detectó ninguna en este repo al momento de escribir esto, pero
+ * queda anotado para quien la ejecute por primera vez contra el entorno
+ * real. Si el entorno no tiene ninguna válida completada con resultados,
+ * el caso se salta con `test.skip` y motivo explícito, igual que el gap
+ * equivalente de la parte 1.
+ *
+ * Privacidad: la descripción de circuito usada en E2E-043-002 es texto
+ * genérico sobre el trazado (sin nombres de atletas ni datos médicos, mismo
+ * criterio que exige el placeholder de `EditCourseDescriptionDialog.tsx`).
+ * El atleta usado para las pruebas de padre es el fixture sintético
+ * "Santiago" de `backend/scripts/seed.py` (vinculado a
+ * `padre@trochayruta.com`), el mismo ya usado por `growth-parent.spec.ts` —
+ * no un dato real. Las pruebas de padre usan un `browser.newContext()`
+ * separado del contexto de coach (en vez de reutilizar `page`), lo que
+ * evita cualquier interferencia de `sessionStorage` entre las dos sesiones
+ * y refleja con más fidelidad dos usuarios reales en dos dispositivos
+ * distintos.
+ */
+
+const PARENT_EMAIL = "padre@trochayruta.com";
+const PARENT_PASSWORD = "Parent2026!";
+
+/** Mismo patrón que `loginAsCoach` de la parte 1, credenciales de padre
+ * sembradas por `backend/scripts/seed.py`. */
+async function loginAsParent(page: Page): Promise<void> {
+  await page.goto("/login");
+  await page.getByRole("textbox", { name: /correo/i }).fill(PARENT_EMAIL);
+  await page
+    .getByRole("textbox", { name: /contraseña/i })
+    .fill(PARENT_PASSWORD);
+  await page.getByRole("button", { name: /ingresar/i }).click();
+
+  await expect(page).not.toHaveURL(/\/login/, { timeout: COLD_START_TIMEOUT });
+  await expect
+    .poll(
+      async () =>
+        page.evaluate(() => {
+          const raw = sessionStorage.getItem("auth-session");
+          if (!raw) return false;
+          try {
+            return JSON.parse(raw)?.state?.isAuthenticated === true;
+          } catch {
+            return false;
+          }
+        }),
+      { timeout: 10_000 },
+    )
+    .toBe(true);
+}
+
+/** Login por API (fuera de la UI) — usado para obtener el token de un
+ * segundo rol (padre) sin depender de que `page` ya esté en el origen del
+ * front. */
+async function apiLogin(
+  page: Page,
+  email: string,
+  password: string,
+): Promise<string> {
+  const res = await page.request.post(`${BACKEND}/api/auth/login`, {
+    data: { email, password },
+  });
+  if (!res.ok()) {
+    throw new Error(`apiLogin: HTTP ${res.status()} para ${email}`);
+  }
+  const body = (await res.json()) as { access_token: string };
+  return body.access_token;
+}
+
+/**
+ * Devuelve el `athlete_id` del primer (único, en el seed) atleta vinculado
+ * al padre — mismo endpoint que consume `useMyAthletes` en el front
+ * (`GET /api/parent-athletes/my-athletes`).
+ */
+async function getMyAthleteId(
+  page: Page,
+  parentToken: string,
+): Promise<number> {
+  const res = await page.request.get(
+    `${BACKEND}/api/parent-athletes/my-athletes`,
+    { headers: { Authorization: `Bearer ${parentToken}` } },
+  );
+  if (!res.ok()) {
+    throw new Error(`getMyAthleteId: HTTP ${res.status()}`);
+  }
+  const athletes = (await res.json()) as { athlete_id: number }[];
+  if (athletes.length === 0) {
+    throw new Error(
+      "getMyAthleteId: el padre de seed no tiene ningún atleta vinculado — " +
+        "revisa el vínculo padre↔Santiago en backend/scripts/seed.py.",
+    );
+  }
+  return athletes[0].athlete_id;
+}
+
+/** Convoca (nómina) un atleta del club a una válida — coach/admin only,
+ * `POST /{race_event_id}/roster`. Basta la convocatoria (sin resultado)
+ * para que el padre tenga visibilidad sobre `GET /course` según T055 (roster
+ * ∪ resultados); ver la nota de E2E-043-004 más abajo. */
+async function addAthleteToRoster(
+  page: Page,
+  coachToken: string,
+  raceEventId: number,
+  athleteId: number,
+): Promise<void> {
+  const res = await page.request.post(
+    `${BACKEND}/api/race-analysis/race-events/${raceEventId}/roster`,
+    {
+      headers: { Authorization: `Bearer ${coachToken}` },
+      data: { athlete_id: athleteId },
+    },
+  );
+  if (!res.ok()) {
+    throw new Error(
+      `addAthleteToRoster: HTTP ${res.status()} — ${await res.text()}`,
+    );
+  }
+}
+
+/**
+ * Sube una variante de circuito directamente por API (multipart), sin pasar
+ * por `VariantUploadDialog` — la UI de subida ya está cubierta por
+ * E2E-043-001 (parte 1); aquí el GPX es solo un insumo de setup para probar
+ * otra cosa. `course-api.md` §2 confirma que la confirmación de detección es
+ * un paso de UI, no de API: el servidor guarda lo que detectó sin pedir
+ * confirmación, así que un POST directo es válido incluso para
+ * `course_3laps.gpx` — esta spec solo usa `course_reduced.gpx` (detección
+ * "single", sin ambigüedad) por simplicidad. Devuelve el `id` de la
+ * variante creada.
+ */
+async function uploadCourseVariantApi(
+  page: Page,
+  token: string,
+  raceEventId: number,
+  label: string,
+  gpxPath: string,
+): Promise<number> {
+  const res = await page.request.post(
+    `${BACKEND}/api/race-analysis/race-events/${raceEventId}/course/variants`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+      multipart: {
+        file: {
+          name: "course.gpx",
+          mimeType: "application/gpx+xml",
+          buffer: fs.readFileSync(gpxPath),
+        },
+        label,
+      },
+    },
+  );
+  if (!res.ok()) {
+    throw new Error(
+      `uploadCourseVariantApi: HTTP ${res.status()} — ${await res.text()}`,
+    );
+  }
+  const body = (await res.json()) as { variants: CourseVariantApi[] };
+  const variant = body.variants.find((v) => v.label === label);
+  if (!variant) {
+    throw new Error(
+      `uploadCourseVariantApi: no se encontró la variante "${label}" en la respuesta`,
+    );
+  }
+  return variant.id;
+}
+
+interface CourseSetupApi {
+  category_id: number;
+  laps: number;
+  variant_id: number;
+}
+
+interface CourseFullApi {
+  variants: CourseVariantApi[];
+  setups: CourseSetupApi[];
+}
+
+async function fetchCourseFull(
+  page: Page,
+  token: string,
+  raceEventId: number,
+): Promise<CourseFullApi> {
+  const res = await page.request.get(
+    `${BACKEND}/api/race-analysis/race-events/${raceEventId}/course`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!res.ok()) {
+    throw new Error(`fetchCourseFull: HTTP ${res.status()}`);
+  }
+  return (await res.json()) as CourseFullApi;
+}
+
+/** `PUT /course/setups` reemplaza la tabla COMPLETA — el caller es
+ * responsable de incluir toda fila que quiera conservar (ver
+ * `ensureCourseSetupForResultsColumns`, que arma el merge). */
+async function putCourseSetups(
+  page: Page,
+  token: string,
+  raceEventId: number,
+  setups: CourseSetupApi[],
+): Promise<void> {
+  const res = await page.request.put(
+    `${BACKEND}/api/race-analysis/race-events/${raceEventId}/course/setups`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+      data: { setups },
+    },
+  );
+  if (!res.ok()) {
+    throw new Error(
+      `putCourseSetups: HTTP ${res.status()} — ${await res.text()}`,
+    );
+  }
+}
+
+/**
+ * Descubre una válida completada CON al menos una categoría con filas de
+ * resultado — a diferencia de `discoverCategoryId` de la parte 1 (que solo
+ * necesita un `category_id` válido, de cualquier válida), esta necesita el
+ * PAR (`race_event_id`, `category_id`) de la MISMA válida, porque
+ * "Distancia"/"Vel. prom." solo se pueden ver en una tabla de resultados que
+ * de verdad tenga filas que renderizar. Devuelve `null` si el entorno no
+ * tiene ninguna — la spec salta ese caso con `test.skip` (ver GAP DE DATOS
+ * en el encabezado de este archivo).
+ */
+async function discoverCompletedEventWithResults(
+  page: Page,
+  token: string,
+): Promise<{ eventId: number; categoryId: number } | null> {
+  const listRes = await page.request.get(
+    `${BACKEND}/api/race-analysis/race-events/?status=completed`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!listRes.ok()) return null;
+  const listData = (await listRes.json()) as {
+    items?: { id: number; has_results?: boolean }[];
+  };
+  const candidates = (listData.items ?? []).filter(
+    (e) => e.has_results !== false,
+  );
+
+  for (const ev of candidates.slice(0, 25)) {
+    const resultsRes = await page.request.get(
+      `${BACKEND}/api/race-analysis/race-events/${ev.id}/results`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!resultsRes.ok()) continue;
+    const resultsData = (await resultsRes.json()) as {
+      categories?: { category_id: number; rows?: unknown[] }[];
+    };
+    const firstWithRows = (resultsData.categories ?? []).find(
+      (c) => (c.rows ?? []).length > 0,
+    );
+    if (firstWithRows) {
+      return { eventId: ev.id, categoryId: firstWithRows.category_id };
+    }
+  }
+  return null;
+}
+
+const RESULTS_COLUMNS_VARIANT_LABEL = "Circuito E2E — distancia y velocidad";
+
+/**
+ * Garantiza que `raceEventId` tenga datos de circuito (variante + una fila
+ * de `setups` para `categoryId`) — idempotente (ver GAP DE DATOS en el
+ * encabezado del archivo: no vuelve a subir el GPX si la variante ya existe,
+ * no vuelve a hacer `PUT` si la fila ya está correcta, y nunca borra las
+ * filas de `setups` de otras categorías).
+ */
+async function ensureCourseSetupForResultsColumns(
+  page: Page,
+  token: string,
+  raceEventId: number,
+  categoryId: number,
+): Promise<void> {
+  const course = await fetchCourseFull(page, token, raceEventId);
+
+  const existingVariant = course.variants.find(
+    (v) => v.label === RESULTS_COLUMNS_VARIANT_LABEL,
+  );
+  const variantId = existingVariant
+    ? existingVariant.id
+    : await uploadCourseVariantApi(
+        page,
+        token,
+        raceEventId,
+        RESULTS_COLUMNS_VARIANT_LABEL,
+        COURSE_REDUCED_GPX,
+      );
+
+  const alreadyWired = course.setups.some(
+    (s) => s.category_id === categoryId && s.variant_id === variantId,
+  );
+  if (alreadyWired) return;
+
+  const merged: CourseSetupApi[] = [
+    ...course.setups.filter((s) => s.category_id !== categoryId),
+    { category_id: categoryId, laps: 1, variant_id: variantId },
+  ];
+  await putCourseSetups(page, token, raceEventId, merged);
+}
+
+// ---------------------------------------------------------------------------
+// E2E-043-002 .. E2E-043-005
+// ---------------------------------------------------------------------------
+
+test.describe("feature 043 — perfil de circuito (parte 2)", () => {
+  test("E2E-043-002: coach edita la descripción cualitativa del circuito vía UI y persiste tras recargar", async ({
+    page,
+  }) => {
+    await loginAsCoach(page);
+    const token = await getToken(page);
+
+    const seriesId = await createCupSeries(page, token);
+    const raceEventId = await createRaceEvent(page, token, seriesId);
+
+    await page.goto(`/competitions/${raceEventId}?tab=circuito`);
+    const courseTab = page.getByTestId("course-tab");
+    await expect(courseTab).toBeVisible({ timeout: COLD_START_TIMEOUT });
+
+    // Estado vacío (0/4 campos) — coach ve el CTA "Describir la pista"
+    // (`CourseDescriptionCard`, US3, ya en `main`).
+    await expect(
+      page.getByTestId("course-description-card-empty"),
+    ).toBeVisible({ timeout: NAV_TIMEOUT });
+    await page.getByTestId("course-description-describe-btn").click();
+
+    // Sheet de edición (`EditCourseDescriptionDialog`) — los 4 campos son
+    // opcionales; se rellenan los 4 para llegar al estado "completo"
+    // (`course-description-card-complete`), el más fácil de aserverar sin
+    // ambigüedad tras recargar.
+    const terrainRadio = page.getByRole("radio", { name: "Trocha" });
+    await expect(terrainRadio).toBeVisible({ timeout: NAV_TIMEOUT });
+    await terrainRadio.click();
+    await page.getByRole("radio", { name: "4 — Técnico" }).click();
+    await page.getByRole("checkbox", { name: "Rock garden" }).click();
+    await page
+      .getByLabel("Notas")
+      .fill(
+        "Tramo con raíces cerca de la meta; avisar en la charla técnica previa.",
+      );
+
+    await page.getByRole("button", { name: "Guardar" }).click();
+    await expect(page.getByText(/guardada correctamente/i)).toBeVisible({
+      timeout: NAV_TIMEOUT,
+    });
+
+    // Recarga — re-consultar el DOM, no confiar en estado en memoria (mismo
+    // criterio que E2E-043-001 de la parte 1).
+    await page.reload();
+    await expect(courseTab).toBeVisible({ timeout: NAV_TIMEOUT });
+
+    // Tarjeta editable del coach — 4/4 campos llenos.
+    const editCard = page.getByTestId("course-description-card-complete");
+    await expect(editCard).toBeVisible({ timeout: NAV_TIMEOUT });
+    await expect(editCard).toContainText("Trocha");
+    await expect(editCard).toContainText("4 — Técnico");
+    await expect(editCard).toContainText("Rock garden");
+    await expect(editCard).toContainText(
+      "Tramo con raíces cerca de la meta; avisar en la charla técnica previa.",
+    );
+
+    // Recap de solo lectura (`CourseSummary`, T058) — misma persistencia,
+    // verificada también en la superficie que ven las familias.
+    await expect(
+      page.getByTestId("course-summary-description-terrain"),
+    ).toContainText("Trocha");
+    await expect(
+      page.getByTestId("course-summary-description-difficulty"),
+    ).toContainText("4 — Técnico");
+    await expect(
+      page.getByTestId("course-summary-description-sectors"),
+    ).toContainText("Rock garden");
+    await expect(
+      page.getByTestId("course-summary-description-notes"),
+    ).toContainText(
+      "Tramo con raíces cerca de la meta; avisar en la charla técnica previa.",
+    );
+  });
+
+  test("E2E-043-003: la tabla de resultados muestra Distancia/Vel. prom. cuando la válida tiene circuito configurado", async ({
+    page,
+  }) => {
+    await loginAsCoach(page);
+    const token = await getToken(page);
+
+    const found = await discoverCompletedEventWithResults(page, token);
+    test.skip(
+      found == null,
+      "No hay ninguna válida completada CON resultados importados en este " +
+        "entorno — sin al menos una fila de resultado real no hay ninguna " +
+        "sección de categoría que renderizar (`ResultsTable` filtra " +
+        "`cat.rows.length > 0`), así que esta aserción no se puede " +
+        "ejercitar. Mismo tipo de gap de datos que el documentado para " +
+        "'vueltas por categoría' en el encabezado de la parte 1 de este " +
+        "archivo.",
+    );
+    const { eventId, categoryId } = found!;
+
+    await ensureCourseSetupForResultsColumns(page, token, eventId, categoryId);
+
+    await page.goto(`/competitions/${eventId}?tab=results`);
+    const categorySection = page.getByTestId(
+      `results-category-section-${categoryId}`,
+    );
+    await expect(categorySection).toBeVisible({ timeout: COLD_START_TIMEOUT });
+    await expect(
+      categorySection.getByRole("columnheader", { name: "Distancia" }),
+    ).toBeVisible({ timeout: NAV_TIMEOUT });
+    await expect(
+      categorySection.getByRole("columnheader", { name: "Vel. prom." }),
+    ).toBeVisible();
+
+    // Recarga — confirma que las columnas dependen de `has_course_data`
+    // persistido, no de estado en memoria de esta sesión.
+    await page.reload();
+    await expect(
+      categorySection.getByRole("columnheader", { name: "Distancia" }),
+    ).toBeVisible({ timeout: NAV_TIMEOUT });
+  });
+
+  test("E2E-043-004: un padre ve la tarjeta de reconocimiento de pista en la válida de su hijo/a", async ({
+    page,
+    browser,
+  }) => {
+    // Setup (coach): válida propia + una variante de circuito + el hijo del
+    // padre de seed convocado en la nómina de esa válida. Basta la
+    // convocatoria (sin resultado) para que el backend resuelva visibilidad
+    // (T055: `my_categories` sale de roster ∪ resultados) — `my_categories`
+    // queda vacío en ese caso (sin fila resaltada en "Vueltas por
+    // categoría", que además no aplica aquí porque no hay `setups`), pero
+    // la tarjeta SÍ se muestra porque `has_course_data` es `true` por la
+    // variante subida. Esta prueba verifica "se ve la tarjeta", no "aparece
+    // resaltada" (ese detalle lo cubre `CourseSummary.test.tsx`, T054).
+    await loginAsCoach(page);
+    const coachToken = await getToken(page);
+
+    const parentToken = await apiLogin(page, PARENT_EMAIL, PARENT_PASSWORD);
+    const athleteId = await getMyAthleteId(page, parentToken);
+
+    const seriesId = await createCupSeries(page, coachToken);
+    const raceEventId = await createRaceEvent(page, coachToken, seriesId);
+    await uploadCourseVariantApi(
+      page,
+      coachToken,
+      raceEventId,
+      "Circuito completo",
+      COURSE_REDUCED_GPX,
+    );
+    await addAthleteToRoster(page, coachToken, raceEventId, athleteId);
+
+    // Sesión de padre en un contexto de navegador separado — evita
+    // cualquier interferencia de `sessionStorage` con la sesión de coach de
+    // `page` y refleja dos usuarios/dispositivos reales.
+    const parentContext = await browser.newContext();
+    try {
+      const parentPage = await parentContext.newPage();
+      await loginAsParent(parentPage);
+      await parentPage.goto(`/parents/competitions/${raceEventId}`);
+
+      await expect(parentPage.getByTestId("parent-results-page")).toBeVisible(
+        { timeout: COLD_START_TIMEOUT },
+      );
+      await expect(parentPage.getByTestId("course-summary")).toBeVisible({
+        timeout: NAV_TIMEOUT,
+      });
+      await expect(parentPage.getByText("Circuito completo")).toBeVisible();
+    } finally {
+      await parentContext.close();
+    }
+  });
+
+  test("E2E-043-005: un padre NO ve tarjeta de circuito ni error en una válida donde su hijo/a no está registrado", async ({
+    page,
+    browser,
+  }) => {
+    await loginAsCoach(page);
+    const coachToken = await getToken(page);
+
+    const seriesId = await createCupSeries(page, coachToken);
+    const raceEventId = await createRaceEvent(page, coachToken, seriesId);
+    // Circuito SÍ configurado — así la ausencia de tarjeta se debe a la
+    // falta de vínculo del padre con esta válida, no a que la válida esté
+    // vacía de datos (de lo contrario la aserción sería trivial).
+    await uploadCourseVariantApi(
+      page,
+      coachToken,
+      raceEventId,
+      "Circuito completo",
+      COURSE_REDUCED_GPX,
+    );
+    // A propósito: NINGÚN atleta del padre se convoca ni tiene resultado en
+    // esta válida — mantiene la premisa "válida NO registrada para este
+    // padre" (`course-api.md` §1: 404 `course_not_available` sin ningún
+    // atleta propio en la nómina ni en los resultados de esta válida).
+
+    const parentContext = await browser.newContext();
+    try {
+      const parentPage = await parentContext.newPage();
+      await loginAsParent(parentPage);
+      await parentPage.goto(`/parents/competitions/${raceEventId}`);
+
+      await expect(parentPage.getByTestId("parent-results-page")).toBeVisible(
+        { timeout: COLD_START_TIMEOUT },
+      );
+
+      // Sin tarjeta de reconocimiento...
+      await expect(parentPage.getByTestId("course-summary")).toHaveCount(0);
+      // ...y sin ningún rastro de un error o toast relacionado con el
+      // circuito (404 `course_not_available` se trata como "ausente", nunca
+      // como error — a diferencia de un fallo real de
+      // `resultsQuery`/`standingsQuery`, que sí puede mostrar su propio
+      // banner de error, pero esa es una superficie totalmente distinta y
+      // no es lo que esta aserción cubre).
+      await expect(parentPage.getByText(/circuito/i)).toHaveCount(0);
+    } finally {
+      await parentContext.close();
+    }
   });
 });

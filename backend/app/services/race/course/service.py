@@ -4,13 +4,27 @@ Persiste variantes de recorrido (GPX ya procesado por ``gpx_processing.py``),
 la tabla de vueltas por categoría (``race_course_category_setups``) y compone
 la lectura agregada (``GET /course``) que consume el router.
 
-Rama coach/admin únicamente — la rama parent de ``get_course``
-(``allowed_athlete_ids is not None``) es ``T055`` y hoy no la llama nadie
-(el router no le da acceso al padre todavía).
+``get_course`` tiene dos ramas (``allowed_athlete_ids``, feature 043 US5,
+T055):
 
-Presupuesto de consultas de ``get_course``: **<= 3 sentencias** (event+variantes
-vía LEFT JOIN, setups+categoría+variante propios, y — solo cuando la válida no
-tiene setups propios — la sugerencia de la válida anterior de la serie). Nunca
+- ``None`` (coach/admin): sin restricción; incluye ``suggested_setups``
+  (R-14) y ``my_categories=[]`` (no aplica a este rol).
+- ``set[int]`` (parent): ``my_categories`` se deriva SOLO de ``RaceResult``
+  de los propios hijos del padre en esta válida (``race_event_roster`` no
+  tiene ``category_id`` — no hay forma de resolver categoría desde ahí). La
+  visibilidad (200 vs 404 ``course_not_available``) es más amplia que
+  ``my_categories``: basta con que un hijo propio esté en la nómina O en los
+  resultados de la válida, aunque no se le pueda resolver categoría todavía
+  (p. ej. convocado a una válida futura sin resultados aún — tarjeta visible,
+  tabla de vueltas sin resaltar). ``suggested_setups`` siempre ``[]`` para
+  este rol (el prefill es una ayuda de flujo de trabajo del coach).
+
+Presupuesto de consultas de ``get_course`` (rama coach/admin): **<= 3
+sentencias** (event+variantes vía LEFT JOIN, setups+categoría+variante
+propios, y — solo cuando la válida no tiene setups propios — la sugerencia de
+la válida anterior de la serie). La rama parent añade como máximo 2-3
+sentencias propias (categorías desde resultados, y — solo si aún no hay
+categorías resueltas — la comprobación de nómina) sobre esa misma base. Nunca
 se hace lazy-load de una relación fuera de las eager-loads explícitas de abajo.
 """
 from __future__ import annotations
@@ -27,11 +41,14 @@ from app.models.race_category import RaceCategory
 from app.models.race_course_category_setup import RaceCourseCategorySetup
 from app.models.race_course_variant import RaceCourseVariant
 from app.models.race_event import RaceEvent
+from app.models.race_event_roster import RaceEventRoster
+from app.models.race_result import RaceResult
 from app.schemas.race_course import (
     CourseDescriptionRead,
     CourseDescriptionUpdate,
     CourseRead,
     LapDetectionRead,
+    MyCategoryRead,
     SetupIn,
     SetupRead,
     SuggestedSetupRead,
@@ -268,20 +285,11 @@ async def _suggested_setups(db: AsyncSession, event: RaceEvent) -> list[Suggeste
     ]
 
 
-async def get_course(
-    db: AsyncSession,
-    race_event_id: int,
-    *,
-    allowed_athlete_ids: list[int] | None = None,
-) -> CourseRead | None:
-    """``None`` cuando ``race_event_id`` no existe (el router responde 404).
-
-    Rama parent (``allowed_athlete_ids is not None``): ``T055`` — nada la usa
-    todavía porque el router no le da esta ruta al padre.
-    """
-    if allowed_athlete_ids is not None:
-        raise NotImplementedError("parent branch of get_course — see T055")
-
+async def _load_event_with_variants(
+    db: AsyncSession, race_event_id: int
+) -> RaceEvent | None:
+    """Query compartida por ambas ramas de ``get_course``: la válida con sus
+    variantes eager-loaded vía LEFT JOIN (``None`` si no existe)."""
     stmt = (
         select(RaceEvent)
         .outerjoin(RaceCourseVariant, RaceCourseVariant.race_event_id == RaceEvent.id)
@@ -290,7 +298,113 @@ async def get_course(
         .order_by(RaceCourseVariant.id)
     )
     result = await db.execute(stmt)
-    event = result.unique().scalar_one_or_none()
+    return result.unique().scalar_one_or_none()
+
+
+async def _my_categories(
+    db: AsyncSession, race_event_id: int, allowed_athlete_ids: set[int]
+) -> list[MyCategoryRead]:
+    """Pares ``{athlete_id, category_id}`` distintos de los propios hijos del
+    padre, derivados SOLO de ``RaceResult`` (``race_event_roster`` no tiene
+    ``category_id`` — ver el docstring del módulo)."""
+    if not allowed_athlete_ids:
+        return []
+    stmt = (
+        select(RaceResult.athlete_id, RaceResult.category_id)
+        .where(
+            RaceResult.event_id == race_event_id,
+            RaceResult.athlete_id.in_(allowed_athlete_ids),
+            RaceResult.deleted_at.is_(None),
+        )
+        .distinct()
+    )
+    rows = (await db.execute(stmt)).all()
+    return [
+        MyCategoryRead(athlete_id=athlete_id, category_id=category_id)
+        for athlete_id, category_id in rows
+    ]
+
+
+async def _has_roster_visibility(
+    db: AsyncSession, race_event_id: int, allowed_athlete_ids: set[int]
+) -> bool:
+    """``True`` si al menos uno de los propios hijos del padre está en la
+    nómina de esta válida — parte del gate de visibilidad, no de
+    ``my_categories`` (``race_event_roster`` no tiene categoría)."""
+    if not allowed_athlete_ids:
+        return False
+    stmt = select(
+        exists().where(
+            RaceEventRoster.race_event_id == race_event_id,
+            RaceEventRoster.athlete_id.in_(allowed_athlete_ids),
+        )
+    )
+    return bool((await db.execute(stmt)).scalar())
+
+
+async def _get_course_for_parent(
+    db: AsyncSession,
+    race_event_id: int,
+    allowed_athlete_ids: set[int],
+) -> CourseRead:
+    """Rama parent de ``get_course`` (feature 043 US5, T055).
+
+    Primero confirma que la válida exista (404 ``race_event_not_found``,
+    igual que el resto de este módulo). Luego resuelve el gate de
+    visibilidad: propio hijo en resultados (``my_categories`` no vacío) O en
+    la nómina — lo que sea más amplio; si ninguno se cumple, 404
+    ``course_not_available`` lanzado directamente aquí (nunca ``None``, para
+    no confundirlo con "válida inexistente" en el router).
+    """
+    await _assert_event_exists(db, race_event_id)
+
+    my_categories = await _my_categories(db, race_event_id, allowed_athlete_ids)
+    visible = bool(my_categories) or await _has_roster_visibility(
+        db, race_event_id, allowed_athlete_ids
+    )
+    if not visible:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "code": "course_not_available",
+                "message": "No tienes ningún hijo relacionado con esta válida.",
+            },
+        )
+
+    event = await _load_event_with_variants(db, race_event_id)
+    assert event is not None  # ya confirmado por _assert_event_exists arriba
+
+    setups = await _load_setups(db, race_event_id)
+
+    return CourseRead(
+        race_event_id=event.id,
+        has_course_data=has_course_data(event),
+        variants=[_variant_read(variant) for variant in event.course_variants],
+        setups=setups,
+        suggested_setups=[],  # el prefill (R-14) es una ayuda de flujo del coach.
+        description=_description_read(event),
+        my_categories=my_categories,
+    )
+
+
+async def get_course(
+    db: AsyncSession,
+    race_event_id: int,
+    *,
+    allowed_athlete_ids: set[int] | None = None,
+) -> CourseRead | None:
+    """``None`` cuando ``race_event_id`` no existe (el router responde 404
+    ``race_event_not_found``).
+
+    Rama parent (``allowed_athlete_ids`` es un ``set[int]``, T055): delega en
+    ``_get_course_for_parent``, que puede lanzar 404 ``course_not_available``
+    directamente en vez de devolver ``None`` — ese caso es distinto de "válida
+    inexistente" y no debe pasar por el ``if course is None`` del router.
+    """
+    if allowed_athlete_ids is not None:
+        return await _get_course_for_parent(db, race_event_id, allowed_athlete_ids)
+
+    event = await _load_event_with_variants(db, race_event_id)
     if event is None:
         return None
 

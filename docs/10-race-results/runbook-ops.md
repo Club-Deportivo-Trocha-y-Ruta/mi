@@ -637,3 +637,87 @@ for a post-mortem, extract what you need from the UI/API first — `down
   `run_count`/`cost_usd_total` fields of the same response stay
   race-only (unchanged by this feature) — only the `by_coach` list
   gained the second stack.
+
+---
+
+## 10. Course profile (feature 043)
+
+> Scope: the seven `/course*` endpoints on the race-events router (variants,
+> category setups, description), and their downstream effects on results and
+> the AI analysis. Design detail (data model, GPX algorithm, AI integration):
+> `docs/10-race-results/course-profile-design.md`.
+
+### 10.1 Re-uploading a GPX to correct a wrong lap count
+
+The coach cannot edit a stored variant's geometry directly — the original
+file is never retained (Ley 1581: it is the coach's personal recording).
+Every correction is a **re-upload**:
+
+1. Coach re-records or locates the same GPX file.
+2. In the Circuito tab, open the variant's "Reemplazar archivo" action
+   (`VariantsCard`) — this calls `PUT /{race_event_id}/course/variants/{variant_id}/file`.
+3. If the platform mis-detected the lap count (common on a recording with a
+   GPS glitch near the start/finish, or a genuinely irregular loop that
+   doesn't close within 30 m), set **"Vueltas grabadas"** to the real number
+   of laps in that recording before confirming. This forces
+   `recorded_laps` on the request, which makes `process_gpx` use
+   `method="manual"` and cut the lap at `total_distance / recorded_laps`
+   instead of running the closure search — it is the *only* way to
+   recompute, because nothing from the original upload survives between
+   requests.
+4. The response is the full `CourseRead`; check `variants[].detection` in
+   the payload (or the dialog's confirmation copy) for
+   `laps_detected`/`lap_distance_km` to confirm the correction took.
+5. `id` stays the same — any category setup already pointing at this
+   variant keeps pointing at it; only the geometry/distance/gain figures
+   change.
+
+If the coach instead uploads a **different** recording of the same route by
+mistake, the response is `409 duplicate_recording` when its SHA-256 matches
+a variant already stored for this válida — that is expected, not a bug; the
+fix is to use the intended file, or `PUT .../file` if the intent really was
+to replace.
+
+### 10.2 Reading a 409 or 422 from a support report
+
+Full message table: `specs/043-race-course-profile/contracts/course-api.md`
+§6. Operationally, group them like this when triaging a "no pude subir el
+GPX" report:
+
+| Status | Codes | What it means for the operator |
+|---|---|---|
+| 415 | `unsupported_media_type` | Browser sent a content-type outside the allow-list (`application/gpx+xml`, `application/xml`, `text/xml`, `application/octet-stream`). Ask what app exported the file — some non-standard exporters use an unrecognized MIME type; the extension check in the next row is usually enough on retry. |
+| 422 | `not_gpx`, `malformed`, `no_track_points`, `no_position`, `too_few_points` | The file isn't a well-formed GPX with usable track points. Ask the coach to open the file in a map tool (e.g. the device's own app) to confirm it actually has a recorded track, not just a route/waypoints file. |
+| 422 | `xml_unsafe` | The file tripped the `defusedxml` guard (DTD, external entity, or similar). This should never happen with a normal GPS device export — if it does, treat the file as suspicious rather than asking the coach to retry it as-is. |
+| 422 | `compressed_not_allowed` | The upload is a `.zip`/`.gz`, detected by magic bytes regardless of the `.gpx` extension on the filename. Ask the coach to extract it first. |
+| 413 | `file_too_large` | Over 5 MB. A multi-hour recording at 1 Hz can hit this; suggest recording just the lap(s) needed, or splitting the file before upload. |
+| 422 | `too_short` | Lap came out under 300 m — usually means the closure search found a false near-start point almost immediately. Check whether `recorded_laps` needs to be set manually (§10.1). |
+| 422 | `too_long` | Lap came out over 15 km — usually a recording with no valid closure at all, so the whole file was treated as one "lap". Same fix: set `recorded_laps` explicitly. |
+| 409 | `duplicate_recording` | This exact file (by SHA-256) is already stored as another variant of this válida. Not an error to "fix" — either that upload already happened, or the coach meant a different file. |
+| 409 | `variant_label_taken` | Another variant of this válida already has that name. Ask for a different label, or confirm whether they meant to rename/replace the existing one instead of creating a new variant. |
+| 409 | `variant_in_use` | Attempted delete of a variant referenced by at least one category setup; the response names the categories. Point the coach at the setups table to reassign those categories to a different variant first. |
+| 422 | `variant_not_in_event` | A `PUT /course/setups` payload referenced a variant id from a different válida — almost always a stale client cache; a page reload before retrying usually resolves it. |
+| 404 | `course_not_available` | Normal for a parent whose child has no relation (roster or results) to this válida — not a bug to escalate. |
+
+A generic `{"detail": {"code": ..., "message": ...}}` body backs all of
+these (same shape as the existing conditions `PATCH`); the `code` field is
+what you match against this table, not the HTTP status alone (several codes
+share a status).
+
+### 10.3 Regenerating the golden-eval baseline after the course cases
+
+Two new v3 golden cases ship with this feature —
+`backend/evals/race_analyst/golden_v3/case_010_course_present.json` and
+`case_011_course_absent.json`. They run through the exact same golden lane
+as every other v3 case; there is no separate procedure for them. Follow the
+existing regeneration steps in §3.3 ("Eval fails in CI") — run
+`pytest tests/evals/test_race_analyst_eval.py -m golden` locally with a real
+`RACE_AI_API_KEY`, inspect `evals/race_analyst/results/last_run.md`, and if
+the divergence (now including these two new cases) is an intentional
+prompt/weights change rather than a regression, update the stored baseline
+and document it in the PR. As of this writing that real run — the one that
+must confirm composite ≥ 0.75 with both new cases included and refresh the
+baseline file — is still a **developer follow-up before this feature
+merges**: it has not been executed in the implementation environment (no
+`RACE_AI_API_KEY` available there; the eval module's own `_skip_no_api`
+guard skips it silently rather than failing).

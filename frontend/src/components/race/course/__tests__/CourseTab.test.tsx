@@ -75,8 +75,11 @@ describe("CourseTab — estado completo", () => {
     // "Circuito completo" también aparece como <option> del select de
     // variantes en CategorySetupTable — se acota a la tarjeta de variantes.
     expect(within(variantsCard).getByText("Circuito completo")).toBeInTheDocument();
-    expect(screen.getByTestId("course-setup-table")).toBeInTheDocument();
-    expect(screen.getByText("Infantil masculino")).toBeInTheDocument();
+    const setupTable = screen.getByTestId("course-setup-table");
+    expect(setupTable).toBeInTheDocument();
+    // "Infantil masculino" también aparece en el recap de solo lectura de
+    // `CourseSummary` (T058, misma pestaña) — se acota a la tabla editable.
+    expect(within(setupTable).getByText("Infantil masculino")).toBeInTheDocument();
     // Estado vacío no debe coexistir con el completo.
     expect(screen.queryByTestId("course-tab-empty")).not.toBeInTheDocument();
   });

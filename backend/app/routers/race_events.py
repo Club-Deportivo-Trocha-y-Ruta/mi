@@ -17,9 +17,9 @@ Endpoints implementados:
 - ``PUT    /race-results/{result_id}/coach-note``   — escribe/reemplaza nota del entrenador (coach + admin).
 - ``DELETE /race-results/{result_id}/coach-note``   — elimina nota del entrenador (coach + admin).
 
-Perfil de circuito (feature 043, T019 — rama coach/admin; la rama parent es T055):
+Perfil de circuito (feature 043, T019 rama coach/admin + T055 rama parent):
 
-- ``GET    /{race_event_id}/course``                          — variantes + setups + descripción + sugerencia (coach + admin).
+- ``GET    /{race_event_id}/course``                          — variantes + setups + descripción + sugerencia (coach + admin; parent con scope a sus hijos, FR-030).
 - ``POST   /{race_event_id}/course/variants``                 — sube GPX y crea variante (coach + admin).
 - ``PUT    /{race_event_id}/course/variants/{variant_id}/file`` — sube GPX y reemplaza geometría de una variante (coach + admin).
 - ``PATCH  /{race_event_id}/course/variants/{variant_id}``    — renombra variante (coach + admin).
@@ -1119,18 +1119,30 @@ async def _read_and_validate_course_gpx_upload(file: UploadFile) -> bytes:
 async def get_race_event_course(
     race_event_id: int,
     db: AsyncSession = Depends(get_db),
-    _current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    current_user: User = Depends(
+        require_role([UserRole.admin, UserRole.coach, UserRole.parent])
+    ),
 ) -> CourseRead:
     """Variantes de recorrido, tabla de vueltas por categoría, descripción
     estructurada y sugerencia de prefill de la válida anterior de la serie.
 
+    Parent (T055, FR-030): mismo ``CourseRead`` con scope reducido —
+    ``my_categories`` solo trae las categorías de sus propios hijos resueltas
+    desde ``race_results`` (nunca desde la nómina, que no tiene categoría) y
+    ``suggested_setups`` siempre ``[]`` (el prefill es una ayuda de coach). El
+    padre ve la válida (200) si al menos un hijo propio está en la nómina O
+    en los resultados de esta válida; si no, 404 ``course_not_available``.
+
     Códigos de respuesta:
     - 200: perfil de circuito (``has_course_data=false`` y listas vacías si
       la válida aún no tiene nada capturado).
-    - 404: ``race_event_id`` no existe.
-    - 403: usuario sin rol coach o admin.
+    - 404: ``race_event_id`` no existe (``race_event_not_found``), o —solo
+      parent— ningún hijo propio tiene relación con esta válida
+      (``course_not_available``).
+    - 403: usuario sin rol coach, admin o parent.
     """
-    course = await course_svc.get_course(db, race_event_id)
+    scoped = await allowed_athlete_ids_for(current_user, db)
+    course = await course_svc.get_course(db, race_event_id, allowed_athlete_ids=scoped)
     if course is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

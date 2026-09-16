@@ -18,9 +18,15 @@ import { ArrowLeft, CalendarDays, MapPin } from "lucide-react";
 import { AlertCircle, Loader2, RefreshCw } from "lucide-react";
 
 import { Skeleton } from "@/components/ui/skeleton";
+import { CourseSummary } from "@/components/race/course/CourseSummary";
+import { useRaceCourse } from "@/hooks/race/useRaceCourse";
 import { useRaceResults } from "@/hooks/race/useRaceResults";
 import { useRaceStandings } from "@/hooks/race/useRaceStandings";
 import { formatDate } from "@/lib/datetime";
+import type {
+  RaceEventResultsResponse,
+  RaceEventStandingsResponse,
+} from "@/types/raceResults.types";
 
 // ---------------------------------------------------------------------------
 // Lazy chunks — mismas tablas que usa el coach, con hideClubFilter
@@ -41,6 +47,32 @@ const StandingsTable = lazy(() =>
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Deriva `athleteNamesById` a partir de las respuestas de resultados/
+ * standings ya obtenidas — evita una llamada de red adicional solo para
+ * resolver el nombre del hijo/a en la tarjeta de reconocimiento de pista
+ * (`CourseSummary`). El backend ya filtra estas respuestas al hijo/a propio
+ * del padre autenticado (FR-030 / US1 escenario 5), así que este mapa nunca
+ * expone datos de otros menores.
+ */
+function athleteNamesFromRaceData(
+  resultsData: RaceEventResultsResponse | undefined,
+  standingsData: RaceEventStandingsResponse | undefined,
+): Record<number, string> {
+  const map: Record<number, string> = {};
+  for (const response of [resultsData, standingsData]) {
+    if (!response) continue;
+    for (const category of response.categories) {
+      for (const row of category.rows) {
+        if (row.athlete_id != null) {
+          map[row.athlete_id] = row.display_name;
+        }
+      }
+    }
+  }
+  return map;
+}
 
 function isColdStart(err: unknown): boolean {
   if (typeof err === "object" && err !== null) {
@@ -216,6 +248,16 @@ export function ParentCompetitionResultsPage() {
 
   const resultsQuery = useRaceResults(raceEventId);
   const standingsQuery = useRaceStandings(raceEventId);
+  // Circuito (feature 043, US5): `useRaceCourse` ya tiene `retry: false`; un
+  // 404 (`course_not_available`) es un estado NORMAL para un padre cuyo
+  // hijo/a no corrió esta válida — no se muestra banner de error ni toast,
+  // solo se omite la tarjeta (a diferencia de `resultsQuery`/`standingsQuery`
+  // arriba, cuyos fallos SÍ son errores reales de la página).
+  const courseQuery = useRaceCourse(raceEventId);
+  const athleteNamesById = athleteNamesFromRaceData(
+    resultsQuery.data,
+    standingsQuery.data,
+  );
 
   // Derivar header desde cualquiera de las dos respuestas (mismos campos)
   const headerData = resultsQuery.data ?? standingsQuery.data;
@@ -315,6 +357,20 @@ export function ParentCompetitionResultsPage() {
           )}
         </div>
       </div>
+
+      {/* Tarjeta de reconocimiento de pista (feature 043, US5) — ausente
+          cuando la válida no tiene circuito registrado o el endpoint 404
+          (course_not_available); nunca un banner de error. */}
+      {!courseQuery.isLoading && !courseQuery.isError && courseQuery.data && (
+        <CourseSummary
+          hasCourseData={courseQuery.data.has_course_data}
+          variants={courseQuery.data.variants}
+          setups={courseQuery.data.setups}
+          description={courseQuery.data.description}
+          myCategories={courseQuery.data.my_categories}
+          athleteNamesById={athleteNamesById}
+        />
+      )}
     </section>
   );
 }
