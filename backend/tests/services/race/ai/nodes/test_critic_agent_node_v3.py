@@ -173,3 +173,54 @@ async def test_v3_branch_skips_none_drafts(monkeypatch):
 
     assert 1 not in update["per_valida_verdicts"]
     assert 2 in update["per_valida_verdicts"]
+
+
+# ---------------------------------------------------------------------------
+# Feature "adult athlete path" (≥18 años)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_v3_branch_adult_hours_and_outcome_goal_precheck_not_flagged(monkeypatch):
+    """Recomendaciones que bloquearían a un menor (35h/semana, meta de
+    podio) no disparan el precheck LTAD cuando ``athlete_age`` es adulto
+    (≥18)."""
+    monkeypatch.setenv("RACE_AGENT_CRITIC_ENABLED", "true")
+    fake = _FakeCriticAgentV3(feedback=CriticFeedback(approved=True))
+    draft = _Draft(
+        headline="El objetivo es el podio tras 35 horas de entrenamiento semanal",
+        observations=[_Observation(claim="Rindió por encima de lo esperado", evidence=["1"])],
+    )
+    state = {
+        "per_valida_drafts_v3": {1: draft},
+        "athlete_age": 31,
+        "_critic_agent": fake,
+    }
+
+    update = await critic_agent(state)
+
+    assert update["per_valida_verdicts"][1].must_block is False
+    assert update["precheck_issues"][1] == []
+
+
+@pytest.mark.asyncio
+async def test_v3_branch_adult_hours_precheck_still_flagged_for_minor(monkeypatch):
+    """Regresión: el mismo texto SÍ dispara el precheck LTAD cuando
+    ``athlete_age`` describe a un menor — la rama adulta no degrada el
+    guardrail por defecto."""
+    monkeypatch.setenv("RACE_AGENT_CRITIC_ENABLED", "true")
+    fake = _FakeCriticAgentV3(feedback=CriticFeedback(approved=True))
+    draft = _Draft(
+        headline="El objetivo es el podio tras 35 horas de entrenamiento semanal",
+        observations=[_Observation(claim="Rindió por encima de lo esperado", evidence=["1"])],
+    )
+    state = {
+        "per_valida_drafts_v3": {1: draft},
+        "athlete_age": 13,
+        "_critic_agent": fake,
+    }
+
+    update = await critic_agent(state)
+
+    assert update["per_valida_verdicts"][1].must_block is True
+    assert update["precheck_issues"][1]  # al menos un issue LTAD

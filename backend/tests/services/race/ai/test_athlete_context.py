@@ -405,3 +405,24 @@ async def test_load_club_forbidden_names_includes_athletes_and_parents(session: 
 )
 def test_age_band_from_age(age, expected):
     assert mod.age_band_from_age(age) == expected
+
+
+@pytest.mark.parametrize("age", [18.0, 18.5, 31.0, 65.0])
+def test_age_band_from_age_adult_returns_none(age):
+    """Feature 'adult athlete path': ``AgeBand`` (columna MySQL) solo tiene 3
+    valores juveniles — un atleta adulto no debe recibir una banda juvenil
+    falsa ("13-15"). ``None`` → el caller no filtra el catálogo por banda.
+    """
+    assert mod.age_band_from_age(age) is None
+
+
+async def test_load_catalog_context_adult_age_band_none_returns_unfiltered(
+    session: AsyncSession,
+):
+    """``age_band=None`` (resuelto para un adulto) no filtra el catálogo del
+    club — mismo comportamiento que pasar ``age_band=None`` explícitamente,
+    NUNCA una excepción ni un catálogo vacío por una banda inexistente.
+    """
+    await _seed_club_and_athlete(session)
+    catalog = await mod.load_catalog_context(session, club_id=1, age_band=None)
+    assert catalog["interval_templates"] == []

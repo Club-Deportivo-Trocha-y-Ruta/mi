@@ -185,3 +185,107 @@ async def test_load_athlete_context_without_club_id_records_error(
     }
     assert update["club_forbidden_names"] == []
     assert any(e["field"] == "club_id" for e in update["errors"])
+
+
+# ---------------------------------------------------------------------------
+# Feature "adult athlete path" (≥18 años)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_load_athlete_context_adult_never_calls_anthro_loader(
+    monkeypatch, configure_db_factory, fake_session
+):
+    """Maduración (PHV) no aplica a un adulto: ``load_anthro_context`` NUNCA
+    se invoca — ni siquiera para descartar el resultado. Defensa en
+    profundidad: aunque hubiera un registro viejo, no debe consultarse."""
+    configure_db_factory(fake_session)
+
+    async def _fake_load_events(db):
+        return []
+
+    async def _fake_resolve_club_id(db, athlete_id):
+        return 1
+
+    async def _boom_anthro(db, athlete_id, reference_date):
+        raise AssertionError("load_anthro_context no debe llamarse para un adulto")
+
+    captured = {}
+
+    async def _fake_catalog(db, club_id, age_band):
+        captured["age_band"] = age_band
+        return {"interval_templates": []}
+
+    async def _fake_training_window(db, athlete_id, club_id, date_from, date_to):
+        return None
+
+    async def _fake_forbidden(db, club_id):
+        return []
+
+    monkeypatch.setattr(mod, "load_events", _fake_load_events)
+    monkeypatch.setattr(mod, "_resolve_club_id", _fake_resolve_club_id)
+    monkeypatch.setattr(mod, "load_anthro_context", _boom_anthro)
+    monkeypatch.setattr(mod, "load_training_window", _fake_training_window)
+    monkeypatch.setattr(mod, "load_catalog_context", _fake_catalog)
+    monkeypatch.setattr(mod, "load_club_forbidden_names", _fake_forbidden)
+
+    state = {
+        "athlete_id": 1,
+        "season": 2026,
+        "athlete_age": 31,
+        "analysis_kind": "valida",
+    }
+    update = await mod.load_athlete_context(state)
+
+    assert update["anthro_context"] is None
+    assert "errors" not in update
+    # age_band=None → load_catalog_context devuelve el catálogo sin filtrar
+    # (nunca la banda juvenil "13-15" mal aplicada a un adulto).
+    assert captured["age_band"] is None
+
+
+@pytest.mark.asyncio
+async def test_load_athlete_context_minor_still_calls_anthro_loader(
+    monkeypatch, configure_db_factory, fake_session
+):
+    """Regresión: un menor (11 años) sigue disparando ``load_anthro_context``
+    normalmente."""
+    configure_db_factory(fake_session)
+
+    async def _fake_load_events(db):
+        return []
+
+    async def _fake_resolve_club_id(db, athlete_id):
+        return 1
+
+    called = {"anthro": False}
+
+    async def _fake_anthro(db, athlete_id, reference_date):
+        called["anthro"] = True
+        return None
+
+    async def _fake_training_window(db, athlete_id, club_id, date_from, date_to):
+        return None
+
+    async def _fake_catalog(db, club_id, age_band):
+        return {"interval_templates": []}
+
+    async def _fake_forbidden(db, club_id):
+        return []
+
+    monkeypatch.setattr(mod, "load_events", _fake_load_events)
+    monkeypatch.setattr(mod, "_resolve_club_id", _fake_resolve_club_id)
+    monkeypatch.setattr(mod, "load_anthro_context", _fake_anthro)
+    monkeypatch.setattr(mod, "load_training_window", _fake_training_window)
+    monkeypatch.setattr(mod, "load_catalog_context", _fake_catalog)
+    monkeypatch.setattr(mod, "load_club_forbidden_names", _fake_forbidden)
+
+    state = {
+        "athlete_id": 1,
+        "season": 2026,
+        "athlete_age": 11,
+        "analysis_kind": "valida",
+    }
+    await mod.load_athlete_context(state)
+
+    assert called["anthro"] is True

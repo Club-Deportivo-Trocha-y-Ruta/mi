@@ -220,6 +220,72 @@ def test_ltad_outcome_goal_blocks():
 
 
 # ---------------------------------------------------------------------------
+# Feature "adult athlete path" — is_adult apaga las reglas LTAD juveniles
+# ---------------------------------------------------------------------------
+
+
+def test_ltad_hours_over_age_not_flagged_for_adult():
+    """35 horas/semana > 31 años — bloquearía a un menor (>edad) pero no a
+    un adulto: la regla horas≤edad es un proxy de desarrollo juvenil.
+    Deliberadamente horas > edad para probar que el skip es por
+    ``is_adult``, no una coincidencia numérica (14h < 31 años nunca habría
+    disparado esta regla de todos modos)."""
+    draft = _draft(actions=[_Action(text="Entrenar 35 horas por semana")])
+    result = run_prechecks(draft, athlete_age=31, is_adult=True)
+    assert not any(i.category == PrecheckCategory.LTAD for i in result.issues)
+    assert result.must_block is False
+
+
+def test_ltad_more_than_5_days_not_flagged_for_adult():
+    draft = _draft(actions=[_Action(text="Entrenar 6 días por semana")])
+    result = run_prechecks(draft, athlete_age=31, is_adult=True)
+    assert not any(i.category == PrecheckCategory.LTAD for i in result.issues)
+    assert result.must_block is False
+
+
+def test_ltad_supplements_not_flagged_for_adult():
+    draft = _draft(actions=[_Action(text="Remitir a un nutricionista para valorar suplementos")])
+    result = run_prechecks(draft, athlete_age=31, is_adult=True)
+    assert not any(i.category == PrecheckCategory.LTAD for i in result.issues)
+    assert result.must_block is False
+
+
+def test_ltad_outcome_goal_not_flagged_for_adult():
+    draft = _draft(headline="La meta es el podio en la próxima válida")
+    result = run_prechecks(draft, athlete_age=31, is_adult=True)
+    assert not any(i.category == PrecheckCategory.LTAD for i in result.issues)
+    assert result.must_block is False
+
+
+def test_ltad_cadence_below_60_still_blocks_for_adult():
+    """La cadencia mínima es un principio biomecánico general, no un tope
+    LTAD por edad — sigue aplicando incluso a un atleta adulto."""
+    draft = _draft(actions=[_Action(text="Trabajar cadencia sostenida de 45 rpm en llano")])
+    result = run_prechecks(draft, athlete_age=31, is_adult=True)
+    assert result.must_block is True
+    assert any(i.category == PrecheckCategory.LTAD for i in result.issues)
+
+
+def test_diagnosis_language_still_blocks_for_adult():
+    """El veto de lenguaje diagnóstico es de privacidad/seguridad, no LTAD —
+    sigue aplicando a cualquier edad."""
+    draft = _draft(observations=[_Observation(claim="El atleta padece anemia leve", evidence=["1"])])
+    result = run_prechecks(draft, athlete_age=31, is_adult=True)
+    assert result.must_block is True
+    assert any(i.category == PrecheckCategory.PRIVACY for i in result.issues)
+
+
+def test_ltad_defaults_to_minor_rules_when_is_adult_not_passed():
+    """Regresión: sin pasar ``is_adult`` explícitamente (default False), un
+    caller que no migró sigue aplicando las reglas juveniles (tope de
+    días/semana, independiente de la edad) — no hay degradación silenciosa
+    de guardrails para callers viejos."""
+    draft = _draft(actions=[_Action(text="Entrenar 6 días por semana")])
+    result = run_prechecks(draft, athlete_age=31)
+    assert result.must_block is True
+
+
+# ---------------------------------------------------------------------------
 # catalog_ref
 # ---------------------------------------------------------------------------
 

@@ -33,6 +33,7 @@ from app.services.race.agents.analyst import (
     v3_prompt_version,
 )
 from app.services.race.ai.events import with_events
+from app.services.race.ai.grounding import is_adult_age
 from app.services.race.ai.retry import with_retry
 from app.services.race.race_labels import build_race_label, series_display_name
 from app.services.race.schemas import AnalysisInput, LTADGroup
@@ -85,9 +86,19 @@ def _resolve_ltad(state: dict) -> LTADGroup:
     return LTADGroup.BAMBINO
 
 
+# Rango plausible de edad — 6..80. El límite superior antes era 20 (el
+# club es juvenil, 10-15) y trataba a cualquier atleta adulto real como un
+# valor "fuera de rango", cayendo al fallback=12 y analizándolo como si
+# fuera un niño de bambino (bug real de producción, ver CLAUDE.md §"adult
+# athlete path"). 80 es "implausible pero no imposible" — sigue habiendo un
+# techo para blindar contra datos corruptos (p.ej. year 1900 en birth_date).
+_MIN_PLAUSIBLE_AGE = 6
+_MAX_PLAUSIBLE_AGE = 80
+
+
 def _resolve_age(state: dict) -> int:
     age = state.get("athlete_age")
-    if isinstance(age, int) and 6 <= age <= 20:
+    if isinstance(age, int) and _MIN_PLAUSIBLE_AGE <= age <= _MAX_PLAUSIBLE_AGE:
         return age
     logger.warning(
         "analyst_agent: athlete_age ausente o fuera de rango en state "
@@ -602,9 +613,17 @@ def _build_v3_inputs(state: dict, athlete_ref: str) -> list[AnalystV3Input]:
     progression_all: list[dict] = metrics_base.get("progression", []) or []
     memory: list[str] = list(state.get("memory") or [])[:3]
 
+    # v3 leía state["athlete_age"] crudo (sin pasar por _resolve_age): un
+    # valor ausente o implausible (None, negativo, corrupto) llegaba tal
+    # cual al prompt en vez de activar el fallback+warning documentado —
+    # inconsistente con v1/v2, que sí resuelven vía _resolve_age. Mismo
+    # resolver para las tres rutas.
+    resolved_age = _resolve_age(state)
+
     common = {
         "athlete_ref": athlete_ref,
-        "age": state.get("athlete_age"),
+        "age": resolved_age,
+        "is_adult": is_adult_age(resolved_age),
         "ltad_group": str(_resolve_ltad(state).value),
         "season": state.get("season"),
         "validas_count": int(state.get("season_validas_count") or 0),

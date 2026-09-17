@@ -29,6 +29,7 @@ from app.services.race.ai.athlete_context import (
     load_training_window,
 )
 from app.services.race.ai.db import get_session
+from app.services.race.ai.grounding import is_adult_age
 from app.services.race.ai.events import with_events
 from app.services.race.ai.retry import with_retry
 from app.services.race.queries import load_events
@@ -128,23 +129,33 @@ async def load_athlete_context(state: dict) -> dict[str, Any]:
             date_to = reference_date
             date_from = reference_date - timedelta(days=_resolve_window_days())
 
-        try:
-            update["anthro_context"] = await load_anthro_context(db, athlete_id, reference_date)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "load_athlete_context: anthro_context falló para atleta %d: %s",
-                athlete_id,
-                type(exc).__name__,
-                exc_info=True,
-            )
-            errors.append(
-                {
-                    "node": NODE_NAME,
-                    "field": "anthro_context",
-                    "error": type(exc).__name__,
-                    "message": str(exc)[:200],
-                }
-            )
+        # Adulto (≥18) → maduración/PHV no aplica (owner decision, feature
+        # "adult athlete path"): ni se consulta la tabla antropométrica. Un
+        # club juvenil no debería tener registros de un atleta que se afilió
+        # ya adulto, pero si los hubiera (p.ej. midió mientras era menor),
+        # igual no deben viajar al prompt de un análisis para adulto.
+        if is_adult_age(athlete_age):
+            update["anthro_context"] = None
+        else:
+            try:
+                update["anthro_context"] = await load_anthro_context(
+                    db, athlete_id, reference_date
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "load_athlete_context: anthro_context falló para atleta %d: %s",
+                    athlete_id,
+                    type(exc).__name__,
+                    exc_info=True,
+                )
+                errors.append(
+                    {
+                        "node": NODE_NAME,
+                        "field": "anthro_context",
+                        "error": type(exc).__name__,
+                        "message": str(exc)[:200],
+                    }
+                )
 
         if club_id is not None:
             try:

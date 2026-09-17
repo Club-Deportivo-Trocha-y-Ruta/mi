@@ -917,13 +917,14 @@ async def start_athlete_run(
     # Feature 011: grupo LTAD y fase madurativa reales → al grafo. Sin estos,
     # el analista trataba a todas como Pre-PHV/Bambino por default.
     from app.services.race.ai.grounding import (
-        latest_maturation_status,
         load_forbidden_names,
         ltad_group_from_age,
+        resolve_maturation_status,
     )
 
     ltad_group_val = ltad_group_from_age(age_decimal)
-    maturation_status = await latest_maturation_status(db, athlete.id)
+    # Adulto (≥18) → None sin consultar la BD: PHV no aplica.
+    maturation_status = await resolve_maturation_status(db, athlete.id, athlete_age)
     # Privacidad (feature 011): nombres reales para scrubear weather_notes y
     # blindar guardrails. NUNCA van al prompt.
     forbidden_names = await load_forbidden_names(
@@ -1262,9 +1263,9 @@ async def create_season_summary(
     # Contexto del atleta (mismo patrón que start_athlete_run / start_run):
     # edad, sexo, grupo LTAD, fase madurativa y forbidden_names reales.
     from app.services.race.ai.grounding import (
-        latest_maturation_status,
         load_forbidden_names,
         ltad_group_from_age,
+        resolve_maturation_status,
     )
 
     athlete_sex_val: Optional[str] = None
@@ -1279,7 +1280,8 @@ async def create_season_summary(
         age_decimal = (date.today() - athlete.birth_date).days / 365.25
         athlete_age = int(age_decimal)
         ltad_group_val = ltad_group_from_age(age_decimal).value
-        maturation_status = await latest_maturation_status(db, athlete.id)
+        # Adulto (≥18) → None sin consultar la BD: PHV no aplica.
+        maturation_status = await resolve_maturation_status(db, athlete.id, athlete_age)
         forbidden_names = await load_forbidden_names(
             db, athlete.id, nickname=getattr(athlete, "nickname", None)
         )

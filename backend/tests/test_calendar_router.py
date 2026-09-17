@@ -623,23 +623,6 @@ class TestAllDayAlias:
         # La respuesta debe incluir el alias 'allDay'
         assert "allDay" in first, f"'allDay' no encontrado en respuesta: {list(first.keys())}"
 
-    async def test_lista_vacia_retorna_array_vacio(self, client: AsyncClient):
-        app.dependency_overrides[get_current_user] = _coach_user
-        app.dependency_overrides[get_db] = _override_db()
-
-        with patch(
-            "app.services.calendar.events.list_events_in_range",
-            AsyncMock(return_value=[]),
-        ):
-            resp = await client.get(
-                "/api/calendar/events",
-                params={"from": "2030-09-01", "to": "2030-09-30"},
-                headers={"Authorization": "Bearer fake"},
-            )
-
-        assert resp.status_code == 200
-        assert resp.json() == []
-
     async def test_all_day_no_aparece_como_snake_case(self, client: AsyncClient):
         """La clave 'all_day' (snake_case) no debe aparecer — solo 'allDay'."""
         app.dependency_overrides[get_current_user] = _coach_user

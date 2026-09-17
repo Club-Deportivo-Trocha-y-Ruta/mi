@@ -65,12 +65,19 @@ class LTADGroup(str, Enum):
     - bambino:      10-12 años
     - juvenil:      13-15 años
     - junior:       16-17 años (fuera del scope MVP pero contemplado)
+    - adulto:       18+ años. El club es un programa juvenil (10-15 años)
+      pero tiene atletas adultos de competición activos; este grupo NO es
+      un LTAD estage — es la señal explícita para que analyst/critic
+      apaguen el marco LTAD/PHV (maduración biológica, topes horas≤edad,
+      veto de objetivos de resultado, etc.) y traten al sujeto como un
+      corredor adulto competitivo. Ver ``ai/grounding.py::is_adult_age``.
     """
 
     MINI_BAMBINO = "mini-bambino"
     BAMBINO = "bambino"
     JUVENIL = "juvenil"
     JUNIOR = "junior"
+    ADULTO = "adulto"
 
 
 class RecommendationCategory(str, Enum):
@@ -176,7 +183,11 @@ class AnalysisInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     athlete_pseudonym: str = Field(..., min_length=1, max_length=64)
-    age: int = Field(..., ge=6, le=20)
+    # ge=80 en vez de 20: el club es juvenil (10-15) pero tiene atletas
+    # adultos de competición activos (LTADGroup.ADULTO, ≥18 años) — un tope
+    # de 20 rechazaba a cualquier adulto real con un ValidationError 500
+    # antes de que _resolve_age pudiera aplicar su propio fallback.
+    age: int = Field(..., ge=6, le=80)
     ltad_group: LTADGroup
     progression_df_records: list[dict[str, Any]] = Field(
         default_factory=list,

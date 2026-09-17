@@ -466,14 +466,21 @@ def rule_subscores_v3(
     precheck_categories: set[str] = set()
     sanitized: Any = draft
     if draft is not None:
+        from app.services.race.ai.grounding import is_adult_age
         from app.services.race.ai.prechecks import run_prechecks
 
+        case_input = case.get("input") or {}
+        # Feature "adult athlete path": el caso golden puede declarar
+        # is_adult explícitamente (mismo campo que AnalystV3Input) o dejarlo
+        # implícito en age ≥18 — se toma lo que esté presente para no exigir
+        # que todo golden case viejo lo declare.
         result = run_prechecks(
             draft,
             grounding_numbers=None,  # el grounding lo puntúa este scorer, no el precheck
-            catalog_context=dict((case.get("input") or {}).get("catalog_context") or {}),
-            athlete_age=(case.get("input") or {}).get("age"),
-            ltad_group=(case.get("input") or {}).get("ltad_group"),
+            catalog_context=dict(case_input.get("catalog_context") or {}),
+            athlete_age=case_input.get("age"),
+            ltad_group=case_input.get("ltad_group"),
+            is_adult=bool(case_input.get("is_adult")) or is_adult_age(case_input.get("age")),
             forbidden_names=[],
         )
         precheck_categories = {i.category.value for i in result.issues}

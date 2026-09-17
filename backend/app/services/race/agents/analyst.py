@@ -677,6 +677,10 @@ class AnalystV3Input:
     analysis_kind: str = "valida"  # "valida" | "season"
     athlete_ref: str = "la deportista"
     age: int | None = None
+    # True cuando el atleta es adulto (≥18, LTADGroup.ADULTO). Apaga el
+    # marco LTAD/PHV juvenil en el prompt (ver race_analyst_v3.md /
+    # race_season_summary_v3.md, bloques `{% if is_adult %}`).
+    is_adult: bool = False
     ltad_group: str = "bambino"
     season: int | None = None
     validas_count: int = 0
@@ -1521,6 +1525,7 @@ class RaceAnalystAgent:
         return {
             "athlete_ref": input_.athlete_ref,
             "age": input_.age,
+            "is_adult": input_.is_adult,
             "ltad_group": input_.ltad_group,
             "season": input_.season,
             "validas_count": input_.validas_count,

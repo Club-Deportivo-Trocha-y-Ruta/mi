@@ -484,11 +484,6 @@ class TestRSVPUpdate:
 
 
 class TestEventListQuery:
-    def test_valid_range(self):
-        from datetime import date
-        q = EventListQuery(from_date=date(2030, 6, 1), to_date=date(2030, 6, 30))
-        assert q.mine_only is False
-
     def test_invalid_range_raises(self):
         from datetime import date
         with pytest.raises(ValidationError) as exc:

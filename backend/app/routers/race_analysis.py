@@ -960,15 +960,18 @@ async def start_run(
             # Feature 011: inyectar grupo LTAD + fase madurativa reales (igual
             # que el path per-atleta) para no caer en defaults Pre-PHV/Bambino.
             from app.services.race.ai.grounding import (
-                latest_maturation_status,
                 load_forbidden_names,
                 ltad_group_from_age,
+                resolve_maturation_status,
             )
 
             _age_decimal = (date.today() - _athlete.birth_date).days / 365.25
             athlete_age = int(_age_decimal)
             ltad_group_val = ltad_group_from_age(_age_decimal).value
-            maturation_status = await latest_maturation_status(db, body.athlete_id)
+            # Adulto (≥18) → None sin consultar la BD: PHV no aplica.
+            maturation_status = await resolve_maturation_status(
+                db, body.athlete_id, athlete_age
+            )
             forbidden_names = await load_forbidden_names(
                 db, body.athlete_id, nickname=getattr(_athlete, "nickname", None)
             )

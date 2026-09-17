@@ -317,3 +317,70 @@ async def test_season_kind_ignores_the_valida_cap():
         )
     )
     assert set(update["per_valida_drafts_v3"]) == {0}
+
+
+# ---------------------------------------------------------------------------
+# Feature "adult athlete path" (≥18 años) — v3
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_v3_adult_athlete_age_flows_through_without_fallback(caplog):
+    """31 años pasa tal cual: sin fallback=12 ni el warning de rango
+    (el bug de producción real). El resolver v3 ahora pasa por
+    ``_resolve_age`` (rango 6-80), consistente con v1/v2."""
+    fake = FakeV3Agent()
+    with caplog.at_level("WARNING"):
+        await analyst_agent(
+            base_state(athlete_age=31, ltad_group="adulto", _analyst_agent=fake)
+        )
+    assert fake.received_inputs[0].age == 31
+    assert not any(
+        "usando fallback=12" in rec.message for rec in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+async def test_v3_adult_athlete_sets_is_adult_true():
+    fake = FakeV3Agent()
+    await analyst_agent(
+        base_state(athlete_age=31, ltad_group="adulto", _analyst_agent=fake)
+    )
+    assert fake.received_inputs[0].is_adult is True
+    assert fake.received_inputs[0].ltad_group == "adulto"
+
+
+@pytest.mark.asyncio
+async def test_v3_minor_athlete_sets_is_adult_false():
+    """Regresión: un menor (13 años, fixture por defecto) no activa la
+    rama adulta."""
+    fake = FakeV3Agent()
+    await analyst_agent(base_state(_analyst_agent=fake))
+    assert fake.received_inputs[0].is_adult is False
+    assert fake.received_inputs[0].age == 13
+
+
+@pytest.mark.asyncio
+async def test_v3_implausible_age_still_falls_back_with_warning(caplog):
+    """Ages fuera de rango plausible (>80) siguen cayendo al fallback=12 con
+    warning — el ensanche a 80 no elimina la guarda, solo mueve el techo."""
+    fake = FakeV3Agent()
+    with caplog.at_level("WARNING"):
+        await analyst_agent(
+            base_state(athlete_age=95, ltad_group="adulto", _analyst_agent=fake)
+        )
+    assert fake.received_inputs[0].age == 12
+    assert fake.received_inputs[0].is_adult is False
+    assert any("usando fallback=12" in rec.message for rec in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_v3_missing_age_still_falls_back_with_warning(caplog):
+    """``athlete_age`` ausente (None) sigue cayendo al fallback=12 — mismo
+    comportamiento que antes de esta feature."""
+    fake = FakeV3Agent()
+    with caplog.at_level("WARNING"):
+        await analyst_agent(base_state(athlete_age=None, _analyst_agent=fake))
+    assert fake.received_inputs[0].age == 12
+    assert fake.received_inputs[0].is_adult is False
+    assert any("usando fallback=12" in rec.message for rec in caplog.records)

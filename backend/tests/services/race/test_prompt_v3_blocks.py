@@ -359,3 +359,95 @@ def test_series_label_v3_uses_the_real_cup_name_when_present():
     # campeonatos mantienen el tratamiento previo).
     champ = {**FIELD_METRICS_CHAMPIONSHIP, "series_name": "Campeonato Departamental"}
     assert series_label_v3(champ) == "Cto. Departamental"
+
+
+# ---------------------------------------------------------------------------
+# Feature "adult athlete path" (≥18 años) — apaga el marco LTAD/PHV juvenil
+# ---------------------------------------------------------------------------
+
+
+def _adult_input(**overrides) -> AnalystV3Input:
+    overrides.setdefault("age", 31)
+    overrides.setdefault("is_adult", True)
+    overrides.setdefault("ltad_group", "adulto")
+    return full_input(**overrides)
+
+
+@pytest.mark.parametrize(
+    "prompt_name", [PROMPT_VERSION_ANALYST_V3, PROMPT_VERSION_SEASON_SUMMARY_V3]
+)
+def test_adult_prompt_still_renders_strict_with_every_block_present(prompt_name):
+    assert render(_adult_input(), prompt_name)
+
+
+def test_adult_context_shows_the_real_ltad_group():
+    text = render(_adult_input(), PROMPT_VERSION_ANALYST_V3)
+    assert "Grupo LTAD: adulto" in text
+    assert "Edad: 31 años" in text
+
+
+def test_adult_analyst_prompt_intro_marks_the_subject_as_adult():
+    text = render(_adult_input(), PROMPT_VERSION_ANALYST_V3)
+    assert "Este análisis es para un atleta ADULTO" in text
+
+
+def test_adult_season_prompt_intro_marks_the_subject_as_adult():
+    text = render(
+        _adult_input(valida_num=0, analysis_kind="season"), PROMPT_VERSION_SEASON_SUMMARY_V3
+    )
+    assert "Este resumen es para un atleta ADULTO" in text
+
+
+def test_adult_analyst_prompt_relaxes_result_goal_and_hours_rules():
+    """Regla 4-6: sin tope horas≤edad/días≤5/cero-suplementos, objetivos de
+    resultado explícitamente permitidos — el texto juvenil de esas 3 reglas
+    no aparece en absoluto."""
+    text = render(_adult_input(), PROMPT_VERSION_ANALYST_V3)
+    assert "horas/semana ≤ edad; máximo 5 días/semana; cero suplementos" not in text
+    assert "Sin objetivos de resultado" not in text
+    assert 'Los objetivos de resultado ("podio", "top 5"' in text
+    # La cadencia mínima (regla biomecánica, no LTAD) se mantiene siempre.
+    assert "Cadencia ≥ 60 rpm" in text
+
+
+def test_adult_season_prompt_relaxes_result_goal_and_hours_rules():
+    text = render(
+        _adult_input(valida_num=0, analysis_kind="season"), PROMPT_VERSION_SEASON_SUMMARY_V3
+    )
+    assert "horas/semana ≤ edad; máximo 5 días/semana; cero suplementos" not in text
+    assert 'Sin objetivos de resultado ("podio", "ganar", "top 5") para la próxima temporada' not in text
+    assert "Cadencia ≥ 60 rpm" in text
+
+
+def test_adult_analyst_prompt_never_claims_maturation_even_with_anthro_context():
+    """Aunque el caller pase ``anthro_context`` (no debería para un adulto,
+    pero el prompt es la última línea de defensa): ``is_adult`` gana siempre
+    y la sección de Maduración se reemplaza por "No aplica" — nunca imprime
+    el bloque real de maduración."""
+    text = render(_adult_input(anthro_context=ANTHRO_CONTEXT), PROMPT_VERSION_ANALYST_V3)
+    assert "## Maduración — No aplica" in text
+    assert "(PHV) no aplica" in text
+    assert "Circa-PHV" not in text.split("# Ejemplo resuelto")[0]
+
+
+def test_adult_season_prompt_coach_question_step_drops_family_and_school_wording():
+    text = render(
+        _adult_input(valida_num=0, analysis_kind="season"), PROMPT_VERSION_SEASON_SUMMARY_V3
+    )
+    assert "disponibilidad laboral" in text
+    step8_line = next(
+        line for line in text.splitlines() if line.startswith("8. **Exactamente una pregunta**")
+    )
+    assert "disponibilidad familiar" not in step8_line
+    assert "calendario escolar" not in step8_line
+    assert "disponibilidad laboral" in step8_line
+
+
+def test_minor_prompt_regression_no_adult_wording_leaks_in():
+    """Regresión: el path juvenil (is_adult=False, default) es byte-idéntico
+    en el contenido que importa — ninguna mención de 'ADULTO' ni 'No aplica'
+    en Maduración se filtra al análisis de un menor."""
+    text = render(full_input(), PROMPT_VERSION_ANALYST_V3)
+    assert "Este análisis es para un atleta ADULTO" not in text
+    assert "## Maduración — No aplica" not in text
+    assert "horas/semana ≤ edad; máximo 5 días/semana; cero suplementos" in text

@@ -4,10 +4,19 @@ Resuelven los dos valores que los routers inyectan en ``initial_state`` para
 que el grafo analice con datos reales (no defaults):
 
 - ``ltad_group_from_age``: mapeo edad cronológica → grupo LTAD. Reutiliza la
-  misma regla que el resto del backend (≤12 bambino, 13-15 juvenil, else junior).
-- ``latest_maturation_status``: fase madurativa del último registro
-  antropométrico del atleta (por ``evaluation_date``). ``None`` cuando no hay
-  registros → el prompt no afirma fase madurativa (FR-007).
+  misma regla que el resto del backend (≤12 bambino, 13-15 juvenil, 16-17
+  junior, ≥18 adulto).
+- ``is_adult_age``: ``True`` si la edad (años enteros o decimales) es ≥18 —
+  la única fuente de verdad para "¿aplica el marco LTAD/PHV juvenil?" en
+  todo el pipeline (analyst_agent, critic_agent, prechecks).
+- ``latest_maturation_status`` / ``resolve_maturation_status``: fase
+  madurativa del último registro antropométrico del atleta (por
+  ``evaluation_date``). ``None`` cuando no hay registros → el prompt no
+  afirma fase madurativa (FR-007). ``resolve_maturation_status`` además
+  devuelve ``None`` sin consultar la BD cuando el atleta es adulto: la
+  maduración biológica (PHV) no aplica a un adulto, así que ni siquiera se
+  busca un registro antropométrico (owner decision, feature "adult athlete
+  path").
 """
 
 from __future__ import annotations
@@ -28,14 +37,36 @@ def ltad_group_from_age(age_decimal: float) -> LTADGroup:
 
     Regla idéntica a la del path season_summary (athlete_race_analysis.py):
     se compara sobre la edad en años enteros (floor), ≤12 → bambino,
-    13-15 → juvenil, else → junior. Una niña de 12.7 años es bambino.
+    13-15 → juvenil, 16-17 → junior, ≥18 → adulto. Una niña de 12.7 años es
+    bambino. El club es juvenil (10-15) pero tiene atletas adultos de
+    competición activos — sin la rama ``adulto`` un atleta de 31 años caía
+    en "junior" (16-17), la clasificación menos incorrecta pero igual
+    equivocada, y activaba lenguaje LTAD/PHV/familiar que no le aplica.
     """
     age = int(age_decimal)
+    if age >= 18:
+        return LTADGroup.ADULTO
     if age <= 12:
         return LTADGroup.BAMBINO
     if age <= 15:
         return LTADGroup.JUVENIL
     return LTADGroup.JUNIOR
+
+
+def is_adult_age(age: int | float | None) -> bool:
+    """``True`` si ``age`` (años, entero o decimal) es adulto (≥18).
+
+    Única fuente de verdad de "¿es adulto?" en todo el pipeline — analyst,
+    critic y prechecks la usan para apagar el marco LTAD/PHV juvenil.
+    ``None`` o un valor no numérico nunca son adultos (conservador: sin
+    edad confiable, se mantienen todos los guardrails juveniles).
+    """
+    if age is None:
+        return False
+    try:
+        return int(age) >= 18
+    except (TypeError, ValueError):
+        return False
 
 
 async def latest_maturation_status(db: Any, athlete_id: int) -> str | None:
@@ -68,6 +99,23 @@ async def latest_maturation_status(db: Any, athlete_id: int) -> str | None:
         return None
     status = record.maturation_status
     return status.value if hasattr(status, "value") else status
+
+
+async def resolve_maturation_status(
+    db: Any, athlete_id: int, athlete_age: int | float | None
+) -> str | None:
+    """Fase madurativa del atleta, o ``None`` si es adulto (PHV no aplica).
+
+    Wrapper delgado sobre :func:`latest_maturation_status` que agrega la
+    regla de negocio "un atleta adulto no tiene fase madurativa" (owner
+    decision, feature "adult athlete path"): para un adulto ni siquiera se
+    consulta la BD — aunque el club tenga (o llegara a tener) un registro
+    antropométrico viejo de cuando el atleta era menor, esa fase NUNCA debe
+    aparecer en un análisis dirigido a un adulto.
+    """
+    if is_adult_age(athlete_age):
+        return None
+    return await latest_maturation_status(db, athlete_id)
 
 
 async def load_forbidden_names(
@@ -125,6 +173,8 @@ async def load_forbidden_names(
 
 __all__ = [
     "ltad_group_from_age",
+    "is_adult_age",
     "latest_maturation_status",
+    "resolve_maturation_status",
     "load_forbidden_names",
 ]

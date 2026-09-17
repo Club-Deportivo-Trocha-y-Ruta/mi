@@ -150,7 +150,22 @@ _OUTCOME_GOAL_RE = re.compile(
 )
 
 
-def _ltad_issues(text: str, *, athlete_age: int | None) -> list[PrecheckIssue]:
+def _ltad_issues(
+    text: str, *, athlete_age: int | None, is_adult: bool = False
+) -> list[PrecheckIssue]:
+    """Reglas LTAD inviolables.
+
+    ``is_adult`` (feature "adult athlete path"): un atleta adulto (≥18) no
+    está sujeto al marco LTAD juvenil. Se mantienen SIEMPRE, adulto o no:
+    cadencia mínima (principio biomecánico general, no etario) y el veto de
+    lenguaje diagnóstico (privacidad/seguridad, no LTAD). Se SALTAN para un
+    adulto: horas/semana ≤ edad, tope de días/semana, test de FC máxima
+    <13 años (ya nunca dispara para un adulto, se documenta por claridad) y
+    el veto de metas de resultado — todas son reglas del marco de
+    desarrollo de un MENOR, no aplican a un competidor adulto (ver
+    race_analyst_v3.md / race_season_summary_v3.md, reglas 4-6 con rama
+    ``is_adult``).
+    """
     issues: list[PrecheckIssue] = []
 
     for m in _CADENCE_RE.finditer(text):
@@ -170,7 +185,7 @@ def _ltad_issues(text: str, *, athlete_age: int | None) -> list[PrecheckIssue]:
                 )
             )
 
-    if _SUPPLEMENT_RE.search(text):
+    if not is_adult and _SUPPLEMENT_RE.search(text):
         issues.append(
             PrecheckIssue(
                 PrecheckCategory.LTAD,
@@ -182,42 +197,49 @@ def _ltad_issues(text: str, *, athlete_age: int | None) -> list[PrecheckIssue]:
             )
         )
 
-    for m in _HOURS_WEEK_RE.finditer(text):
-        raw = m.group(1).replace(",", ".")
-        try:
-            hours = float(raw)
-        except ValueError:
-            continue
-        if athlete_age is not None and hours > athlete_age:
-            issues.append(
-                PrecheckIssue(
-                    PrecheckCategory.LTAD,
-                    CriticIssue(
-                        section="ltad",
-                        problem=f"Horas semanales sugeridas ({hours}) superan la edad del atleta ({athlete_age}).",
-                        suggested_fix="Reducir la carga semanal sugerida por debajo de la edad del atleta.",
-                    ),
+    if not is_adult:
+        for m in _HOURS_WEEK_RE.finditer(text):
+            raw = m.group(1).replace(",", ".")
+            try:
+                hours = float(raw)
+            except ValueError:
+                continue
+            if athlete_age is not None and hours > athlete_age:
+                issues.append(
+                    PrecheckIssue(
+                        PrecheckCategory.LTAD,
+                        CriticIssue(
+                            section="ltad",
+                            problem=f"Horas semanales sugeridas ({hours}) superan la edad del atleta ({athlete_age}).",
+                            suggested_fix="Reducir la carga semanal sugerida por debajo de la edad del atleta.",
+                        ),
+                    )
                 )
-            )
 
-    for m in _DAYS_WEEK_RE.finditer(text):
-        try:
-            days = int(m.group(1))
-        except ValueError:
-            continue
-        if days > 5:
-            issues.append(
-                PrecheckIssue(
-                    PrecheckCategory.LTAD,
-                    CriticIssue(
-                        section="ltad",
-                        problem=f"Recomendación de {days} días/semana (máximo LTAD: 5).",
-                        suggested_fix="Limitar la recomendación a máximo 5 días/semana.",
-                    ),
+    if not is_adult:
+        for m in _DAYS_WEEK_RE.finditer(text):
+            try:
+                days = int(m.group(1))
+            except ValueError:
+                continue
+            if days > 5:
+                issues.append(
+                    PrecheckIssue(
+                        PrecheckCategory.LTAD,
+                        CriticIssue(
+                            section="ltad",
+                            problem=f"Recomendación de {days} días/semana (máximo LTAD: 5).",
+                            suggested_fix="Limitar la recomendación a máximo 5 días/semana.",
+                        ),
+                    )
                 )
-            )
 
-    if athlete_age is not None and athlete_age < 13 and _FCMAX_TEST_RE.search(text):
+    if (
+        not is_adult
+        and athlete_age is not None
+        and athlete_age < 13
+        and _FCMAX_TEST_RE.search(text)
+    ):
         issues.append(
             PrecheckIssue(
                 PrecheckCategory.LTAD,
@@ -241,7 +263,7 @@ def _ltad_issues(text: str, *, athlete_age: int | None) -> list[PrecheckIssue]:
             )
         )
 
-    if _OUTCOME_GOAL_RE.search(text):
+    if not is_adult and _OUTCOME_GOAL_RE.search(text):
         issues.append(
             PrecheckIssue(
                 PrecheckCategory.LTAD,
@@ -438,6 +460,7 @@ def run_prechecks(
     catalog_context: dict | None = None,
     athlete_age: int | None = None,
     ltad_group: str | None = None,
+    is_adult: bool = False,
     forbidden_names: Iterable[str] | None = None,
     previous_headlines: Iterable[str] | None = None,
     ground_truth: str | None = None,
@@ -479,7 +502,7 @@ def run_prechecks(
     issues.extend(_forbidden_name_issues(full_text, forbidden_names or []))
 
     # 2) Reglas LTAD inviolables.
-    issues.extend(_ltad_issues(full_text, athlete_age=athlete_age))
+    issues.extend(_ltad_issues(full_text, athlete_age=athlete_age, is_adult=is_adult))
 
     # 2b) Invención de estado de carrera (hotfix identidad de válida).
     issues.extend(_race_status_issues(full_text, ground_truth))

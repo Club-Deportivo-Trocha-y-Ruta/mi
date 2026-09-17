@@ -29,6 +29,7 @@ from app.services.race.ai.confidence import (
     compute_confidence_v3,
 )
 from app.services.race.ai.events import with_events
+from app.services.race.ai.grounding import is_adult_age
 from app.services.race.ai.prechecks import run_prechecks
 from app.services.race.ai.retry import with_retry
 from app.services.race.race_labels import series_display_name
@@ -331,6 +332,7 @@ async def critic_agent(state: dict) -> dict[str, Any]:
                 catalog_context=catalog_context,
                 athlete_age=athlete_age,
                 ltad_group=state.get("ltad_group"),
+                is_adult=is_adult_age(athlete_age),
                 forbidden_names=forbidden_names,
                 previous_headlines=previous_headlines,
                 ground_truth=ground_truth,

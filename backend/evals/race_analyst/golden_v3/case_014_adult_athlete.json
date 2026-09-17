@@ -1,0 +1,237 @@
+{
+  "case_id": "014_adult_athlete",
+  "description": "Atleta ADULTO (31 años, categoría Élite) — feature 'adult athlete path'. Sin marco LTAD/PHV, sin anthro_context (maduración no aplica), objetivos de resultado permitidos, sin lenguaje familiar/escolar. Válida el flujo adulto añadido al pipeline v3.",
+  "input": {
+    "valida_num": 3,
+    "analysis_kind": "valida",
+    "athlete_ref": "el deportista",
+    "age": 31,
+    "is_adult": true,
+    "ltad_group": "adulto",
+    "season": 2026,
+    "validas_count": 3,
+    "valida_label": "Válida 3 · Copa Élite",
+    "race_row": {
+      "valida_num": 3,
+      "event_date": "2026-06-14",
+      "category_code": "ELITE",
+      "position": 3,
+      "race_time_ms": 5400000,
+      "gap_to_winner_ms": 90000,
+      "gap_to_winner_pct": 1.69
+    },
+    "field_metrics": {
+      "event_id": 5203,
+      "valida_num": 3,
+      "event_date": "2026-06-14",
+      "series_kind": "cup",
+      "series_level": "departmental",
+      "is_championship": false,
+      "field_size": 18,
+      "position": 3,
+      "percentile": 88,
+      "race_time_ms": 5400000,
+      "gap_to_p1_ms": 90000,
+      "gap_pct": 1.69,
+      "gap_to_p3_ms": 0,
+      "category_median_time_ms": 5700000,
+      "gap_to_median_pct": -5.3,
+      "laps_behind": 0,
+      "prior_index": 3.1,
+      "expected_position": 4,
+      "delta_vs_expected": 1,
+      "field_strength": 6.2,
+      "coverage_with_prior": 0.61
+    },
+    "season_rows": [
+      {
+        "valida_num": 1,
+        "event_date": "2026-02-15",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 5,
+        "field_size": 17,
+        "percentile": 74,
+        "gap_pct": 3.2,
+        "gap_to_p3_ms": 41000,
+        "expected_position": 5,
+        "delta_vs_expected": 0
+      },
+      {
+        "valida_num": 2,
+        "event_date": "2026-04-12",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 4,
+        "field_size": 18,
+        "percentile": 81,
+        "gap_pct": 2.4,
+        "gap_to_p3_ms": 22000,
+        "expected_position": 4,
+        "delta_vs_expected": 0
+      },
+      {
+        "valida_num": 3,
+        "event_date": "2026-06-14",
+        "series_kind": "cup",
+        "is_championship": false,
+        "position": 3,
+        "field_size": 18,
+        "percentile": 88,
+        "gap_pct": 1.69,
+        "gap_to_p3_ms": 0,
+        "expected_position": 4,
+        "delta_vs_expected": 1
+      }
+    ],
+    "race_meta": "- Clima: nublado\n- Temperatura: 19 °C\n- Superficie de la pista: húmeda",
+    "training_window": {
+      "window_days": 28,
+      "date_from": "2026-05-17",
+      "date_to": "2026-06-14",
+      "sessions_in_window": 14,
+      "attended": 13,
+      "absent": 1,
+      "excused": 0,
+      "attendance_pct": 92.9,
+      "training_hours": 21.0,
+      "rpe_mean": 5.6,
+      "rpe_last7_mean": 5.9,
+      "rpe_prev21_mean": 5.4,
+      "rubric_effort_mean": 4.6,
+      "rubric_attitude_mean": 4.8,
+      "rubric_technique_mean": 4.3,
+      "technical_foci": [
+        "Cambios en pelotón",
+        "Ritmo sostenido en subida"
+      ],
+      "interval_sessions": 3,
+      "days_since_last_session": 2,
+      "days_since_previous_race": 63,
+      "coach_feedback": [
+        "Sostiene el ritmo de umbral sin perder posición en el pelotón de cabeza"
+      ],
+      "strava_load": null
+    },
+    "coach_dialogue": [],
+    "catalog_context": {
+      "interval_templates": [
+        {
+          "id": 7,
+          "name": "Umbral 4x8 minutos",
+          "age_band": "13-15",
+          "mesocycle_phase": "specific"
+        }
+      ]
+    },
+    "memory_recent_insights": [
+      "Válida 2 · Copa Élite: subió al percentil 81 tras recuperar continuidad en la ventana previa",
+      "Válida 1 · Copa Élite: primera fecha de la temporada, percentil 74 en un pelotón de 17"
+    ]
+  },
+  "expected_themes": [
+    "percentil",
+    "umbral",
+    "pelotón"
+  ],
+  "forbidden_terms": [
+    "Pre-PHV",
+    "Circa-PHV",
+    "Post-PHV",
+    "PHV",
+    "maduración",
+    "estirón",
+    "disponibilidad familiar",
+    "calendario escolar",
+    "suplementos",
+    "creatina",
+    "Mariana",
+    "Thiago",
+    "Valentina"
+  ],
+  "expected_headline_keywords": [
+    "percentil",
+    "umbral",
+    "0:01:30",
+    "88"
+  ],
+  "must_reference_catalog": true,
+  "max_words": 450,
+  "ideal_output": {
+    "schema_version": "v3",
+    "headline": "Subió al percentil 88 y quedó a 0:01:30 del líder, el mejor resultado de la temporada, tras tres semanas seguidas de bloques de umbral sin faltar.",
+    "field_reading": {
+      "percentile": 88,
+      "expected_position": 4,
+      "actual_position": 3,
+      "delta_vs_expected": 1,
+      "gap_to_p3_hhmmss": "0:00:00",
+      "series_label": "Válida 3 · Copa Élite",
+      "summary": "Mejor percentil de la temporada y un puesto por encima de lo esperado en un pelotón de 18 corredores."
+    },
+    "trend": "improving",
+    "observations": [
+      {
+        "claim": "Rindió por encima de su índice previo y encadena la tercera mejora consecutiva de percentil de la temporada.",
+        "evidence": [
+          "percentil 88 con pelotón de 18",
+          "esperada 4 frente a real 3",
+          "gap 1.69% al líder"
+        ],
+        "domain": "field",
+        "confidence": "high"
+      },
+      {
+        "claim": "La mejora coincide con la ventana de entrenamiento más constante del ciclo, con el trabajo de umbral sostenido.",
+        "evidence": [
+          "asistencia 92.9%",
+          "3 sesiones con intervalos",
+          "RPE medio 5.6"
+        ],
+        "domain": "training",
+        "confidence": "high"
+      },
+      {
+        "claim": "El gap a P3 llegó a cero: ya compite dentro del grupo de cabeza, no solo se acerca a él.",
+        "evidence": [
+          "gap a P3 0:00:00",
+          "posición 3"
+        ],
+        "domain": "race",
+        "confidence": "high"
+      }
+    ],
+    "actions": [
+      {
+        "text": "Sostener dos sesiones semanales de umbral con la plantilla del club antes de la próxima válida, sin subir el volumen total.",
+        "category": "volume",
+        "priority": "high",
+        "horizon": "next_race",
+        "catalog_ref": {
+          "kind": "interval_template",
+          "code": "7",
+          "label": null
+        },
+        "derived_from": 1
+      },
+      {
+        "text": "Trabajar cambios de ritmo dentro del pelotón de cabeza para llegar a los últimos kilómetros con margen táctico.",
+        "category": "tactics",
+        "priority": "med",
+        "horizon": "next_race",
+        "catalog_ref": null,
+        "derived_from": 2
+      }
+    ],
+    "watch_signals": [
+      "Si el gap sigue por debajo de 2% en las próximas dos fechas, evaluar sumar una sesión específica de umbral."
+    ],
+    "coach_question": "¿Hay un objetivo de resultado concreto (top-3 general de la copa, clasificación nacional) que debamos priorizar en la planificación de las próximas válidas?",
+    "data_gaps": [
+      "Sin datos de potencia (vatios) para contrastar el ritmo sostenido en el tramo de umbral."
+    ],
+    "principles_cited": [
+      "5. Periodización de la temporada"
+    ]
+  }
+}

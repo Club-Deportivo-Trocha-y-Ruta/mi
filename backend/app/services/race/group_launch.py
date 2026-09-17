@@ -158,9 +158,9 @@ async def resolve_athlete_ai_context(db: AsyncSession, athlete: Athlete) -> Athl
     devuelve una lista, nunca ``None``.
     """
     from app.services.race.ai.grounding import (
-        latest_maturation_status,
         load_forbidden_names,
         ltad_group_from_age,
+        resolve_maturation_status,
     )
 
     athlete_sex_val: Optional[str] = None
@@ -176,7 +176,9 @@ async def resolve_athlete_ai_context(db: AsyncSession, athlete: Athlete) -> Athl
         age_decimal = (date.today() - athlete.birth_date).days / 365.25
         athlete_age = int(age_decimal)
         ltad_group_val = ltad_group_from_age(age_decimal).value
-        maturation_status = await latest_maturation_status(db, athlete.id)
+        # Adulto (≥18) → None sin consultar la BD: PHV no aplica (ver
+        # resolve_maturation_status).
+        maturation_status = await resolve_maturation_status(db, athlete.id, athlete_age)
         forbidden_names = await load_forbidden_names(
             db, athlete.id, nickname=getattr(athlete, "nickname", None)
         )

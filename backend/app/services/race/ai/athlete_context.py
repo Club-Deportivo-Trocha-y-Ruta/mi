@@ -46,12 +46,20 @@ _SESSION_DESCRIPTION_MAX_CHARS = 200
 _MAX_TECHNICAL_FOCI = 6
 
 
-def age_band_from_age(age_decimal: float) -> str:
+def age_band_from_age(age_decimal: float) -> str | None:
     """Mapea edad decimal → banda de edad del catálogo (``AgeBand``).
 
     Regla (data-model.md §037 T103): <10 → ``"7-9"``, 10-12 → ``"10-12"``,
-    ≥13 → ``"13-15"``.
+    ≥13 → ``"13-15"``. ``AgeBand`` (``app.models.interval_structure``) es un
+    enum de 3 valores persistido en MySQL — solo cubre bandas juveniles, y
+    agregar un cuarto valor "adulto" exigiría una migración de columna. Para
+    un atleta adulto (≥18) devuelve ``None`` en vez de mentir con "13-15":
+    el caller (``load_catalog_context``) trata ``None`` como "sin filtro de
+    banda" y devuelve el catálogo completo del club, en vez de etiquetar a
+    un adulto con una banda etaria juvenil que no le corresponde.
     """
+    if age_decimal >= 18:
+        return None
     if age_decimal < 10:
         return "7-9"
     if age_decimal < 13:
