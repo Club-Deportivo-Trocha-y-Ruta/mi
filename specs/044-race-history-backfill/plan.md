@@ -72,6 +72,7 @@ specs/044-race-history-backfill/
 │   ├── category-mapping.md          # aliases, season-specific rows, frozen labels
 │   ├── third-party-lock.md          # guard, structural test, ordering rule, legal basis
 │   ├── identity-review-api.md       # candidates, decisions, resolver, gate, reversal
+│   ├── historical-load.md           # staging service + script, full start list, printed points, idempotence, 2026 untouched
 │   ├── history-progression-api.md   # endpoint, thresholds, parent gate, budget
 │   └── ui-history.md                # card, preview extensions, board, review page
 ├── checklists/requirements.md       # spec quality checklist

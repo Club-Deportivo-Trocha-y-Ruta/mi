@@ -6,7 +6,7 @@ description: "Task list for feature 044 — Race history backfill"
 
 **Input**: Design documents from `/specs/044-race-history-backfill/`
 
-**Prerequisites**: `plan.md`, `spec.md`, `research.md` (R-01…R-16), `data-model.md`, `contracts/` (`reading-integrity.md`, `category-mapping.md`, `third-party-lock.md`, `identity-review-api.md`, `history-progression-api.md`, `ui-history.md`), `quickstart.md`
+**Prerequisites**: `plan.md`, `spec.md`, `research.md` (R-01…R-16), `data-model.md`, `contracts/` (`reading-integrity.md`, `category-mapping.md`, `third-party-lock.md`, `identity-review-api.md`, `historical-load.md`, `history-progression-api.md`, `ui-history.md`), `quickstart.md`
 
 **Tests**: REQUIRED. Constitution principle II (Testing) is NON-NEGOTIABLE and every contract ends with its test list; test tasks are first-class and sit **before** the implementation they cover inside each phase. Write them, watch them fail, then implement.
 
@@ -187,7 +187,7 @@ Per `.claude/agents/README.md`: leads orchestrate on **opus** and never write co
 
 ## Phase 7: User Story 5 — The fifteen válidas through the same trusted path (Priority: P1)
 
-**Goal**: staging, partial commit and a board for the historical load, on the existing preview → dry-run → commit path.
+**Goal**: staging, partial commit and a board for the historical load, on the existing preview → dry-run → commit path. Contract: `contracts/historical-load.md` (FR-023…FR-029).
 
 **Independent Test**: spec US5 — two synthetic válidas of one season: season and válidas created, full fields, calculated standings, re-load creates nothing, audit trail complete.
 
@@ -195,17 +195,17 @@ Per `.claude/agents/README.md`: leads orchestrate on **opus** and never write co
 
 ### Tests for User Story 5 ⚠️ write first
 
-- [ ] T056 [P] [US5] `backend/tests/services/race/test_import_staging.py`: the extracted staging service produces the same `RaceImport` and response as today's `/parse` for a 2026 file (golden comparison), and stages a historical builder file with season/válida/date/venue taken from the inputs, never assumed [agent: qa-engineer · sonnet]
-- [ ] T057 [P] [US5] `backend/tests/routers/test_race_imports_history.py`: partial commit ingests consistent/acknowledged categories and lists `pending_categories`; `/commit-pending` finishes them and returns `409 nothing_pending` afterwards; re-staging an identical file creates nothing in any table; interrupted load resumes; standings carry `is_calculated` [agent: qa-engineer · sonnet]
+- [ ] T056 [P] [US5] `backend/tests/services/race/test_import_staging.py`: the extracted staging service produces the same `RaceImport` and response as today's `/parse` for a 2026 file (golden comparison), stages a historical builder file with season/válida/date/venue taken from the inputs, never assumed (FR-025), and emits `header_mismatch` when the printed header disagrees [agent: qa-engineer · sonnet]
+- [ ] T057 [P] [US5] `backend/tests/routers/test_race_imports_history.py`: the full start list is committed, including categories where no club athlete raced (FR-028); printed points kept verbatim (FR-026); partial commit ingests consistent/acknowledged categories and lists `pending_categories`; `/commit-pending` finishes them, returns `409 nothing_pending` afterwards and obeys the same `409 identity_review_pending` gate as `/commit`; re-staging or re-committing an identical file creates nothing in any table (FR-027); interrupted load resumes; standings carry `is_calculated` [agent: qa-engineer · sonnet]
 - [ ] T058 [P] [US5] `backend/tests/services/race/test_2026_unchanged.py`: with two historical seasons loaded, `GET /evolution`, results and standings of 2026 and the race-AI analyst context are identical to the baseline without them (FR-029, R-15) [agent: qa-engineer · sonnet]
 
 ### Implementation for User Story 5
 
 - [ ] T059 [US5] Extract the body of `parse_import` into `backend/app/services/race/import_staging.py::stage_results_file` and make `backend/app/routers/race_imports.py` a thin caller (no behaviour change; T056 is the safety net) [agent: fastapi-architect · sonnet]
 - [ ] T060 [US5] `only_categories` support in `backend/app/services/race/ingestor.py::ingest_event` (bypasses the SHA-256 short-circuit only for a restricted re-run) and unknown-header / inconsistent categories skipped into `pending_categories` [agent: fastapi-architect · sonnet]
-- [ ] T061 [US5] `POST /{id}/commit-pending` and the `pending_categories` bookkeeping in `backend/app/routers/race_imports.py`; `pending_categories_count` in the import list schema [agent: fastapi-architect · sonnet]
+- [ ] T061 [US5] `POST /{id}/commit-pending` (behind the same identity-review gate as `/commit`, FR-018) and the `pending_categories` bookkeeping in `backend/app/routers/race_imports.py`; `pending_categories_count` in the import list schema [agent: fastapi-architect · sonnet]
 - [ ] T062 [P] [US5] `is_calculated: true` on the standings read schema in `backend/app/schemas/race_results.py` and `backend/app/services/race/standings.py` [agent: fastapi-architect · sonnet]
-- [ ] T063 [P] [US5] `backend/scripts/stage_race_history.py`: reads a manifest (season, válida, date, venue, path) located **outside the repository**, calls `stage_results_file`, supports `--dry`, never commits, prints ids and counts only; refuses to run when the manifest path is inside the repo [agent: data-analyst · sonnet]
+- [ ] T063 [P] [US5] `backend/scripts/stage_race_history.py`: reads a manifest (season, válida, date, venue, path) located **outside the repository**, calls `stage_results_file`, supports `--dry`, never commits, prints ids and counts only; refuses a manifest or file path inside the repo and any cumulative-standings file (FR-024) [agent: data-analyst · sonnet]
 - [ ] T064 [US5] `frontend/src/routes/competitions/history/HistoricalLoadPage.tsx` per `contracts/ui-history.md` §3 (board by season and state, pending-category counters, identity banner, commit and commit-pending actions with the gate reason) and its route + navigation entry for coach/admin [agent: react-ui-engineer · sonnet]
 - [ ] T065 [P] [US5] "Clasificación calculada por la plataforma" label on the standings table component under `frontend/src/components/competitions/` [agent: react-ui-engineer · sonnet]
 - [ ] T066 [P] [US5] vitest + MSW + jest-axe for `HistoricalLoadPage` in `frontend/src/routes/competitions/history/__tests__/` [agent: qa-engineer · sonnet]
@@ -277,7 +277,7 @@ Per `.claude/agents/README.md`: leads orchestrate on **opus** and never write co
 - [ ] T091 Review T090 (policy: a sonnet safety worker is reviewed by an opus lead); confirm FR-043's deferred items are written down with an owner; sign off or return it [agent: data-platform-lead · opus]
 - [ ] T092 [P] `docs/10-race-results/history-backfill-design.md`: the overprint finding and the band reader, category vocabulary by season, signatures and the review, the lock, thresholds, the legal basis (legitimate interest; "public on a blog" ≠ public data), deferred erasure/retention [agent: technical-writer · sonnet]
 - [ ] T093 [P] `docs/10-race-results/runbook-ops.md` §11 — real-load runbook from `quickstart.md` §8, including the pre-load checklist line "third-party lock green" and the reminder that a local backend may point at production [agent: technical-writer · sonnet]
-- [ ] T094 [P] Update `docs/implementation-status.md` and `docs/technical-notes.md`; trim the Feature 044 paragraph inside the `SPECKIT` markers of `CLAUDE.md` to the shipped state [agent: technical-writer · sonnet]
+- [ ] T094 [P] Update `docs/implementation-status.md` and `docs/technical-notes.md`; rewrite the Feature 044 paragraph of `CLAUDE.md` (it lives **below** the `SPECKIT` markers — the block between them is machine-managed and gets replaced by `/speckit-agent-context-update`) to the shipped state [agent: technical-writer · sonnet]
 - [ ] T095 [P] Record the pre-existing concern of research R-14 (real official files under `backend/tests/fixtures/race/`) as an open item in `docs/technical-notes.md` for an owner decision; do not delete or replace them in this feature [agent: technical-writer · sonnet]
 - [ ] T096 Review the real-load runbook (T093) from the data side: order of operations, spot-check procedure against official files, rollback of a bad season (delete by `imported_from_id`) [agent: data-platform-lead · opus]
 - [ ] T097 Pre-deploy checklist: single Alembic head, migration dry-run timing on a production-sized copy, `RACE_HISTORY_FAMILY_POLICY_VERSION` unset in Render, seeds to run after migrate [agent: release-manager · sonnet]
