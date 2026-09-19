@@ -20,6 +20,10 @@ Privacidad:
   real. El test sentinela (``test_anonymize.py``) valida esto.
 - ``errors`` en payload solo lleva el ``type(exc).__name__`` y un mensaje
   truncado (≤200 chars).
+- Ese mensaje se persiste en ``agent_run_events`` y se sirve tal cual por
+  ``GET /race-analysis/runs/{run_id}/status``, así que una excepción cuyo
+  ``str()`` lleve datos que no deban publicarse puede declarar un sustituto
+  con :data:`EVENT_SAFE_MESSAGE_ATTR` — ver :func:`_event_message`.
 """
 
 from __future__ import annotations
@@ -34,8 +38,39 @@ from langgraph.errors import GraphInterrupt
 logger = logging.getLogger(__name__)
 
 
+#: Máximo de caracteres del mensaje de error que se persiste en un evento.
+_MAX_EVENT_MESSAGE_CHARS = 200
+
+#: Atributo OPCIONAL que una excepción puede exponer para que ``with_events``
+#: publique un mensaje sustituto en vez de su ``str()``.
+#:
+#: Es una convención genérica a propósito: ``events.py`` no importa ninguna
+#: excepción concreta, y cualquier nodo que la lance —presente o futuro—
+#: queda cubierto sin acordarse de configurar nada. La alternativa (una
+#: tupla de excepciones pasada a ``with_events`` por cada nodo, como el
+#: ``non_retryable`` de ``retry.py``) volvería a depender de que quien
+#: escriba el próximo nodo se acuerde; acá la garantía viaja con la
+#: excepción.
+EVENT_SAFE_MESSAGE_ATTR = "event_safe_message"
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _event_message(exc: BaseException) -> str:
+    """Mensaje a persistir para *exc*, truncado a 200 caracteres.
+
+    Si la excepción declara :data:`EVENT_SAFE_MESSAGE_ATTR` con un string no
+    vacío, se publica ESE texto en lugar de ``str(exc)``. Sirve para
+    excepciones cuyo mensaje operativo (ids, rutas, parámetros) no debe
+    terminar en un stream que se sirve por HTTP, aunque sí quede en el log
+    del servidor.
+    """
+    safe = getattr(exc, EVENT_SAFE_MESSAGE_ATTR, None)
+    if isinstance(safe, str) and safe.strip():
+        return safe[:_MAX_EVENT_MESSAGE_CHARS]
+    return str(exc)[:_MAX_EVENT_MESSAGE_CHARS]
 
 
 def emit_event(
@@ -76,6 +111,9 @@ def with_events(node_name: str) -> Callable:
 
     Si el nodo lanza una excepción:
     1. Se emite ``node_error`` con ``{exc: ClassName, msg: first 200 chars}``.
+       Una excepción que declare :data:`EVENT_SAFE_MESSAGE_ATTR` publica ese
+       texto en vez de su ``str()`` — el ``str()`` completo sigue yendo al
+       log del servidor vía ``logger.exception``.
     2. Se acumula en ``state["errors"]``.
     3. Se re-raise para que el wrapper de grafo decida (fallback / END).
 
@@ -120,7 +158,7 @@ def with_events(node_name: str) -> Callable:
                 err_record = {
                     "node": node_name,
                     "error": type(exc).__name__,
-                    "message": str(exc)[:200],
+                    "message": _event_message(exc),
                     "timestamp": _now_iso(),
                 }
                 errors.append(err_record)
@@ -146,4 +184,4 @@ def with_events(node_name: str) -> Callable:
     return decorator
 
 
-__all__ = ["emit_event", "with_events"]
+__all__ = ["EVENT_SAFE_MESSAGE_ATTR", "emit_event", "with_events"]

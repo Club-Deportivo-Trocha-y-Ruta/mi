@@ -48,6 +48,7 @@ def with_retry(
     max_attempts: int = 3,
     backoff: float = 2.0,
     retryable: tuple[type[BaseException], ...] | None = None,
+    non_retryable: tuple[type[BaseException], ...] = (),
 ) -> Callable[[Callable[..., Awaitable[T]]], Callable[..., Awaitable[T]]]:
     """Decorador de retry con backoff exponencial.
 
@@ -58,6 +59,15 @@ def with_retry(
             ``backoff=0`` desactiva sleep (tests).
         retryable: override de la tupla de excepciones a reintentar. Por
             default :data:`RETRYABLE_EXCEPTIONS`.
+        non_retryable: excepciones que se re-lanzan de inmediato AUNQUE sean
+            subclase de alguna de ``retryable``. Existe porque
+            :data:`RETRYABLE_EXCEPTIONS` incluye ``OSError``, y varias
+            excepciones de la stdlib que no tienen nada de transitorio
+            heredan de ahí (``PermissionError`` es la que motivó el
+            parámetro: reintentar una denegación de permisos sólo multiplica
+            las consultas y las líneas de log del rechazo). Tupla vacía por
+            default — ``except ()`` nunca matchea, así que el comportamiento
+            preexistente no cambia.
 
     Returns:
         Decorador.
@@ -78,6 +88,10 @@ def with_retry(
             while attempt < max_attempts:
                 try:
                     return await fn(*args, **kwargs)
+                except non_retryable:
+                    # Antes de ``exc_types`` a propósito: gana la lista
+                    # explícita de "esto no se reintenta".
+                    raise
                 except exc_types as exc:
                     last_exc = exc
                     logger.warning(

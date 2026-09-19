@@ -105,10 +105,12 @@ PROGRESSION_ROWS_CN = [
 
 
 @pytest.fixture
-def patched_championship_pipeline(monkeypatch):
+def patched_championship_pipeline(monkeypatch, fake_session):
     """Patchea la pipeline (DB + métricas de pelotón) para el lanzamiento
     anclado al Cto. Nacional — misma convención que ``patched_pipeline`` en
-    ``test_graph.py``."""
+    ``test_graph.py``, incluido el competidor 22 declarado como del club para
+    el candado de terceros de la feature 044."""
+    fake_session.link_competitor(22)
 
     async def _fetch_results(db, aid, season, valida_nums=None, series_id=None):
         return [_CnResult()]

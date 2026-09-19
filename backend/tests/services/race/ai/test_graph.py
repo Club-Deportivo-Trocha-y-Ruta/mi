@@ -31,8 +31,15 @@ from tests.services.race.ai.conftest import (
 
 
 @pytest.fixture
-def patched_pipeline(monkeypatch):
-    """Patchea TODA la pipeline para evitar DB y LLM real."""
+def patched_pipeline(monkeypatch, fake_session):
+    """Patchea TODA la pipeline para evitar DB y LLM real.
+
+    Feature 044: ``compute_metrics`` exige que el ``competitor_id`` del state
+    esté vinculado a un atleta del club (``require_club_competitor``), así que
+    se declara acá el competidor 22 —el que devuelven los resultados
+    falseados de abajo— como competidor del club.
+    """
+    fake_session.link_competitor(22)
 
     async def _fetch_results(db, aid, season, valida_nums=None, series_id=None):
         class R:

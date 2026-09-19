@@ -53,6 +53,7 @@ from app.services.race.queries import (
 )
 from app.models.race_series import RaceSeriesKind, RaceSeriesLevel
 from app.services.race.comparison_groups import build_comparison_group
+from app.services.race.third_party_guard import club_competitor_only
 
 logger = logging.getLogger(__name__)
 
@@ -71,12 +72,20 @@ _CONFIDENCE_MED_MAX_N: int = 8   # 5..8 → medium ; >8 → high
 # ---------------------------------------------------------------------------
 
 
+@club_competitor_only
 async def athlete_progression(db: AsyncSession, competitor_id: int) -> pd.DataFrame:
     """Historial cronológico de un competidor a lo largo de las válidas.
+
+    Candado de terceros (feature 044, FR-012…FR-015): devuelve data
+    longitudinal persona-a-persona, así que ``@club_competitor_only`` exige
+    que ``competitor_id`` esté vinculado a un ``Athlete`` del club antes de
+    ejecutar nada. Un competidor ajeno —o inexistente— levanta
+    ``ThirdPartyProgressionForbidden``.
 
     Args:
         db: Sesión async (AsyncSession real o ``FakeAsyncSession`` para tests).
         competitor_id: PK del ``RaceCompetitor`` cuyo historial queremos.
+            Debe estar vinculado a un atleta del club.
 
     Returns:
         ``pd.DataFrame`` con columnas:
@@ -247,6 +256,15 @@ async def podium_gap(
 
     Solo considera competitors con ``athlete_id IS NOT NULL`` (matches
     confirmados por el coach).
+
+    NO lleva ``@club_competitor_only`` (feature 044), aunque la prosa de
+    ``contracts/third-party-lock.md`` y ``research.md`` R-07 la mencionan: su
+    firma no recibe ``competitor_id`` y el filtro ``athlete_id IS NOT NULL``
+    de arriba excluye a los terceros antes de construir la grilla, así que no
+    hay forma de pedirle la fila de un competidor ajeno. El barrido
+    estructural de ``tests/privacy/test_third_party_lock.py`` no la reporta
+    como candidata, y es correcto. Si algún día recibiera ``competitor_id``,
+    ese barrido la marcaría automáticamente como ofensora.
 
     Args:
         db: Sesión async.
@@ -637,14 +655,21 @@ def _confidence_from_n(n: int) -> str:
     return "high"
 
 
+@club_competitor_only
 async def projection(
     db: AsyncSession, competitor_id: int, next_event_id: int
 ) -> dict[str, Any]:
     """Proyección lineal para próxima válida basada en histórico del competidor.
 
+    Candado de terceros (feature 044, FR-012…FR-015): es una regresión sobre
+    el histórico completo de una persona, así que ``@club_competitor_only``
+    exige competidor vinculado al club. Hoy no tiene llamador de producción,
+    pero es superficie pública exportada que podría conectarse a un router.
+
     Args:
         db: Sesión async.
-        competitor_id: PK del ``RaceCompetitor``.
+        competitor_id: PK del ``RaceCompetitor``. Debe estar vinculado a un
+            atleta del club.
         next_event_id: PK del ``RaceEvent`` para el que queremos proyectar.
             Se usa para inferir el ``valida_num`` objetivo (eje X de la
             regresión).

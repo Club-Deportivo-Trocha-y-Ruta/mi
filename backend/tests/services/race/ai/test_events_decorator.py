@@ -116,3 +116,79 @@ async def test_real_exception_still_emits_node_error():
     err_ev = events[-1]
     assert err_ev["payload"]["exc"] == "ValueError"
     assert "bug real" in err_ev["payload"]["msg"]
+
+
+# ---------------------------------------------------------------------------
+# EVENT_SAFE_MESSAGE_ATTR — sustitución del mensaje publicado (feature 044)
+#
+# El mensaje del evento ``node_error`` se persiste en ``agent_run_events`` y
+# se sirve por ``GET /race-analysis/runs/{run_id}/status``. Una excepción
+# cuyo ``str()`` lleve datos que no deban publicarse puede declarar un
+# sustituto; ``events.py`` no importa ninguna excepción concreta, así que la
+# convención sirve para cualquier nodo, presente o futuro.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_exception_with_event_safe_message_publishes_the_substitute():
+    """El ``str()`` con el dato sensible no llega al evento; el sustituto sí."""
+
+    class _Sensitive(RuntimeError):
+        event_safe_message = "acceso denegado"
+
+    @with_events("guarded_node")
+    async def node(state: dict) -> dict:
+        raise _Sensitive("dato que no debe publicarse id=4242")
+
+    state: dict = {}
+    with pytest.raises(_Sensitive):
+        await node(state)
+
+    err_ev = state["events"][-1]
+    assert err_ev["type"] == "node_error"
+    assert err_ev["payload"]["exc"] == "_Sensitive"
+    assert err_ev["payload"]["msg"] == "acceso denegado"
+    assert "4242" not in err_ev["payload"]["msg"]
+    # state["errors"] es la otra copia persistida — misma sustitución.
+    assert state["errors"][0]["message"] == "acceso denegado"
+
+
+@pytest.mark.asyncio
+async def test_event_safe_message_is_ignored_when_empty_or_not_a_string():
+    """Un atributo vacío o de tipo raro NO debe silenciar el mensaje real:
+    se cae al ``str(exc)`` de siempre en vez de publicar un evento mudo."""
+
+    class _EmptySafe(RuntimeError):
+        event_safe_message = "   "
+
+    class _WrongType(RuntimeError):
+        event_safe_message = 42
+
+    for exc_cls in (_EmptySafe, _WrongType):
+
+        @with_events("node_y")
+        async def node(state: dict, _cls=exc_cls) -> dict:
+            raise _cls("mensaje real")
+
+        state: dict = {}
+        with pytest.raises(exc_cls):
+            await node(state)
+        assert state["events"][-1]["payload"]["msg"] == "mensaje real"
+
+
+@pytest.mark.asyncio
+async def test_event_safe_message_is_truncated_to_200_chars():
+    """El sustituto pasa por el mismo truncado que el mensaje normal."""
+
+    class _LongSafe(RuntimeError):
+        event_safe_message = "x" * 500
+
+    @with_events("node_z")
+    async def node(state: dict) -> dict:
+        raise _LongSafe("corto")
+
+    state: dict = {}
+    with pytest.raises(_LongSafe):
+        await node(state)
+
+    assert len(state["events"][-1]["payload"]["msg"]) == 200

@@ -277,8 +277,20 @@ class TestAthleteProgression:
     async def test_empty_when_competitor_has_no_results(
         self, analytics_session: FakeAsyncSession
     ):
-        """Si el competidor no tiene results → DataFrame vacío con columnas."""
-        df = await athlete_progression(analytics_session, competitor_id=99999)
+        """Si el competidor no tiene results → DataFrame vacío con columnas.
+
+        Feature 044: el competidor debe estar vinculado a un atleta del club
+        (``@club_competitor_only``). Antes este test pasaba
+        ``competitor_id=99999`` —un id inexistente, que hoy el candado
+        rechaza igual que a un tercero—; se seedea un competidor vinculado
+        SIN resultados para ejercitar exactamente la misma rama.
+        """
+        sin_results = _seed_competitor(
+            analytics_session.store, "Sin Resultados", athlete_id=777
+        )
+        df = await athlete_progression(
+            analytics_session, competitor_id=sin_results.id
+        )
         assert df.empty
         # Pero las columnas deben estar presentes para que .to_dict("records") sea estable.
         # (feature 039): event_id/series_id/series_name/comparison_group habilitan
@@ -736,12 +748,19 @@ class TestProjection:
         self, fake_session: FakeAsyncSession
     ):
         """Competidor sin results → todos los campos derivados son None,
-        n_samples=0, confidence='low'."""
+        n_samples=0, confidence='low'.
+
+        Feature 044: ``projection`` lleva ``@club_competitor_only``, así que
+        el competidor debe existir y estar vinculado. Antes se pasaba
+        ``competitor_id=99999`` (inexistente); se seedea uno vinculado sin
+        resultados para ejercitar la misma rama.
+        """
         store = fake_session.store
         _seed_series(store)
         events = _seed_events(store, series_id=1, count=1)
+        sin_results = _seed_competitor(store, "Sin Resultados", athlete_id=778)
         out = await projection(
-            fake_session, competitor_id=99999, next_event_id=events[0].id
+            fake_session, competitor_id=sin_results.id, next_event_id=events[0].id
         )
         assert out["n_samples"] == 0
         assert out["confidence"] == "low"

@@ -19,6 +19,7 @@ from app.routers.athlete_monthly_newsletters import router as athlete_newsletter
 from app.routers.parent_newsletters import router as parent_newsletters_router
 from app.routers.webhooks_resend import router as webhooks_resend_router
 from app.services.race import observability
+from app.services.race.third_party_guard import ThirdPartyProgressionForbidden
 from app.services.request_context import RequestIdMiddleware
 
 class RequestIdLogFilter(logging.Filter):
@@ -131,6 +132,46 @@ app.add_middleware(
     expose_headers=["ETag", "X-Request-Id"],                               # ← new, both values
 )
 app.add_middleware(RequestIdMiddleware)                                    # ← last = outermost
+
+
+@app.exception_handler(ThirdPartyProgressionForbidden)
+async def third_party_progression_handler(
+    request: Request, exc: ThirdPartyProgressionForbidden
+) -> JSONResponse:
+    """Candado de terceros (feature 044, FR-012…FR-015) → ``403``.
+
+    Se registra a nivel de app y no por router a propósito: hoy ningún
+    endpoint expone un ``competitor_id`` crudo (todos lo resuelven desde un
+    ``athlete_id`` ya autorizado), así que un handler por router protegería
+    sólo los caminos que existen hoy. Puesto acá, cualquier router futuro que
+    llame a una función guardada devuelve el mismo ``403`` con el mismo
+    código, sin acordarse de envolver nada.
+
+    El cuerpo repite la forma ``detail={"code": ..., "message": ...}`` que ya
+    usan los endpoints de ``race_events.py``. Nunca lleva nombre, club ni
+    ciudad del competidor — sólo el código y un mensaje genérico; el
+    ``competitor_id`` ya quedó en el evento ``third_party_progression_refused``
+    que emitió el propio candado.
+    """
+    logger.warning(
+        "third_party_progression_refused | method=%s path=%s competitor_id=%s reason=%s",
+        request.method,
+        request.url.path,
+        exc.competitor_id,
+        exc.reason,
+    )
+    return JSONResponse(
+        status_code=403,
+        content={
+            "detail": {
+                "code": exc.code,
+                "message": (
+                    "Solo se puede consultar el historial de deportistas "
+                    "vinculados al club."
+                ),
+            }
+        },
+    )
 
 
 @app.exception_handler(Exception)

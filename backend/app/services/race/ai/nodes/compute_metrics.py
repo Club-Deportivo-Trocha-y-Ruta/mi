@@ -54,6 +54,10 @@ from app.services.race.comparison_groups import split_progression
 from app.services.race.field_metrics import compute_field_metrics
 from app.services.race.queries import load_categories, load_events, load_results, load_series
 from app.services.race.race_labels import build_race_label
+from app.services.race.third_party_guard import (
+    ThirdPartyProgressionForbidden,
+    require_club_competitor,
+)
 
 NODE_NAME = "compute_metrics"
 
@@ -331,7 +335,15 @@ def _build_progression_groups(
 
 
 @with_events(NODE_NAME)
-@with_retry(max_attempts=3, backoff=0)
+# ``ThirdPartyProgressionForbidden`` hereda de ``PermissionError`` → ``OSError``,
+# que SÍ está en ``RETRYABLE_EXCEPTIONS``. Sin esta exclusión, un rechazo del
+# candado se reintentaría 3 veces: 3 consultas y 3 líneas
+# ``third_party_progression_refused`` por un único intento de acceso.
+@with_retry(
+    max_attempts=3,
+    backoff=0,
+    non_retryable=(ThirdPartyProgressionForbidden,),
+)
 async def compute_metrics(state: dict) -> dict[str, Any]:
     competitor_id = state.get("competitor_id")
     category_id = state.get("category_id")
@@ -341,6 +353,18 @@ async def compute_metrics(state: dict) -> dict[str, Any]:
         return {"metrics": {}}
 
     async with get_session() as db:
+        # Candado de terceros (feature 044, FR-012…FR-015) — explícito y
+        # primero. ``athlete_progression`` ya lo lleva vía
+        # ``@club_competitor_only``, pero apoyarse en eso sería "protección
+        # por orden de llamado": bastaría reordenar el nodo, agregar un
+        # early-return o mover esa llamada dentro de un condicional para que
+        # la protección desapareciera en silencio. Este nodo recibe ``state``,
+        # no un ``competitor_id`` en su firma, así que el barrido estructural
+        # de ``tests/privacy/test_third_party_lock.py`` tampoco lo vigila.
+        # Acá queda fijado: un competidor no vinculado aborta el nodo antes de
+        # que se cargue nada, incluida la entrada de ``compute_field_metrics``
+        # (síncrona y pura, no puede llevar el candado ella misma).
+        await require_club_competitor(db, competitor_id)
         progression = await athlete_progression(db, competitor_id)
         podium_full = (
             await podium_gap(db, category_id, season) if category_id is not None else pd.DataFrame()

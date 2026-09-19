@@ -87,6 +87,50 @@ class FakeSession:
     def add(self, obj: Any) -> None:
         self.added_objects.append(obj)
 
+    def seed_competitor(self, competitor_id: int, *, athlete_id: int | None) -> None:
+        """Registra un ``RaceCompetitor`` para el candado de terceros.
+
+        Feature 044 (FR-012…FR-015): los nodos que reciben un
+        ``competitor_id`` pasan primero por
+        ``third_party_guard.require_club_competitor``, que ejecuta
+        ``select(RaceCompetitor).where(id == competitor_id)``. Sin esta fila
+        el fake devuelve vacío y el candado rechaza con
+        ``reason="unknown_competitor"`` — que es el comportamiento correcto,
+        así que los tests que ejercitan el camino feliz deben declarar
+        explícitamente que su competidor es del club.
+
+        Se seedea a propósito por test y NO por defecto en la fixture
+        ``fake_session``: un default silencioso volvería a hacer invisible el
+        candado, que es justo lo que la feature quiere evitar.
+
+        Args:
+            competitor_id: PK del competidor a registrar.
+            athlete_id: ``None`` → tercero sin vincular (el candado rechaza
+                con ``not_linked``); un int → competidor del club.
+
+        Nombres sintéticos evidentemente ficticios — nunca un dato real de un
+        menor (CLAUDE.md, Ley 1581).
+        """
+        from app.models.race_competitor import RaceCompetitor
+
+        linked = athlete_id is not None
+        display_name = (
+            "Deportista Club Ficticio" if linked else "Tercero Ajeno Ficticio"
+        )
+        self.row_responses["FROM race_competitors"] = [
+            RaceCompetitor(
+                id=competitor_id,
+                normalized_name=display_name.lower(),
+                display_name=display_name,
+                club_text="Club Trocha y Ruta" if linked else "Club Externo Ficticio",
+                athlete_id=athlete_id,
+            )
+        ]
+
+    def link_competitor(self, competitor_id: int, athlete_id: int = 4242) -> None:
+        """Azúcar de :meth:`seed_competitor` para el caso "competidor del club"."""
+        self.seed_competitor(competitor_id, athlete_id=athlete_id)
+
 
 @pytest_asyncio.fixture
 async def fake_session() -> FakeSession:

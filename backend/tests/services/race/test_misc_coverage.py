@@ -128,8 +128,18 @@ class TestLoadCompetitors:
 class TestAthleteProgressionBranches:
     @pytest.mark.asyncio
     async def test_returns_empty_df_when_no_results_at_all(self, fake_session):
-        """Sin race_results en absoluto → DataFrame vacío con columnas."""
-        df = await athlete_progression(fake_session, competitor_id=1)
+        """Sin race_results en absoluto → DataFrame vacío con columnas.
+
+        Feature 044: el competidor debe estar vinculado a un atleta del club
+        (``@club_competitor_only``). Antes este test pasaba ``competitor_id=1``
+        contra un store vacío — un id inexistente, que hoy el candado rechaza
+        igual que a un tercero. Se seedea un competidor vinculado SIN
+        resultados para seguir ejercitando exactamente la misma rama.
+        """
+        from tests.services.race.test_analytics import _seed_competitor
+
+        c = _seed_competitor(fake_session.store, "Sin Resultados", athlete_id=7)
+        df = await athlete_progression(fake_session, competitor_id=c.id)
         assert df.empty
         assert "valida_num" in df.columns
 
