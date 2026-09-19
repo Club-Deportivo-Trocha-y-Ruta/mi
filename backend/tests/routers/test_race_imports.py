@@ -211,22 +211,35 @@ def stub_parsers(monkeypatch):
     from app.routers import race_imports as router_mod
 
     async def fake_parse_results(path, ext):  # noqa: ARG001
-        # Devolver 2 filas para que n_rows_resultados > 0
-        from app.services.race.pdf_parser import ResultsRow
-        return {
-            "TET_CP": [
-                ResultsRow(
-                    position=1, bib="550", name="Sebastian Yule Mendoza",
-                    city="Yumbo", club="Club Trocha y Ruta",
-                    time_raw="0:03:38", points=40,
-                ),
-                ResultsRow(
-                    position=2, bib="551", name="Otro Tetero",
-                    city="Cali", club="Club X",
-                    time_raw="0:04:00", points=36,
+        # Devolver 2 filas para que n_rows_resultados > 0. Feature 044 (US1):
+        # `_parse_results_with_timeout` devuelve `ParsedResults`, no el dict
+        # legado — el stub imita esa forma.
+        from app.services.race.pdf_parser import (
+            ParsedCategory,
+            ParsedResults,
+            ResultsRow,
+        )
+        return ParsedResults(
+            categories=[
+                ParsedCategory(
+                    header_raw="TETEROS CON PEDALES",
+                    code="TET_CP",
+                    rows=[
+                        ResultsRow(
+                            position=1, bib="550", name="Sebastian Yule Mendoza",
+                            city="Yumbo", club="Club Trocha y Ruta",
+                            time_raw="0:03:38", points=40,
+                        ),
+                        ResultsRow(
+                            position=2, bib="551", name="Otro Tetero",
+                            city="Cali", club="Club X",
+                            time_raw="0:04:00", points=36,
+                        ),
+                    ],
                 ),
             ],
-        }
+            unreadable_rows=[],
+        )
 
     async def fake_parse_general(path):  # noqa: ARG001
         return {}
@@ -245,7 +258,9 @@ def stub_parsers_empty(monkeypatch):
     from app.routers import race_imports as router_mod
 
     async def fake_empty(path, ext):  # noqa: ARG001
-        return {}
+        from app.services.race.pdf_parser import ParsedResults
+
+        return ParsedResults(categories=[], unreadable_rows=[])
 
     async def fake_general_empty(path):  # noqa: ARG001
         return {}
@@ -1488,18 +1503,29 @@ class TestFullFlowWithStubIngestor:
     ):
         """PDF sin atletas TyR (todos clubes externos) → 0 matches."""
         from app.routers import race_imports as router_mod
-        from app.services.race.pdf_parser import ResultsRow
+        from app.services.race.pdf_parser import (
+            ParsedCategory,
+            ParsedResults,
+            ResultsRow,
+        )
 
         async def fake_no_tyr(path, ext):  # noqa: ARG001
-            return {
-                "TET_CP": [
-                    ResultsRow(
-                        position=1, bib="999", name="External Rider",
-                        city="Bogotá", club="Club Externo",
-                        time_raw="0:05:00", points=30,
+            return ParsedResults(
+                categories=[
+                    ParsedCategory(
+                        header_raw="TETEROS CON PEDALES",
+                        code="TET_CP",
+                        rows=[
+                            ResultsRow(
+                                position=1, bib="999", name="External Rider",
+                                city="Bogotá", club="Club Externo",
+                                time_raw="0:05:00", points=30,
+                            ),
+                        ],
                     ),
                 ],
-            }
+                unreadable_rows=[],
+            )
 
         async def fake_g(path):  # noqa: ARG001
             return {}
@@ -1539,21 +1565,32 @@ class TestFullFlowWithStubIngestor:
         """
         from app.routers import race_imports as router_mod
         from app.services.race import ingestor as ingestor_mod
-        from app.services.race.pdf_parser import ResultsRow
+        from app.services.race.pdf_parser import (
+            ParsedCategory,
+            ParsedResults,
+            ResultsRow,
+        )
 
         # Stub parser devuelve una categoría inexistente en DB
         _FAKE_CODE = "XYZ_FAKE"
 
         async def fake_unknown_cat(path, ext):  # noqa: ARG001
-            return {
-                _FAKE_CODE: [
-                    ResultsRow(
-                        position=1, bib="001", name="Ciclista Fantasma",
-                        city="Cali", club="Club Trocha y Ruta",
-                        time_raw="0:04:00", points=40,
+            return ParsedResults(
+                categories=[
+                    ParsedCategory(
+                        header_raw=_FAKE_CODE,
+                        code=_FAKE_CODE,
+                        rows=[
+                            ResultsRow(
+                                position=1, bib="001", name="Ciclista Fantasma",
+                                city="Cali", club="Club Trocha y Ruta",
+                                time_raw="0:04:00", points=40,
+                            ),
+                        ],
                     ),
                 ],
-            }
+                unreadable_rows=[],
+            )
 
         async def fake_g(path):  # noqa: ARG001
             return {}

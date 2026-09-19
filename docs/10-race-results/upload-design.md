@@ -454,7 +454,7 @@ Insert as **second tab** between "New analysis" and "Active runs":
 ╠══════════════════════════════════════════════════════════════╣
 ║  ✓ RESULTS: valida_iv_2026_resultados.pdf (246 KB)           ║
 ║    SHA: 7f3a...b2c1                                          ║
-║    26 categories · 227 riders                                ║
+║    26 categories · 229 riders                                ║
 ║                                                              ║
 ║  ✓ GENERAL: valida_iv_2026_general.pdf (160 KB)              ║
 ║    SHA: 9b8c...4f0e · 339 rows                               ║
@@ -464,6 +464,19 @@ Insert as **second tab** between "New analysis" and "Active runs":
 ║  [Change files]                  [Continue to step 2 →]      ║
 ╚══════════════════════════════════════════════════════════════╝
 ```
+
+> **Row count corrected in feature 044 (229, not 227).** The round-IV results
+> file prints 229 rows across its 26 categories. The earlier figure of 227 came
+> from the text-line parser, which lost two rows without warning: PREINFANTIL B
+> position 17 and MASTER B1 position 5. Both carry a long `Club/Patrocinador`
+> that is not clipped to its column and prints over the `Tiempo` column;
+> `extract_text()` orders characters by x, so the club letters interleave with
+> the time digits and the row regex stops matching. The band-first reader
+> (research R-01) recovers both. The regression guard is per-category ordinal
+> completeness (`1..N` with no gaps), not the total count — see
+> `tests/services/race/test_parser.py::TestCategoryOrdinalCompleteness`.
+> The original `edge-cases.md` §1, cited by several docstrings, was deleted in
+> commit `bcdc3e5`; this note replaces it for that figure.
 
 **SHA duplicate state:**
 ```

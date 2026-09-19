@@ -148,18 +148,31 @@ def override_storage(monkeypatch, tmp_path):
 @pytest.fixture
 def stub_parsers(monkeypatch):
     from app.routers import race_imports as router_mod
-    from app.services.race.pdf_parser import ResultsRow
+    from app.services.race.pdf_parser import (
+        ParsedCategory,
+        ParsedResults,
+        ResultsRow,
+    )
 
     async def fake_results(path, ext):  # noqa: ARG001
-        return {
-            "TET_CP": [
-                ResultsRow(
-                    position=1, bib="550", name="Sebastian Yule Mendoza",
-                    city="Yumbo", club="Club Trocha y Ruta",
-                    time_raw="0:03:38", points=40,
+        # Feature 044 (US1): `_parse_results_with_timeout` devuelve
+        # `ParsedResults`, no el dict legado — el stub imita esa forma.
+        return ParsedResults(
+            categories=[
+                ParsedCategory(
+                    header_raw="TETEROS CON PEDALES",
+                    code="TET_CP",
+                    rows=[
+                        ResultsRow(
+                            position=1, bib="550", name="Sebastian Yule Mendoza",
+                            city="Yumbo", club="Club Trocha y Ruta",
+                            time_raw="0:03:38", points=40,
+                        ),
+                    ],
                 ),
             ],
-        }
+            unreadable_rows=[],
+        )
 
     async def fake_general(path):  # noqa: ARG001
         return {}

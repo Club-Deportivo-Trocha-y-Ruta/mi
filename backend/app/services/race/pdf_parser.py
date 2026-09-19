@@ -2,25 +2,53 @@
 
 Operación pura: lee ``Path`` y devuelve dataclasses. No toca DB.
 
-Estrategia (edge-cases.md §6.1):
-1. **Primario por celda**: ``page.extract_tables(table_settings=...)`` con
-   ``vertical_strategy="lines"`` — devuelve celdas separadas para ``name``,
-   ``city`` y ``club`` evitando recurrir a heurísticas posicionales.
-2. **Verificación textual**: ``page.extract_text()`` línea-por-línea + regex
-   sobre el final (``status`` + ``points``) — es el camino más confiable para
-   ``position``, ``bib``, ``time_raw`` y ``points`` porque esos campos están
-   siempre delimitados por espacios al final de la línea. Si la tabla no
-   produjo una fila para una posición que el regex sí detecta, **gana el
-   regex** (datos faltantes en la tabla se enriquecen desde el texto).
-3. **Persistencia de categoría**: si una página inicia con filas sin haber
-   visto ``CAT:``, se reusa la última categoría detectada (edge-cases.md
-   §4.9 — INFANTIL B continúa entre p4 y p5).
-4. **Descarte de cabeceras**: líneas que matchean ``COPA VALLE``, ``VALIDA``,
-   ``RESULTADOS``, ``CLASIFICACION``, ``GENERAL``, ``Ord N``, ``ORD N`` se
-   descartan. Línea espuria ``0 COPA VALLE…`` (§4.10) se tolera.
+Lectura **band-first** de RESULTADOS (feature 044, research R-01)
+------------------------------------------------------------------
+El camino por líneas de texto pierde entre 16 % y 25 % de las filas de los
+archivos oficiales históricos (y 2 filas de la válida IV de 2026): cuando el
+``Club/Patrocinador`` es largo no se recorta a su columna, se imprime
+*encima* de la columna ``Tiempo``, y como ``page.extract_text()`` ordena los
+caracteres por ``x`` las letras del club quedan intercaladas con los dígitos
+del tiempo (``…AA0A:A2A2:15 3``). El regex de fila deja de matchear y la
+fila se pierde en silencio.
 
-Logging: solo ``warning`` cuando se descartan filas o se detectan anomalías,
-sin nombres completos. Nivel ``debug`` permitido para troubleshoot local.
+Algoritmo vigente, por página:
+
+1. ``page.find_tables(_TABLE_SETTINGS)`` entrega una **banda** (bbox) por
+   fila. Los rulings son confiables para los LÍMITES de fila, pero no para
+   las columnas club/tiempo/puntos (el club desbordado cruza el ruling), así
+   que tiempo y puntos ya **no** se leen de las celdas.
+2. Por cada banda, ``_band_text`` reconstruye el texto tomando los
+   ``page.chars`` de la banda **en orden de flujo del PDF** — nunca ordenados
+   por ``x``. En ese orden el club y el tiempo quedan contiguos y limpios
+   aunque se superpongan visualmente.
+3. Regex de fila relajado (``_RESULTS_ROW_RE``): hora de un solo dígito con
+   lookbehind ``(?<![\\d:])`` y espacio opcional antes del tiempo.
+4. Una banda que solo matchea ``pos bib body points``
+   (``_RESULTS_ROW_NO_TIME_RE``) se conserva como **clasificada sin tiempo**
+   (``time_raw=""``); una banda que no matchea nada se reporta como
+   ``UnreadableRow`` con página y ordinal, nunca se descarta en silencio.
+5. ``name``/``city``/``club`` salen de los **runs** de la banda asignados a
+   las celdas 2–4 por el ``x`` donde arrancan (``_cells_from_runs``), no del
+   texto que devuelve ``table.extract()``. Ese texto también está corrompido
+   en las filas desbordadas: la ciudad llega truncada y el club llega
+   intercalado con el desborde vecino. Respaldos: las celdas de la tabla y,
+   por último, el cuerpo del regex.
+6. Los encabezados ``CAT:`` se intercalan con las bandas por posición
+   vertical (``extract_text_lines`` top vs top de la banda). La categoría
+   **persiste entre páginas** (edge-cases.md §4.9 — INFANTIL B continúa
+   entre p4 y p5).
+7. El camino por líneas de texto se conserva como **respaldo** para páginas
+   donde ``find_tables`` no devuelve tabla, y como verificación cruzada: si
+   un camino encuentra una fila que el otro no, se emite un warning
+   ``row_path_mismatch`` (solo conteos).
+
+Descarte de cabeceras: líneas que matchean ``COPA VALLE``, ``VALIDA``,
+``RESULTADOS``, ``CLASIFICACION``, ``GENERAL``, ``Ord N``, ``ORD N`` se
+descartan. Línea espuria ``0 COPA VALLE…`` (§4.10) se tolera.
+
+Logging: **solo** página, ordinal, dorsal y conteos. Nunca un nombre, una
+ciudad ni un club — los archivos son actas de menores de edad.
 """
 from __future__ import annotations
 
@@ -29,7 +57,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 
 import pdfplumber
 
@@ -45,7 +73,13 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ResultsRow:
-    """Una fila del PDF RESULTADOS (un corredor en una válida)."""
+    """Una fila del PDF RESULTADOS (un corredor en una válida).
+
+    ``time_raw == ""`` significa **clasificado sin tiempo**: la banda trae
+    posición, dorsal y puntos pero la celda ``Tiempo`` vino vacía en el acta
+    (research R-01 punto 4). No es lo mismo que ``DNF``/``DSQ``/``DNS``, que
+    sí se conservan como texto.
+    """
 
     position: Optional[int]
     bib: str
@@ -54,6 +88,41 @@ class ResultsRow:
     club: str
     time_raw: str
     points: int
+
+
+@dataclass
+class UnreadableRow:
+    """Banda de fila que no pudo interpretarse (FR-001).
+
+    Se reporta al coach en la previsualización en vez de descartarse en
+    silencio. Solo lleva ubicación — ``page`` y el ordinal impreso cuando la
+    celda 0 de la tabla es numérica — nunca texto de la fila.
+    """
+
+    page: int
+    ordinal: Optional[int]
+
+
+@dataclass
+class ParsedCategory:
+    """Una categoría del acta, en el orden en que aparece en el documento.
+
+    ``code is None`` significa encabezado no reconocido: las filas **se
+    conservan** igual (FR-002) y el commit queda bloqueado hasta que exista
+    un mapeo en ``normalizer.HEADER_TO_CODE``.
+    """
+
+    header_raw: str  #: tal como se imprime, p. ej. "PREJUVENIL A DAMAS".
+    code: Optional[str]
+    rows: list[ResultsRow] = field(default_factory=list)
+
+
+@dataclass
+class ParsedResults:
+    """Salida completa de ``parse_results_document``."""
+
+    categories: list[ParsedCategory] = field(default_factory=list)
+    unreadable_rows: list[UnreadableRow] = field(default_factory=list)
 
 
 @dataclass
@@ -99,12 +168,48 @@ _TABLE_SETTINGS: dict = {
 #: Captura los 4 grupos al final con regex no-greedy del medio. La separación
 #: ``name`` vs ``city`` vs ``club`` se delega a la tabla; este regex sólo
 #: garantiza ``position``, ``bib``, ``time_raw`` y ``points``.
+#:
+#: Relajado en la feature 044 (research R-01 punto 3), dos cambios:
+#:
+#: - **Hora de un solo dígito** con lookbehind ``(?<![\d:])``. Las carreras
+#:   XCO duran menos de 10 h, así que la hora siempre es ``\d`` sola. El
+#:   lookbehind es una guarda de corrección, no de recuperación: si el
+#:   carácter previo es un dígito o dos puntos no se puede saber si ese
+#:   dígito pertenece a la hora o al club, así que el parser prefiere
+#:   declarar la fila "sin tiempo" antes que inventar un tiempo equivocado.
+#: - **Espacio opcional antes del tiempo** (``\s*``), para el club que
+#:   termina pegado a la hora (``…FICTICIOFC0:40:07``). Los tokens de estado
+#:   sí siguen exigiendo un espacio previo (``(?<=\s)``) porque un club
+#:   podría terminar en esas tres letras.
+#:
+#: El grupo se sigue llamando ``time`` y sigue capturando también los estados
+#: (``DNF``/``DSQ``/``DNS``/``(-N VUELTAS)``) — el self-test del builder de
+#: fixtures depende de esa forma.
 _RESULTS_ROW_RE = re.compile(
-    r"^(?P<pos>\d+)\s+(?P<bib>\d+)\s+(?P<body>.+?)\s+"
-    r"(?P<time>\d+:\d{2}:\d{2}|DNF|DSQ|DNS|\(-\d+\s*VUELTAS?\))\s+"
+    r"^(?P<pos>\d+)\s+(?P<bib>\d+)\s+(?P<body>.+?)\s*"
+    r"(?P<time>(?<![\d:])\d:\d{2}:\d{2}"
+    r"|(?<=\s)(?:DNF|DSQ|DNS|\(-\d+\s*VUELTAS?\)))\s+"
     r"(?P<points>\d+)\s*$",
     re.IGNORECASE,
 )
+
+#: Fila **clasificada sin tiempo**: ``<pos> <bib> <body> <points>`` desnudo,
+#: sin token de tiempo ni de estado (research R-01 punto 4 — 2 filas en cada
+#: archivo de 2025). Solo se intenta cuando ``_RESULTS_ROW_RE`` ya falló y la
+#: línea no es una cabecera descartable, para que no se coma ruido.
+_RESULTS_ROW_NO_TIME_RE = re.compile(
+    r"^(?P<pos>\d+)\s+(?P<bib>\d+)\s+(?P<body>.+?)\s+(?P<points>\d+)\s*$"
+)
+
+#: Encabezado de categoría dentro de una línea: ``CAT: <NOMBRE>``. Captura el
+#: nombre tal como se imprime (``header_raw``). Tolera un prefijo antes del
+#: ``CAT:`` usando la última ocurrencia.
+_CAT_LINE_RE = re.compile(r"CAT\s*:\s*(?P<header>\S.*)$", re.IGNORECASE)
+
+#: Tolerancia (pt) del hueco horizontal a partir del cual ``_band_text``
+#: inserta un espacio entre dos caracteres consecutivos (research R-01
+#: punto 2). Dentro de una misma palabra los chars vienen pegados (gap ≈ 0).
+_BAND_GAP_PT: float = 1.0
 
 #: Líneas de cabecera fijas que se descartan. Tolera prefijo espurio
 #: ``\d+\s*`` (línea ``0 COPA VALLE...`` del separador, §4.10).
@@ -121,9 +226,16 @@ _GENERAL_HEADER_RE = re.compile(
 )
 
 #: Header del evento: ``VALIDA IV CALI MAYO 17 DE 2026`` o ``VALIDA CD ...``.
-#: Acepta ``I``, ``II``, ``III``, ``IV``, ``V``, ``VI``, ``VII`` y ``CD``.
+#: Acepta ``I``–``XII`` y ``CD`` (research R-02: la válida de cierre de 2025
+#: es ``VALIDA VIII`` y con la alternancia anterior, que paraba en VII, el
+#: header devolvía ``None``).
+#:
+#: La alternancia va **de más largo a más corto** para que ``VIII`` no se lea
+#: como ``VII`` seguido de una ubicación que empieza por ``I`` (el grupo
+#: ``location`` acepta la letra ``I``).
 _EVENT_HEADER_RE = re.compile(
-    r"VALIDA\s+(?P<num>I{1,3}|IV|VI{0,2}|V|CD)\s+(?P<location>[A-ZÁÉÍÓÚÑ ]+?)\s+"
+    r"VALIDA\s+(?P<num>CD|XII|XI|IX|X|VIII|VII|VI|IV|V|III|II|I)\s+"
+    r"(?P<location>[A-ZÁÉÍÓÚÑ ]+?)\s+"
     r"(?P<month>ENERO|FEBRERO|MARZO|ABRIL|MAYO|JUNIO|JULIO|AGOSTO|SEPTIEMBRE|OCTUBRE|NOVIEMBRE|DICIEMBRE)\s+"
     r"(?P<day>\d{1,2})\s+DE\s+(?P<year>\d{4})",
     re.IGNORECASE,
@@ -131,7 +243,8 @@ _EVENT_HEADER_RE = re.compile(
 
 #: Roman numeral → int. ``CD`` se mapea a 99 (Campeonato Departamental).
 _ROMAN_TO_INT: dict[str, int] = {
-    "I": 1, "II": 2, "III": 3, "IV": 4, "V": 5, "VI": 6, "VII": 7, "CD": 99,
+    "I": 1, "II": 2, "III": 3, "IV": 4, "V": 5, "VI": 6, "VII": 7,
+    "VIII": 8, "IX": 9, "X": 10, "XI": 11, "XII": 12, "CD": 99,
 }
 
 #: Mes español → int.
@@ -204,101 +317,425 @@ def _split_body_fallback(body: str) -> tuple[str, str, str]:
 
 
 # ---------------------------------------------------------------------------
+# Lector por banda (research R-01)
+# ---------------------------------------------------------------------------
+
+
+def _band_text(chars: Sequence[dict], bbox: tuple[float, float, float, float]) -> str:
+    """Reconstruye el texto de una banda de fila leyendo ``chars`` en orden de flujo.
+
+    ``bbox`` es ``(x0, top, x1, bottom)`` — la convención de pdfplumber en
+    ``Page.crop`` y ``Table.rows[i].bbox``.
+
+    El filtrado es **solo vertical** (``top``/``bottom`` del char dentro de la
+    banda): el ancho de ``bbox`` no recorta nada, porque el propósito mismo de
+    la lectura por banda es capturar el texto que se desborda horizontalmente
+    fuera de su columna nominal.
+
+    Los caracteres se recorren en el orden en que el PDF los dibuja, **nunca
+    ordenados por ``x``**. Se inserta un espacio cuando el hueco con el
+    carácter anterior supera ``_BAND_GAP_PT`` o cuando ``x`` salta hacia atrás
+    (el arranque del texto de la celda siguiente, que es lo que ocurre cuando
+    un club largo se imprime encima de la columna ``Tiempo``).
+
+    La función no inventa un espacio cuando el club queda pegado al tiempo sin
+    hueco: reproduce el texto tal cual. La garantía de que el regex no se
+    trague la hora vive en el lookbehind de ``_RESULTS_ROW_RE``, no aquí.
+    """
+    return " ".join(text for _, text in _band_runs(chars, bbox))
+
+
+def _band_runs(
+    chars: Sequence[dict], bbox: tuple[float, float, float, float]
+) -> list[tuple[float, str]]:
+    """Parte la banda en *runs* de texto: ``(x0 donde arranca, texto)``.
+
+    Un run es una tirada de caracteres contiguos en el flujo del PDF. El corte
+    es exactamente el mismo criterio con el que ``_band_text`` inserta un
+    espacio (hueco > ``_BAND_GAP_PT`` o salto de ``x`` hacia atrás), así que
+    ``_band_text`` es literalmente los runs unidos por un espacio y ambas
+    funciones no pueden divergir.
+
+    Medido sobre los archivos oficiales: **cada celda de la fila produce su
+    propio run**, y el run de una celda siempre arranca dentro del rango
+    horizontal de esa celda aunque la celda anterior se haya desbordado encima
+    (el desborde va hacia la derecha, nunca mueve el arranque de la siguiente).
+    Eso es lo que permite recuperar nombre, ciudad y club limpios sin confiar
+    en el texto de las celdas — ver ``_cells_from_runs``.
+    """
+    _, top, _, bottom = bbox
+    runs: list[tuple[float, str]] = []
+    pieces: list[str] = []
+    start_x = 0.0
+    prev: Optional[dict] = None
+    for char in chars:
+        if not (char["top"] >= top and char["bottom"] <= bottom):
+            continue
+        if prev is None or (
+            char["x0"] - prev["x1"] > _BAND_GAP_PT or char["x0"] < prev["x0"]
+        ):
+            if pieces:
+                runs.append((start_x, "".join(pieces).strip()))
+            pieces = []
+            start_x = char["x0"]
+        pieces.append(char["text"])
+        prev = char
+    if pieces:
+        runs.append((start_x, "".join(pieces).strip()))
+    return [(x, text) for x, text in runs if text]
+
+
+def _cells_from_runs(
+    runs: Sequence[tuple[float, str]],
+    cell_boxes: Sequence[Optional[tuple[float, float, float, float]]],
+) -> Optional[list[str]]:
+    """Asigna cada run a su celda por el ``x`` donde **arranca**.
+
+    Es la lectura correcta del defecto de R-01: cuando una celda se desborda,
+    su texto invade la columna siguiente, pero la celda invadida sigue
+    dibujando su propio texto desde su propio borde izquierdo. Por eso el
+    arranque del run identifica la celda sin ambigüedad, mientras que el texto
+    que ``table.extract()`` devuelve para esa celda ya viene contaminado.
+
+    Medido sobre la válida IV de 2026: ``table.extract()`` entrega la ciudad
+    truncada (``SANTANDER DE QUILICHAO`` → ``SANTANDER DE``) y el club como
+    texto intercalado con el desborde vecino, en decenas de filas. Los runs
+    los devuelven íntegros.
+
+    Devuelve ``None`` si algún run arranca fuera de toda celda — señal de que
+    el supuesto no se cumple en esa fila y hay que conservar lo que diga la
+    tabla.
+    """
+    out = [""] * len(cell_boxes)
+    for start_x, text in runs:
+        index = next(
+            (
+                i
+                for i, box in enumerate(cell_boxes)
+                if box is not None and box[0] <= start_x < box[2]
+            ),
+            None,
+        )
+        if index is None:
+            return None
+        out[index] = f"{out[index]} {text}" if out[index] else text
+    return out
+
+
+def _chars_by_band(
+    chars: Sequence[dict], bboxes: Sequence[tuple[float, float, float, float]]
+) -> list[list[dict]]:
+    """Reparte los chars de la página entre las bandas, en orden de flujo.
+
+    Una sola pasada sobre ``page.chars`` en vez de una por banda; el orden
+    relativo dentro de cada banda es el del content stream, que es justo lo
+    que ``_band_text`` necesita.
+    """
+    buckets: list[list[dict]] = [[] for _ in bboxes]
+    for char in chars:
+        char_top = char["top"]
+        char_bottom = char["bottom"]
+        for idx, (_, top, _, bottom) in enumerate(bboxes):
+            if char_top >= top and char_bottom <= bottom:
+                buckets[idx].append(char)
+                break
+    return buckets
+
+
+def _band_cells(
+    runs: Sequence[tuple[float, str]],
+    cell_boxes: Sequence[Optional[tuple[float, float, float, float]]],
+) -> Optional[tuple[str, str, str]]:
+    """``(name, city, club)`` de una banda a partir de sus runs, o ``None``."""
+    texts = _cells_from_runs(runs, cell_boxes)
+    if texts is None or len(texts) <= _RES_COL_CLUB:
+        return None
+    return (
+        texts[_RES_COL_NAME],
+        texts[_RES_COL_CITY],
+        texts[_RES_COL_CLUB],
+    )
+
+
+def _row_from_match(
+    match: re.Match,
+    time_raw: str,
+    table_idx: dict[tuple[str, str], tuple[str, str, str]],
+    band_cells: Optional[tuple[str, str, str]] = None,
+) -> ResultsRow:
+    """Arma un ``ResultsRow`` desde un match de fila + los campos de texto.
+
+    Orden de preferencia para ``name``/``city``/``club``:
+
+    1. ``band_cells`` — los runs de la banda asignados a las celdas 2–4
+       (``_cells_from_runs``). Es la única fuente que sobrevive a un desborde.
+    2. Las celdas de ``table.extract()`` (research R-01 punto 6), cuando los
+       runs no se pudieron asignar.
+    3. El cuerpo completo del regex, cuando la tabla tampoco trajo la fila.
+    """
+    pos_str = match.group("pos")
+    bib = match.group("bib")
+    body = match.group("body")
+    if band_cells is not None and band_cells[0]:
+        name, city, club = band_cells
+    else:
+        cells = table_idx.get((pos_str, bib))
+        if cells is not None and cells[0]:
+            name, city, club = cells
+        else:
+            name, city, club = _split_body_fallback(body)
+    return ResultsRow(
+        position=int(pos_str),
+        bib=bib,
+        name=name,
+        city=city,
+        club=club,
+        time_raw=time_raw,
+        points=int(match.group("points")),
+    )
+
+
+def _match_row_text(text: str) -> tuple[Optional[re.Match], str]:
+    """Intenta interpretar el texto de una banda/línea como fila de resultados.
+
+    Devuelve ``(match, time_raw)``; ``(None, "")`` si no es una fila. Una fila
+    sin token de tiempo ni de estado se acepta como clasificada sin tiempo
+    (``time_raw == ""``).
+    """
+    match = _RESULTS_ROW_RE.match(text)
+    if match is not None:
+        return match, match.group("time")
+    match = _RESULTS_ROW_NO_TIME_RE.match(text)
+    if match is not None:
+        return match, ""
+    return None, ""
+
+
+def _category_header_of(text: str) -> Optional[str]:
+    """Devuelve el ``header_raw`` de una línea ``CAT: <NOMBRE>``, o ``None``.
+
+    Tolera un prefijo espurio antes del ``CAT:`` — mismo criterio que el
+    camino por líneas previo a la feature 044.
+    """
+    upper = text.upper()
+    if not upper.startswith("CAT:") and " CAT:" not in upper:
+        return None
+    match = _CAT_LINE_RE.search(text)
+    return match.group("header").strip() if match is not None else None
+
+
+# ---------------------------------------------------------------------------
 # API pública — RESULTADOS
 # ---------------------------------------------------------------------------
+
+
+def _parse_page(
+    page,
+    page_no: int,
+    state: "_DocState",
+) -> None:
+    """Procesa una página: intercala encabezados ``CAT:`` y bandas de fila."""
+    text = page.extract_text() or ""
+
+    tables = []
+    find_tables = getattr(page, "find_tables", None)
+    if callable(find_tables):
+        tables = find_tables(_TABLE_SETTINGS) or []
+
+    if not tables:
+        # Respaldo: páginas donde ``find_tables`` no devuelve tabla (o páginas
+        # que no exponen la API, como los dobles de prueba).
+        _parse_page_by_lines(text, page_no, state)
+        return
+
+    _parse_page_by_bands(page, text, tables, page_no, state)
+
+
+def _parse_page_by_bands(page, text: str, tables, page_no: int, state: "_DocState") -> None:
+    """Camino principal: una banda por fila, chars en orden de flujo."""
+    table_idx = _build_table_index([table.extract() for table in tables])
+
+    bboxes: list[tuple[float, float, float, float]] = []
+    cell_ordinals: list[Optional[int]] = []
+    cell_boxes: list[list] = []
+    for table in tables:
+        extracted = table.extract()
+        for row, cells in zip(table.rows, extracted):
+            bboxes.append(row.bbox)
+            cell_boxes.append(list(row.cells))
+            first = (cells[0] or "").strip() if cells else ""
+            cell_ordinals.append(int(first) if first.isdigit() else None)
+
+    buckets = _chars_by_band(page.chars, bboxes)
+
+    # Eventos ordenados por posición vertical: encabezados CAT: y bandas.
+    events: list[tuple[float, int, str, object]] = []
+    extract_lines = getattr(page, "extract_text_lines", None)
+    if callable(extract_lines):
+        for line in extract_lines():
+            header_raw = _category_header_of(line["text"].strip())
+            if header_raw is not None:
+                events.append((line["top"], 0, "cat", header_raw))
+    for idx, bbox in enumerate(bboxes):
+        events.append((bbox[1], 1, "band", idx))
+    events.sort(key=lambda event: (event[0], event[1]))
+
+    band_keys: set[tuple[str, str]] = set()
+    for _, _, kind, payload in events:
+        if kind == "cat":
+            state.start_category(str(payload))
+            continue
+
+        idx = int(payload)  # type: ignore[arg-type]
+        runs = _band_runs(buckets[idx], bboxes[idx])
+        band = " ".join(run_text for _, run_text in runs)
+        if not band or _is_discardable_line(band):
+            continue
+
+        match, time_raw = _match_row_text(band)
+        if match is None:
+            state.unreadable.append(UnreadableRow(page=page_no, ordinal=cell_ordinals[idx]))
+            logger.warning(
+                "Banda de fila ilegible en página %d (ordinal=%s)",
+                page_no,
+                cell_ordinals[idx],
+            )
+            continue
+
+        band_keys.add((match.group("pos"), match.group("bib")))
+        state.add_row(
+            _row_from_match(
+                match, time_raw, table_idx, _band_cells(runs, cell_boxes[idx])
+            ),
+            page_no,
+        )
+
+    _warn_on_path_mismatch(text, band_keys, page_no)
+
+
+def _parse_page_by_lines(text: str, page_no: int, state: "_DocState") -> None:
+    """Respaldo por líneas de texto (comportamiento previo a la feature 044)."""
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+
+        header_raw = _category_header_of(stripped)
+        if header_raw is not None:
+            state.start_category(header_raw)
+            continue
+
+        if _is_discardable_line(stripped):
+            continue
+
+        match, time_raw = _match_row_text(stripped)
+        if match is None:
+            # Sub-header partido o ruido — no es una fila.
+            continue
+
+        state.add_row(_row_from_match(match, time_raw, {}), page_no)
+
+
+def _warn_on_path_mismatch(text: str, band_keys: set[tuple[str, str]], page_no: int) -> None:
+    """Verificación cruzada banda ↔ línea de texto (research R-01 punto 7)."""
+    line_keys: set[tuple[str, str]] = set()
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or _is_discardable_line(stripped):
+            continue
+        match = _RESULTS_ROW_RE.match(stripped)
+        if match is not None:
+            line_keys.add((match.group("pos"), match.group("bib")))
+
+    only_band = len(band_keys - line_keys)
+    only_line = len(line_keys - band_keys)
+    if only_band or only_line:
+        logger.warning(
+            "row_path_mismatch en página %d: %d fila(s) solo por banda, "
+            "%d solo por línea de texto",
+            page_no,
+            only_band,
+            only_line,
+        )
+
+
+@dataclass
+class _DocState:
+    """Estado mutable del recorrido del documento (categoría activa, salida)."""
+
+    categories: list[ParsedCategory] = field(default_factory=list)
+    unreadable: list[UnreadableRow] = field(default_factory=list)
+    current: Optional[ParsedCategory] = None
+    unknown_headers: set[str] = field(default_factory=set)
+
+    def start_category(self, header_raw: str) -> None:
+        """Abre una categoría. Un encabezado repetido de forma contigua
+        (continuación entre páginas) sigue alimentando la misma categoría."""
+        if self.current is not None and self.current.header_raw == header_raw:
+            return
+        code = parse_category_header(f"CAT: {header_raw}")
+        if code is None:
+            self.unknown_headers.add(header_raw[:80])
+            logger.warning("Header CAT desconocido: %r", header_raw[:80])
+        category = ParsedCategory(header_raw=header_raw, code=code, rows=[])
+        self.categories.append(category)
+        self.current = category
+
+    def add_row(self, row: ResultsRow, page_no: int) -> None:
+        if self.current is None:
+            # Fila antes del primer ``CAT:`` — no se puede atribuir. Se reporta
+            # al coach en vez de descartarse en silencio (FR-001).
+            logger.warning(
+                "Fila sin categoría activa en página %d (bib=%s); no atribuida",
+                page_no,
+                row.bib,
+            )
+            self.unreadable.append(UnreadableRow(page=page_no, ordinal=row.position))
+            return
+        self.current.rows.append(row)
+
+
+def parse_results_document(path: Path) -> ParsedResults:
+    """Parsea un PDF RESULTADOS completo con el lector por banda (research R-01).
+
+    Devuelve las categorías **en orden de documento**, incluidas las de
+    encabezado no reconocido (``code is None``) con todas sus filas, más las
+    bandas que no pudo interpretar (``unreadable_rows``).
+    """
+    if not path.exists():
+        raise FileNotFoundError(f"PDF no encontrado: {path}")
+
+    state = _DocState()
+    with pdfplumber.open(path) as pdf:
+        for page_idx, page in enumerate(pdf.pages):
+            # La categoría activa persiste entre páginas (edge-cases §4.9).
+            _parse_page(page, page_idx + 1, state)
+
+    if state.unknown_headers:
+        logger.warning(
+            "Categorías con encabezado desconocido: %d",
+            len(state.unknown_headers),
+        )
+    if state.unreadable:
+        logger.warning("Filas ilegibles o no atribuidas: %d", len(state.unreadable))
+
+    return ParsedResults(categories=state.categories, unreadable_rows=state.unreadable)
 
 
 def parse_results_pdf(path: Path) -> dict[str, list[ResultsRow]]:
     """Parsea un PDF RESULTADOS y devuelve ``{category_code: [ResultsRow, ...]}``.
 
-    Excluye categorías desconocidas (no mapeadas en ``HEADER_TO_CODE``) con
-    log warning. Mantiene orden de aparición de las filas dentro de cada
-    categoría (que en el PDF coincide con la posición).
+    Wrapper de retrocompatibilidad sobre ``parse_results_document``: conserva
+    la forma de retorno de siempre y excluye las categorías de encabezado no
+    reconocido. Una categoría reconocida sin filas sigue apareciendo con lista
+    vacía.
     """
-    if not path.exists():
-        raise FileNotFoundError(f"PDF no encontrado: {path}")
-
+    parsed = parse_results_document(path)
     out: dict[str, list[ResultsRow]] = {}
-    current_cat: Optional[str] = None  # persiste entre páginas (edge-cases §4.9)
-    unknown_categories: set[str] = set()
-
-    with pdfplumber.open(path) as pdf:
-        for page_idx, page in enumerate(pdf.pages):
-            text = page.extract_text() or ""
-            tables = page.extract_tables(table_settings=_TABLE_SETTINGS) or []
-            table_idx = _build_table_index(tables)
-
-            for line in text.splitlines():
-                stripped = line.strip()
-                if not stripped:
-                    continue
-
-                # Detectar nuevo header CAT:
-                if stripped.upper().startswith("CAT:") or " CAT:" in stripped.upper():
-                    code = parse_category_header(stripped)
-                    if code is None:
-                        # Capturamos el raw para warning sin nombres
-                        unknown_categories.add(stripped[:80])
-                        current_cat = None
-                        logger.warning(
-                            "Header CAT desconocido en página %d: %r",
-                            page_idx + 1,
-                            stripped[:80],
-                        )
-                        continue
-                    current_cat = code
-                    out.setdefault(current_cat, [])
-                    continue
-
-                if _is_discardable_line(stripped):
-                    continue
-
-                m = _RESULTS_ROW_RE.match(stripped)
-                if not m:
-                    # No es fila válida — puede ser sub-header partido o ruido.
-                    continue
-
-                if current_cat is None:
-                    # Tenemos fila pero no sabemos categoría — descartar con warning.
-                    logger.warning(
-                        "Fila sin categoría activa en página %d (bib=%s); descartada",
-                        page_idx + 1,
-                        m.group("bib"),
-                    )
-                    continue
-
-                pos_str = m.group("pos")
-                bib = m.group("bib")
-                body = m.group("body")
-                time_raw = m.group("time")
-                points = int(m.group("points"))
-
-                # Enriquecer name/city/club desde la tabla si está disponible
-                key = (pos_str, bib)
-                if key in table_idx:
-                    name, city, club = table_idx[key]
-                    # Si la tabla devolvió celdas vacías o muy cortas, fallback al body
-                    if not name:
-                        name, city, club = _split_body_fallback(body)
-                else:
-                    name, city, club = _split_body_fallback(body)
-
-                row = ResultsRow(
-                    position=int(pos_str),
-                    bib=bib,
-                    name=name,
-                    city=city,
-                    club=club,
-                    time_raw=time_raw,
-                    points=points,
-                )
-                out[current_cat].append(row)
-
-    if unknown_categories:
-        logger.warning(
-            "Categorías desconocidas detectadas (no incluidas en resultado): %s",
-            sorted(unknown_categories),
-        )
+    for category in parsed.categories:
+        if category.code is None:
+            continue
+        out.setdefault(category.code, []).extend(category.rows)
     return out
 
 

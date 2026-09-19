@@ -242,31 +242,40 @@ def override_storage(monkeypatch, tmp_path):
 def stub_parsers(monkeypatch):
     """Stub de los parsers de PDF — una fila TyR y una ajena, sin tocar disco."""
     from app.routers import race_imports as router_mod
-    from app.services.race.pdf_parser import ResultsRow
+    from app.services.race.pdf_parser import ParsedCategory, ParsedResults, ResultsRow
 
     async def _fake_results(path, ext):
-        return {
-            CATEGORY_CODE: [
-                ResultsRow(
-                    position=1,
-                    bib="550",
-                    name=TYR_ATHLETE_NAME,
-                    city="Yumbo",
-                    club="Club Trocha y Ruta",
-                    time_raw="0:03:38",
-                    points=40,
+        # Feature 044 (US1): `_parse_results_with_timeout` devuelve
+        # `ParsedResults`, no el dict legado — el stub imita esa forma.
+        return ParsedResults(
+            categories=[
+                ParsedCategory(
+                    header_raw="TETEROS CON PEDALES",
+                    code=CATEGORY_CODE,
+                    rows=[
+                        ResultsRow(
+                            position=1,
+                            bib="550",
+                            name=TYR_ATHLETE_NAME,
+                            city="Yumbo",
+                            club="Club Trocha y Ruta",
+                            time_raw="0:03:38",
+                            points=40,
+                        ),
+                        ResultsRow(
+                            position=2,
+                            bib="551",
+                            name="Competidora Ficticia Externa",
+                            city="Cali",
+                            club="Club Ficticio Dos",
+                            time_raw="0:04:00",
+                            points=36,
+                        ),
+                    ],
                 ),
-                ResultsRow(
-                    position=2,
-                    bib="551",
-                    name="Competidora Ficticia Externa",
-                    city="Cali",
-                    club="Club Ficticio Dos",
-                    time_raw="0:04:00",
-                    points=36,
-                ),
-            ]
-        }
+            ],
+            unreadable_rows=[],
+        )
 
     async def _fake_general(path):
         return {}

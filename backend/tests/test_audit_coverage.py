@@ -1,7 +1,7 @@
 """Route-registry audit coverage (FR-009), T018.
 
 `contracts/audit-recording.md` §7/§9 T4. Estado real del registro a hoy:
-`AUDITED_ROUTES` tiene 111 claves, 99 de ellas `Audited` y el resto `Exempt`
+`AUDITED_ROUTES` tiene 117 claves, 105 de ellas `Audited` y el resto `Exempt`
 (`app/services/audit.py`). Desde 2026-09-10 **todas** las exentas son
 exenciones genuinas de §4.14 con su razón revisada: ya no queda ninguna con
 el marcador "pending instrumentation". Lo que se comprueba aquí:

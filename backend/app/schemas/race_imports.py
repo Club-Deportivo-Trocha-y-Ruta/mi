@@ -23,11 +23,12 @@ from __future__ import annotations
 import enum
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.race_event import SurfaceCondition
+from app.services.race.completeness import AcknowledgeReasonCode
 
 
 # ---------------------------------------------------------------------------
@@ -137,6 +138,167 @@ class DryRunCounts(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Integridad de lectura (feature 044, US1) — contracts/reading-integrity.md
+# ---------------------------------------------------------------------------
+
+
+class ParsedResultsRowRead(BaseModel):
+    """Una fila cruda del acta tal como la interpretó el parser.
+
+    Espejo de ``pdf_parser.ResultsRow`` para el wizard de importación — el
+    coach ya vio estos mismos datos en el PDF/CSV que acaba de subir, así
+    que mostrarlos aquí no expone nada nuevo (misma base que
+    ``MatchPreview.competitor_name``). ``time_raw == ""`` significa
+    "clasificada sin tiempo" (research R-01 punto 4), no ``DNF``/``DSQ``.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    position: Optional[int] = None
+    bib: str = ""
+    name: str = ""
+    city: str = ""
+    club: str = ""
+    time_raw: str = ""
+    points: int = 0
+
+
+class CompletenessRead(BaseModel):
+    """Estado de completitud de una categoría (``completeness.CompletenessReport``)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    status: Literal["ok", "inconsistent", "acknowledged"]
+    missing: list[int] = Field(default_factory=list)
+    duplicated: list[int] = Field(default_factory=list)
+
+
+class ParsedCategoryRead(BaseModel):
+    """Una categoría del acta tal como la vio el parser, con su completitud.
+
+    ``code=None`` significa encabezado no reconocido: las filas se conservan
+    igual (FR-002) y el commit de esa categoría queda bloqueado hasta que
+    exista un mapeo. ``mapping_kind`` distingue exact/rename/season_specific
+    /unknown (``normalizer.mapping_kind_for``).
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    header_raw: str
+    code: Optional[str] = None
+    mapping_kind: str
+    rows: list[ParsedResultsRowRead] = Field(default_factory=list)
+    completeness: CompletenessRead
+
+
+class UnreadableRowRead(BaseModel):
+    """Banda de fila que el parser no pudo interpretar (FR-001).
+
+    Solo ubicación — nunca contenido de la fila (privacidad menores).
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    page: int
+    ordinal: Optional[int] = None
+
+
+class ResultsRowIn(BaseModel):
+    """Cuerpo de una fila para ``POST /{parse_id}/corrections`` (add/edit).
+
+    Espejo de los campos que ``completeness._build_row`` acepta
+    (``_ROW_FIELDS``). ``extra="forbid"`` para que un campo inesperado se
+    rechace en el borde HTTP en vez de perderse en silencio.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    position: Optional[int] = None
+    bib: str = ""
+    name: str = ""
+    city: str = ""
+    club: str = ""
+    time_raw: str = ""
+    points: int = 0
+
+
+class RowCorrectionIn(BaseModel):
+    """Body de ``POST /{parse_id}/corrections`` (research R-05).
+
+    ``row`` es obligatorio para ``add``/``edit`` (``remove`` no lo necesita);
+    esa regla la aplica ``completeness.apply_corrections`` porque depende del
+    ``op`` — aquí solo se valida la forma del payload, no la combinación.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    op: Literal["add", "edit", "remove"]
+    category_header: str = Field(min_length=1, max_length=200)
+    ordinal: int
+    row: Optional[ResultsRowIn] = None
+
+    @model_validator(mode="after")
+    def _row_position_required_for_add_or_edit(self) -> "RowCorrectionIn":
+        """``check_completeness``/``check_category`` solo miran filas con
+        ``position`` — una fila ``add``/``edit`` sin ``row.position`` entraría
+        en el acta y desaparecería en silencio de la verificación de
+        completitud (una categoría podría quedar reportada ``ok`` mientras la
+        fila corregida no cuenta para nada). ``remove`` no necesita ``row``.
+        """
+        if self.op in ("add", "edit") and (
+            self.row is None or self.row.position is None
+        ):
+            raise ValueError(
+                "row.position es obligatorio para 'add'/'edit': sin él, la "
+                "fila corregida queda fuera de la verificación de "
+                "completitud de la categoría (el ordinal por sí solo no la "
+                "reemplaza)."
+            )
+        return self
+
+
+class CategoryCompletenessResponse(BaseModel):
+    """Respuesta común de ``/corrections`` y ``/acknowledge``: la
+    completitud recalculada de la categoría afectada."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    category_header: str
+    completeness: CompletenessRead
+
+
+class AcknowledgeIn(BaseModel):
+    """Body de ``POST /{parse_id}/acknowledge`` (research R-05).
+
+    ``reason`` es un code del catálogo CERRADO ``AcknowledgeReasonCode`` —
+    Pydantic rechaza cualquier valor fuera del enum con 422, igual que
+    ``RevisionReasonCode`` en el commit.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    category_header: str = Field(min_length=1, max_length=200)
+    reason: AcknowledgeReasonCode
+
+
+class AcknowledgeReasonOption(BaseModel):
+    """Opción del catálogo de motivos de reconocimiento (dropdown UI)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    code: str
+    label: str
+
+
+class AcknowledgeReasonsResponse(BaseModel):
+    """Catálogo cerrado de motivos de reconocimiento de completitud."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    options: list[AcknowledgeReasonOption]
+
+
+# ---------------------------------------------------------------------------
 # Parse response
 # ---------------------------------------------------------------------------
 
@@ -169,6 +331,11 @@ class ImportParseResponse(BaseModel):
     n_rows_resultados: int
     n_rows_general: Optional[int] = None
     warnings: list[ParseWarning] = Field(default_factory=list)
+
+    # Feature 044 (US1): integridad de lectura — contracts/reading-integrity.md.
+    # Aditivo: default vacío, un cliente previo sigue deserializando igual.
+    categories: list[ParsedCategoryRead] = Field(default_factory=list)
+    unreadable_rows: list[UnreadableRowRead] = Field(default_factory=list)
 
     # F-UP-REV2: detección de revisión post-parse
     will_be_revision: bool = False
@@ -261,6 +428,11 @@ class ImportCommitResponse(BaseModel):
     n_results_inserted: int
     n_competitors_created: int
     n_competitors_linked: int
+    # Feature 044 (US1/US5): headers de categorías cuyo commit quedó fuera
+    # (inconsistentes sin reconocer, o de encabezado no reconocido). El
+    # backfill real de esta lista es de T060/T061 (commit-pending);
+    # aditivo con default vacío para no romper clientes previos.
+    pending_categories: list[str] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------

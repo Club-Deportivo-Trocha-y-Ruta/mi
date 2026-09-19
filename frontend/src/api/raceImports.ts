@@ -8,6 +8,9 @@
  */
 import { apiClient } from "@/api/client";
 import type {
+  AcknowledgeInput,
+  AcknowledgeReasonsResponse,
+  CategoryCompletenessResponse,
   ImportCommitRequest,
   ImportCommitResponse,
   ImportDryRunResponse,
@@ -17,6 +20,7 @@ import type {
   ImportsHistoryParams,
   RaceEventDiffResponse,
   RevisionReasonsResponse,
+  RowCorrectionInput,
 } from "@/types/raceImports.types";
 
 const BASE = "/api/race-analysis/imports";
@@ -125,6 +129,56 @@ export async function listRaceImports(
     },
     signal: options?.signal,
   });
+  return response.data;
+}
+
+/**
+ * POST /api/race-analysis/imports/{parse_id}/corrections — feature 044 (US1).
+ *
+ * Agrega/edita/elimina una fila de una categoría del acta parseada.
+ * Privacidad: `body.row` trae nombre/ciudad/club de un menor — nunca se
+ * loggea (mismo criterio que `parseRaceImport`).
+ */
+export async function addRaceImportRowCorrection(
+  parseId: string,
+  body: RowCorrectionInput,
+  options?: { signal?: AbortSignal },
+): Promise<CategoryCompletenessResponse> {
+  const response = await apiClient.post<CategoryCompletenessResponse>(
+    `${BASE}/${parseId}/corrections`,
+    body,
+    { signal: options?.signal },
+  );
+  return response.data;
+}
+
+/**
+ * POST /api/race-analysis/imports/{parse_id}/acknowledge — feature 044 (US1).
+ *
+ * Reconoce una categoría con completitud `inconsistent` usando un motivo
+ * del catálogo cerrado (`GET /acknowledge-reasons`) — sin texto libre.
+ */
+export async function acknowledgeRaceImportCategory(
+  parseId: string,
+  body: AcknowledgeInput,
+  options?: { signal?: AbortSignal },
+): Promise<CategoryCompletenessResponse> {
+  const response = await apiClient.post<CategoryCompletenessResponse>(
+    `${BASE}/${parseId}/acknowledge`,
+    body,
+    { signal: options?.signal },
+  );
+  return response.data;
+}
+
+/** GET /api/race-analysis/imports/acknowledge-reasons — catálogo cerrado (feature 044). */
+export async function getAcknowledgeReasons(options?: {
+  signal?: AbortSignal;
+}): Promise<AcknowledgeReasonsResponse> {
+  const response = await apiClient.get<AcknowledgeReasonsResponse>(
+    `${BASE}/acknowledge-reasons`,
+    { signal: options?.signal },
+  );
   return response.data;
 }
 

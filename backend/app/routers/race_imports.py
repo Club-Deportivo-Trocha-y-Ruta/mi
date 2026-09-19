@@ -18,6 +18,18 @@ Endpoints (docs/10-race-results/upload-design.md §4):
                                    ``race-imports/committed/{uuid}/``.
 - ``GET /``                    — histórico paginado. RBAC: coach + admin.
 
+Feature 044 (US1, research R-05, ``contracts/reading-integrity.md``): además,
+``POST /parse`` gana ``categories[]``/``unreadable_rows[]`` (lector por banda
+de ``pdf_parser.parse_results_document``), y tres rutas nuevas:
+
+- ``POST /{parse_id}/corrections``  — parcha una fila (add/edit/remove) de
+                                        una categoría; se persiste en
+                                        ``parse_meta_json.corrections`` y se
+                                        reaplica en cada dry-run/commit.
+- ``POST /{parse_id}/acknowledge``  — reconoce una categoría inconsistente
+                                        con un motivo del catálogo cerrado.
+- ``GET /acknowledge-reasons``      — catálogo cerrado del dropdown.
+
 Convenciones:
 - RBAC ``require_role([coach, admin])`` — padres bloqueados.
 - Magic bytes obligatorios: ``%PDF-`` para PDF, primera línea con delimitador
@@ -40,6 +52,7 @@ import re
 import tempfile
 import uuid
 from asyncio import wait_for
+from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path as PathLib
 from typing import Annotated, Optional
@@ -69,6 +82,11 @@ from app.models.race_series import RaceSeries, RaceSeriesKind, RaceSeriesLevel
 from app.models.user import User, UserRole
 from app.schemas.race import EventMeta
 from app.schemas.race_imports import (
+    AcknowledgeIn,
+    AcknowledgeReasonOption,
+    AcknowledgeReasonsResponse,
+    CategoryCompletenessResponse,
+    CompletenessRead,
     DryRunCounts,
     ImportCommitRequest,
     ImportCommitResponse,
@@ -78,6 +96,8 @@ from app.schemas.race_imports import (
     ImportParseRequestFields,
     ImportParseResponse,
     MatchPreview,
+    ParsedCategoryRead,
+    ParsedResultsRowRead,
     ParseHeaderInfo,
     ParseWarning,
     RaceEventDiffResponse,
@@ -85,13 +105,30 @@ from app.schemas.race_imports import (
     RevisionReasonCode,
     RevisionReasonOption,
     RevisionReasonsResponse,
+    RowCorrectionIn,
     TyrAthleteRef,
+    UnreadableRowRead,
     UploadUserRef,
 )
 from app.services.audit import AuditEntityType, record_audit
 from app.services.permissions import coach_club_ids, ensure_import_club_access
+from app.services.race.completeness import (
+    ACKNOWLEDGE_REASON_LABELS,
+    AcknowledgeReasonCode,
+    CompletenessReport,
+    CorrectionError,
+    apply_corrections,
+    check_category,
+)
 from app.services.race.ingestor import RaceIngestor
 from app.services.race.matcher import match_athletes
+from app.services.race.normalizer import mapping_kind_for
+from app.services.race.pdf_parser import (
+    ParsedCategory,
+    ParsedResults,
+    ResultsRow,
+    parse_results_document,
+)
 from app.services.race.revision import detect_revision
 from app.services.race.revision_diff_view import build_event_diff_view
 from app.services.race.run_staleness import invalidate_runs_for_event
@@ -270,21 +307,37 @@ async def _get_or_create_series(
     return series
 
 
-async def _parse_results_with_timeout(
-    path: PathLib, ext: str
-) -> dict[str, list]:
-    """Parsea con asyncio.wait_for + asyncio.to_thread; mapea TimeoutError a 422."""
+async def _parse_results_with_timeout(path: PathLib, ext: str) -> ParsedResults:
+    """Parsea RESULTADOS con timeout; mapea TimeoutError/excepción a 422.
+
+    Feature 044 (US1, research R-01): el PDF ahora usa el lector por banda
+    (``parse_results_document``), que devuelve categorías en orden de
+    documento — incluidas las de encabezado no reconocido, con sus filas — y
+    las bandas ilegibles (``unreadable_rows``), en vez del dict legado
+    ``{code: [rows]}`` que descartaba ambas cosas en silencio.
+
+    El CSV de la Liga no tiene el defecto de desborde de columna que motiva
+    el lector por banda (research R-01 es específico del layout PDF), así
+    que sigue usando ``csv_parser.parse_results_csv`` — su dict legado se
+    envuelve en un ``ParsedResults`` sin filas ilegibles para que el llamador
+    tenga una única forma de salida.
+    """
     import asyncio
 
     from app.services.race.csv_parser import parse_results_csv
-    from app.services.race.pdf_parser import parse_results_pdf
 
-    parser = parse_results_pdf if ext == "pdf" else parse_results_csv
+    async def _run() -> ParsedResults:
+        if ext == "pdf":
+            return await asyncio.to_thread(parse_results_document, path)
+        legacy = await asyncio.to_thread(parse_results_csv, path)
+        categories = [
+            ParsedCategory(header_raw=code, code=code, rows=rows)
+            for code, rows in legacy.items()
+        ]
+        return ParsedResults(categories=categories, unreadable_rows=[])
+
     try:
-        return await wait_for(
-            asyncio.to_thread(parser, path),
-            timeout=settings.race_parse_timeout_seconds,
-        )
+        return await wait_for(_run(), timeout=settings.race_parse_timeout_seconds)
     except asyncio.TimeoutError:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -293,12 +346,142 @@ async def _parse_results_with_timeout(
                 f"{settings.race_parse_timeout_seconds}s). Verifique formato oficial."
             ),
         )
+    except HTTPException:
+        raise
     except Exception:  # noqa: BLE001
         logger.exception("race_import_parse RESULTADOS failed")
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="No se pudo procesar el PDF RESULTADOS. Verifique que sea el formato oficial de la Federación.",
         )
+
+
+def _legacy_results_by_category(parsed: ParsedResults) -> dict[str, list[ResultsRow]]:
+    """Colapsa un ``ParsedResults`` a la forma legada ``{code: [rows]}`` que
+    ``RaceIngestor.ingest_event`` sigue esperando. Categorías de encabezado no
+    reconocido se excluyen — igual que hacía ``pdf_parser.parse_results_pdf``
+    — su commit queda bloqueado hasta que exista un mapeo (research R-03).
+    """
+    out: dict[str, list[ResultsRow]] = {}
+    for category in parsed.categories:
+        if category.code is None:
+            continue
+        out.setdefault(category.code, []).extend(category.rows)
+    return out
+
+
+def _category_headers_raw(parsed: ParsedResults) -> dict[str, str]:
+    """``{code: header_raw}`` — el encabezado tal como venía impreso, para
+    que el ingestor congele ``category_label_raw`` con el header REAL del
+    acta en vez de la etiqueta vigente del catálogo (research R-04). Si un
+    code se repite entre categorías del mismo documento (no esperado), se
+    conserva el primero.
+    """
+    out: dict[str, str] = {}
+    for category in parsed.categories:
+        if category.code and category.code not in out:
+            out[category.code] = category.header_raw
+    return out
+
+
+def _categories_read(
+    parsed: ParsedResults, cat_by_code: dict[str, "RaceCategory"]
+) -> list[ParsedCategoryRead]:
+    """Construye el ``categories[]`` de la respuesta de ``/parse`` — header
+    crudo, code resuelto, ``mapping_kind`` y completitud por categoría
+    (contracts/reading-integrity.md).
+    """
+    out: list[ParsedCategoryRead] = []
+    for category in parsed.categories:
+        cat_obj = cat_by_code.get(category.code) if category.code else None
+        mapping_kind = mapping_kind_for(f"CAT: {category.header_raw}", cat_obj)
+        report = check_category(category)
+        out.append(
+            ParsedCategoryRead(
+                header_raw=category.header_raw,
+                code=category.code,
+                mapping_kind=mapping_kind,
+                rows=[
+                    ParsedResultsRowRead(
+                        position=row.position,
+                        bib=row.bib,
+                        name=row.name,
+                        city=row.city,
+                        club=row.club,
+                        time_raw=row.time_raw,
+                        points=row.points,
+                    )
+                    for row in category.rows
+                ],
+                completeness=CompletenessRead(
+                    status=report.status,
+                    missing=report.missing,
+                    duplicated=report.duplicated,
+                ),
+            )
+        )
+    return out
+
+
+def _categories_meta(parsed: ParsedResults, categories_read: list[ParsedCategoryRead]) -> list[dict]:
+    """Forma persistida en ``parse_meta_json["categories"]`` (data-model.md §7):
+    a diferencia de la respuesta HTTP, ``rows`` es un CONTEO, nunca la lista —
+    el archivo almacenado ya es la fuente de verdad de las filas, y esta
+    caché es solo para lectura rápida (histórico, futuras corridas)."""
+    return [
+        {
+            "header_raw": read.header_raw,
+            "code": read.code,
+            "mapping_kind": read.mapping_kind,
+            "rows": len(read.rows),
+            "completeness": {
+                "status": read.completeness.status,
+                "missing": read.completeness.missing,
+                "duplicated": read.completeness.duplicated,
+            },
+        }
+        for read in categories_read
+    ]
+
+
+def _unreadable_rows_meta(parsed: ParsedResults) -> list[dict]:
+    return [{"page": r.page, "ordinal": r.ordinal} for r in parsed.unreadable_rows]
+
+
+def _update_category_cache(
+    categories_meta: list[dict],
+    header: str,
+    *,
+    rows: int,
+    completeness: CompletenessReport,
+) -> list[dict]:
+    """Actualiza (o agrega) la entrada de ``header`` en la caché de solo
+    lectura ``parse_meta_json["categories"]`` tras una corrección o un
+    reconocimiento. No es la fuente de verdad — esa es el archivo almacenado
+    más ``corrections``/``acknowledged`` — solo evita que la caché quede
+    desactualizada frente a lo que un futuro listado mostraría.
+    """
+    updated = [dict(entry) for entry in categories_meta]
+    completeness_dict = {
+        "status": completeness.status,
+        "missing": completeness.missing,
+        "duplicated": completeness.duplicated,
+    }
+    for entry in updated:
+        if entry.get("header_raw") == header:
+            entry["rows"] = rows
+            entry["completeness"] = completeness_dict
+            return updated
+    updated.append(
+        {
+            "header_raw": header,
+            "code": None,
+            "mapping_kind": "unknown",
+            "rows": rows,
+            "completeness": completeness_dict,
+        }
+    )
+    return updated
 
 
 async def _parse_general_with_timeout(path: PathLib) -> dict[str, list]:
@@ -544,19 +727,39 @@ async def parse_import(
         tmp_results.flush()
         results_path = PathLib(tmp_results.name)
     try:
-        parsed_results = await _parse_results_with_timeout(results_path, results_ext)
+        parsed_doc = await _parse_results_with_timeout(results_path, results_ext)
     finally:
         try:
             results_path.unlink(missing_ok=True)
         except OSError:
             pass
 
-    n_rows_resultados = sum(len(v) for v in parsed_results.values())
+    # Feature 044 (US1): el total cuenta TODAS las filas parseadas, incluidas
+    # las de encabezado no reconocido — FR-002 las conserva, no las descarta,
+    # así que un archivo con solo categorías desconocidas ya no cae en el 422
+    # de abajo como si no se hubiera extraído nada.
+    n_rows_resultados = sum(len(c.rows) for c in parsed_doc.categories)
     if n_rows_resultados == 0:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Parser no extrajo ninguna fila válida. PDF/CSV no oficial?",
         )
+
+    # Categorías por code, para resolver `mapping_kind` (necesita `.is_active`).
+    parsed_codes = {c.code for c in parsed_doc.categories if c.code}
+    cat_by_code: dict[str, RaceCategory] = {}
+    if parsed_codes:
+        cat_stmt = select(RaceCategory).where(RaceCategory.code.in_(parsed_codes))
+        cat_by_code = {
+            c.code: c for c in (await db.execute(cat_stmt)).scalars().all()
+        }
+    categories_read = _categories_read(parsed_doc, cat_by_code)
+    unreadable_rows_read = [
+        UnreadableRowRead(page=r.page, ordinal=r.ordinal)
+        for r in parsed_doc.unreadable_rows
+    ]
+
+    parsed_results = _legacy_results_by_category(parsed_doc)
 
     n_rows_general: Optional[int] = None
     if general_bytes:
@@ -610,6 +813,12 @@ async def parse_import(
         "n_rows_resultados": n_rows_resultados,
         "n_rows_general": n_rows_general,
         "parse_uuid": parse_uuid,
+        # Feature 044 (US1, data-model.md §7): caché de solo lectura — el
+        # archivo almacenado sigue siendo la fuente de verdad, se re-parsea
+        # en cada dry-run/commit (`_reload_parsed_from_storage`). `rows` aquí
+        # es un CONTEO, nunca la lista (que sí lleva nombres de menores).
+        "categories": _categories_meta(parsed_doc, categories_read),
+        "unreadable_rows": _unreadable_rows_meta(parsed_doc),
     }
     race_import = RaceImport(
         filename=safe_results_name,
@@ -681,6 +890,8 @@ async def parse_import(
         n_rows_resultados=n_rows_resultados,
         n_rows_general=n_rows_general,
         warnings=warnings_collected,
+        categories=categories_read,
+        unreadable_rows=unreadable_rows_read,
         will_be_revision=will_be_revision,
         parent_event_id=revision_ctx.parent_event_id if revision_ctx else None,
         parent_import_id=revision_ctx.parent_import_id if revision_ctx else None,
@@ -737,14 +948,12 @@ async def _load_pending_import(
     return imp
 
 
-async def _reload_parsed_from_storage(
-    imp: RaceImport,
-) -> tuple[dict[str, list], Optional[dict[str, list]], str]:
-    """Re-carga RESULTADOS (+ GENERAL opcional) desde el storage path persistido
-    durante /parse. Retorna ``(results, general, results_ext)``.
-
-    Necesario para dry-run/commit: el bytes original ya está en SFTP/local; lo
-    descargamos a tmp, parseamos, descartamos.
+async def _reload_results_document(imp: RaceImport) -> ParsedResults:
+    """Descarga + parsea solo RESULTADOS desde storage, SIN aplicar las
+    correcciones guardadas (research R-05). Building block de
+    ``_reload_parsed_from_storage`` y de los endpoints de corrección /
+    reconocimiento (T019), que necesitan un parseo fresco del acta tal como
+    quedó impresa para validar una corrección nueva contra el estado real.
 
     En producción (SFTP configurado) el ``storage_path`` es un path remoto
     Hostinger que no existe en el disco del contenedor. Se descarga vía FTPS
@@ -753,7 +962,6 @@ async def _reload_parsed_from_storage(
     meta = imp.parse_meta_json or {}
     results_ext = meta.get("results_ext", "pdf")
 
-    # --- RESULTADOS (obligatorio) ---
     try:
         results_tmp_path = await storage_sftp.download_to_tempfile(
             imp.storage_path or "", suffix=f".{results_ext}"
@@ -770,13 +978,40 @@ async def _reload_parsed_from_storage(
     # ¿Es el path un temporal nuevo (SFTP) o el mismo local ya existente?
     results_is_tmp = str(results_tmp_path) != str(imp.storage_path or "")
     try:
-        parsed_results = await _parse_results_with_timeout(results_tmp_path, results_ext)
+        return await _parse_results_with_timeout(results_tmp_path, results_ext)
     finally:
         if results_is_tmp:
             try:
                 os.unlink(results_tmp_path)
             except OSError:
                 pass
+
+
+async def _reload_parsed_from_storage(
+    imp: RaceImport,
+) -> tuple[dict[str, list], Optional[dict[str, list]], str, dict[str, str]]:
+    """Re-carga RESULTADOS (+ GENERAL opcional) desde el storage path persistido
+    durante /parse. Retorna ``(results, general, results_ext, category_headers_raw)``.
+
+    Necesario para dry-run/commit: el bytes original ya está en SFTP/local; lo
+    descargamos a tmp, parseamos, descartamos.
+
+    Feature 044 (US1, research R-05): las correcciones manuales guardadas en
+    ``parse_meta_json["corrections"]`` se reaplican aquí, ANTES de que el
+    resultado llegue al ingestor — las filas parseadas se re-derivan del
+    archivo almacenado en cada dry-run/commit, así que una corrección que no
+    se reaplicara en este punto se perdería en silencio.
+    """
+    meta = imp.parse_meta_json or {}
+    results_ext = meta.get("results_ext", "pdf")
+
+    parsed_doc = await _reload_results_document(imp)
+    corrections = meta.get("corrections") or []
+    if corrections:
+        parsed_doc = apply_corrections(parsed_doc, corrections)
+
+    category_headers_raw = _category_headers_raw(parsed_doc)
+    parsed_results = _legacy_results_by_category(parsed_doc)
 
     # --- GENERAL (opcional) ---
     parsed_general: Optional[dict[str, list]] = None
@@ -802,7 +1037,7 @@ async def _reload_parsed_from_storage(
             )
             parsed_general = None
 
-    return parsed_results, parsed_general, results_ext
+    return parsed_results, parsed_general, results_ext, category_headers_raw
 
 
 def _build_event_meta_from_parse_meta(
@@ -877,7 +1112,9 @@ async def dry_run_import(
     # expire_on_commit=False mantiene los atributos de `imp` accesibles tras commit.
     await db.commit()
 
-    parsed_results, parsed_general, _ = await _reload_parsed_from_storage(imp)
+    parsed_results, parsed_general, _, category_headers_raw = (
+        await _reload_parsed_from_storage(imp)
+    )
 
     # Construir EventMeta desde parse_meta (incluye condiciones de carrera si las hay)
     try:
@@ -908,6 +1145,7 @@ async def dry_run_import(
             ingested_by_user_id=current_user.id,
             dry_run=True,
             series_id=imp_series_id,
+            category_headers_raw=category_headers_raw,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -1035,7 +1273,9 @@ async def commit_import(
     # expire_on_commit=False mantiene los atributos de `imp` accesibles tras commit.
     await db.commit()
 
-    parsed_results, parsed_general, _ = await _reload_parsed_from_storage(imp)
+    parsed_results, parsed_general, _, category_headers_raw = (
+        await _reload_parsed_from_storage(imp)
+    )
 
     # Construir EventMeta (incluye condiciones de carrera si fueron capturadas en /parse)
     try:
@@ -1102,6 +1342,7 @@ async def commit_import(
             ingested_by_user_id=current_user.id,
             dry_run=False,
             series_id=imp_series_id,
+            category_headers_raw=category_headers_raw,
         )
     except IntegrityError:
         await db.rollback()
@@ -1229,6 +1470,215 @@ async def commit_import(
         n_results_inserted=report.results_inserted,
         n_competitors_created=report.competitors_created,
         n_competitors_linked=report.tyr_count,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Endpoints US1: correcciones manuales + reconocimiento de completitud
+# (feature 044, research R-05, contracts/reading-integrity.md §"API deltas")
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{parse_id}/corrections",
+    response_model=CategoryCompletenessResponse,
+    summary="Corrige una fila de una categoría parseada",
+    description=(
+        "Agrega/edita/elimina una fila de una categoría (add|edit|remove) "
+        "sobre el acta parseada de un cargue pending. El parche se persiste "
+        "en `parse_meta_json.corrections` y se reaplica en cada dry-run/"
+        "commit posterior (el archivo se re-parsea desde storage cada vez). "
+        "422 si la categoría no existe o la fila es inválida. RBAC coach/admin."
+    ),
+)
+async def add_correction(
+    parse_id: int,
+    body: RowCorrectionIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
+) -> CategoryCompletenessResponse:
+    """``POST /{parse_id}/corrections`` (research R-05).
+
+    Privacidad: ``body.row`` trae nombre/ciudad/club de un menor — nunca se
+    loggea ni entra al ``meta_json`` de auditoría (solo se guarda en
+    ``parse_meta_json.corrections``, misma clase de sensibilidad que
+    ``race_competitors`` per data-model.md §7).
+    """
+    imp = await _load_pending_import(db, parse_id, current_user)
+    meta = dict(imp.parse_meta_json or {})
+
+    existing_corrections = list(meta.get("corrections") or [])
+    new_correction = {
+        "op": body.op,
+        "category_header": body.category_header,
+        "ordinal": body.ordinal,
+        "row": body.row.model_dump() if body.row is not None else None,
+    }
+
+    fresh = await _reload_results_document(imp)
+    try:
+        corrected = apply_corrections(fresh, [*existing_corrections, new_correction])
+    except CorrectionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        )
+
+    category = next(
+        c for c in corrected.categories if c.header_raw == body.category_header
+    )
+    report = check_category(category)
+
+    meta["corrections"] = [
+        *existing_corrections,
+        {
+            **new_correction,
+            "by": current_user.id,
+            "at": datetime.now(timezone.utc).isoformat(),
+        },
+    ]
+    meta["categories"] = _update_category_cache(
+        meta.get("categories") or [],
+        body.category_header,
+        rows=len(category.rows),
+        completeness=report,
+    )
+    imp.parse_meta_json = meta
+
+    await record_audit(
+        db,
+        action=AuditAction.update,
+        entity_type=AuditEntityType.race_import,
+        entity_id=imp.id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=None,
+        changed_fields=["parse_meta_json"],
+        request_id=ctx.request_id,
+    )
+    await db.flush()
+
+    return CategoryCompletenessResponse(
+        category_header=body.category_header,
+        completeness=CompletenessRead(
+            status=report.status,
+            missing=report.missing,
+            duplicated=report.duplicated,
+        ),
+    )
+
+
+@router.post(
+    "/{parse_id}/acknowledge",
+    response_model=CategoryCompletenessResponse,
+    summary="Reconoce una categoría con completitud inconsistente",
+    description=(
+        "Da por buena una categoría con un motivo del catálogo cerrado "
+        "(`AcknowledgeReasonCode`) — sin texto libre (privacidad menores). "
+        "`completeness.status` pasa a `acknowledged`. RBAC coach/admin, "
+        "auditado (`record_audit`)."
+    ),
+)
+async def acknowledge_category(
+    parse_id: int,
+    body: AcknowledgeIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
+) -> CategoryCompletenessResponse:
+    """``POST /{parse_id}/acknowledge`` (research R-05).
+
+    El gate de commit que consume este reconocimiento (bloquear solo la
+    categoría, no todo el cargue) es de T060/T061 — esta tarea (T019) solo
+    persiste la decisión y la audita.
+    """
+    imp = await _load_pending_import(db, parse_id, current_user)
+    meta = dict(imp.parse_meta_json or {})
+
+    corrections = meta.get("corrections") or []
+    fresh = await _reload_results_document(imp)
+    corrected = apply_corrections(fresh, corrections) if corrections else fresh
+    category = next(
+        (c for c in corrected.categories if c.header_raw == body.category_header),
+        None,
+    )
+    if category is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="unknown_category",
+        )
+
+    report = check_category(category)
+    acknowledged_report = CompletenessReport(
+        status="acknowledged", missing=report.missing, duplicated=report.duplicated
+    )
+
+    existing_acks = [
+        a
+        for a in (meta.get("acknowledged") or [])
+        if a.get("category_header") != body.category_header
+    ]
+    meta["acknowledged"] = [
+        *existing_acks,
+        {
+            "category_header": body.category_header,
+            "reason": body.reason.value,
+            "by": current_user.id,
+            "at": datetime.now(timezone.utc).isoformat(),
+        },
+    ]
+    meta["categories"] = _update_category_cache(
+        meta.get("categories") or [],
+        body.category_header,
+        rows=len(category.rows),
+        completeness=acknowledged_report,
+    )
+    imp.parse_meta_json = meta
+
+    await record_audit(
+        db,
+        action=AuditAction.update,
+        entity_type=AuditEntityType.race_import,
+        entity_id=imp.id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=None,
+        changed_fields=["parse_meta_json"],
+        request_id=ctx.request_id,
+    )
+    await db.flush()
+
+    return CategoryCompletenessResponse(
+        category_header=body.category_header,
+        completeness=CompletenessRead(
+            status=acknowledged_report.status,
+            missing=acknowledged_report.missing,
+            duplicated=acknowledged_report.duplicated,
+        ),
+    )
+
+
+@router.get(
+    "/acknowledge-reasons",
+    response_model=AcknowledgeReasonsResponse,
+    summary="Catálogo cerrado de motivos de reconocimiento de completitud",
+    description=(
+        "Devuelve los motivos permitidos para reconocer una categoría con "
+        "completitud inconsistente (research R-05). El frontend usa este "
+        "catálogo para poblar el dropdown — sin texto libre (privacidad "
+        "menores). RBAC coach/admin."
+    ),
+)
+async def list_acknowledge_reasons(
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+) -> AcknowledgeReasonsResponse:
+    """``GET /api/race-analysis/imports/acknowledge-reasons`` (coach/admin)."""
+    return AcknowledgeReasonsResponse(
+        options=[
+            AcknowledgeReasonOption(code=code.value, label=ACKNOWLEDGE_REASON_LABELS[code])
+            for code in AcknowledgeReasonCode
+        ]
     )
 
 

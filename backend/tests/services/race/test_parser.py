@@ -44,11 +44,21 @@ class TestParseResultsPdf:
         out = parse_results_pdf(valida_iv_resultados_pdf)
         assert len(out) == 26
 
-    def test_total_rows_is_227(self, valida_iv_resultados_pdf: Path):
-        """edge-cases §1: 227 finalistas totales V-IV."""
+    def test_total_rows_is_229(self, valida_iv_resultados_pdf: Path):
+        """229 finalistas totales V-IV (corregido de 227 en la feature 044).
+
+        El acta imprime 229 filas. El oráculo anterior decía 227 porque el
+        parser por líneas de texto perdía dos de ellas en silencio: PREINFANTIL
+        B puesto 17 y MASTER B1 puesto 5, ambas con un Club/Patrocinador largo
+        que se imprime encima de la columna Tiempo (research R-01). El lector
+        por banda las recupera con tiempo y puntos correctos.
+
+        El conteo total es un resumen frágil; la propiedad que de verdad
+        importa se fija en ``TestCategoryOrdinalCompleteness``.
+        """
         out = parse_results_pdf(valida_iv_resultados_pdf)
         total = sum(len(rows) for rows in out.values())
-        assert total == 227
+        assert total == 229
 
     def test_teteros_sp_has_11_rows(self, valida_iv_resultados_pdf: Path):
         """edge-cases §1: TET_SP = 11 corredores."""
@@ -169,6 +179,58 @@ class TestParseResultsPdf:
         assert counts[ResultStatus.DNF] == 1
         assert counts[ResultStatus.MINUS_LAPS] == 1
         assert counts[ResultStatus.DSQ] == 0
+
+
+# ===========================================================================
+# Completitud de puestos por categoría — regresión del lector por banda
+# ===========================================================================
+
+
+class TestCategoryOrdinalCompleteness:
+    """Cada categoría de V-IV imprime los puestos ``1..N`` sin huecos.
+
+    Ésta es la propiedad que de verdad importa y la que el parser por líneas
+    de texto violaba en silencio: un Club/Patrocinador largo se imprime encima
+    de la columna Tiempo, ``extract_text()`` intercala sus letras con los
+    dígitos del tiempo y la fila deja de matchear el regex (research R-01).
+    El síntoma visible era un puesto faltante en medio de la clasificación, no
+    un error; por eso el conteo total quedó congelado en 227 durante tanto
+    tiempo. El lector por banda recupera ambas filas.
+    """
+
+    def test_every_category_has_a_gapless_1_to_n_sequence(
+        self, valida_iv_resultados_pdf: Path
+    ):
+        out = parse_results_pdf(valida_iv_resultados_pdf)
+        assert out, "el parser no devolvió ninguna categoría"
+
+        incomplete = {
+            code: [r.position for r in rows]
+            for code, rows in out.items()
+            if [r.position for r in rows] != list(range(1, len(rows) + 1))
+        }
+        assert incomplete == {}, (
+            f"categorías con puestos faltantes o desordenados: {incomplete}"
+        )
+
+    @pytest.mark.parametrize(
+        ("code", "expected_rows"),
+        [
+            # Las dos categorías que perdían una fila cada una: el puesto 17 de
+            # PREINFANTIL B y el puesto 5 de MASTER B1 (misma causa, mismo club
+            # largo desbordado sobre la columna Tiempo).
+            ("PRE_B", 19),
+            ("MAS_B1", 9),
+        ],
+    )
+    def test_recovered_categories_are_complete(
+        self, valida_iv_resultados_pdf: Path, code: str, expected_rows: int
+    ):
+        out = parse_results_pdf(valida_iv_resultados_pdf)
+
+        assert code in out
+        positions = [r.position for r in out[code]]
+        assert positions == list(range(1, expected_rows + 1))
 
 
 # ===========================================================================

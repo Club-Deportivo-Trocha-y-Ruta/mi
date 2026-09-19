@@ -102,6 +102,12 @@ export interface ImportParseResponse {
   // F-COND — condiciones de carrera parseadas (null si no se enviaron).
   conditions?: ParsedConditions | null;
 
+  // Feature 044 (US1) — integridad de lectura: categorías del acta con su
+  // completitud, y filas que el parser no pudo interpretar. Aditivo, default
+  // vacío en el backend para no romper clientes previos.
+  categories?: ParsedCategory[];
+  unreadable_rows?: UnreadableRow[];
+
   // F-UP-REV2 — metadatos de revisión detectada en /parse.
   // Cuando `(series, valida_num)` ya tiene un commit previo, el backend
   // marca el import como revisión y devuelve datos del padre para que
@@ -112,6 +118,120 @@ export interface ImportParseResponse {
   parent_event_id?: number;
   parent_committed_at?: string; // ISO datetime
   parent_n_results?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Feature 044 (US1) — Integridad de lectura del acta
+// (contracts/reading-integrity.md §"API deltas")
+//
+// Mirror de `backend/app/schemas/race_imports.py`:
+// `ParsedCategoryRead`, `CompletenessRead`, `UnreadableRowRead`,
+// `RowCorrectionIn`, `AcknowledgeIn`, `AcknowledgeReasonsResponse`.
+//
+// Privacidad: `ParsedResultsRow` trae nombre/ciudad/club de un corredor —
+// mismo origen público (PDF oficial de la Federación) que `MatchPreview`
+// arriba. Nunca va a un log ni a un parámetro de query/URL.
+// ---------------------------------------------------------------------------
+
+/** Estado de completitud de una categoría (`completeness.CompletenessReport`). */
+export type CompletenessStatus = "ok" | "inconsistent" | "acknowledged";
+
+/** Cómo resolvió el header de una categoría (`normalizer.mapping_kind_for`). */
+export type CategoryMappingKind =
+  | "exact"
+  | "rename"
+  | "season_specific"
+  | "unknown";
+
+export interface CategoryCompleteness {
+  status: CompletenessStatus;
+  missing: number[];
+  duplicated: number[];
+}
+
+/** Una fila cruda del acta tal como la interpretó el parser. */
+export interface ParsedResultsRow {
+  position: number | null;
+  bib: string;
+  name: string;
+  city: string;
+  club: string;
+  time_raw: string;
+  points: number;
+}
+
+/** Una categoría del acta con su completitud (mirror `ParsedCategoryRead`). */
+export interface ParsedCategory {
+  header_raw: string;
+  /** `null` = encabezado no reconocido; las filas se conservan igual. */
+  code: string | null;
+  mapping_kind: CategoryMappingKind;
+  rows: ParsedResultsRow[];
+  completeness: CategoryCompleteness;
+}
+
+/** Banda de fila que el parser no pudo interpretar — solo ubicación. */
+export interface UnreadableRow {
+  page: number;
+  ordinal: number | null;
+}
+
+// ---------------------------------------------------------------------------
+// POST /imports/{parse_id}/corrections
+// ---------------------------------------------------------------------------
+
+export type RowCorrectionOp = "add" | "edit" | "remove";
+
+/** Cuerpo de una fila para `POST /{parse_id}/corrections` (mirror `ResultsRowIn`). */
+export interface RowCorrectionRow {
+  position: number | null;
+  bib: string;
+  name: string;
+  city: string;
+  club: string;
+  time_raw: string;
+  points: number;
+}
+
+/** Body de `POST /{parse_id}/corrections` (mirror `RowCorrectionIn`). */
+export interface RowCorrectionInput {
+  op: RowCorrectionOp;
+  category_header: string;
+  ordinal: number;
+  /** Obligatorio para `add`/`edit`; ausente en `remove`. */
+  row?: RowCorrectionRow | null;
+}
+
+/** Respuesta común de `/corrections` y `/acknowledge`. */
+export interface CategoryCompletenessResponse {
+  category_header: string;
+  completeness: CategoryCompleteness;
+}
+
+// ---------------------------------------------------------------------------
+// POST /imports/{parse_id}/acknowledge + GET /imports/acknowledge-reasons
+// ---------------------------------------------------------------------------
+
+/** Catálogo CERRADO de motivos de reconocimiento (mirror `AcknowledgeReasonCode`). */
+export type AcknowledgeReasonCode =
+  | "source_duplicate_ordinal"
+  | "source_missing_ordinal"
+  | "source_disqualification_gap"
+  | "verified_against_source";
+
+/** Body de `POST /{parse_id}/acknowledge` (mirror `AcknowledgeIn`). */
+export interface AcknowledgeInput {
+  category_header: string;
+  reason: AcknowledgeReasonCode;
+}
+
+export interface AcknowledgeReasonOption {
+  code: string;
+  label: string;
+}
+
+export interface AcknowledgeReasonsResponse {
+  options: AcknowledgeReasonOption[];
 }
 
 // ---------------------------------------------------------------------------
@@ -236,6 +356,12 @@ export interface ImportCommitResponse {
    * inusualmente grande (n_total > 500 o deletes > 20% unchanged).
    */
   warning_banner?: string | null;
+  /**
+   * Feature 044 (US1/US5) — headers de categorías cuyo commit quedó fuera
+   * (inconsistentes sin reconocer, o de encabezado no reconocido). Aditivo,
+   * default vacío en el backend.
+   */
+  pending_categories?: string[];
 }
 
 // ---------------------------------------------------------------------------

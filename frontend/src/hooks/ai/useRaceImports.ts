@@ -13,12 +13,18 @@ import {
 } from "@tanstack/react-query";
 
 import {
+  acknowledgeRaceImportCategory,
+  addRaceImportRowCorrection,
   commitRaceImport,
   dryRunRaceImport,
+  getAcknowledgeReasons,
   listRaceImports,
   parseRaceImport,
 } from "@/api/raceImports";
 import type {
+  AcknowledgeInput,
+  AcknowledgeReasonsResponse,
+  CategoryCompletenessResponse,
   ImportCommitRequest,
   ImportCommitResponse,
   ImportDryRunResponse,
@@ -26,6 +32,7 @@ import type {
   ImportParseRequestFields,
   ImportParseResponse,
   ImportsHistoryParams,
+  RowCorrectionInput,
 } from "@/types/raceImports.types";
 
 export const raceImportsKeys = {
@@ -79,5 +86,54 @@ export function useImportsHistory(params: ImportsHistoryParams = {}) {
     queryKey: raceImportsKeys.history(params),
     queryFn: () => listRaceImports(params),
     staleTime: 30_000,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Feature 044 (US1) — integridad de lectura: correcciones + reconocimiento
+// ---------------------------------------------------------------------------
+
+export interface UseAddRowCorrectionVariables {
+  parseId: string;
+  body: RowCorrectionInput;
+}
+
+/** `useAddRowCorrection()` → mutation POST /imports/{id}/corrections. */
+export function useAddRowCorrection() {
+  return useMutation<
+    CategoryCompletenessResponse,
+    unknown,
+    UseAddRowCorrectionVariables
+  >({
+    mutationKey: ["race-imports", "corrections"],
+    mutationFn: ({ parseId, body }) =>
+      addRaceImportRowCorrection(parseId, body),
+  });
+}
+
+export interface UseAcknowledgeCategoryVariables {
+  parseId: string;
+  body: AcknowledgeInput;
+}
+
+/** `useAcknowledgeCategory()` → mutation POST /imports/{id}/acknowledge. */
+export function useAcknowledgeCategory() {
+  return useMutation<
+    CategoryCompletenessResponse,
+    unknown,
+    UseAcknowledgeCategoryVariables
+  >({
+    mutationKey: ["race-imports", "acknowledge"],
+    mutationFn: ({ parseId, body }) =>
+      acknowledgeRaceImportCategory(parseId, body),
+  });
+}
+
+/** `useAcknowledgeReasons()` → query GET /imports/acknowledge-reasons. */
+export function useAcknowledgeReasons() {
+  return useQuery<AcknowledgeReasonsResponse, unknown>({
+    queryKey: ["race-imports", "acknowledge-reasons"],
+    queryFn: () => getAcknowledgeReasons(),
+    staleTime: 5 * 60_000,
   });
 }

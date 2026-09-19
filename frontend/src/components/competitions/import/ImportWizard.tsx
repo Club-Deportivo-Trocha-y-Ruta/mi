@@ -36,6 +36,7 @@ import { launchGroupAnalysis } from "@/api/raceAnalysis";
 import { z } from "zod";
 
 import { AthleteCombobox } from "@/components/ai/AthleteCombobox";
+import { CategoryMappingTable } from "@/components/competitions/import/CategoryMappingTable";
 import { RaceUploadZone } from "@/components/competitions/import/RaceUploadZone";
 import { RaceConditionsCard } from "@/components/race/RaceConditionsCard";
 import { Stepper } from "@/components/shared/Stepper";
@@ -496,6 +497,13 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
   >({});
   const [onlyPending, setOnlyPending] = useState(false);
   const [step1Error, setStep1Error] = useState<string | null>(null);
+  // Feature 044 (US1) — cuántas categorías del acta quedan listas para
+  // confirmar (ok/acknowledged y reconocidas) vs. el total, para el copy
+  // del botón de confirmar. Lo reporta `CategoryMappingTable`.
+  const [categoryReadyCounts, setCategoryReadyCounts] = useState({
+    ready: 0,
+    total: 0,
+  });
   // F-UP-REV5 / PR4: motivo de revisión — code del catálogo CERRADO
   // (sin texto libre, privacidad menores). Obligatorio si hay deletes.
   const [revisionReason, setRevisionReason] = useState("");
@@ -1336,6 +1344,22 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
             </div>
           )}
 
+          {/* Feature 044 (US1/US2) — integridad de lectura: completitud por
+              categoría, mapeo (exacta/renombrada/propia de temporada/sin
+              reconocer) y aviso de filas ilegibles. Se muestra tanto en modo
+              revisión como en modo matches — el parseo ya trae `categories`
+              en cualquiera de los dos casos. */}
+          {parseResult && parseResult.categories && parseResult.categories.length > 0 && (
+            <CategoryMappingTable
+              parseId={parseResult.parse_id}
+              categories={parseResult.categories}
+              unreadableRows={parseResult.unreadable_rows ?? []}
+              onReadyCountChange={(ready, total) =>
+                setCategoryReadyCounts({ ready, total })
+              }
+            />
+          )}
+
           {revisionData && (
             <div className="space-y-4" data-testid="wizard-revision-mode">
               {/* Banner revisión detectada */}
@@ -1681,7 +1705,11 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                   ) : (
                     <ArrowRight size={14} aria-hidden="true" />
                   )}
-                  Confirmar e ingestar
+                  <span data-testid="wizard-step2-confirm-label">
+                    {categoryReadyCounts.total > 0
+                      ? `Confirmar categorías completas (${categoryReadyCounts.ready} de ${categoryReadyCounts.total})`
+                      : "Confirmar e ingestar"}
+                  </span>
                 </button>
               </div>
               {!canCommit && pendingAmbiguous.length > 0 && (

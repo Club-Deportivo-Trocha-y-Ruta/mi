@@ -160,16 +160,29 @@ def stub_parsers(monkeypatch):
     from app.routers import race_imports as router_mod
 
     async def fake_parse_results(path, ext):  # noqa: ARG001
-        from app.services.race.pdf_parser import ResultsRow
-        return {
-            "TET_CP": [
-                ResultsRow(
-                    position=1, bib="550", name="Sebastian Yule Mendoza",
-                    city="Yumbo", club="Club Trocha y Ruta",
-                    time_raw="0:03:38", points=40,
+        # Feature 044 (US1): `_parse_results_with_timeout` devuelve
+        # `ParsedResults`, no el dict legado — el stub imita esa forma.
+        from app.services.race.pdf_parser import (
+            ParsedCategory,
+            ParsedResults,
+            ResultsRow,
+        )
+        return ParsedResults(
+            categories=[
+                ParsedCategory(
+                    header_raw="TETEROS CON PEDALES",
+                    code="TET_CP",
+                    rows=[
+                        ResultsRow(
+                            position=1, bib="550", name="Sebastian Yule Mendoza",
+                            city="Yumbo", club="Club Trocha y Ruta",
+                            time_raw="0:03:38", points=40,
+                        ),
+                    ],
                 ),
             ],
-        }
+            unreadable_rows=[],
+        )
 
     async def fake_parse_general(path):  # noqa: ARG001
         return {}

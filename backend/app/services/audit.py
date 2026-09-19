@@ -1064,8 +1064,10 @@ _AI_RUNS: dict[tuple[str, str], AuditPolicy] = {
     ): Audited(frozenset({AuditEntityType.athlete_ai_insight})),
 }
 
-#: §4.10 Race results domain — 18 keys, 17 instrumentadas y 1 pendiente
-#: (`POST …/imports/{parse_id}/dry-run`).
+#: §4.10 Race results domain — 25 keys, 24 instrumentadas y 1 exenta
+#: (`POST …/imports/{parse_id}/dry-run`, §4.14 — ya no "pendiente", ver su
+#: razón abajo). Los dos últimos pares (feature 044, T019) son
+#: `.../{parse_id}/corrections` y `.../{parse_id}/acknowledge`.
 _RACE_RESULTS: dict[tuple[str, str], AuditPolicy] = {
     ("POST", "/api/race-analysis/race-series/"): Audited(
         frozenset({AuditEntityType.race_series})
@@ -1110,6 +1112,16 @@ _RACE_RESULTS: dict[tuple[str, str], AuditPolicy] = {
         "Settled as a §4.14 exemption, not pending instrumentation."
     ),
     ("POST", "/api/race-analysis/imports/{parse_id}/commit"): Audited(
+        frozenset({AuditEntityType.race_import})
+    ),
+    # Feature 044 (US1, research R-05): corrección manual de una fila y
+    # reconocimiento de una categoría con completitud inconsistente. Ambas
+    # mutan `race_imports.parse_meta_json` — nunca el contenido de la fila
+    # (que sí lleva nombres de menores) llega a `meta_json`/`diff_json`.
+    ("POST", "/api/race-analysis/imports/{parse_id}/corrections"): Audited(
+        frozenset({AuditEntityType.race_import})
+    ),
+    ("POST", "/api/race-analysis/imports/{parse_id}/acknowledge"): Audited(
         frozenset({AuditEntityType.race_import})
     ),
     ("POST", "/api/race-analysis/race-events/"): Audited(

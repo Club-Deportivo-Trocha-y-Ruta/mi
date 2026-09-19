@@ -5,7 +5,7 @@ de ``AsyncSession`` que usa el ingestor — select, add, flush, commit, rollback
 No requiere aiosqlite ni MySQL.
 
 Cobertura mínima (≥5 casos, workflow §4.4):
-- Ingest V-IV completo: 26 categorías, 227 race_results, 10 TyR.
+- Ingest V-IV completo: 26 categorías, 229 race_results, 10 TyR.
 - Re-ingest sin SHA: idempotente por UNIQUE (results_skipped sube).
 - Re-ingest con SHA committed: abort idempotente (results_inserted=0).
 - Match decision aplicada: bib 553 queda con athlete_id confirmado.
@@ -118,10 +118,13 @@ class TestIngestFromFullPdf:
         # 26 categorías observadas en V-IV (edge-cases §1)
         assert len(results) == 26
 
-        # 227 finalistas en RESULTADOS (edge-cases §1)
+        # 229 finalistas en RESULTADOS. Corregido de 227 en la feature 044: el
+        # acta imprime 229 y el parser por líneas perdía dos filas con club
+        # largo superpuesto al tiempo (PREINFANTIL B puesto 17, MASTER B1
+        # puesto 5); el lector por banda las recupera.
         total_rows = sum(len(rs) for rs in results.values())
-        assert total_rows == 227
-        assert report.results_inserted == 227
+        assert total_rows == 229
+        assert report.results_inserted == 229
         assert report.results_skipped == 0
 
         # 10 TyR en RESULTADOS V-IV (edge-cases §5)
@@ -484,7 +487,9 @@ class TestFullIdempotency:
             pdf_results_sha256=sha,
             ingested_by_user_id=1,
         )
-        assert r1.results_inserted == 227
+        # 229, no 227: ver la nota de test_ingest_valida_iv_creates_expected_counts
+        # (el parser por líneas perdía dos filas con club largo superpuesto).
+        assert r1.results_inserted == 229
 
         # Re-ingest con mismo sha → no escribe results
         snapshot_results_count = len(fake_session.store.results)
