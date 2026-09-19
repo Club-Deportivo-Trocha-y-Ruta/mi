@@ -26,6 +26,11 @@ Convenciones de schema (Paso 2):
 - ``RaceCompetitor.normalized_name`` es UNIQUE — el upsert se hace por allí.
 - ``RaceImport`` usa enum ``RaceImportStatus.{pending, dry_run, committed, failed}``.
 - ``RaceResult.created_by_user_id`` es NOT NULL → debe pasarse ``ingested_by_user_id``.
+- Feature 044: ``category_label_raw``/``category_age_min_raw``/``category_age_max_raw``
+  se congelan en el INSERT y nunca se actualizan después (ver docstring de
+  ``ingest_event`` § ``category_headers_raw`` y research.md R-04). Categorías
+  con ``is_active=False`` (propias de temporada 2024/2025) se ingestan igual
+  — necesario para la carga histórica — pero generan warning no bloqueante.
 """
 from __future__ import annotations
 
@@ -177,6 +182,7 @@ class RaceIngestor:
         ingested_by_user_id: int,
         dry_run: bool = False,
         series_id: Optional[int] = None,
+        category_headers_raw: Optional[dict[str, str]] = None,
     ) -> IngestReport:
         """Ingest atómico de una válida completa.
 
@@ -204,6 +210,17 @@ class RaceIngestor:
                 avanza a ``committed``) para que un ``ingest_event`` posterior
                 con ``dry_run=False`` y el mismo ``pdf_results_sha256`` pueda
                 promoverlo. Default ``False`` (backward compat con CLI F1.7).
+            category_headers_raw: (feature 044, US2) ``{code: header_raw}`` —
+                el encabezado tal como venía impreso en el PDF/CSV para cada
+                categoría (ej. ``{"ELITE_M": "ELITE HOMBRES"}``). Punto de
+                extensión para cuando ``pdf_parser.parse_results_document``
+                exponga ``ParsedCategory.header_raw`` (en desarrollo en
+                paralelo); el caller arma este dict a partir de esa lista.
+                Opcional y retrocompatible: si no se pasa (o el code no está
+                presente), ``category_label_raw`` congela la etiqueta VIGENTE
+                del catálogo (``category.label``) en el momento del insert en
+                vez del header crudo — sigue siendo una congelación válida,
+                solo que la fuente es el catálogo y no el PDF.
 
         Returns:
             ``IngestReport`` con conteos y warnings (sin nombres completos).
@@ -324,6 +341,19 @@ class RaceIngestor:
                         f"Verificar seed `race_categories`."
                     )
 
+                # T027/T030: `_load_category_cache` no filtra `is_active` a
+                # propósito — la carga histórica (2024/2025) reusa este mismo
+                # ingestor para resolver codes propios de temporada (R-12).
+                # Pero nada distinguía esa carga legítima de un import de
+                # temporada corriente que por error resolviera a un code
+                # inactivo. No bloqueamos (bloquear rompería la carga
+                # histórica) — advertencia no bloqueante, mismo formato que
+                # `tiempo_anomalo`: code + categoría, nunca un nombre.
+                if not category.is_active:
+                    warnings.append(
+                        f"categoria_inactiva cat={code} label={category.label!r}"
+                    )
+
                 # Index de race_results existentes para idempotencia por UNIQUE
                 # (no consultamos en el loop por performance; un solo select por categoría)
                 existing_pairs = await self._existing_competitor_ids_for(
@@ -388,6 +418,21 @@ class RaceIngestor:
                     athlete_id_to_persist = competitor.athlete_id if is_tyr else None
                     laps_behind_val = laps_behind if laps_behind > 0 else None
 
+                    # Feature 044 (US2, research R-04): columnas congeladas —
+                    # se escriben UNA sola vez, aquí, y nunca se actualizan
+                    # después (ni por una edición del catálogo ni por el flujo
+                    # de revisión, que inserta filas nuevas en vez de editar
+                    # las existentes). El header crudo del PDF tiene prioridad
+                    # cuando el caller lo provee (``category_headers_raw``,
+                    # ver docstring); si no, cae a la etiqueta vigente del
+                    # catálogo en este instante — retrocompatible con los
+                    # llamadores actuales, que todavía no pasan el header.
+                    header_raw = (
+                        category_headers_raw.get(code)
+                        if category_headers_raw
+                        else None
+                    )
+
                     race_result = RaceResult(
                         event_id=event.id,
                         category_id=category.id,
@@ -399,6 +444,9 @@ class RaceIngestor:
                         race_time_ms=race_time_ms,
                         laps_behind=laps_behind_val,
                         points_awarded=row.points,
+                        category_label_raw=header_raw or category.label,
+                        category_age_min_raw=category.age_min,
+                        category_age_max_raw=category.age_max,
                         imported_from_id=(race_import.id if race_import else None),
                         created_by_user_id=ingested_by_user_id,
                     )

@@ -729,6 +729,7 @@ class TestCoachNotePrivacy:
             "club_text": "Trocha y Ruta",
             "category_code": "INF_F",
             "category_label": "Infantil Femenino",
+            "category_label_raw": None,  # feature 044: sin dato, cae al label del catálogo
             "category_sort_order": 1,
         }
 
@@ -812,6 +813,7 @@ class TestCoachNotePrivacy:
             "club_text": "Trocha y Ruta",
             "category_code": "INF_M",
             "category_label": "Infantil Masculino",
+            "category_label_raw": None,  # feature 044: sin dato, cae al label del catálogo
             "category_sort_order": 2,
         }
 

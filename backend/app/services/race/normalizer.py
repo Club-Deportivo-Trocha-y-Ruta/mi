@@ -45,9 +45,11 @@ DEFAULT_TYR_THRESHOLD: int = 85
 #: ``race_categories``. Igualdad exacta sobre header normalizado para evitar
 #: la colisión ``"INFANTIL A" ⊂ "INFANTIL A FEMENINO"`` (edge-cases.md §4.4).
 #:
-#: 26 entradas correspondientes a las 26 categorías observadas en Válida IV
-#: (edge-cases.md §2). Si una válida futura usa un texto distinto (ej.
-#: ``INFANTIL A (FEMENINO)``), ampliar este dict — punto único de cambio.
+#: 38 entradas: las 26 categorías observadas en Válida IV (edge-cases.md §2)
+#: más 12 alias históricos Copa Valle 2024/2025 (feature 044, ver
+#: ``contracts/category-mapping.md`` y ``HEADER_ALIASES``). Si una válida
+#: futura usa un texto distinto (ej. ``INFANTIL A (FEMENINO)``), ampliar
+#: este dict — punto único de cambio.
 HEADER_TO_CODE: dict[str, str] = {
     "teteros sin pedales": "TET_SP",
     "teteros con pedales": "TET_CP",
@@ -75,7 +77,49 @@ HEADER_TO_CODE: dict[str, str] = {
     "master c2": "MAS_C2",
     "master d": "MAS_D",
     "master femenino": "MAS_F",
+    # ------------------------------------------------------------------
+    # Alias históricos (feature 044, carga histórica Copa Valle 2024/2025).
+    # Ver contracts/category-mapping.md y research.md R-03. Amplían el
+    # MISMO dict (no uno paralelo) — 26 originales + 12 alias = 38 entradas.
+    # ------------------------------------------------------------------
+    # --- Renombres puros: header histórico distinto, misma categoría 2026 --
+    "elite hombres": "ELITE_M",
+    "elite damas": "ELITE_F",
+    "junior damas": "JUN_F",
+    "master damas": "MAS_F",
+    "infantil a ninas": "INF_A_F",
+    "infantil b ninas": "INF_B_F",
+    "prejuvenil a damas": "PJUV_A_F",
+    "prejuvenil b damas": "PJUV_B_F",
+    # --- Propios de temporada: sin equivalente activo, resuelven a codes --
+    # --- inactivos del catálogo (nunca ofrecidos para datos 2026+) --------
+    "master b": "MAS_B_2025",
+    "master c": "MAS_C_2025",
+    "preinfantil ninas": "PRE_F_U",
+    "preinfantil femenino": "PRE_F_U",
 }
+
+#: Subconjunto de keys de ``HEADER_TO_CODE`` que son alias históricos (feature
+#: 044) — es decir, NO están entre las 26 originales de Válida IV 2026.
+#: Usado por ``mapping_kind_for`` para distinguir ``exact`` de
+#: ``rename``/``season_specific``. Disjunto de las 26 keys originales por
+#: construcción (contracts/category-mapping.md).
+HEADER_ALIASES: frozenset[str] = frozenset(
+    {
+        "elite hombres",
+        "elite damas",
+        "junior damas",
+        "master damas",
+        "infantil a ninas",
+        "infantil b ninas",
+        "prejuvenil a damas",
+        "prejuvenil b damas",
+        "master b",
+        "master c",
+        "preinfantil ninas",
+        "preinfantil femenino",
+    }
+)
 
 # ---------------------------------------------------------------------------
 # Regex para parse_time
@@ -283,3 +327,40 @@ def parse_category_header(s: str) -> Optional[str]:
     header = header.replace("-", "")
     header = re.sub(r"\s+", " ", header).strip()
     return HEADER_TO_CODE.get(header)
+
+
+def mapping_kind_for(raw_header: str, category: Optional[object]) -> str:
+    """Clasifica cómo resolvió un header de categoría (feature 044, US2).
+
+    Recibe el header CRUDO (con prefijo ``CAT:``/``CATEGORIA:``), igual que
+    ``parse_category_header`` — no un header ya normalizado — para poder
+    aplicar la misma normalización aquí adentro.
+
+    Contrato (``contracts/category-mapping.md``):
+    - ``category is None`` → ``"unknown"`` (el header no resolvió a ningún
+      code — desconocido para el catálogo).
+    - Header normalizado en ``HEADER_ALIASES`` y ``category.is_active`` →
+      ``"rename"`` (alias histórico que resuelve a una categoría activa
+      2026 — ej. ``ELITE HOMBRES`` → ``ELITE_M``).
+    - Header normalizado en ``HEADER_ALIASES`` y NO ``category.is_active``
+      → ``"season_specific"`` (alias que resuelve a un code propio de
+      temporada, ej. ``MASTER B`` → ``MAS_B_2025``).
+    - Cualquier otro header resuelto (una de las 26 keys originales) →
+      ``"exact"``.
+
+    ``category`` solo necesita exponer ``.is_active`` (duck typing) — los
+    tests lo ejercitan con ``SimpleNamespace`` sin tocar la DB.
+    """
+    if category is None:
+        return "unknown"
+    if not raw_header:
+        return "exact"
+    m = _CAT_HEADER_RE.match(raw_header)
+    if not m:
+        return "exact"
+    header = _strip_diacritics_lower(m.group(1))
+    header = header.replace("-", "")
+    header = re.sub(r"\s+", " ", header).strip()
+    if header in HEADER_ALIASES:
+        return "rename" if category.is_active else "season_specific"
+    return "exact"

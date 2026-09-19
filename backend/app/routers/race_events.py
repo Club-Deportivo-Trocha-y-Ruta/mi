@@ -1286,7 +1286,11 @@ def _result_row_from_orm(row: RaceResult) -> ResultRow:
     """Serialize a ``RaceResult`` ORM instance to ``ResultRow``.
 
     Used by the coach-note PUT/DELETE handlers where we already hold
-    the ORM object (no extra query needed).
+    the ORM object (no extra query needed). Callers must eager-load
+    ``row.category`` (``selectinload(RaceResult.category)``) — feature 044's
+    ``category_label`` falls back to ``row.category.label`` when
+    ``category_label_raw`` is still NULL (rows older than the backfill
+    migration), and a lazy-load here would raise ``MissingGreenlet``.
     """
     return ResultRow(
         result_id=row.id,
@@ -1301,6 +1305,7 @@ def _result_row_from_orm(row: RaceResult) -> ResultRow:
         laps_behind=row.laps_behind,
         points_awarded=row.points_awarded if row.points_awarded is not None else 0,
         bib_number=row.bib_number,
+        category_label=row.category_label_raw or row.category.label,
         coach_note=row.coach_note,
         coach_note_updated_at=row.coach_note_updated_at,
     )
@@ -1337,7 +1342,7 @@ async def set_race_result_coach_note(
 
     result = await db.execute(
         select(RaceResult)
-        .options(selectinload(RaceResult.competitor))
+        .options(selectinload(RaceResult.competitor), selectinload(RaceResult.category))
         .where(RaceResult.id == result_id, RaceResult.deleted_at.is_(None))
     )
     race_result: Optional[RaceResult] = result.scalar_one_or_none()
@@ -1415,7 +1420,7 @@ async def clear_race_result_coach_note(
 
     result = await db.execute(
         select(RaceResult)
-        .options(selectinload(RaceResult.competitor))
+        .options(selectinload(RaceResult.competitor), selectinload(RaceResult.category))
         .where(RaceResult.id == result_id, RaceResult.deleted_at.is_(None))
     )
     race_result: Optional[RaceResult] = result.scalar_one_or_none()

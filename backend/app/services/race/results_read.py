@@ -136,6 +136,7 @@ async def get_event_results(
             RaceResult.points_awarded,
             RaceResult.bib_number,
             RaceResult.category_id,
+            RaceResult.category_label_raw,
             RaceResult.coach_note,
             RaceResult.coach_note_updated_at,
             RaceCompetitor.display_name,
@@ -219,6 +220,9 @@ async def get_event_results(
                 laps_behind=row["laps_behind"],
                 points_awarded=row["points_awarded"] if row["points_awarded"] is not None else 0,
                 bib_number=row["bib_number"],
+                # Feature 044 (R-04): etiqueta congelada al insertar, con
+                # respaldo en la del catálogo para filas previas al backfill.
+                category_label=row["category_label_raw"] or row["category_label"],
                 coach_note=None if is_parent_scope else row["coach_note"],
                 coach_note_updated_at=None if is_parent_scope else row["coach_note_updated_at"],
                 distance_km=figures.distance_km,

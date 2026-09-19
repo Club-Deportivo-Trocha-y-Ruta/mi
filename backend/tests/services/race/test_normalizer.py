@@ -5,8 +5,17 @@ Cobertura:
 - ``is_trocha_y_ruta``: variantes válidas, falsos positivos cortos, vacíos.
 - ``normalize_club``: placeholder ``0``, casing, tildes.
 - ``parse_category_header``: 26 categorías + colisión INF_A vs INF_A_F.
+- T025 (feature 044, US2): alias de categorías históricas 2024/2025 →
+  ``contracts/category-mapping.md``, y derivación de ``mapping_kind``.
+
+TDD (T025): al escribir estas clases, ``normalizer.py`` todavía no tiene los
+12 alias de ``HEADER_TO_CODE``, ni ``HEADER_ALIASES``, ni
+``mapping_kind_for`` (T028, agente data-analyst, pendiente) — deben fallar
+por ``ImportError``/``KeyError`` hoy, no por un error de este archivo.
 """
 from __future__ import annotations
+
+from types import SimpleNamespace
 
 import pytest
 
@@ -311,6 +320,153 @@ class TestParseCategoryHeader:
         assert parse_category_header("INFANTIL A") is None
         assert parse_category_header("") is None
 
-    def test_header_to_code_has_26_entries(self):
-        """Sanity check: el dict tiene exactamente 26 entries (edge-cases §1)."""
-        assert len(HEADER_TO_CODE) == 26
+    def test_header_to_code_has_38_entries_after_044_aliases(self):
+        """Sanity check: 26 originales (edge-cases §1) + 12 alias históricos
+        del contrato de la 044 (8 renombres + 4 propios de temporada) = 38.
+
+        Reemplaza el sanity check previo de "26 entries" — T028 agrega los
+        alias al MISMO dict (``HEADER_TO_CODE``, no uno separado), así que
+        el tamaño total debe crecer. Si este test falla con
+        ``len == 26``, T028 todavía no corrió.
+        """
+        assert len(HEADER_TO_CODE) == 38
+
+
+# ---------------------------------------------------------------------------
+# T025 (feature 044, US2) — alias de categorías históricas 2024/2025
+# ---------------------------------------------------------------------------
+
+
+class TestHistoricalAliasResolution:
+    """Cada fila de la tabla de alias de ``contracts/category-mapping.md``,
+    probada con y sin tildes y con y sin guion donde aplica (el CSV y el PDF
+    difieren en eso — ver instrucción T025)."""
+
+    @pytest.mark.parametrize(
+        "header,expected_code",
+        [
+            # --- Renombres puros → código activo 2026 -----------------------
+            ("CAT: ELITE HOMBRES", "ELITE_M"),
+            ("CAT: ELITE DAMAS", "ELITE_F"),
+            ("CAT: JUNIOR DAMAS", "JUN_F"),
+            ("CAT: MASTER DAMAS", "MAS_F"),
+            ("CAT: INFANTIL A NINAS", "INF_A_F"),
+            ("CAT: INFANTIL A NIÑAS", "INF_A_F"),  # con tilde
+            ("CAT: INFANTIL B NINAS", "INF_B_F"),
+            ("CAT: INFANTIL B NIÑAS", "INF_B_F"),  # con tilde
+            ("CAT: PREJUVENIL A DAMAS", "PJUV_A_F"),
+            ("CAT: PRE-JUVENIL A DAMAS", "PJUV_A_F"),  # con guion
+            ("CAT: PREJUVENIL B DAMAS", "PJUV_B_F"),
+            ("CAT: PRE-JUVENIL B DAMAS", "PJUV_B_F"),  # con guion
+            # --- Propios de temporada → código inactivo (nunca 2026) --------
+            ("CAT: MASTER B", "MAS_B_2025"),
+            ("CAT: MASTER C", "MAS_C_2025"),
+            ("CAT: PREINFANTIL NINAS", "PRE_F_U"),
+            ("CAT: PREINFANTIL NIÑAS", "PRE_F_U"),  # con tilde
+            ("CAT: PRE-INFANTIL NINAS", "PRE_F_U"),  # con guion
+            ("CAT: PRE-INFANTIL NIÑAS", "PRE_F_U"),  # con guion + tilde
+            ("CAT: PREINFANTIL FEMENINO", "PRE_F_U"),
+            ("CAT: PRE-INFANTIL FEMENINO", "PRE_F_U"),  # con guion
+        ],
+    )
+    def test_alias_resolves_to_contract_code(self, header: str, expected_code: str):
+        assert parse_category_header(header) == expected_code
+
+    def test_renames_still_collide_correctly_with_2026_forms(self):
+        """Un alias y su forma 2026 nativa deben resolver al MISMO code —
+        el catálogo no se duplica, sólo se amplía el vocabulario aceptado."""
+        assert parse_category_header("CAT: ELITE HOMBRES") == parse_category_header(
+            "CAT: ELITE"
+        )
+        assert parse_category_header(
+            "CAT: INFANTIL A NIÑAS"
+        ) == parse_category_header("CAT: INFANTIL A FEMENINO")
+
+
+class TestHeaderAliasesFrozenset:
+    """``HEADER_ALIASES`` marca cuáles keys de ``HEADER_TO_CODE`` son alias
+    (no las 26 originales) — usado por ``mapping_kind_for`` para distinguir
+    ``exact`` de ``rename``/``season_specific``."""
+
+    def test_contains_exactly_the_12_alias_headers(self):
+        from app.services.race.normalizer import HEADER_ALIASES
+
+        assert HEADER_ALIASES == frozenset(
+            {
+                "elite hombres",
+                "elite damas",
+                "junior damas",
+                "master damas",
+                "infantil a ninas",
+                "infantil b ninas",
+                "prejuvenil a damas",
+                "prejuvenil b damas",
+                "master b",
+                "master c",
+                "preinfantil ninas",
+                "preinfantil femenino",
+            }
+        )
+
+    def test_aliases_disjoint_from_original_26(self):
+        """Ningún alias reemplaza/colisiona con una de las 26 keys nativas
+        2026 — son vocabulario ADICIONAL, no un rename del dict existente."""
+        from app.services.race.normalizer import HEADER_ALIASES
+
+        original_26 = {
+            "teteros sin pedales", "teteros con pedales",
+            "preinfantil a", "preinfantil a femenino",
+            "preinfantil b", "preinfantil b femenino",
+            "infantil a", "infantil a femenino",
+            "infantil b", "infantil b femenino",
+            "prejuvenil a", "prejuvenil a femenino",
+            "prejuvenil b", "prejuvenil b femenino",
+            "junior", "junior femenino",
+            "elite", "elite femenino",
+            "promocional",
+            "master a", "master b1", "master b2", "master c1", "master c2",
+            "master d", "master femenino",
+        }
+        assert len(original_26) == 26
+        assert HEADER_ALIASES.isdisjoint(original_26)
+        assert HEADER_ALIASES <= set(HEADER_TO_CODE.keys())
+
+
+class TestMappingKindDerivation:
+    """``mapping_kind_for(header, category)`` — contrato: ``exact`` para una
+    de las 26 keys originales; ``rename`` para un alias que resuelve a una
+    categoría ``is_active=True``; ``season_specific`` para un alias que
+    resuelve a ``is_active=False``; ``unknown`` cuando no resolvió (``category
+    is None``)."""
+
+    def test_exact_for_one_of_the_26_original_headers(self):
+        from app.services.race.normalizer import mapping_kind_for
+
+        active_category = SimpleNamespace(is_active=True)
+        assert mapping_kind_for("CAT: INFANTIL A", active_category) == "exact"
+
+    def test_rename_for_alias_resolving_to_active_category(self):
+        from app.services.race.normalizer import mapping_kind_for
+
+        active_category = SimpleNamespace(is_active=True)  # p.ej. ELITE_M
+        assert mapping_kind_for("CAT: ELITE HOMBRES", active_category) == "rename"
+
+    def test_season_specific_for_alias_resolving_to_inactive_category(self):
+        from app.services.race.normalizer import mapping_kind_for
+
+        inactive_category = SimpleNamespace(is_active=False)  # p.ej. MAS_B_2025
+        assert mapping_kind_for("CAT: MASTER B", inactive_category) == "season_specific"
+
+    def test_season_specific_for_preinfantil_grupo_unico(self):
+        from app.services.race.normalizer import mapping_kind_for
+
+        inactive_category = SimpleNamespace(is_active=False)  # PRE_F_U
+        assert (
+            mapping_kind_for("CAT: PREINFANTIL FEMENINO", inactive_category)
+            == "season_specific"
+        )
+
+    def test_unknown_when_unresolved(self):
+        from app.services.race.normalizer import mapping_kind_for
+
+        assert mapping_kind_for("CAT: SUPER ELITE COSMICO", None) == "unknown"

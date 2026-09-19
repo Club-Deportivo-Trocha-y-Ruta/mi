@@ -58,6 +58,16 @@ class ResultRow(BaseModel):
     )
     points_awarded: int = Field(..., description="Points credited to the competitor.")
     bib_number: Optional[int] = Field(None, description="Race bib number.")
+    category_label: str = Field(
+        ...,
+        description=(
+            "Feature 044: etiqueta congelada de la categoría al momento de "
+            "cargar este resultado (``category_label_raw``), o la etiqueta "
+            "vigente del catálogo cuando el resultado es anterior a la "
+            "migración de backfill. Nunca cambia si el catálogo se edita "
+            "después — ver research.md R-04."
+        ),
+    )
     coach_note: Optional[str] = Field(
         None,
         description="Coach qualitative note for this result (max 500 chars). None if not set.",
