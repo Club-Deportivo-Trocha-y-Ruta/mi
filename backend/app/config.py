@@ -233,6 +233,21 @@ class Settings(BaseSettings):
     race_ai_budget_usd_30d: float = 20.0
 
     # -----------------------------------------------------------------------
+    # Histórico de resultados — visibilidad para familias (feature 044, FR-041)
+    # -----------------------------------------------------------------------
+    # Las válidas históricas (Copa Valle 2024/2025) incluyen carreras que un
+    # deportista corrió ANTES de entrar al club. Ese dato no lo entregó la
+    # familia al club, así que no se le muestra hasta que esté vigente un
+    # aviso de privacidad que lo diga explícitamente.
+    #
+    # Vacío (default) = compuerta CERRADA: a rol `parent` se le filtran en el
+    # servidor los resultados anteriores a la fecha de registro del atleta,
+    # sin señal alguna de que se omitió algo. Coach y admin nunca se filtran.
+    # Con valor = `privacy_policies.version` que autoriza mostrarlos; solo
+    # abre la compuerta si esa versión existe y su `effective_date` ya llegó.
+    race_history_family_policy_version: str = ""
+
+    # -----------------------------------------------------------------------
     # Race AI — reconciliación de runs huérfanos (specs/036, US3)
     # -----------------------------------------------------------------------
     # El registry de runs activos (services/race/ai/runner.py) vive SOLO en

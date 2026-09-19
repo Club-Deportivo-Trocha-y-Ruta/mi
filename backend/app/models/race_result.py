@@ -16,6 +16,10 @@ El edge-cases.md §4.7 confirma que `MINUS_LAPS` es necesario (Válida IV mostr�
 
 `bib_number` se persiste como `SmallInteger`: si una válida futura usa dorsales
 alfanuméricos (`1A`, `E-23` per edge-cases.md §4.8), habrá que migrar a `String(10)`.
+
+Feature 044 (histórico Copa Valle 2024-2025) agrega tres columnas *congeladas*:
+`category_label_raw`, `category_age_min_raw`, `category_age_max_raw`. Ver el
+docstring de `RaceResult` — se escriben UNA sola vez, al insertar.
 """
 from __future__ import annotations
 
@@ -78,6 +82,24 @@ class RaceResult(Base):
 
     `imported_from_id` referencia el `race_imports.id` que originó el insert
     (audit trail). `deleted_at` permite soft-delete.
+
+    **Columnas congeladas (feature 044, data-model §1 / research R-04).**
+    `category_label_raw`, `category_age_min_raw` y `category_age_max_raw` se
+    escriben **una sola vez, en el INSERT**, y **nunca se actualizan**: ni por
+    el flujo de revisión (que inserta filas nuevas, no las edita) ni por
+    ninguna edición posterior del catálogo `race_categories`.
+
+    Congelan *qué significaba la categoría cuando se cargó el resultado*. El
+    catálogo es mutable — una etiqueta se puede renombrar y un rango de edad
+    se puede corregir — y sin estas tres columnas esa edición reescribiría el
+    pasado: un resultado de 2024 aparecería con la etiqueta y el rango de
+    2026. Todo camino de lectura que muestre la categoría de un resultado
+    *pasado* prefiere la etiqueta congelada sobre `category.label`.
+
+    Son nullable porque las filas anteriores a la migración 044 se
+    backfillean desde el catálogo vigente en ese momento (mejor aproximación
+    disponible) y porque `age_min`/`age_max` del catálogo son de por sí
+    nullable (categorías máster 2025 sin rango publicado).
     """
 
     __tablename__ = "race_results"
@@ -128,6 +150,10 @@ class RaceResult(Base):
     race_time_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     laps_behind: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     points_awarded: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0)
+    # --- Feature 044: congelado al insertar, nunca actualizado (ver docstring).
+    category_label_raw: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    category_age_min_raw: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    category_age_max_raw: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     imported_from_id: Mapped[int | None] = mapped_column(
         ForeignKey("race_imports.id", ondelete="SET NULL"), nullable=True
     )

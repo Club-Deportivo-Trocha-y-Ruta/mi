@@ -50,6 +50,14 @@ from app.models.race_result import RaceResult, ResultStatus
 from app.models.race_result_revision import RaceResultRevision, RaceResultRevisionAction
 from app.models.race_series import RaceSeries
 
+# Feature 044 — Histórico Copa Valle 2024-2025 (identidad entre temporadas)
+from app.models.race_competitor_signature import RaceCompetitorSignature
+from app.models.race_identity_candidate import (
+    IdentityCandidateKind,
+    IdentityCandidateState,
+    RaceIdentityCandidate,
+)
+
 # Race-analysis v2 agentic module (BE-1)
 from app.models.agent_run import AgentRun, AgentRunStatus
 from app.models.athlete_ai_insight import AthleteAiInsight, InsightConfidence
@@ -198,4 +206,9 @@ __all__ = [
     # Feature 043 — Race course profile
     "RaceCourseVariant",
     "RaceCourseCategorySetup",
+    # Feature 044 — Histórico Copa Valle 2024-2025
+    "RaceCompetitorSignature",
+    "RaceIdentityCandidate",
+    "IdentityCandidateKind",
+    "IdentityCandidateState",
 ]

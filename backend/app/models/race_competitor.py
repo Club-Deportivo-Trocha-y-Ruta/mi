@@ -8,10 +8,16 @@ Equivale al `riders` del `design.md §3.3`. Convenciones de nombres distintas:
 - `display_name`              → equivale a `full_name_raw` del design.
 - `club_text`                 → equivale a `club_raw` del design.
 
+Feature 044 (histórico Copa Valle 2024-2025) cambia la identidad:
+- Se elimina `uq_race_competitors_normalized_name`. Dos personas distintas
+  **pueden** llamarse igual; con el UNIQUE global se fusionaban en silencio.
+- La unicidad de identidad pasa a `race_competitor_signatures`, con
+  `UNIQUE(normalized_name, club_norm, city_norm)` — ese UNIQUE es también el
+  que restituye la protección de concurrencia que daba el eliminado.
+- Se agrega `city_text` como señal de desambiguación.
+
 Campos del design que NO existen físicamente en la tabla:
 - `full_name_normalized` separado (se usa `normalized_name`).
-- `city_raw` (no almacenada; el parser la captura para resolución de homónimos
-  durante ingesta pero no se persiste — el matcher prioriza nombre + club).
 - `club_normalized` (no almacenada; se calcula on-demand desde `club_text`).
 - `is_trocha_y_ruta` flag explícito (se deriva de `athlete_id IS NOT NULL`
   cuando hay match confirmado; el parser persiste `club_text` para que la
@@ -34,7 +40,6 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
-    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -42,6 +47,7 @@ from app.models.base import Base
 
 if TYPE_CHECKING:
     from app.models.athlete import Athlete
+    from app.models.race_competitor_signature import RaceCompetitorSignature
     from app.models.race_result import RaceResult
     from app.models.user import User
 
@@ -64,11 +70,16 @@ class RaceCompetitor(Base):
     `Athlete` registrado del club. Es la única forma de marcar un competidor
     como Trocha y Ruta a nivel de modelo (el fuzzy match contra `club_text`
     se ejecuta en cada ingesta y no se persiste como flag).
+
+    Feature 044: `normalized_name` ya **no** es único (índice simple). La
+    unicidad de identidad vive en `RaceCompetitorSignature`.
     """
 
     __tablename__ = "race_competitors"
     __table_args__ = (
-        UniqueConstraint("normalized_name", name="uq_race_competitors_normalized_name"),
+        # Feature 044 — era UNIQUE; ahora índice simple: dos homónimos son dos
+        # personas distintas y el UNIQUE los fusionaba en silencio.
+        Index("ix_race_competitors_normalized_name", "normalized_name"),
         Index("ix_race_competitors_athlete_id", "athlete_id"),
         Index("ix_race_competitors_club_text", "club_text"),
     )
@@ -77,6 +88,11 @@ class RaceCompetitor(Base):
     normalized_name: Mapped[str] = mapped_column(String(160), nullable=False)
     display_name: Mapped[str] = mapped_column(String(160), nullable=False)
     club_text: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    # Feature 044 (FR-014) — señal de desambiguación de homónimos, nada más.
+    # NUNCA se serializa fuera de los schemas de revisión de identidad
+    # (`IdentityRecordRead`, coach/admin): es el único lugar de la plataforma
+    # donde la ciudad de un tercero sale del backend.
+    city_text: Mapped[str | None] = mapped_column(String(100), nullable=True)
     sex: Mapped[CompetitorSex | None] = mapped_column(
         Enum(CompetitorSex, name="racecompetitorsex", values_callable=lambda e: [x.value for x in e]),
         nullable=True,
@@ -111,4 +127,13 @@ class RaceCompetitor(Base):
         "RaceResult",
         back_populates="competitor",
         foreign_keys="[RaceResult.competitor_id]",
+    )
+    # Feature 044 — formas observadas en que este competidor viene impreso.
+    # `cascade="all, delete-orphan"` refleja el ON DELETE CASCADE de la FK:
+    # una firma sin competidor no significa nada.
+    signatures: Mapped[list["RaceCompetitorSignature"]] = relationship(
+        "RaceCompetitorSignature",
+        back_populates="competitor",
+        foreign_keys="[RaceCompetitorSignature.competitor_id]",
+        cascade="all, delete-orphan",
     )
