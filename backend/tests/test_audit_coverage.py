@@ -68,6 +68,10 @@ GENUINE_EXEMPTIONS: frozenset[tuple[str, str]] = frozenset(
         ),
         ("GET", "/api/training-sessions/{session_id}/media"),
         ("POST", "/api/race-analysis/imports/{parse_id}/dry-run"),
+        # Feature 044 (US4, T050): recalcula la cola de candidatos de
+        # identidad, no decide nada — ver la razón en `_RACE_IDENTITY`
+        # (services/audit.py).
+        ("POST", "/api/race-identity/rebuild"),
     }
 )
 

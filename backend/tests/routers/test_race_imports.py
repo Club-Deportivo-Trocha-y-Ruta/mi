@@ -126,6 +126,12 @@ async def sqlite_engine() -> AsyncEngine:
     from app.models.race_category import RaceCategory as _C  # noqa: F401
     from app.models.race_competitor import RaceCompetitor as _Comp  # noqa: F401
     from app.models.race_result import RaceResult as _R  # noqa: F401
+    from app.models.race_competitor_signature import (  # noqa: F401
+        RaceCompetitorSignature as _Sig,
+    )
+    from app.models.race_identity_candidate import (  # noqa: F401
+        RaceIdentityCandidate as _IdCand,
+    )
 
     tables = [
         Base.metadata.tables[t]
@@ -140,6 +146,12 @@ async def sqlite_engine() -> AsyncEngine:
             "race_categories",
             "race_competitors",
             "race_results",
+            # Feature 044 (US4, T050): el candado de identidad de /commit
+            # llama identity_review.rebuild, que lee estas dos tablas incluso
+            # cuando no hay ningún candidato — sin ellas el commit revienta
+            # con "no such table" en vez del 200/409 que el test espera.
+            "race_competitor_signatures",
+            "race_identity_candidates",
             *AUDIT_TABLES,
         )
     ]

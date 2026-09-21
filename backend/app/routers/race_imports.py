@@ -120,6 +120,7 @@ from app.services.race.completeness import (
     apply_corrections,
     check_category,
 )
+from app.services.race import identity_review
 from app.services.race.ingestor import RaceIngestor
 from app.services.race.matcher import match_athletes
 from app.services.race.normalizer import mapping_kind_for
@@ -1040,6 +1041,28 @@ async def _reload_parsed_from_storage(
     return parsed_results, parsed_general, results_ext, category_headers_raw
 
 
+#: Presupuesto del contrato (``identity-review-api.md`` §Rebuild): trabajo
+#: real ≤ 10 s, este timeout deja margen bajo carga sin bloquear la petición
+#: indefinidamente. Compartido por el gate de este router y por
+#: ``POST /api/race-identity/rebuild`` (T049), que importa esta constante en
+#: vez de repetir el número.
+IDENTITY_REBUILD_TIMEOUT_S = 30.0
+
+
+async def load_identity_rows(imp: RaceImport) -> dict[str, list[ResultsRow]]:
+    """``RowsLoader`` de ``identity_review.rebuild`` (feature 044, T050/T049).
+
+    Adapta ``_reload_parsed_from_storage`` — descarta ``GENERAL`` y los
+    metadatos que el universo de identidad no usa, y conserva solo RESULTADOS
+    con las correcciones ya reaplicadas. Vive en este router, no en el
+    servicio, porque reutiliza su descarga SFTP + reparseo; el servicio de
+    identidad no debe importar el router (contrato §Resolver, docstring de
+    ``identity_review.load_universe``).
+    """
+    parsed_results, _general, _ext, _headers = await _reload_parsed_from_storage(imp)
+    return parsed_results
+
+
 def _build_event_meta_from_parse_meta(
     parse_meta: dict,
     filename: Optional[str],
@@ -1276,6 +1299,44 @@ async def commit_import(
     parsed_results, parsed_general, _, category_headers_raw = (
         await _reload_parsed_from_storage(imp)
     )
+
+    # Feature 044 (US4, T050) — candado de revisión de identidad. Mientras
+    # exista al menos un candidato `pending`, el resolver del ingestor podría
+    # fusionar homónimos en silencio (o partir a una misma persona) sin que
+    # el coach haya decidido. `identity_review.rebuild` es idempotente
+    # (nunca pisa una decisión tomada, `pair_hash` no cambia), así que
+    # llamarlo aquí — incluso si el coach nunca pulsó "recalcular" en la
+    # pantalla de revisión — es barato y cierra estructuralmente el hueco:
+    # sin este rebuild, `pending` podría leer 0 solo porque nadie reconstruyó
+    # la cola desde que se subió el import, y el commit avanzaría igual.
+    try:
+        identity_result = await identity_review.rebuild(
+            db, rows_loader=load_identity_rows, timeout_s=IDENTITY_REBUILD_TIMEOUT_S
+        )
+    except TimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "identity_rebuild_timeout",
+                "message": (
+                    "El recálculo de identidad tardó demasiado antes del "
+                    "commit. Intenta de nuevo en unos minutos."
+                ),
+            },
+        )
+    await db.commit()
+    if identity_result.pending > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "identity_review_pending",
+                "pending": identity_result.pending,
+                "message": (
+                    "Hay candidatos de identidad sin decidir. Resuélvelos en "
+                    "la revisión de identidad antes de confirmar la carga."
+                ),
+            },
+        )
 
     # Construir EventMeta (incluye condiciones de carrera si fueron capturadas en /parse)
     try:
