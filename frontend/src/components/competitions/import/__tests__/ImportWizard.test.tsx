@@ -864,6 +864,119 @@ describe("ImportWizard — Step 3", () => {
     await user.click(screen.getByTestId("wizard-step3-retry"));
     expect(screen.getByTestId("import-wizard-step2")).toBeInTheDocument();
   });
+
+  it("commit bloqueado por identidad pendiente (409 identity_review_pending): arma el mensaje con el conteo y muestra un link a la revisión de identidad", async () => {
+    vi.mocked(importsApi.parseRaceImport).mockResolvedValue(PARSE_RESPONSE);
+    vi.mocked(importsApi.dryRunRaceImport).mockResolvedValue(
+      DRY_RUN_CONFIRMED_ONLY,
+    );
+    vi.mocked(importsApi.commitRaceImport).mockRejectedValue({
+      response: {
+        status: 409,
+        data: {
+          detail: {
+            code: "identity_review_pending",
+            pending: 3,
+            message:
+              "Hay candidatos de identidad sin decidir. Resuélvelos en la revisión de identidad antes de confirmar la carga.",
+          },
+        },
+      },
+    });
+
+    const user = userEvent.setup();
+    wrap(<ImportWizard />);
+    await fillStep1AndSubmit(user);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("wizard-step2-confirm")).toBeEnabled(),
+    );
+    await user.click(screen.getByTestId("wizard-step2-confirm"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("wizard-step3-error")).toBeInTheDocument(),
+    );
+    // El frontend arma su propio mensaje con `detail.pending` (más claro
+    // que el texto genérico del backend, que no incluye el número).
+    expect(screen.getByTestId("wizard-step3-error")).toHaveTextContent(
+      "Hay 3 posibles coincidencias de identidad por revisar antes de confirmar la carga.",
+    );
+    const link = screen.getByTestId("wizard-identity-review-link");
+    expect(link).toHaveAttribute("href", "/competitions/identity-review");
+  });
+
+  it("commit bloqueado por identidad pendiente con un solo candidato: usa singular", async () => {
+    vi.mocked(importsApi.parseRaceImport).mockResolvedValue(PARSE_RESPONSE);
+    vi.mocked(importsApi.dryRunRaceImport).mockResolvedValue(
+      DRY_RUN_CONFIRMED_ONLY,
+    );
+    vi.mocked(importsApi.commitRaceImport).mockRejectedValue({
+      response: {
+        status: 409,
+        data: {
+          detail: {
+            code: "identity_review_pending",
+            pending: 1,
+            message: "Hay candidatos de identidad sin decidir.",
+          },
+        },
+      },
+    });
+
+    const user = userEvent.setup();
+    wrap(<ImportWizard />);
+    await fillStep1AndSubmit(user);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("wizard-step2-confirm")).toBeEnabled(),
+    );
+    await user.click(screen.getByTestId("wizard-step2-confirm"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("wizard-step3-error")).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("wizard-step3-error")).toHaveTextContent(
+      "Hay 1 posible coincidencia de identidad por revisar antes de confirmar la carga.",
+    );
+  });
+
+  it("commit bloqueado por timeout de recálculo (503 identity_rebuild_timeout): muestra el mensaje amigable del backend, sin link", async () => {
+    vi.mocked(importsApi.parseRaceImport).mockResolvedValue(PARSE_RESPONSE);
+    vi.mocked(importsApi.dryRunRaceImport).mockResolvedValue(
+      DRY_RUN_CONFIRMED_ONLY,
+    );
+    vi.mocked(importsApi.commitRaceImport).mockRejectedValue({
+      response: {
+        status: 503,
+        data: {
+          detail: {
+            code: "identity_rebuild_timeout",
+            message:
+              "El recálculo de identidad tardó demasiado antes del commit. Intenta de nuevo en unos minutos.",
+          },
+        },
+      },
+    });
+
+    const user = userEvent.setup();
+    wrap(<ImportWizard />);
+    await fillStep1AndSubmit(user);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("wizard-step2-confirm")).toBeEnabled(),
+    );
+    await user.click(screen.getByTestId("wizard-step2-confirm"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("wizard-step3-error")).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("wizard-step3-error")).toHaveTextContent(
+      /El recálculo de identidad tardó demasiado/,
+    );
+    expect(
+      screen.queryByTestId("wizard-identity-review-link"),
+    ).not.toBeInTheDocument();
+  });
 });
 
 // ---------------------------------------------------------------------------

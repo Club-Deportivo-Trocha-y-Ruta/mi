@@ -227,6 +227,21 @@ function getErrMsg(err: unknown, fallback: string): string {
       message?: string;
     };
     const detail = e.response?.data?.detail;
+    // Feature 044 (US4/US5) — `race_imports.py::commit_import` responde con
+    // `detail: {code, message, ...}` para el candado de identidad
+    // (`identity_review_pending`, 409) y el timeout de recálculo
+    // (`identity_rebuild_timeout`, 503). Ese `message` ya viene en español
+    // y es más específico que los status codes genéricos de abajo, así que
+    // se prioriza sobre ellos.
+    if (
+      detail &&
+      typeof detail === "object" &&
+      !Array.isArray(detail) &&
+      "message" in detail &&
+      typeof (detail as { message?: unknown }).message === "string"
+    ) {
+      return (detail as { message: string }).message;
+    }
     if (typeof detail === "string") return detail;
     if (Array.isArray(detail) && detail.length > 0) {
       const first = detail[0] as { msg?: string };
@@ -250,6 +265,74 @@ function getErrMsg(err: unknown, fallback: string): string {
     }
   }
   return fallback;
+}
+
+/**
+ * Objeto `detail` estructurado de un error axios, cuando existe — usado
+ * para decisiones de UI más allá del texto del mensaje (código, contadores).
+ */
+function getErrDetail(err: unknown): Record<string, unknown> | undefined {
+  if (typeof err === "object" && err !== null) {
+    const e = err as { response?: { data?: { detail?: unknown } } };
+    const detail = e.response?.data?.detail;
+    if (detail && typeof detail === "object" && !Array.isArray(detail)) {
+      return detail as Record<string, unknown>;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Banner de error del commit — feature 044 (US4). Dos casos especiales:
+ *
+ *  - `identity_review_pending` (409): candado de identidad. El backend
+ *    manda `detail.pending` (cuántos candidatos faltan) — se arma el
+ *    mensaje en el frontend para incluir ese número explícito, y se agrega
+ *    un link directo a `/competitions/identity-review`.
+ *  - `identity_rebuild_timeout` (503): el recálculo tardó demasiado antes
+ *    del commit. Se usa el mensaje del backend tal cual — ya invita a
+ *    reintentar ("Intenta de nuevo en unos minutos.").
+ *
+ * Cualquier otro error cae en `getErrMsg()` (prioriza `detail.message`,
+ * luego status codes genéricos).
+ */
+function CommitErrorMessage({
+  error,
+  fallback,
+}: {
+  error: unknown;
+  fallback: string;
+}) {
+  const detail = getErrDetail(error);
+  const code = typeof detail?.code === "string" ? detail.code : undefined;
+
+  let message: string;
+  if (code === "identity_review_pending") {
+    const pending = typeof detail?.pending === "number" ? detail.pending : null;
+    message =
+      pending != null
+        ? `Hay ${pending} posible${pending === 1 ? "" : "s"} coincidencia${
+            pending === 1 ? "" : "s"
+          } de identidad por revisar antes de confirmar la carga.`
+        : getErrMsg(error, fallback);
+  } else {
+    message = getErrMsg(error, fallback);
+  }
+
+  return (
+    <>
+      <span>{message}</span>
+      {code === "identity_review_pending" && (
+        <Link
+          to="/competitions/identity-review"
+          className="mt-1 block font-medium underline underline-offset-2"
+          data-testid="wizard-identity-review-link"
+        >
+          Ir a la revisión de identidad
+        </Link>
+      )}
+    </>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1470,10 +1553,10 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                   className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
                   data-testid="wizard-commit-error"
                 >
-                  {getErrMsg(
-                    commitMutation.error,
-                    "Error aplicando la revisión.",
-                  )}
+                  <CommitErrorMessage
+                    error={commitMutation.error}
+                    fallback="Error aplicando la revisión."
+                  />
                 </div>
               )}
 
@@ -1676,10 +1759,10 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                   className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
                   data-testid="wizard-commit-error"
                 >
-                  {getErrMsg(
-                    commitMutation.error,
-                    "Error confirmando el commit.",
-                  )}
+                  <CommitErrorMessage
+                    error={commitMutation.error}
+                    fallback="Error confirmando el commit."
+                  />
                 </div>
               )}
 
@@ -1737,12 +1820,12 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
             >
               <div className="mb-2 flex items-start gap-2">
                 <AlertCircle size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
-                <span>
-                  {getErrMsg(
-                    commitMutation.error,
-                    "El commit falló. Reintenta o cancela.",
-                  )}
-                </span>
+                <div>
+                  <CommitErrorMessage
+                    error={commitMutation.error}
+                    fallback="El commit falló. Reintenta o cancela."
+                  />
+                </div>
               </div>
               <button
                 type="button"

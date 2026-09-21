@@ -24,6 +24,7 @@ import {
   RefreshCw,
   Trash2,
   Trophy,
+  UserCheck,
   Upload,
 } from "lucide-react";
 
@@ -198,6 +199,15 @@ export function CompetitionsListPage() {
             >
               <Upload size={14} aria-hidden="true" />
               Cargar resultados
+            </Link>
+            {/* Feature 044 (US4) — entrada a la revisión de identidad del histórico */}
+            <Link
+              to="/competitions/identity-review"
+              className="inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
+              aria-label="Revisar identidad de competidores del histórico"
+            >
+              <UserCheck size={14} aria-hidden="true" />
+              Revisión de identidad
             </Link>
             {/* Acción primaria */}
             <Link

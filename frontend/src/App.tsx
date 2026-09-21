@@ -253,6 +253,13 @@ const CompetitionImportPage = lazy(() =>
     default: m.CompetitionImportPage,
   })),
 );
+// Revisión de identidad del histórico Copa Valle (feature 044, US4) — gate
+// del commit de una carga histórica (contracts/identity-review-api.md).
+const IdentityReviewPage = lazy(() =>
+  import("@/routes/competitions/history/IdentityReviewPage").then((m) => ({
+    default: m.IdentityReviewPage,
+  })),
+);
 
 // Strava Activity Sync (feature 025) — revisión de actividades, coach/admin only (lazy)
 const ActivityReviewPage = lazy(() =>
@@ -744,6 +751,16 @@ export default function App() {
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
               <Suspense fallback={<RouteFallback label="Cargando importación..." />}>
                 <CompetitionImportPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/competitions/identity-review"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <Suspense fallback={<RouteFallback label="Cargando revisión de identidad..." />}>
+                <IdentityReviewPage />
               </Suspense>
             </ProtectedRoute>
           }
