@@ -33,11 +33,12 @@ An observed way a competitor is printed. Owned by exactly one competitor.
 | `normalized_name` | `VARCHAR(160) NOT NULL` | `normalize_name` |
 | `club_norm` | `VARCHAR(150) NOT NULL DEFAULT ''` | `normalize_club` (placeholders → `''`) |
 | `city_norm` | `VARCHAR(100) NOT NULL DEFAULT ''` | same normalisation |
+| `discriminator` | `VARCHAR(32) NOT NULL DEFAULT ''` | revision `a7c3e5d91f20` (owner decision 2026-09-21). `''` for every signature that needs no tie-break; otherwise `"<sex>:<age_min>-<age_max>@<season>"` from the catalogue row of the category (see research R-06 §9) |
 | `first_season` / `last_season` | `SMALLINT NOT NULL` | widened on each sighting |
 | `source_candidate_id` | `INT NULL FK → race_identity_candidates.id ON DELETE SET NULL` | set when a `same_person` decision attached this signature (enables exact reversal) |
 | `created_at` | `DATETIME NOT NULL` | |
 
-`UNIQUE(normalized_name, club_norm, city_norm)` — `uq_race_competitor_signatures_triple`. `NOT NULL DEFAULT ''` on purpose: MySQL treats `NULL`s as distinct in a unique key, which would void the guard.
+`UNIQUE(normalized_name, club_norm, city_norm, discriminator)` — `uq_race_competitor_signatures_identity` (revision `a7c3e5d91f20`, replacing the original `uq_race_competitor_signatures_triple` of `8efe1618cb83`). `NOT NULL DEFAULT ''` on purpose: MySQL treats `NULL`s as distinct in a unique key, which would void the guard. The downgrade of `a7c3e5d91f20` refuses while any triple has more than one signature.
 
 Backfill: one signature per existing competitor from `(normalized_name, normalize_club(club_text), '')`, seasons from its results (fallback: current season).
 
@@ -50,7 +51,7 @@ Review queue and decision audit in one table.
 | `id` | `INT PK` | |
 | `kind` | `ENUM('same_person_suspect','homonym_suspect')` | |
 | `pair_hash` | `CHAR(64) NOT NULL UNIQUE` | SHA-256 of the two ordered record keys; makes rebuilds idempotent and "never ask again" structural |
-| `left_record` / `right_record` | `JSON NOT NULL` | snapshot: `name_printed`, `normalized_name`, `club`, `city`, `seasons[]`, `category_codes[]`, `sex`, `competitor_id?`, `athlete_linked: bool` |
+| `left_record` / `right_record` | `JSON NOT NULL` | snapshot: `name_printed`, `normalized_name`, `club`, `city`, `seasons[]`, `category_codes[]`, `sex`, `competitor_id?`, `athlete_linked: bool`; internal keys never serialised: `key`, `club_norm`, `city_norm`, `discriminator` and `result_ids` (records split by category), `attached_result_ids` (results a `same_person` decision attached or merged, for exact reversal) |
 | `score` | `SMALLINT NOT NULL` | 0–100 |
 | `signals` | `JSON NOT NULL` | e.g. `["extra_surname"]`, `["same_valida_two_categories"]`, `["club_and_city_differ"]` |
 | `state` | `ENUM('pending','same_person','different_people')` | default `pending` |
@@ -99,7 +100,7 @@ Rows inside `corrections` hold rider names; this JSON is database-only and is ex
 ## 10. Invariants (each has a test)
 
 1. A result's frozen label and age range never change after insert, including through the revision flow and catalogue edits.
-2. No two signatures share `(normalized_name, club_norm, city_norm)`; concurrent ingests of the same new rider yield one competitor.
+2. No two signatures share `(normalized_name, club_norm, city_norm, discriminator)`; concurrent ingests of the same new rider yield one competitor.
 3. No historical import is committed while any candidate is `pending`.
 4. No function returns cross-válida data for a competitor whose `athlete_id IS NULL`.
 5. `city_text`, `city_norm` and candidate snapshots are serialised only by the identity-review schemas (coach/admin).
