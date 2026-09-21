@@ -85,6 +85,8 @@ class AuditEntityType(StrEnum):
     race_event = "race_event"
     race_result = "race_result"
     race_competitor = "race_competitor"
+    # Feature 044 (US4): decisiones y reversiones de la revisión de identidad.
+    race_identity_candidate = "race_identity_candidate"
     interval_structure = "interval_structure"
     interval_template = "interval_template"
     strava_connection = "strava_connection"
@@ -308,6 +310,7 @@ VALUE_ALLOWLIST: dict[str, frozenset[str]] = {
     AuditEntityType.race_import: frozenset({"status", "kind", "event_id", "series_id"}),
     AuditEntityType.race_result: frozenset({"deleted_at", "category_id", "competitor_id"}),
     AuditEntityType.race_competitor: frozenset({"athlete_id"}),
+    AuditEntityType.race_identity_candidate: frozenset({"state"}),
     AuditEntityType.strava_connection: frozenset({"athlete_id"}),
     AuditEntityType.anthropometric_record: frozenset({"evaluation_date", "growth_source"}),
 }
@@ -383,6 +386,10 @@ META_ALLOWLIST: frozenset[str] = frozenset(
         "race_event_id",
         "is_revision",
         "block",
+        # Feature 044 (US4) — ids y hash del par revisado, nunca nombres.
+        "left_competitor_id",
+        "right_competitor_id",
+        "pair_hash",
     }
 )
 
@@ -1193,6 +1200,27 @@ _RACE_RESULTS: dict[tuple[str, str], AuditPolicy] = {
     ),
 }
 
+#: §4.10b Revisión de identidad de competidores (feature 044, US4, T050) — 3
+#: keys. ``/rebuild`` solo recalcula la cola (inserta/actualiza candidatos
+#: ``pending``, nunca decide nada) — exención genuina, misma familia que las
+#: lecturas: no hay una decisión del coach que registrar. ``/decide`` y
+#: ``/reverse`` sí llaman ``record_audit`` (``services/race/identity_review.py``
+#: — ``decide``/``reverse``) sobre ``race_identity_candidate``.
+_RACE_IDENTITY: dict[tuple[str, str], AuditPolicy] = {
+    ("POST", "/api/race-identity/rebuild"): Exempt(
+        "Recalcula la cola de candidatos de identidad "
+        "(services/race/identity_review.py::rebuild): inserta o refresca "
+        "filas `pending` por `pair_hash`, pero no decide ni revierte nada — "
+        "no hay una acción del coach que registrar hasta `/decide`."
+    ),
+    ("POST", "/api/race-identity/candidates/{candidate_id}/decide"): Audited(
+        frozenset({AuditEntityType.race_identity_candidate})
+    ),
+    ("POST", "/api/race-identity/candidates/{candidate_id}/reverse"): Audited(
+        frozenset({AuditEntityType.race_identity_candidate})
+    ),
+}
+
 #: §4.11 Interval training — 8 keys, las 8 instrumentadas (T030).
 _INTERVALS: dict[tuple[str, str], AuditPolicy] = {
     ("POST", "/api/intervals/structures"): Audited(
@@ -1324,6 +1352,7 @@ AUDITED_ROUTES: dict[tuple[str, str], AuditPolicy] = {
     **_NEWSLETTERS,
     **_AI_RUNS,
     **_RACE_RESULTS,
+    **_RACE_IDENTITY,
     **_INTERVALS,
     **_STRAVA,
     **_MUTATING_GET_ENTRIES,
@@ -1498,6 +1527,7 @@ AUDIT_ENTITY_LABELS: dict[AuditEntityType, str] = {
     AuditEntityType.race_event: "la válida",
     AuditEntityType.race_result: "el resultado de carrera",
     AuditEntityType.race_competitor: "el competidor de la carrera",
+    AuditEntityType.race_identity_candidate: "la revisión de identidad de competidores",
     AuditEntityType.interval_structure: "la estructura de intervalos",
     AuditEntityType.interval_template: "la plantilla de intervalos",
     AuditEntityType.strava_connection: "la conexión con Strava",
@@ -1689,6 +1719,8 @@ SENTENCE_TEMPLATES: dict[tuple[AuditEntityType, AuditAction], str] = {
     (AuditEntityType.race_result, AuditAction.restore): "{actor} restauró un resultado del acta.",
     (AuditEntityType.race_competitor, AuditAction.link): "{actor} enlazó un competidor con un deportista del club.",
     (AuditEntityType.race_competitor, AuditAction.unlink): "{actor} deshizo el enlace de un competidor con un deportista del club.",
+    (AuditEntityType.race_competitor, AuditAction.delete): "{actor} fusionó dos registros de un mismo competidor.",
+    (AuditEntityType.race_identity_candidate, AuditAction.update): "{actor} decidió o deshizo una revisión de identidad de competidores.",
     (AuditEntityType.interval_structure, AuditAction.create): "{actor} creó una estructura de intervalos.",
     (AuditEntityType.interval_structure, AuditAction.update): "{actor} actualizó una estructura de intervalos.",
     (AuditEntityType.interval_template, AuditAction.create): "{actor} creó una plantilla de intervalos.",

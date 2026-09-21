@@ -25,6 +25,8 @@ import pytest
 
 from app.models.race_category import CategoryGender, CategoryTier, RaceCategory
 from app.models.race_competitor import RaceCompetitor
+from app.models.race_competitor_signature import RaceCompetitorSignature
+from app.models.race_identity_candidate import RaceIdentityCandidate
 from app.models.race_event import RaceEvent
 from app.models.race_import import RaceImport
 from app.models.race_result import RaceResult
@@ -69,6 +71,9 @@ class _Store:
     competitors: dict[int, RaceCompetitor] = field(default_factory=dict)
     results: dict[int, RaceResult] = field(default_factory=dict)
     imports: dict[int, RaceImport] = field(default_factory=dict)
+    # Feature 044 (US4) — el resolver de identidad lee/escribe estas dos.
+    signatures: dict[int, RaceCompetitorSignature] = field(default_factory=dict)
+    candidates: dict[int, RaceIdentityCandidate] = field(default_factory=dict)
 
     # Pending: objetos agregados via session.add() pero aún sin flush
     pending: list[Any] = field(default_factory=list)
@@ -85,6 +90,8 @@ class _Store:
             "competitors": count(1),
             "results": count(1),
             "imports": count(1),
+            "signatures": count(1),
+            "candidates": count(1),
         }
     )
 
@@ -104,6 +111,10 @@ class _Store:
             return "results"
         if isinstance(obj, RaceImport):
             return "imports"
+        if isinstance(obj, RaceCompetitorSignature):
+            return "signatures"
+        if isinstance(obj, RaceIdentityCandidate):
+            return "candidates"
         raise RuntimeError(f"FakeAsyncSession: tipo no soportado {type(obj)!r}")
 
     def get_table_dict(self, table: str) -> dict:
@@ -163,7 +174,10 @@ class FakeAsyncSession:
     Limitaciones reconocidas (no es una DB real):
     - No valida UNIQUE constraints físicamente — el ingestor consulta antes
       de insertar, así que la idempotencia se valida por la lógica del
-      servicio, no por la DB.
+      servicio, no por la DB. **Excepción (feature 044)**: el UNIQUE de la
+      terna + discriminador de ``race_competitor_signatures`` sí se valida en ``flush`` y
+      lanza ``IntegrityError`` — es la protección de concurrencia que el
+      resolver de identidad debe manejar dentro de ``begin_nested()``.
     - ``commit()`` confirma los pending → tablas.
     - ``rollback()`` restaura el snapshot pre-tx (si existe).
     """
@@ -184,6 +198,8 @@ class FakeAsyncSession:
             "competitors": dict(self.store.competitors),
             "results": dict(self.store.results),
             "imports": dict(self.store.imports),
+            "signatures": dict(self.store.signatures),
+            "candidates": dict(self.store.candidates),
         }
 
     # -- API que consume el ingestor -------------------------------------
@@ -217,6 +233,8 @@ class FakeAsyncSession:
             "race_competitors": ("competitors", self.store.competitors),
             "race_results": ("results", self.store.results),
             "race_imports": ("imports", self.store.imports),
+            "race_competitor_signatures": ("signatures", self.store.signatures),
+            "race_identity_candidates": ("candidates", self.store.candidates),
         }
         if from_table not in table_map:
             raise RuntimeError(f"FakeAsyncSession: tabla {from_table!r} no soportada")
@@ -290,6 +308,26 @@ class FakeAsyncSession:
 
     async def flush(self) -> None:
         """Asigna IDs a pending y los promueve a tablas."""
+        from sqlalchemy.exc import IntegrityError
+
+        for obj in list(self.store.pending):
+            if isinstance(obj, RaceCompetitorSignature):
+                key = (
+                    obj.normalized_name, obj.club_norm or "", obj.city_norm or "",
+                    obj.discriminator or "",
+                )
+                for other in self.store.signatures.values():
+                    if other is obj:
+                        continue
+                    other_key = (
+                        other.normalized_name, other.club_norm or "",
+                        other.city_norm or "", other.discriminator or "",
+                    )
+                    if other_key == key:
+                        raise IntegrityError(
+                            "INSERT race_competitor_signatures", {},
+                            Exception("uq_race_competitor_signatures_identity"),
+                        )
         for obj in list(self.store.pending):
             table = self.store.table_for(obj)
             if getattr(obj, "id", None) is None:
@@ -310,7 +348,42 @@ class FakeAsyncSession:
         self.store.competitors = dict(snap.get("competitors", {}))
         self.store.results = dict(snap.get("results", {}))
         self.store.imports = dict(snap.get("imports", {}))
+        self.store.signatures = dict(snap.get("signatures", {}))
+        self.store.candidates = dict(snap.get("candidates", {}))
         self.store.pending.clear()
+
+    def begin_nested(self) -> "_FakeSavepoint":
+        """SAVEPOINT emulado: ante una excepción deshace lo agregado dentro."""
+        return _FakeSavepoint(self)
+
+
+_SAVEPOINT_TABLES = (
+    "series", "events", "categories", "competitors", "results", "imports",
+    "signatures", "candidates",
+)
+
+
+class _FakeSavepoint:
+    def __init__(self, session: "FakeAsyncSession") -> None:
+        self._session = session
+        self._tables: dict[str, dict] = {}
+        self._pending: list[Any] = []
+
+    async def __aenter__(self) -> "_FakeSavepoint":
+        store = self._session.store
+        self._tables = {t: dict(store.get_table_dict(t)) for t in _SAVEPOINT_TABLES}
+        self._pending = list(store.pending)
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> bool:
+        store = self._session.store
+        if exc_type is not None:
+            for t, snapshot in self._tables.items():
+                setattr(store, t, snapshot)
+            store.pending[:] = self._pending
+            return False
+        await self._session.flush()
+        return False
 
 
 # ---------------------------------------------------------------------------

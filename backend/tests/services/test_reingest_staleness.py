@@ -19,10 +19,8 @@ Privacy: no athlete names in log assertions; all IDs only.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
-from itertools import count
-from typing import Any, AsyncGenerator, Optional
+from typing import AsyncGenerator
 
 import pytest
 import pytest_asyncio
@@ -39,11 +37,7 @@ from app.models.agent_run import AgentRun, AgentRunStatus
 from app.models.athlete_ai_insight import AthleteAiInsight
 from app.models.athlete_newsletter import AthleteMonthlyNewsletter, NewsletterStatus
 from app.models.race_category import CategoryGender, CategoryTier, RaceCategory
-from app.models.race_competitor import RaceCompetitor
-from app.models.race_event import RaceEvent
-from app.models.race_import import RaceImport, RaceImportStatus
-from app.models.race_result import RaceResult
-from app.models.race_series import RaceSeries
+from app.models.race_import import RaceImportStatus
 from app.models.user import UserRole
 from app.schemas.race import EventMeta
 from app.services.race.ingestor import RaceIngestor
@@ -105,192 +99,13 @@ def _results_one_row(bib: str = "401", time: str = "0:33:00") -> dict:
 # ===========================================================================
 
 
-@dataclass
-class _Store:
-    """Minimal in-memory store for the FakeAsyncSession used in Part 1."""
-
-    series: dict[int, RaceSeries] = field(default_factory=dict)
-    events: dict[int, RaceEvent] = field(default_factory=dict)
-    categories: dict[int, RaceCategory] = field(default_factory=dict)
-    competitors: dict[int, RaceCompetitor] = field(default_factory=dict)
-    results: dict[int, RaceResult] = field(default_factory=dict)
-    imports: dict[int, RaceImport] = field(default_factory=dict)
-    pending: list[Any] = field(default_factory=list)
-    snapshot: Optional[dict[str, dict]] = None
-    _id_counters: dict[str, Any] = field(
-        default_factory=lambda: {
-            "series": count(1),
-            "events": count(1),
-            "categories": count(1),
-            "competitors": count(1),
-            "results": count(1),
-            "imports": count(1),
-        }
-    )
-
-    def next_id(self, table: str) -> int:
-        return next(self._id_counters[table])
-
-    def table_for(self, obj: Any) -> str:
-        if isinstance(obj, RaceSeries):
-            return "series"
-        if isinstance(obj, RaceEvent):
-            return "events"
-        if isinstance(obj, RaceCategory):
-            return "categories"
-        if isinstance(obj, RaceCompetitor):
-            return "competitors"
-        if isinstance(obj, RaceResult):
-            return "results"
-        if isinstance(obj, RaceImport):
-            return "imports"
-        raise RuntimeError(f"FakeSession: type not supported {type(obj)!r}")
-
-    def get_table_dict(self, table: str) -> dict:
-        return getattr(self, table)
-
-
-class _FakeResult:
-    def __init__(self, rows: list[Any]) -> None:
-        self._rows = rows
-
-    def scalar_one_or_none(self) -> Optional[Any]:
-        if not self._rows:
-            return None
-        if len(self._rows) > 1:
-            raise RuntimeError(f"scalar_one_or_none: got {len(self._rows)} rows")
-        return self._rows[0]
-
-    def scalars(self) -> "_FakeScalars":
-        return _FakeScalars(self._rows)
-
-
-class _FakeScalars:
-    def __init__(self, rows: list[Any]) -> None:
-        self._rows = rows
-
-    def all(self) -> list[Any]:
-        return list(self._rows)
-
-    def first(self) -> Optional[Any]:
-        return self._rows[0] if self._rows else None
-
-    def __iter__(self):
-        return iter(self._rows)
-
-
-class _FakeSession:
-    """Minimal AsyncSession fake for Part 1 ingestor unit tests.
-
-    Supports exactly the queries RaceIngestor issues, including the new
-    _find_any_committed_import_for_event (WHERE event_id=X AND status=committed).
-    """
-
-    def __init__(self, store: Optional[_Store] = None) -> None:
-        self.store = store or _Store()
-        self._snapshot()
-
-    def _snapshot(self) -> None:
-        self.store.snapshot = {
-            "series": dict(self.store.series),
-            "events": dict(self.store.events),
-            "categories": dict(self.store.categories),
-            "competitors": dict(self.store.competitors),
-            "results": dict(self.store.results),
-            "imports": dict(self.store.imports),
-        }
-
-    async def execute(self, stmt: Any) -> _FakeResult:
-        return _FakeResult(self._eval(stmt))
-
-    def _eval(self, stmt: Any) -> list[Any]:
-        from sqlalchemy.sql.selectable import Select
-
-        if not isinstance(stmt, Select):
-            raise RuntimeError(f"FakeSession: unsupported stmt {type(stmt)!r}")
-
-        cols = stmt.selected_columns
-        froms = list(stmt.get_final_froms())
-        if not froms:
-            raise RuntimeError("FakeSession: select without FROM")
-        from_table = froms[0].name
-
-        table_map = {
-            "race_series": self.store.series,
-            "race_events": self.store.events,
-            "race_categories": self.store.categories,
-            "race_competitors": self.store.competitors,
-            "race_results": self.store.results,
-            "race_imports": self.store.imports,
-        }
-        if from_table not in table_map:
-            raise RuntimeError(f"FakeSession: unknown table {from_table!r}")
-        store_dict = table_map[from_table]
-
-        rows = list(store_dict.values())
-        if stmt.whereclause is not None:
-            rows = [r for r in rows if self._match(r, stmt.whereclause)]
-
-        # Scalar projection: select(RaceResult.competitor_id)
-        col_list = list(cols)
-        if len(col_list) == 1 and col_list[0].name == "competitor_id":
-            return [r.competitor_id for r in rows]
-
-        return rows
-
-    def _match(self, row: Any, clause: Any) -> bool:
-        from sqlalchemy.sql import operators
-        from sqlalchemy.sql.elements import BinaryExpression, BooleanClauseList
-
-        if isinstance(clause, BooleanClauseList):
-            if clause.operator is operators.and_:
-                return all(self._match(row, c) for c in clause.clauses)
-            if clause.operator is operators.or_:
-                return any(self._match(row, c) for c in clause.clauses)
-            raise RuntimeError(f"FakeSession: unsupported boolean op {clause.operator}")
-
-        if isinstance(clause, BinaryExpression):
-            left = clause.left
-            right = clause.right
-            op = clause.operator
-            if op is operators.eq:
-                col_name = getattr(left, "name", None) or getattr(left, "key", None)
-                if col_name is None:
-                    raise RuntimeError(f"FakeSession: left without name: {left!r}")
-                right_val = getattr(right, "value", right)
-                lhs = getattr(row, col_name, None)
-                # Handle str-enum comparison
-                if hasattr(lhs, "value") and isinstance(right_val, str):
-                    return lhs.value == right_val or lhs == right_val
-                return lhs == right_val
-            raise RuntimeError(f"FakeSession: unsupported op {op!r}")
-
-        raise RuntimeError(f"FakeSession: unsupported clause {type(clause)!r}")
-
-    def add(self, obj: Any) -> None:
-        self.store.pending.append(obj)
-
-    async def flush(self) -> None:
-        for obj in list(self.store.pending):
-            table = self.store.table_for(obj)
-            if getattr(obj, "id", None) is None:
-                obj.id = self.store.next_id(table)
-            self.store.get_table_dict(table)[obj.id] = obj
-        self.store.pending.clear()
-
-    async def commit(self) -> None:
-        await self.flush()
-        self._snapshot()
-
-    async def rollback(self) -> None:
-        snap = self.store.snapshot or {}
-        self.store.series = dict(snap.get("series", {}))
-        self.store.events = dict(snap.get("events", {}))
-        self.store.categories = dict(snap.get("categories", {}))
-        self.store.competitors = dict(snap.get("competitors", {}))
-        self.store.results = dict(snap.get("results", {}))
-        self.store.imports = dict(snap.get("imports", {}))
-        self.store.pending.clear()
+# Feature 044 (US4): el ingestor resuelve identidad con `IdentityResolver`,
+# que lee `race_competitor_signatures` / `race_identity_candidates`. En vez de
+# mantener un segundo fake en paralelo se reusa el de `tests/services/race`.
+from tests.services.race.conftest import (  # noqa: E402
+    FakeAsyncSession as _FakeSession,
+    _Store,
+)
 
 
 def _seeded_fake_store() -> _Store:

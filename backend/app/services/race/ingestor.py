@@ -13,7 +13,9 @@ Orquesta el flujo completo de persistencia tras parser + matcher:
 5. **RESULTADOS**: upsert de cada corredor + insert de ``RaceResult`` con
    manejo de UNIQUE ``(event_id, category_id, competitor_id)``.
 6. **Match decisions**: solo si ``is_trocha_y_ruta(row.club)``, aplicamos
-   el ``athlete_id`` confirmado por el coach (no auto-asignación).
+   el ``athlete_id`` confirmado por el coach (no auto-asignación). El club
+   de la fila decide solo si el wizard pregunta; el ``athlete_id`` del
+   resultado es siempre el del competidor resuelto (feature 044, R-06 §8).
 7. **Commit único** al final; cualquier excepción → rollback completo.
 
 Restricciones inviolables (CLAUDE.md + workflow §4):
@@ -23,7 +25,10 @@ Restricciones inviolables (CLAUDE.md + workflow §4):
 
 Convenciones de schema (Paso 2):
 - ``RaceResult.race_time_ms`` en milisegundos (NO segundos).
-- ``RaceCompetitor.normalized_name`` es UNIQUE — el upsert se hace por allí.
+- Feature 044 (US4): la identidad la resuelve ``IdentityResolver``
+  (firma exacta → decisión del coach → nombre), no un upsert por
+  ``normalized_name`` — que ya no es UNIQUE. La protección de concurrencia
+  es el UNIQUE de ``race_competitor_signatures``.
 - ``RaceImport`` usa enum ``RaceImportStatus.{pending, dry_run, committed, failed}``.
 - ``RaceResult.created_by_user_id`` es NOT NULL → debe pasarse ``ingested_by_user_id``.
 - Feature 044: ``category_label_raw``/``category_age_min_raw``/``category_age_max_raw``
@@ -42,20 +47,28 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.race_category import RaceCategory
-from app.models.race_competitor import CompetitorSex, RaceCompetitor
+from app.models.race_competitor import CompetitorSex
 from app.models.race_event import RaceEvent, RaceEventStatus
 from app.models.race_import import RaceImport, RaceImportStatus
 from app.models.race_result import RaceResult, ResultStatus
 from app.models.race_series import RaceSeries, RaceSeriesKind
 from app.schemas.race import EventMeta, IngestReport
+from app.services.race.identity_resolver import (
+    IdentityResolver,
+    ResolutionBranch,
+    Triple,
+    signature_triple,
+)
+from app.services.race.identity_review import record_attached_results
 from app.services.race.normalizer import (
     is_trocha_y_ruta,
-    normalize_name,
+    normalize_club,
     parse_time,
 )
 from app.services.race.series_rules import derive_event_fields_for_series
 
 if TYPE_CHECKING:
+    from app.services.race.identity_resolver import Resolution
     from app.services.race.pdf_parser import GeneralRow, ResultsRow
 
 logger = logging.getLogger(__name__)
@@ -240,6 +253,14 @@ class RaceIngestor:
 
         is_revision = False  # PR5 (FR-018): set True on confirmed revision commit
 
+        # Feature 044 (US4): en dry-run una fila sin resolución no revienta —
+        # se crea un competidor provisional que el rollback descarta y se
+        # advierte. En commit, el candado 409 hace esa rama inalcanzable.
+        resolver = IdentityResolver(self.db, strict=not dry_run)
+        # {candidate_id: [(terna, RaceResult)]} — resultados que entraron bajo
+        # una firma adjuntada por una decisión ``same_person`` (reversión exacta).
+        attachments: dict[int, list[tuple[Triple, RaceResult]]] = {}
+
         try:
             # --- 1. Upsert RaceSeries por (name, season_year) ----------
             # BUG-1 fix: when series_id is given (from the wizard /parse → /commit
@@ -325,7 +346,7 @@ class RaceIngestor:
                         continue
                     for row in rows:
                         created = await self._upsert_competitor_from_general(
-                            row, category
+                            row, category, resolver, meta.season
                         )
                         if created:
                             competitors_created += 1
@@ -361,10 +382,12 @@ class RaceIngestor:
                 )
 
                 for row in rows:
-                    # Upsert competitor
-                    competitor, was_created = await self._upsert_competitor_from_results(
-                        row, category
+                    resolution = await self._resolve_competitor(
+                        resolver, row, category, meta.season
                     )
+                    competitor, was_created = resolution.competitor, resolution.created
+                    if resolution.branch == ResolutionBranch.provisional:
+                        warnings.append(f"identidad_pendiente bib={row.bib} cat={code}")
                     if was_created:
                         competitors_created += 1
                     else:
@@ -415,7 +438,10 @@ class RaceIngestor:
 
                     # Construir RaceResult
                     bib_int = self._parse_bib_safe(row.bib)
-                    athlete_id_to_persist = competitor.athlete_id if is_tyr else None
+                    # R-06 §8: el vínculo es del competidor, no de la fila. Un
+                    # competidor ya vinculado arrastra su ``athlete_id`` aunque
+                    # la fila traiga otro club (historia previa al club).
+                    athlete_id_to_persist = competitor.athlete_id
                     laps_behind_val = laps_behind if laps_behind > 0 else None
 
                     # Feature 044 (US2, research R-04): columnas congeladas —
@@ -451,10 +477,25 @@ class RaceIngestor:
                         created_by_user_id=ingested_by_user_id,
                     )
                     self.db.add(race_result)
+                    if resolution.source_candidate_id is not None:
+                        attachments.setdefault(resolution.source_candidate_id, []).append(
+                            (signature_triple(row.name, row.club, row.city), race_result)
+                        )
                     # Memorizar para evitar doble insert dentro del mismo loop
                     # si el PDF tuviera duplicados (defensa profundidad).
                     existing_pairs.add(competitor.id)
                     results_inserted += 1
+
+            # --- 6b. Resultados adjuntados por decisión (feature 044) -----
+            if attachments and not dry_run:
+                await self.db.flush()
+                await record_attached_results(
+                    self.db,
+                    {
+                        cid: [(triple, rr.id) for triple, rr in entries]
+                        for cid, entries in attachments.items()
+                    },
+                )
 
             # --- 7. Cierre del RaceImport como committed ---------------
             # Solo promovemos a committed cuando NO es dry_run. En dry_run
@@ -730,87 +771,58 @@ class RaceIngestor:
         )
         return set(result.scalars().all())
 
-    async def _upsert_competitor_from_results(
-        self, row: "ResultsRow", category: RaceCategory
-    ) -> tuple[RaceCompetitor, bool]:
-        """Upsert por ``normalized_name`` desde una ``ResultsRow``.
-
-        Retorna ``(competitor, was_created)``. ``was_created=True`` si insertamos
-        fila nueva; ``False`` si reusamos existente (y posiblemente actualizamos
-        club_text/sex).
+    async def _resolve_competitor(
+        self,
+        resolver: IdentityResolver,
+        row: "ResultsRow | GeneralRow",
+        category: RaceCategory,
+        season: int,
+    ) -> "Resolution":
+        """Resuelve la fila con ``IdentityResolver`` y actualiza en suave el
+        competidor reusado (club y ciudad más recientes no vacíos, sexo si
+        faltaba). Reemplaza el upsert por ``normalized_name`` (feature 044).
         """
-        normalized = normalize_name(row.name)
-        if not normalized:
+        sex_from_code = _derive_sex_from_code(category.code)
+        try:
+            resolution = await resolver.resolve(
+                name=row.name,
+                club=row.club,
+                city=row.city,
+                season=season,
+                sex=sex_from_code,
+                category=category,
+            )
+        except ValueError:
             # Nombre vacío post-normalización: no debería ocurrir, defensivo.
             raise ValueError(
                 f"Nombre vacío post-normalización bib={row.bib} cat={category.code}"
             )
-
-        result = await self.db.execute(
-            select(RaceCompetitor).where(RaceCompetitor.normalized_name == normalized)
-        )
-        competitor = result.scalar_one_or_none()
-        sex_from_code = _derive_sex_from_code(category.code)
-
-        if competitor is not None:
-            # Update suave: preferimos club_text reciente si no es vacío
-            from app.services.race.normalizer import normalize_club
-
-            club_norm = normalize_club(row.club)
-            if club_norm and competitor.club_text != row.club:
+        competitor = resolution.competitor
+        if not resolution.created:
+            if normalize_club(row.club) and competitor.club_text != row.club:
                 competitor.club_text = row.club
+            if normalize_club(row.city) and competitor.city_text != row.city:
+                competitor.city_text = row.city[:100]
             if competitor.sex is None and sex_from_code is not None:
                 competitor.sex = sex_from_code
-            return competitor, False
-
-        # Nuevo competidor
-        competitor = RaceCompetitor(
-            normalized_name=normalized,
-            display_name=row.name.strip(),
-            club_text=row.club or None,
-            sex=sex_from_code,
-        )
-        self.db.add(competitor)
-        await self.db.flush()
-        return competitor, True
+        return resolution
 
     async def _upsert_competitor_from_general(
-        self, row: "GeneralRow", category: RaceCategory
+        self,
+        row: "GeneralRow",
+        category: RaceCategory,
+        resolver: IdentityResolver,
+        season: int,
     ) -> bool:
-        """Upsert desde GENERAL. No retorna el objeto — solo informa si creó.
+        """Resuelve desde GENERAL. No retorna el objeto — solo informa si creó.
 
         Razón: el GENERAL no genera ``race_results``; solo nos interesa
         pre-llenar el catálogo histórico de competidores (edge-cases §4.12).
         """
-        normalized = normalize_name(row.name)
-        if not normalized:
+        if not signature_triple(row.name, row.club, row.city)[0]:
             return False
-
-        result = await self.db.execute(
-            select(RaceCompetitor).where(RaceCompetitor.normalized_name == normalized)
-        )
-        competitor = result.scalar_one_or_none()
-        sex_from_code = _derive_sex_from_code(category.code)
-
-        if competitor is not None:
-            from app.services.race.normalizer import normalize_club
-
-            club_norm = normalize_club(row.club)
-            if club_norm and competitor.club_text != row.club:
-                competitor.club_text = row.club
-            if competitor.sex is None and sex_from_code is not None:
-                competitor.sex = sex_from_code
-            return False
-
-        competitor = RaceCompetitor(
-            normalized_name=normalized,
-            display_name=row.name.strip(),
-            club_text=row.club or None,
-            sex=sex_from_code,
-        )
-        self.db.add(competitor)
-        await self.db.flush()
-        return True
+        resolution = await self._resolve_competitor(resolver, row, category, season)
+        return resolution.created
 
     # -------------------------------------------------------------------
     # Helpers internos — parsing defensivo

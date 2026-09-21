@@ -437,6 +437,65 @@ class TestRaceCompetitorSignature:
             assert sig.last_season == 2025
 
 
+    @pytest.mark.asyncio
+    async def test_same_triple_with_distinct_discriminators_coexist(self, session_factory):
+        """Revisión a7c3e5d91f20 (decisión 2026-09-21): padre e hijo con el
+        mismo nombre, club y ciudad son dos firmas si su discriminador de
+        categoría difiere; con el mismo discriminador siguen colisionando."""
+        async with session_factory() as session:
+            parent = await _seed_competitor(
+                session, normalized_name="mateo ficticio igual", display_name="Mateo Ficticio Igual"
+            )
+            child = await _seed_competitor(
+                session, normalized_name="mateo ficticio igual", display_name="Mateo Ficticio Igual"
+            )
+            await session.commit()
+            for comp, disc in ((parent, "M:30-39@2025"), (child, "M:9-10@2025")):
+                session.add(
+                    RaceCompetitorSignature(
+                        competitor_id=comp.id,
+                        normalized_name="mateo ficticio igual",
+                        club_norm="club andino",
+                        city_norm="cali",
+                        discriminator=disc,
+                        first_season=2025,
+                        last_season=2025,
+                    )
+                )
+            await session.commit()  # no debe lanzar
+
+            session.add(
+                RaceCompetitorSignature(
+                    competitor_id=child.id,
+                    normalized_name="mateo ficticio igual",
+                    club_norm="club andino",
+                    city_norm="cali",
+                    discriminator="M:9-10@2025",
+                    first_season=2026,
+                    last_season=2026,
+                )
+            )
+            with pytest.raises(IntegrityError):
+                await session.commit()
+
+    @pytest.mark.asyncio
+    async def test_discriminator_defaults_to_empty_string(self, session_factory):
+        async with session_factory() as session:
+            comp = await _seed_competitor(
+                session, normalized_name="sin disc ficticio", display_name="Sin Disc Ficticio"
+            )
+            sig = RaceCompetitorSignature(
+                competitor_id=comp.id,
+                normalized_name="sin disc ficticio",
+                first_season=2025,
+                last_season=2025,
+            )
+            session.add(sig)
+            await session.commit()
+            await session.refresh(sig)
+            assert sig.discriminator == ""
+
+
 # ---------------------------------------------------------------------------
 # 4. race_identity_candidates — pair_hash único, state default, enums, JSON
 # ---------------------------------------------------------------------------

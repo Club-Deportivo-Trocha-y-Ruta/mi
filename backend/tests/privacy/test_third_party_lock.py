@@ -111,6 +111,7 @@ import inspect
 import json
 import logging
 import pkgutil
+import re
 import unicodedata
 from datetime import date
 from typing import Any, Callable
@@ -161,13 +162,50 @@ def _is_marked(fn: Callable[..., Any]) -> bool:
     return getattr(fn, _GUARD_MARKER_ATTR, False) is True
 
 
+#: Forma de parámetro que el barrido considera "ids de competidor". Desde la
+#: nota de auditoría de T036 (feature 044, US4) no basta con ``competitor_id``
+#: literal: ``competitor_ids: list[int]`` — la forma que necesitaría una
+#: operación por lotes como la revisión de identidad — pasaba sin detectar.
+#: El patrón cubre ``competitor_id``, ``competitor_ids`` y cualquier prefijo
+#: (``other_competitor_id``, ``keep_competitor_ids``...).
+_COMPETITOR_PARAM_RE = re.compile(r"(^|_)competitor_ids?$")
+
+
+def _competitor_params(fn: Callable[..., Any]) -> list[str]:
+    try:
+        sig = inspect.signature(fn)
+    except (TypeError, ValueError):
+        return []
+    return [p for p in sig.parameters if _COMPETITOR_PARAM_RE.search(p)]
+
+
+def _public_callables(module: Any, modname: str) -> list[tuple[str, Callable[..., Any]]]:
+    """Funciones públicas de primer nivel y métodos públicos de clases
+    públicas definidas en el módulo (``Clase.metodo``)."""
+    out: list[tuple[str, Callable[..., Any]]] = []
+    for name, obj in vars(module).items():
+        if name.startswith("_") or getattr(obj, "__module__", None) != modname:
+            continue
+        if inspect.isfunction(obj):
+            out.append((name, obj))
+        elif inspect.isclass(obj):
+            for mname, member in vars(obj).items():
+                if mname.startswith("_"):
+                    continue
+                fn = member.__func__ if isinstance(member, (staticmethod, classmethod)) else member
+                if inspect.isfunction(fn):
+                    out.append((f"{name}.{mname}", fn))
+    return out
+
+
 def _discover_competitor_id_callables() -> list[tuple[str, str, Callable[..., Any]]]:
     """Recorre ``app.services.race`` y devuelve ``(module, name, fn)`` para
-    todo callable público de primer nivel cuya firma incluye
-    ``competitor_id``.
+    todo callable público — función de primer nivel o método público de una
+    clase pública — cuya firma incluye un parámetro de ids de competidor
+    (``_COMPETITOR_PARAM_RE``: ``competitor_id``, ``competitor_ids``, …).
 
-    Sólo cuenta funciones DEFINIDAS en el módulo que se está recorriendo
-    (``fn.__module__ == modname``) — evita contar dos veces un mismo
+    Sólo cuenta objetos DEFINIDOS en el módulo que se está recorriendo
+    (``__module__ == modname``) — evita contar dos veces un mismo
     callable reexportado bajo un alias en otro módulo (frecuente en este
     paquete: ``analytics.py`` reexporta varios ``_load_*`` de
     ``queries.py``, pero esos alias empiezan con ``_`` y ya quedan afuera
@@ -178,20 +216,38 @@ def _discover_competitor_id_callables() -> list[tuple[str, str, Callable[..., An
         race_pkg.__path__, prefix=f"{race_pkg.__name__}."
     ):
         module = importlib.import_module(modname)
-        for name, obj in vars(module).items():
-            if name.startswith("_"):
-                continue
-            if not inspect.isfunction(obj):
-                continue
-            if getattr(obj, "__module__", None) != modname:
-                continue
-            try:
-                sig = inspect.signature(obj)
-            except (TypeError, ValueError):
-                continue
-            if "competitor_id" in sig.parameters:
-                found.append((modname, name, obj))
+        for name, fn in _public_callables(module, modname):
+            if _competitor_params(fn):
+                found.append((modname, name, fn))
     return found
+
+
+def test_scan_detects_list_of_competitor_ids_and_public_methods() -> None:
+    """Autoprueba del barrido (nota de auditoría T036): la forma por lotes y
+    los métodos públicos se detectan; los privados no."""
+    import types
+
+    fake = types.ModuleType("app.services.race._scan_probe")
+
+    def batch(db: Any, competitor_ids: list[int]) -> None: ...
+
+    def other(db: Any, keep_competitor_id: int) -> None: ...
+
+    def _private(db: Any, competitor_ids: list[int]) -> None: ...
+
+    class Service:
+        def run(self, competitor_ids: list[int]) -> None: ...
+
+        def _hidden(self, competitor_id: int) -> None: ...
+
+    for obj in (batch, other, _private, Service):
+        obj.__module__ = fake.__name__
+        setattr(fake, obj.__name__, obj)
+    for fn in (Service.run, Service._hidden):
+        fn.__module__ = fake.__name__
+
+    names = {n for n, fn in _public_callables(fake, fake.__name__) if _competitor_params(fn)}
+    assert names == {"batch", "other", "Service.run"}
 
 
 def test_discovered_surface_matches_reviewed_snapshot() -> None:

@@ -125,6 +125,10 @@ async def sqlite_engine() -> AsyncEngine:
             "race_imports",
             "race_categories",
             "race_competitors",
+            # Feature 044 (US4): el commit reconstruye la revisión de
+            # identidad y el ingestor resuelve por firma.
+            "race_identity_candidates",
+            "race_competitor_signatures",
             "race_results",
             "race_competitor_link_audit",
             # Feature 043: RaceEvent.course_variants/course_setups cascade

@@ -153,6 +153,77 @@ class TestConcurrentIngestSameSha:
 
 
 # ===========================================================================
+# 1b. Concurrencia de identidad (feature 044, T042): el UNIQUE de la terna
+#     de ``race_competitor_signatures`` reemplaza al UNIQUE eliminado de
+#     ``race_competitors.normalized_name``.
+# ===========================================================================
+
+
+class TestConcurrentIngestSameNewRider:
+    @pytest.mark.asyncio
+    async def test_two_ingests_same_new_rider_yield_one_competitor(self, fake_session):
+        """Dos válidas distintas (SHAs distintos) con el mismo corredor nuevo:
+        un solo competidor y una sola firma, dos resultados."""
+        rider = [_row(1, "550", "Ana Prueba Uno", "Club X", "0:03:38", 40)]
+        await asyncio.gather(
+            RaceIngestor(fake_session).ingest_event(
+                meta=_meta(4), results_by_category={"TET_CP": rider},
+                pdf_results_sha256="d" * 64, ingested_by_user_id=1,
+            ),
+            RaceIngestor(fake_session).ingest_event(
+                meta=_meta(5), results_by_category={"TET_CP": rider},
+                pdf_results_sha256="e" * 64, ingested_by_user_id=1,
+            ),
+        )
+        assert len(fake_session.store.competitors) == 1
+        assert len(fake_session.store.signatures) == 1
+        assert len(fake_session.store.results) == 2
+        (competitor_id,) = fake_session.store.competitors
+        assert {r.competitor_id for r in fake_session.store.results.values()} == {competitor_id}
+
+    @pytest.mark.asyncio
+    async def test_lost_race_on_signature_insert_reuses_winner(self, fake_session, monkeypatch):
+        """Ventana de carrera: la segunda ingesta no ve la firma al leer (otra
+        transacción la confirmó justo después), intenta crear competidor +
+        firma, choca contra el UNIQUE de la terna, deshace su SAVEPOINT (el
+        competidor recién creado incluido) y reusa el competidor ganador."""
+        from app.services.race.identity_resolver import IdentityResolver
+
+        rider = [_row(1, "550", "Ana Prueba Uno", "Club X", "0:03:38", 40)]
+        await RaceIngestor(fake_session).ingest_event(
+            meta=_meta(4), results_by_category={"TET_CP": rider},
+            pdf_results_sha256="d" * 64, ingested_by_user_id=1,
+        )
+
+        real_lookup = IdentityResolver._signatures_for
+        missed = {"done": False}
+
+        async def stale_read(self, triple):
+            if not missed["done"]:
+                missed["done"] = True
+                return []
+            return await real_lookup(self, triple)
+
+        async def no_name_hit(self, normalized):
+            return []
+
+        monkeypatch.setattr(IdentityResolver, "_signatures_for", stale_read)
+        # La lectura "vieja" tampoco ve al competidor por nombre (misma
+        # transacción concurrente aún no confirmada al leer).
+        monkeypatch.setattr(IdentityResolver, "_competitors_by_name", no_name_hit)
+        report = await RaceIngestor(fake_session).ingest_event(
+            meta=_meta(5), results_by_category={"TET_CP": rider},
+            pdf_results_sha256="e" * 64, ingested_by_user_id=1,
+        )
+        assert missed["done"]
+        assert report.results_inserted == 1
+        assert report.competitors_created == 0
+        assert len(fake_session.store.competitors) == 1
+        assert len(fake_session.store.signatures) == 1
+        assert len(fake_session.store.results) == 2
+
+
+# ===========================================================================
 # 2. Idempotencia con cambio de points — contrato: PRESERVE (no UPDATE)
 # ===========================================================================
 

@@ -133,6 +133,9 @@ async def sqlite_engine() -> AsyncGenerator[AsyncEngine, None]:
             "race_imports",
             "race_categories",
             "race_competitors",
+            # Feature 044 (US4): el ingestor resuelve identidad por firma.
+            "race_identity_candidates",
+            "race_competitor_signatures",
             "race_results",
             *AUDIT_TABLES,
         )

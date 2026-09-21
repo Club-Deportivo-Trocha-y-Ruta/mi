@@ -18,10 +18,10 @@ reconoce por acierto exacto y no vuelve a preguntar. No es una función de
 alias editable por el usuario: no hay pantalla para crear ni borrar firmas
 fuera del flujo de revisión de identidad.
 
-``UNIQUE(normalized_name, club_norm, city_norm)`` cumple además el segundo
+``UNIQUE(normalized_name, club_norm, city_norm, discriminator)`` cumple además el segundo
 papel del constraint que se eliminó: es la **protección de concurrencia**.
 Dos ingestas simultáneas del mismo corredor nuevo compiten por insertar la
-misma terna y solo una gana; la otra recibe el error de integridad y reusa
+misma terna (con discriminador ``''``) y solo una gana; la otra recibe el error de integridad y reusa
 el competidor ya creado.
 
 ``club_norm`` y ``city_norm`` son ``NOT NULL DEFAULT ''`` a propósito. MySQL
@@ -70,11 +70,15 @@ class RaceCompetitorSignature(Base):
 
     __tablename__ = "race_competitor_signatures"
     __table_args__ = (
+        # Revisión a7c3e5d91f20 (decisión del dueño 2026-09-21): el UNIQUE
+        # incluye `discriminator` para que padre e hijo homónimos del mismo
+        # club y ciudad puedan ser dos personas.
         UniqueConstraint(
             "normalized_name",
             "club_norm",
             "city_norm",
-            name="uq_race_competitor_signatures_triple",
+            "discriminator",
+            name="uq_race_competitor_signatures_identity",
         ),
         Index("ix_race_competitor_signatures_competitor_id", "competitor_id"),
         # No hay índice propio sobre `normalized_name`: el UNIQUE de arriba ya
@@ -96,6 +100,13 @@ class RaceCompetitorSignature(Base):
     )
     city_norm: Mapped[str] = mapped_column(
         String(100), nullable=False, default="", server_default=text("''")
+    )
+    # Desempate de dos personas con la misma terna, derivado de la categoría
+    # (``identity_resolver.category_discriminator``: ``"<sexo>:<min>-<max>@<temporada>"``).
+    # ``''`` en toda firma que no lo necesita — el caso normal. NOT NULL por
+    # la misma razón que `club_norm`: con NULL el UNIQUE no protegería.
+    discriminator: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="", server_default=text("''")
     )
     first_season: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     last_season: Mapped[int] = mapped_column(SmallInteger, nullable=False)

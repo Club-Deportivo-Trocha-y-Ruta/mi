@@ -462,6 +462,9 @@ async def ingest_engine() -> AsyncGenerator[AsyncEngine, None]:
             "race_competitors",
             "race_results",
             "race_imports",
+            # El ingestor resuelve la identidad por firma (feature 044, US4).
+            "race_competitor_signatures",
+            "race_identity_candidates",
             *AUDIT_TABLES,
         )
     ]
