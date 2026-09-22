@@ -657,3 +657,56 @@ class TestMatchesUnresolved:
         detail = r.json()["detail"]
         assert detail["code"] == "matches_unresolved"
         assert detail["missing_count"] == 1
+
+
+class TestIdentityGateSkipsRedundantRebuild:
+    """T050 + hotfix 2026-09-22: el rebuild del candado reparsea TODOS los
+    imports en staging. Con las quince válidas históricas eso tarda minutos en
+    Render y la conexión MySQL ociosa se cae. Solo debe correr si algún import
+    en staging es más nuevo que el último candidato calculado."""
+
+    @pytest.mark.asyncio
+    async def test_rebuild_skipped_when_queue_is_up_to_date(
+        self, coach_client, tmp_path, monkeypatch, db_session_factory
+    ):
+        from app.models.race_identity_candidate import (
+            IdentityCandidateKind,
+            IdentityCandidateState,
+            RaceIdentityCandidate,
+        )
+        from app.routers import race_imports as router_mod
+
+        parsed = await _parse(coach_client, tmp_path, [sequential_category("ELITE HOMBRES", 3)])
+        parse_id = parsed["parse_id"]
+        await coach_client.post(f"{_IMPORTS_URL}/{parse_id}/dry-run")
+
+        # Un candidato pendiente creado DESPUÉS del import: la cola está al día.
+        async with db_session_factory() as db:
+            db.add(
+                RaceIdentityCandidate(
+                    pair_hash="h" * 64,
+                    kind=IdentityCandidateKind.same_person_suspect,
+                    state=IdentityCandidateState.pending,
+                    score=95,
+                    signals=["extra_or_missing_surname"],
+                    left_record={"name_printed": "Ana Prueba Uno"},
+                    right_record={"name_printed": "Ana Prueba Uno Dos"},
+                    linked_athlete_involved=True,
+                )
+            )
+            await db.commit()
+
+        called = {"n": 0}
+
+        async def _boom(*args, **kwargs):  # pragma: no cover - no debe llamarse
+            called["n"] += 1
+            raise AssertionError("rebuild no debía correr: la cola está al día")
+
+        monkeypatch.setattr(router_mod.identity_review, "rebuild", _boom)
+        resp = await coach_client.post(
+            f"{_IMPORTS_URL}/{parse_id}/commit", json={"resolved_matches": []}
+        )
+        assert resp.status_code == 409
+        assert resp.json()["detail"]["code"] == "identity_review_pending"
+        assert resp.json()["detail"]["pending"] == 1
+        assert called["n"] == 0

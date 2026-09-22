@@ -65,7 +65,7 @@ from fastapi import (
     UploadFile,
     status,
 )
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -75,6 +75,10 @@ from app.models.athlete import Athlete
 from app.models.audit_log import AuditAction
 from app.models.club import ClubMember, ClubRole
 from app.models.race_category import RaceCategory
+from app.models.race_identity_candidate import (
+    IdentityCandidateState,
+    RaceIdentityCandidate,
+)
 from app.models.race_import import RaceImport, RaceImportKind, RaceImportStatus
 from app.models.race_event import RaceEvent
 from app.models.race_series import RaceSeries, RaceSeriesKind, RaceSeriesLevel
@@ -888,6 +892,47 @@ async def _reload_parsed_from_storage(
 IDENTITY_REBUILD_TIMEOUT_S = 30.0
 
 
+async def _identity_rebuild_needed(db: AsyncSession) -> bool:
+    """¿Hace falta recalcular la cola antes de este commit?
+
+    El rebuild reparsea TODOS los imports en staging: con las quince válidas
+    históricas cargadas eso son minutos en Render y la conexión MySQL ociosa
+    se cae a mitad (visto en producción, 2026-09-22). Solo es necesario si
+    algún import en staging es más nuevo que el último candidato calculado
+    — si nada se subió desde entonces, la cola ya está al día y basta con
+    leer el contador de `pending`.
+    """
+    last_candidate = (
+        await db.execute(select(func.max(RaceIdentityCandidate.created_at)))
+    ).scalar()
+    if last_candidate is None:
+        return True
+    newest_staged = (
+        await db.execute(
+            select(func.max(RaceImport.imported_at)).where(
+                RaceImport.status.in_(
+                    (RaceImportStatus.pending, RaceImportStatus.dry_run)
+                )
+            )
+        )
+    ).scalar()
+    return newest_staged is not None and newest_staged > last_candidate
+
+
+async def _identity_pending_count(db: AsyncSession) -> int:
+    """Candidatos `pending` de la cola, sin recalcular."""
+    return int(
+        (
+            await db.execute(
+                select(func.count())
+                .select_from(RaceIdentityCandidate)
+                .where(RaceIdentityCandidate.state == IdentityCandidateState.pending)
+            )
+        ).scalar()
+        or 0
+    )
+
+
 async def load_identity_rows(imp: RaceImport) -> dict[str, list[ResultsRow]]:
     """``RowsLoader`` de ``identity_review.rebuild`` (feature 044, T050/T049).
 
@@ -1166,9 +1211,16 @@ async def commit_import(
     # sin este rebuild, `pending` podría leer 0 solo porque nadie reconstruyó
     # la cola desde que se subió el import, y el commit avanzaría igual.
     try:
-        identity_result = await identity_review.rebuild(
-            db, rows_loader=load_identity_rows, timeout_s=IDENTITY_REBUILD_TIMEOUT_S
-        )
+        if await _identity_rebuild_needed(db):
+            identity_pending = (
+                await identity_review.rebuild(
+                    db,
+                    rows_loader=load_identity_rows,
+                    timeout_s=IDENTITY_REBUILD_TIMEOUT_S,
+                )
+            ).pending
+        else:
+            identity_pending = await _identity_pending_count(db)
     except TimeoutError:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -1181,12 +1233,12 @@ async def commit_import(
             },
         )
     await db.commit()
-    if identity_result.pending > 0:
+    if identity_pending > 0:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
                 "code": "identity_review_pending",
-                "pending": identity_result.pending,
+                "pending": identity_pending,
                 "message": (
                     "Hay candidatos de identidad sin decidir. Resuélvelos en "
                     "la revisión de identidad antes de confirmar la carga."
@@ -1442,9 +1494,16 @@ async def commit_pending_import(
     # Mismo candado de identidad que /commit — reutiliza el patrón
     # rebuild-then-check (FR-018).
     try:
-        identity_result = await identity_review.rebuild(
-            db, rows_loader=load_identity_rows, timeout_s=IDENTITY_REBUILD_TIMEOUT_S
-        )
+        if await _identity_rebuild_needed(db):
+            identity_pending = (
+                await identity_review.rebuild(
+                    db,
+                    rows_loader=load_identity_rows,
+                    timeout_s=IDENTITY_REBUILD_TIMEOUT_S,
+                )
+            ).pending
+        else:
+            identity_pending = await _identity_pending_count(db)
     except TimeoutError:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -1457,12 +1516,12 @@ async def commit_pending_import(
             },
         )
     await db.commit()
-    if identity_result.pending > 0:
+    if identity_pending > 0:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
                 "code": "identity_review_pending",
-                "pending": identity_result.pending,
+                "pending": identity_pending,
                 "message": (
                     "Hay candidatos de identidad sin decidir. Resuélvelos en "
                     "la revisión de identidad antes de confirmar la carga."
