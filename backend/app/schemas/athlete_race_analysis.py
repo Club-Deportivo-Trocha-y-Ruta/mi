@@ -56,6 +56,9 @@ __all__ = [
     "ClubInsightsByRaceResponse",
     "RaceParticipationOption",
     "RaceParticipationResponse",
+    "HistoryPoint",
+    "SeasonCompletion",
+    "AthleteRaceHistoryRead",
 ]
 
 
@@ -663,6 +666,123 @@ class DistributionResponse(BaseModel):
     points: list[DistributionPoint] = Field(default_factory=list)
     curve: list[DistributionCurvePoint] = Field(default_factory=list)
     confidence: AnalysisConfidence
+
+
+# ---------------------------------------------------------------------------
+# Progresión histórica cruzando temporadas (feature 044, US6/US7 — FR-030..042)
+#
+# Contrato: ``specs/044-race-history-backfill/contracts/history-progression-api.md``.
+# ``AthleteRaceHistoryRead`` es la respuesta de
+# ``GET /{athlete_id}/race-analysis/history``. Nunca lleva ``competitor_id``
+# ni ningún campo de un tercero — la serie está indexada por ``athlete_id``
+# (ver ``services/race/history.py`` y ``third_party_guard.py``).
+# ---------------------------------------------------------------------------
+
+
+class HistoryPoint(BaseModel):
+    """Un punto de la serie continua multi-temporada de un atleta (US6/US7).
+
+    ``category_label``/``category_code`` describen la categoría *tal como
+    corresponde a este resultado* — ``category_label`` prefiere la etiqueta
+    congelada (``race_results.category_label_raw``, feature 044) cuando
+    existe, para no reescribir el pasado si el catálogo cambia después.
+    ``category_code`` sale siempre del catálogo vigente (no hay columna
+    congelada para el código).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: int = Field(..., ge=1)
+    event_date: date
+    season: int = Field(..., ge=2020, le=2100)
+    label: str = Field(
+        ...,
+        min_length=1,
+        description="Etiqueta legible construida por ``build_race_label``.",
+    )
+    series_id: int = Field(..., ge=1)
+    series_name: str = Field(..., min_length=1)
+    series_kind: Literal["cup", "championship"] = Field(
+        ..., description="Serializa como string; nunca expone el enum interno."
+    )
+    category_code: str = Field(..., min_length=1, max_length=60)
+    category_label: str = Field(..., min_length=1, max_length=100)
+    category_changed: bool = Field(
+        ...,
+        description=(
+            "True en el primer resultado cuya categoría (``category_id``) "
+            "difiere de la del resultado anterior del atleta en orden "
+            "cronológico (FR-034). Un renombre del catálogo que no cambia "
+            "``category_id`` nunca la levanta. Siempre ``False`` en el "
+            "primer punto de la serie."
+        ),
+    )
+    previous_category_label: Optional[str] = Field(
+        default=None,
+        description="Etiqueta (congelada si existe) de la categoría anterior, solo cuando ``category_changed``.",
+    )
+    status: Literal["finished", "dnf", "dns", "dsq", "minus_laps"]
+    position: Optional[int] = Field(default=None, ge=1)
+    field_size: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="Finalistas de la categoría/válida, incluidos los que perdieron vueltas (FR-030).",
+    )
+    timed_finishers: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="Finalistas FINISHED estricto con tiempo registrado (FR-030/031).",
+    )
+    percentile: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=100.0,
+        description="``None`` si ``field_size < 5`` (FR-032) o el atleta no finalizó.",
+    )
+    gap_to_median_pct: Optional[float] = Field(
+        default=None,
+        description=(
+            "``None`` si ``timed_finishers < 5``, o el atleta no finalizó la "
+            "distancia completa con tiempo (FR-031)."
+        ),
+    )
+    gap_to_winner_pct: Optional[float] = Field(
+        default=None,
+        description="Sin umbral de tamaño de campo — se mantiene por continuidad con 037/039.",
+    )
+    avg_speed_kmh: Optional[float] = Field(
+        default=None,
+        description="Derivado con ``course.derived.derive_figures``. ``None`` sin recorrido configurado.",
+    )
+    points_awarded: int = Field(..., ge=0)
+
+
+class SeasonCompletion(BaseModel):
+    """Resumen de finalización por temporada (FR-035): ``"5 de 7"``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    season: int = Field(..., ge=2020, le=2100)
+    started: int = Field(..., ge=0, description="Resultados con salida — excluye DNS.")
+    finished: int = Field(
+        ..., ge=0, description="Resultados ``finished`` o ``minus_laps``."
+    )
+
+
+class AthleteRaceHistoryRead(BaseModel):
+    """Respuesta de ``GET /{athlete_id}/race-analysis/history`` (US6/US7)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    points: list[HistoryPoint] = Field(default_factory=list)
+    seasons: list[SeasonCompletion] = Field(default_factory=list)
+    caveats: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Advertencias permanentes (FR-038), siempre las mismas cinco: "
+            "``services.race.history.HISTORY_CAVEATS``."
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------

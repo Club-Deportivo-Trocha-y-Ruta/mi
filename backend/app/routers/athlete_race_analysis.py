@@ -30,14 +30,20 @@ from datetime import date, datetime, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import text
+from sqlalchemy import and_, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import contains_eager, joinedload
 
 from app.config import settings
 from app.dependencies import get_current_user, get_db, require_role, verify_athlete_access
 from app.models.athlete import Athlete
 from app.models.athlete_ai_insight import AthleteAiInsight
 from app.models.audit_log import AuditAction
+from app.models.race_category import RaceCategory
+from app.models.race_course_category_setup import RaceCourseCategorySetup
+from app.models.race_event import RaceEvent
+from app.models.race_result import RaceResult
+from app.models.race_series import RaceSeries
 from app.models.user import User, UserRole
 from app.services.audit import AuditEntityType, record_audit
 from app.schemas.athlete_race_analysis import (
@@ -45,6 +51,7 @@ from app.schemas.athlete_race_analysis import (
     AthleteInsightDetailOut,
     AthleteInsightListResponse,
     AthleteInsightOut,
+    AthleteRaceHistoryRead,
     AthleteRunListResponse,
     AthleteRunOut,
     AthleteRunStatus,
@@ -73,6 +80,11 @@ from app.services.race.ai.runner import RunBackpressureError, submit_run
 from app.services.race.group_launch import find_active_run
 from app.services.notification.race_event_tier import RaceTier, get_race_tier
 from app.services.privacy import athlete_has_ai_processing_consent
+from app.services.race.history import (
+    HISTORY_CAVEATS,
+    build_history_points,
+    build_season_completions,
+)
 from app.services.race.insights_history import (
     get_athlete_insight,
     get_insight_supersedes_chain,
@@ -1075,6 +1087,130 @@ async def get_evolution(
         season=season,
         metric=metric,
         series_id=series_id,
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /history — progresión histórica cruzando temporadas (US6/US7, feature 044)
+# ---------------------------------------------------------------------------
+
+
+async def _load_history_inputs(
+    db: AsyncSession, *, athlete_id: int
+) -> tuple[
+    list[RaceResult],
+    list[RaceEvent],
+    list[RaceSeries],
+    list[RaceCategory],
+    list[RaceCourseCategorySetup],
+]:
+    """Cuatro SELECT, sin excepción (contrato: presupuesto ≤ 4, asertado en
+    ``tests/routers/test_athlete_race_history.py``).
+
+    1. Resultados propios del atleta (cualquier temporada, cualquier estado),
+       con ``event``/``event.series`` precargados en el MISMO join (nunca un
+       segundo roundtrip por fila).
+    2. Filas de "campo" — cualquier competidor, restringidas a los pares
+       exactos ``(event_id, category_id)`` en los que el atleta compitió
+       (data-model §10 invariante 4: nunca progresión cruzada de un tercero).
+    3. Catálogo de categorías usadas.
+    4. Setups de recorrido de esas válidas, con ``variant`` en el mismo join.
+    """
+    own_stmt = (
+        select(RaceResult)
+        .join(RaceEvent, RaceResult.event_id == RaceEvent.id)
+        .join(RaceSeries, RaceEvent.series_id == RaceSeries.id)
+        .options(contains_eager(RaceResult.event).contains_eager(RaceEvent.series))
+        .where(RaceResult.athlete_id == athlete_id, RaceResult.deleted_at.is_(None))
+    )
+    own_result = await db.execute(own_stmt)
+    own_rows: list[RaceResult] = list(own_result.unique().scalars().all())
+
+    if not own_rows:
+        return [], [], [], [], []
+
+    pairs = {(r.event_id, r.category_id) for r in own_rows}
+    event_ids = {r.event_id for r in own_rows}
+    category_ids = {r.category_id for r in own_rows}
+
+    field_stmt = select(RaceResult).where(
+        RaceResult.deleted_at.is_(None),
+        or_(*(and_(RaceResult.event_id == eid, RaceResult.category_id == cid) for eid, cid in pairs)),
+    )
+    field_result = await db.execute(field_stmt)
+    field_rows: list[RaceResult] = list(field_result.scalars().all())
+
+    categories_result = await db.execute(
+        select(RaceCategory).where(RaceCategory.id.in_(category_ids))
+    )
+    categories = list(categories_result.scalars().all())
+
+    setups_stmt = (
+        select(RaceCourseCategorySetup)
+        .options(joinedload(RaceCourseCategorySetup.variant))
+        .where(RaceCourseCategorySetup.race_event_id.in_(event_ids))
+    )
+    setups_result = await db.execute(setups_stmt)
+    setups = list(setups_result.unique().scalars().all())
+
+    by_id: dict[int, RaceResult] = {r.id: r for r in own_rows}
+    by_id.update({r.id: r for r in field_rows})
+    all_results = list(by_id.values())
+
+    events = [r.event for r in own_rows]
+    series = [r.event.series for r in own_rows]
+
+    return all_results, events, series, categories, setups
+
+
+@router.get(
+    "/{athlete_id}/race-analysis/history",
+    response_model=AthleteRaceHistoryRead,
+)
+async def get_history(
+    series_kind: str = Query(
+        default="cup",
+        pattern="^(cup|championship|all)$",
+        description="Filtra la serie continua por tipo de serie (contrato history-progression-api.md).",
+    ),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    athlete: Athlete = Depends(verify_athlete_access),
+) -> AthleteRaceHistoryRead:
+    """Progresión histórica multi-temporada de un atleta (US6/US7, FR-030..042).
+
+    RBAC vía ``verify_athlete_access`` (sin cambios): admin/coach/padre del
+    propio atleta → 200; cualquier otro caller → 403/404. No existe
+    ``competitor_id`` en ningún punto de este contrato — la serie está
+    indexada por ``athlete_id`` (ver ``services/race/history.py``).
+
+    Gate de familia (FR-040/041, R-09) — **enganche documentado, no
+    implementado aquí a propósito** (Fase 9 / T080 de
+    ``specs/044-race-history-backfill/tasks.md``): cuando
+    ``current_user.role == UserRole.parent`` y
+    ``RACE_HISTORY_FAMILY_POLICY_VERSION`` (o el gate de
+    ``app/services/privacy.py`` que lo resuelva) siga cerrado, este punto
+    debe filtrar ``response.points`` a
+    ``event_date >= athlete.created_at.date()``, recalcular ``seasons`` a
+    partir de lo que quede, y no emitir ninguna cuenta ni señal de lo
+    retirado (data-model §10 invariante 6). Hoy TODO caller autorizado ve la
+    serie completa.
+    """
+    results, events, series, categories, setups = await _load_history_inputs(
+        db, athlete_id=athlete.id
+    )
+
+    points = build_history_points(
+        results, events, series, categories, setups, athlete.id, series_kind=series_kind
+    )
+    seasons = build_season_completions(
+        results, events, series, athlete.id, series_kind=series_kind
+    )
+
+    return AthleteRaceHistoryRead(
+        points=points,
+        seasons=seasons,
+        caveats=list(HISTORY_CAVEATS),
     )
 
 
