@@ -687,6 +687,14 @@ async def load_universe(db: AsyncSession, rows_loader: RowsLoader) -> Universe:
             .order_by(RaceImport.id)
         )
     ).scalars().all()
+    # Suelta la conexión MySQL ANTES de descargar y reparsear los archivos:
+    # con 15 válidas históricas el bucle tarda minutos y Hostinger cierra la
+    # conexión ociosa, lo que en producción tumbó el rebuild con un
+    # RuntimeError de driver. `expire_on_commit=False`, así que los objetos ya
+    # cargados siguen siendo utilizables; la próxima consulta toma una conexión
+    # nueva del pool (con `pool_pre_ping`).
+    await db.commit()
+
     unreadable: list[int] = []
     scanned = 0
     for imp in staged_imports:
