@@ -158,8 +158,8 @@ def _format_date_es(d: date | None) -> str:
 
 
 def _roman_numeral(n: int) -> str:
-    """Convierte 1..7 a numeral romano. Para CD retorna 'CD' externamente."""
-    table = {1: "I", 2: "II", 3: "III", 4: "IV", 5: "V", 6: "VI", 7: "VII"}
+    """Convierte 1..12 a numeral romano. Para CD retorna 'CD' externamente."""
+    table = {1: "I", 2: "II", 3: "III", 4: "IV", 5: "V", 6: "VI", 7: "VII", 8: "VIII", 9: "IX", 10: "X", 11: "XI", 12: "XII"}
     return table.get(n, str(n))
 
 

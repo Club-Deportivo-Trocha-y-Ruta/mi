@@ -47,11 +47,16 @@ _ROMAN: dict[int, str] = {
     5: "V",
     6: "VI",
     7: "VII",
+    8: "VIII",
+    9: "IX",
+    10: "X",
+    11: "XI",
+    12: "XII",
 }
 
 
 def _to_roman(n: int) -> str:
-    """Devuelve el numeral romano para *n* (1..7) o el entero como cadena."""
+    """Devuelve el numeral romano para *n* (1..12) o el entero como cadena."""
     return _ROMAN.get(n, str(n))
 
 

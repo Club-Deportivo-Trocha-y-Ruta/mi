@@ -53,11 +53,16 @@ class TestCupRomanNumerals:
 
 
 class TestCupOutOfRange:
-    """sequence_number fuera del rango 1–7 debe renderizarse como entero."""
+    """sequence_number fuera del rango 1–12 debe renderizarse como entero."""
 
-    def test_sequence_8_falls_back_to_integer_string(self):
-        result = build_race_label(RaceSeriesKind.cup, 8, "Palmira")
-        assert result == "Válida 8 — Palmira"
+    def test_sequence_8_is_roman(self):
+        # Copa Valle 2025 tuvo ocho válidas (feature 044).
+        result = build_race_label(RaceSeriesKind.cup, 8, "Roldanillo")
+        assert result == "Válida VIII — Roldanillo"
+
+    def test_sequence_13_falls_back_to_integer_string(self):
+        result = build_race_label(RaceSeriesKind.cup, 13, "Palmira")
+        assert result == "Válida 13 — Palmira"
 
     def test_sequence_0_falls_back_to_integer_string(self):
         result = build_race_label(RaceSeriesKind.cup, 0, "Ginebra")

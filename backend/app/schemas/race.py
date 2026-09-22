@@ -29,6 +29,11 @@ from app.models.race_event import SurfaceCondition
 # ---------------------------------------------------------------------------
 
 
+#: Mayor número de válida regular admitido — igual al numeral más alto que
+#: lee ``pdf_parser`` (XII, research R-02).
+MAX_REGULAR_VALIDA = 12
+
+
 class EventMeta(BaseModel):
     """Metadata de un evento (válida) para upsert en ``race_events``.
 
@@ -37,7 +42,8 @@ class EventMeta(BaseModel):
     prompts al coach (workflow §6.2 paso 3).
 
     Validaciones:
-    - ``valida_num`` ∈ [1..7] ∪ {99} (99 = Campeonato Departamental).
+    - ``valida_num`` ∈ [1..12] ∪ {99} (99 = Campeonato Departamental). La Copa
+      Valle 2025 tuvo ocho válidas; el parser lee numerales hasta XII (R-02).
     - ``season`` ∈ [2020..2100] — rango defensivo razonable.
     - ``temperature_c`` ∈ [-10, 50] °C cuando se provee.
     """
@@ -61,11 +67,11 @@ class EventMeta(BaseModel):
     @field_validator("valida_num")
     @classmethod
     def _check_valida_num(cls, v: int) -> int:
-        # Válidas regulares 1..7, CD = 99. Ningún otro valor admitido.
-        if v == 99 or 1 <= v <= 7:
+        # Válidas regulares 1..12 (2025 tuvo ocho), CD = 99. Nada más.
+        if v == 99 or 1 <= v <= MAX_REGULAR_VALIDA:
             return v
         raise ValueError(
-            f"valida_num inválido: {v}. Debe ser 1..7 (regulares) o 99 (CD)."
+            f"valida_num inválido: {v}. Debe ser 1..{MAX_REGULAR_VALIDA} (regulares) o 99 (CD)."
         )
 
     @field_validator("temperature_c")

@@ -51,11 +51,19 @@ class TestEventMetaValidaNum:
                 event_date=date(2026, 1, 1), location="X",
             )
 
-    def test_valida_num_8_rejected_by_validator(self):
-        """``valida_num=8`` pasa el Field(le=99) pero falla el ``_check_valida_num``."""
+    def test_valida_num_8_accepted(self):
+        """La Copa Valle 2025 tuvo ocho válidas (feature 044): 8 es válido."""
+        m = EventMeta(
+            season=2025, valida_num=8, name="VALIDA VIII",
+            event_date=date(2025, 9, 7), location="X",
+        )
+        assert m.valida_num == 8
+
+    def test_valida_num_13_rejected_by_validator(self):
+        """``valida_num=13`` pasa el Field(le=99) pero falla el ``_check_valida_num``."""
         with pytest.raises(ValidationError) as exc:
             EventMeta(
-                season=2026, valida_num=8, name="X",
+                season=2026, valida_num=13, name="X",
                 event_date=date(2026, 1, 1), location="X",
             )
         assert "valida_num inválido" in str(exc.value)

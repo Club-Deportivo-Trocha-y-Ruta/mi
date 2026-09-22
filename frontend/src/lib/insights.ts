@@ -113,7 +113,7 @@ export function getV2Preview(summaryText: string): string {
 // Etiquetas de enums — reutilizables en lista y hero card
 // ---------------------------------------------------------------------------
 
-/** Roman numerals for válidas 1..7 — misma tabla que `MiniSparkline.tsx`. */
+/** Roman numerals for válidas 1..12 (2025 had eight) — misma tabla que `MiniSparkline.tsx`. */
 const VALIDA_ROMAN_NUMERALS: Record<number, string> = {
   1: "I",
   2: "II",
@@ -122,6 +122,11 @@ const VALIDA_ROMAN_NUMERALS: Record<number, string> = {
   5: "V",
   6: "VI",
   7: "VII",
+  8: "VIII",
+  9: "IX",
+  10: "X",
+  11: "XI",
+  12: "XII",
 };
 
 // ---------------------------------------------------------------------------

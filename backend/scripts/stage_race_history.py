@@ -64,9 +64,20 @@ from app.models.user import User, UserRole
 from app.services.race.import_staging import stage_results_file
 from app.services.request_context import AuditContext
 
-#: Raíz del monorepo (backend/scripts/../.. = raíz del repo) — ningún
-#: manifiesto ni archivo referenciado puede resolver dentro de este árbol.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+def _find_repo_root() -> Path:
+    """Raíz del monorepo: el ancestro más cercano con ``.git``. Dentro del
+    contenedor de Docker solo existe ``backend/`` montado en ``/app`` (sin
+    ``.git``), y ``parents[2]`` daría ``/`` — todo quedaría "dentro del
+    repo". En ese caso la raíz protegida es la carpeta ``backend``."""
+    backend_dir = Path(__file__).resolve().parents[1]
+    for candidate in (backend_dir, *backend_dir.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return backend_dir
+
+
+#: Ningún manifiesto ni archivo referenciado puede resolver dentro de este árbol.
+_REPO_ROOT = _find_repo_root()
 
 #: Extensiones de RESULTADOS aceptadas — igual que el wizard (router).
 _ALLOWED_EXTS = {"pdf", "csv", "tsv", "txt"}
