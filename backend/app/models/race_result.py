@@ -107,10 +107,12 @@ class RaceResult(Base):
         UniqueConstraint(
             "event_id", "category_id", "competitor_id", name="uq_race_results_event_category_competitor"
         ),
+        # Feature 044 (T024b, migración b4e8d2f61a93): ``finished`` admite
+        # ``race_time_ms`` nulo — "clasificado sin tiempo" de las actas
+        # históricas. Un estado que no es ``finished`` sigue sin tiempo.
         CheckConstraint(
-            "(status = 'finished' AND race_time_ms IS NOT NULL) "
-            "OR (status != 'finished' AND race_time_ms IS NULL) "
-            "OR (status = 'finished' AND laps_behind IS NOT NULL)",
+            "(status = 'finished') "
+            "OR (status != 'finished' AND race_time_ms IS NULL)",
             name="ck_race_results_time_consistent_with_status",
         ),
         CheckConstraint(

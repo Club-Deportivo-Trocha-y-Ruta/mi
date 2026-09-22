@@ -30,6 +30,7 @@ import pytest
 
 from app.models.race_event import SurfaceCondition
 from app.models.race_import import RaceImportStatus
+from app.models.race_result import ResultStatus
 from app.schemas.race import EventMeta
 from app.services.race.ingestor import (
     RaceIngestor,
@@ -465,7 +466,8 @@ class TestAnomalousTimeWarnings:
 
     @pytest.mark.asyncio
     async def test_invalid_time_emits_unparseable_warning(self, fake_session):
-        """Tiempo no-parseable (ej. ``BADFORMAT``) → warning + fila no inserta."""
+        """Tiempo no-parseable (ej. ``BADFORMAT``) → warning, y la fila se
+        conserva con tiempo nulo (T024b: con posición nunca se descarta)."""
         ingestor = RaceIngestor(fake_session)
         report = await ingestor.ingest_event(
             meta=_meta(),
@@ -478,8 +480,13 @@ class TestAnomalousTimeWarnings:
         assert len(unparse) == 1
         assert "bib=401" in unparse[0]
         assert "cat=INF_A" in unparse[0]
-        # Y el race_result NO se insertó
-        assert len(fake_session.store.results) == 0
+        # La fila se conserva: FINISHED sin tiempo, posición y puntos intactos
+        assert report.results_inserted == 1
+        (stored,) = fake_session.store.results.values()
+        assert stored.status == ResultStatus.FINISHED
+        assert stored.race_time_ms is None
+        assert stored.position == 1
+        assert stored.points_awarded == 5
 
 
 # ===========================================================================

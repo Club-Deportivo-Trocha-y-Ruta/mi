@@ -129,9 +129,34 @@ HEADER_ALIASES: frozenset[str] = frozenset(
 #: espacio opcional. Ej: ``(-1 VUELTA)``, ``(-2 VUELTAS)``, ``(-12 VUELTAS)``.
 _MINUS_LAPS_RE = re.compile(r"^\(-(\d+)\s*VUELTAS?\)$", re.IGNORECASE)
 
-#: Patrón ``H:MM:SS`` (con H de 1+ dígito). El PDF usa formato 24h pero las
-#: pruebas son XCO < 4h, así que rara vez excede ``2:30:00``.
-_TIME_HMS_RE = re.compile(r"^(\d+):(\d{2}):(\d{2})$")
+#: Palabra "vuelta(s)" tal como la escriben las actas, erratas medidas
+#: incluidas (``VUELTA``, ``VUELTAS``, ``VULETAS``, ``VIELTAS``). Deliberadamente
+#: estrecha: una ``V`` seguida de ``EL``/``LE`` y ``TA[S]`` no se confunde con
+#: un club ni con un nombre propio que empiece por ``V``.
+LAP_WORD_PATTERN = r"V[UÚI]?(?:EL|LE)TAS?"
+
+#: Déficit de vueltas en cualquiera de las formas medidas en 2024–2025
+#: (feature 044, T024b): ``-1 vuelta``, ``(1- VUELTA``, ``(- 1 VUELTA)``,
+#: ``(2 VUELTAS)``, ``(-3 VUELTAS=``, ``()-1 VUELTA)``, ``-2 vueltas (lap)``
+#: o un ``-N`` desnudo. Se acepta solo si trae la palabra de vuelta o un
+#: signo menos — un número suelto no es un déficit (ver ``parse_time``).
+_LAP_DEFICIT_RE = re.compile(
+    r"^\(?\s*\)?\s*(?P<pre>-)?\s*(?P<n>\d{1,2})\s*(?P<post>-)?\s*"
+    r"(?P<word>" + LAP_WORD_PATTERN + r")?"
+    r"\s*[)=\-]?\s*(?:\(\w+\))?$",
+    re.IGNORECASE,
+)
+
+#: Patrón ``H:MM:SS``. El apóstrofo opcional antes de los segundos es una
+#: errata medida en un acta de 2025 (``0:16:'08``).
+_TIME_HMS_RE = re.compile(r"^(\d+):(\d{2}):'?(\d{2})$")
+
+#: Patrón ``MM:SS`` (categorías cortas que imprimen el tiempo sin horas).
+_TIME_MS_RE = re.compile(r"^(\d{1,2}):(\d{2})$")
+
+#: Una prueba XCO dura menos de 10 h; una hora ≥ 10 es una errata del acta
+#: (``12:02:00`` entre tiempos de 1:2x) y no se inventa un tiempo con ella.
+_MAX_XCO_HOURS = 9
 
 #: Patrón inicio "CAT: <texto>" (PDF Federación) o "CATEGORÍA: <texto>" /
 #: "CATEGORIA: <texto>" (CSV/XLSX Federación V-I Sevilla 2026). Texto puede
@@ -272,15 +297,25 @@ def parse_time(raw: str) -> tuple[ResultStatus, Optional[int], int]:
       no observado en V-IV — la federación lo usa en otras válidas).
     - ``(-1 VUELTA)`` → ``(MINUS_LAPS, None, 1)``
     - ``(-N VUELTAS)`` → ``(MINUS_LAPS, None, N)``
-    - ``H:MM:SS``   → ``(FINISHED, <ms>, 0)``
+    - variantes del déficit de vueltas medidas en 2024–2025 (``-1 vuelta``,
+      ``(1- VUELTA``, ``(2 VUELTAS)``, ``-N`` desnudo…) → ``(MINUS_LAPS, None, N)``
+    - ``H:MM:SS``   → ``(FINISHED, <ms>, 0)`` (H ≤ 9)
+    - ``MM:SS``     → ``(FINISHED, <ms>, 0)``
+    - ``""``        → ``(FINISHED, None, 0)``: **clasificado sin tiempo** —
+      la fila trae posición y puntos pero la celda Tiempo vino vacía
+      (research R-01 punto 4, R-05). Quien llama decide qué hacer si además
+      falta la posición.
 
     Lanza ``ValueError`` si el formato no coincide con ningún patrón conocido —
-    el parser debe atrapar y emitir warning para que la ingesta no se rompa.
+    el ingestor atrapa, emite warning y conserva la fila con tiempo nulo.
     """
     if raw is None:
         raise ValueError("parse_time recibió None")
     s = raw.strip()
     su = s.upper()
+
+    if not s:
+        return ResultStatus.FINISHED, None, 0
 
     if su == "DNF":
         return ResultStatus.DNF, None, 0
@@ -293,13 +328,26 @@ def parse_time(raw: str) -> tuple[ResultStatus, Optional[int], int]:
     if m:
         return ResultStatus.MINUS_LAPS, None, int(m.group(1))
 
+    m = _LAP_DEFICIT_RE.match(s)
+    if m and (m.group("word") or m.group("pre") or m.group("post")):
+        laps = int(m.group("n"))
+        if laps >= 1:
+            return ResultStatus.MINUS_LAPS, None, laps
+
     m = _TIME_HMS_RE.match(s)
     if m:
         h, mm, ss = (int(x) for x in m.groups())
-        if mm >= 60 or ss >= 60:
+        if mm >= 60 or ss >= 60 or h > _MAX_XCO_HOURS:
             raise ValueError(f"Componentes de tiempo fuera de rango: {raw!r}")
         ms = (h * 3600 + mm * 60 + ss) * 1000
         return ResultStatus.FINISHED, ms, 0
+
+    m = _TIME_MS_RE.match(s)
+    if m:
+        mm, ss = (int(x) for x in m.groups())
+        if ss >= 60:
+            raise ValueError(f"Componentes de tiempo fuera de rango: {raw!r}")
+        return ResultStatus.FINISHED, (mm * 60 + ss) * 1000, 0
 
     raise ValueError(f"Tiempo no parseable: {raw!r}")
 

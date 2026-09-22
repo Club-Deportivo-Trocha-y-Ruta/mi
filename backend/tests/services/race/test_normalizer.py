@@ -103,17 +103,70 @@ class TestParseTime:
         _, _, laps = parse_time("(-3 VUELTAS)")
         assert laps == 3
 
-    def test_minus_laps_extra_whitespace(self):
-        """(- 1 VUELTA) con espacio extra — tolerar variantes futuras."""
-        # Regex actual no tolera espacio entre `(-` y digit; documentamos.
+    @pytest.mark.parametrize(
+        ("raw", "laps"),
+        [
+            # Variantes medidas en las actas 2024–2025 (feature 044, T024b).
+            ("(- 1 VUELTA)", 1),
+            ("-1 vuelta", 1),
+            ("-1 Vuelta", 1),
+            ("-2 VUELTAS", 2),
+            ("-1 vuelta-", 1),
+            ("(1- VUELTA", 1),
+            ("(2 VUELTAS)", 2),
+            ("(-3 VUELTAS=", 3),
+            ("()-1 VUELTA)", 1),
+            ("(-2 VULETAS)", 2),
+            ("(-3 VIELTAS)", 3),
+            ("(-1vuelta)", 1),
+            ("(-2  VUELTAS)", 2),
+            ("-3 vueltas (lap)", 3),
+            ("-1", 1),
+            ("-4", 4),
+        ],
+    )
+    def test_minus_laps_variants(self, raw, laps):
+        status, ms, got = parse_time(raw)
+        assert status == ResultStatus.MINUS_LAPS
+        assert ms is None
+        assert got == laps
+
+    @pytest.mark.parametrize("raw", ["1", "(1)", "-0", "VUELTA", "-1 VALLE", "-1 VELETA"])
+    def test_minus_laps_rejects_ambiguous(self, raw):
+        """Un número sin signo ni palabra de vuelta, o cero vueltas, no es
+        un déficit de vueltas."""
         with pytest.raises(ValueError):
-            parse_time("(- 1 VUELTA)")
+            parse_time(raw)
+
+    def test_mm_ss(self):
+        """Categorías cortas: ``MM:SS`` sin horas."""
+        assert parse_time("13:07") == (ResultStatus.FINISHED, 787_000, 0)
+        assert parse_time("9:58") == (ResultStatus.FINISHED, 598_000, 0)
+
+    def test_mm_ss_rejects_overflow(self):
+        with pytest.raises(ValueError):
+            parse_time("13:60")
+
+    def test_stray_apostrophe_in_seconds(self):
+        """``0:16:'08`` (errata del acta) se lee como ``0:16:08``."""
+        assert parse_time("0:16:'08") == (ResultStatus.FINISHED, 968_000, 0)
+
+    def test_hours_out_of_xco_range_raise(self):
+        """Una hora ≥ 10 no es un tiempo XCO plausible: ``ValueError`` y el
+        ingestor conserva la fila con tiempo nulo."""
+        with pytest.raises(ValueError):
+            parse_time("12:02:00")
+
+    def test_empty_is_classified_without_time(self):
+        """``""`` = clasificado sin tiempo (R-01 punto 4, R-05)."""
+        assert parse_time("") == (ResultStatus.FINISHED, None, 0)
+        assert parse_time("   ") == (ResultStatus.FINISHED, None, 0)
 
     def test_invalid_raises(self):
         with pytest.raises(ValueError):
             parse_time("???")
         with pytest.raises(ValueError):
-            parse_time("32:00")  # falta H:
+            parse_time("1:2")
 
     def test_none_raises(self):
         with pytest.raises(ValueError):

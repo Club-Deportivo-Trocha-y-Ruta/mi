@@ -390,6 +390,91 @@ class TestTimeAnomalyWarning:
 
 
 # ===========================================================================
+# 4b. Filas sin tiempo reconocible (feature 044, T024b)
+# ===========================================================================
+
+
+class TestRowsWithoutRecognisableTime:
+    """Una fila leída nunca se pierde en silencio: se guarda o se salta con
+    warning, y la cuenta por categoría cuadra (SC-001 a nivel de ingesta)."""
+
+    @pytest.mark.asyncio
+    async def test_every_row_is_stored_with_the_right_status(self, fake_session):
+        results = {
+            "INF_A": [
+                _row(1, "501", "Ficticio Uno", "Club X", "0:38:00", 50),
+                _row(2, "502", "Ficticio Dos", "Club X", "13:07", 45),
+                _row(3, "503", "Ficticio Tres", "Club X", "-1 vuelta", 40),
+                _row(4, "504", "Ficticio Cuatro", "Club X", "-2", 35),
+                _row(5, "505", "Ficticio Cinco", "Club X", "", 30),
+                _row(6, "506", "Ficticio Seis", "Club X", "12:02:00", 25),
+            ],
+        }
+        ingestor = RaceIngestor(fake_session)
+        report = await ingestor.ingest_event(
+            meta=_meta_v4(), results_by_category=results, ingested_by_user_id=1,
+        )
+
+        assert report.results_inserted == 6
+        assert report.results_skipped == 0
+        by_bib = {r.bib_number: r for r in fake_session.store.results.values()}
+        assert by_bib[502].status == ResultStatus.FINISHED
+        assert by_bib[502].race_time_ms == 787_000
+        assert (by_bib[503].status, by_bib[503].laps_behind) == (ResultStatus.MINUS_LAPS, 1)
+        assert (by_bib[504].status, by_bib[504].laps_behind) == (ResultStatus.MINUS_LAPS, 2)
+        # Clasificado sin tiempo: FINISHED, sin tiempo ni vueltas, puntos tal cual.
+        assert by_bib[505].status == ResultStatus.FINISHED
+        assert by_bib[505].race_time_ms is None
+        assert by_bib[505].laps_behind is None
+        assert by_bib[505].position == 5
+        assert by_bib[505].points_awarded == 30
+        # Hora fuera de rango XCO: warning y fila conservada sin tiempo.
+        assert by_bib[506].race_time_ms is None
+        assert by_bib[506].points_awarded == 25
+        unparse = [w for w in report.warnings if "tiempo_no_parseable" in w]
+        assert len(unparse) == 1 and "bib=506" in unparse[0]
+        assert "Ficticio" not in unparse[0]
+
+    @pytest.mark.asyncio
+    async def test_row_without_position_nor_time_is_an_explicit_skip(self, fake_session):
+        row = _row(1, "511", "Ficticio Once", "Club X", "", 0)
+        row.position = None
+        results = {"INF_A": [_row(1, "510", "Ficticio Diez", "Club X", "0:38:00", 50), row]}
+        ingestor = RaceIngestor(fake_session)
+        report = await ingestor.ingest_event(
+            meta=_meta_v4(), results_by_category=results, ingested_by_user_id=1,
+        )
+
+        assert report.results_inserted == 1
+        assert report.results_skipped == 1
+        skips = [w for w in report.warnings if "fila_sin_posicion_ni_tiempo" in w]
+        assert skips == ["fila_sin_posicion_ni_tiempo bib=511 cat=INF_A"]
+        # Una fila que no se guarda no deja un competidor huérfano.
+        assert "ficticio once" not in {
+            c.normalized_name for c in fake_session.store.competitors.values()
+        }
+
+    @pytest.mark.asyncio
+    async def test_per_category_accounting_is_enforced(self, fake_session):
+        """Si una rama futura se saltara una fila sin contarla, la ingesta
+        aborta en vez de confirmar una categoría incompleta. Se simula con una
+        categoría que declara una fila más de las que itera."""
+        rows = [_row(1, "520", "Ficticio Veinte", "Club X", "0:38:00", 50)]
+
+        class _ShortList(list):
+            def __len__(self):  # la categoría "declara" una fila más de las que itera
+                return super().__len__() + 1
+
+        ingestor = RaceIngestor(fake_session)
+        with pytest.raises(RuntimeError, match="ingest_incompleto cat=INF_A leidas=2"):
+            await ingestor.ingest_event(
+                meta=_meta_v4(),
+                results_by_category={"INF_A": _ShortList(rows)},
+                ingested_by_user_id=1,
+            )
+
+
+# ===========================================================================
 # 5. GENERAL primero — competidores pre-cargados sin race_result
 # ===========================================================================
 

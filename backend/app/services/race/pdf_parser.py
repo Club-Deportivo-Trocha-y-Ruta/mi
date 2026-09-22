@@ -61,7 +61,7 @@ from typing import Optional, Sequence
 
 import pdfplumber
 
-from app.services.race.normalizer import parse_category_header
+from app.services.race.normalizer import LAP_WORD_PATTERN, parse_category_header
 
 logger = logging.getLogger(__name__)
 
@@ -185,10 +185,35 @@ _TABLE_SETTINGS: dict = {
 #: El grupo se sigue llamando ``time`` y sigue capturando también los estados
 #: (``DNF``/``DSQ``/``DNS``/``(-N VUELTAS)``) — el self-test del builder de
 #: fixtures depende de esa forma.
+#:
+#: Ampliado en T024b (medido sobre los 15 archivos 2024–2025: 230 filas
+#: llegaban con ``time_raw == ""``). El token de tiempo ahora también acepta:
+#:
+#: - **Hora de dos dígitos** y **``MM:SS``** sin horas, con el mismo
+#:   lookbehind ``(?<![\d:])``. ``parse_time`` rechaza una hora ≥ 10 (errata
+#:   del acta) y el ingestor conserva la fila con tiempo nulo.
+#: - **Déficit de vueltas no canónico** (``_LAP_TOKEN``): ``-1 vuelta``,
+#:   ``(1- VUELTA``, ``(- 1 VUELTA)``, ``(2 VUELTAS)``, ``(-2 VULETAS)``,
+#:   ``-2 vueltas (lap)``… Exige un número **y** la palabra de vuelta
+#:   (``normalizer.LAP_WORD_PATTERN``), más un signo o paréntesis, así que
+#:   ni el dorsal ni los puntos pueden leerse como vuelta. No exige espacio
+#:   previo: en las actas la vuelta perdida a veces queda pegada al club en
+#:   el mismo run (``…CLUB(-1 VUELTA)``) — ``_row_from_match`` la despega.
+#: - **``-N`` desnudo** con espacio previo.
+#:
+#: Todo sigue anclado al final de la banda (``\s+<puntos>$``): el token solo
+#: puede ser lo que está justo antes de los puntos.
+_LAP_TOKEN = (
+    r"(?:\(\s*\)?\s*-?\s*\d{1,2}\s*-?|-\s*\d{1,2}\s*-?|\d{1,2}\s*-)\s*"
+    + LAP_WORD_PATTERN
+    + r"(?:\s*[)=\-])?(?:\s*\(\w+\))?"
+)
 _RESULTS_ROW_RE = re.compile(
     r"^(?P<pos>\d+)\s+(?P<bib>\d+)\s+(?P<body>.+?)\s*"
-    r"(?P<time>(?<![\d:])\d:\d{2}:\d{2}"
-    r"|(?<=\s)(?:DNF|DSQ|DNS|\(-\d+\s*VUELTAS?\)))\s+"
+    r"(?P<time>(?<![\d:])\d{1,2}:\d{2}(?::'?\d{2})?"
+    r"|(?<=\s)(?:DNF|DSQ|DNS)"
+    r"|" + _LAP_TOKEN
+    + r"|(?<=\s)-\d{1,2})\s+"
     r"(?P<points>\d+)\s*$",
     re.IGNORECASE,
 )
@@ -484,6 +509,14 @@ def _row_from_match(
             name, city, club = cells
         else:
             name, city, club = _split_body_fallback(body)
+    if time_raw:
+        # Vuelta perdida pegada al texto de la celda anterior en el mismo run
+        # (T024b): el token ya es ``time_raw``, no puede quedarse también
+        # dentro del club — ni de la ciudad, cuando el club vino vacío.
+        if club.endswith(time_raw):
+            club = club[: -len(time_raw)].rstrip()
+        elif not club and city.endswith(time_raw):
+            city = city[: -len(time_raw)].rstrip()
     return ResultsRow(
         position=int(pos_str),
         bib=bib,

@@ -428,7 +428,46 @@ class RaceIngestor:
                     event_id=event.id, category_id=category.id
                 )
 
+                # SC-001 a nivel de ingesta (T024b): toda fila leída termina
+                # en exactamente uno de tres destinos — insertada, ya existente
+                # (idempotencia) o salto explícito con warning. Nunca un
+                # ``continue`` silencioso.
+                cat_inserted = 0
+                cat_existing = 0
+                cat_explicit_skips = 0
+
                 for idx, row in enumerate(rows):
+                    # Parsear tiempo / status ANTES de resolver el competidor:
+                    # una fila que no se va a guardar no debe crear un
+                    # competidor huérfano.
+                    #
+                    # T024b (research R-01 punto 4, R-05): una fila con posición
+                    # y sin tiempo es "clasificada sin tiempo" y se guarda como
+                    # FINISHED con ``race_time_ms`` nulo — mismo criterio que
+                    # ``history.py``/``field_metrics`` (cuenta en el campo, no
+                    # en las cifras de tiempo). Un texto no vacío que no se
+                    # puede interpretar tampoco borra la fila: se avisa y se
+                    # guarda igual, con tiempo nulo. Solo se salta la fila que
+                    # no trae ni posición ni tiempo interpretable.
+                    try:
+                        status, race_time_ms, laps_behind = parse_time(row.time_raw)
+                    except ValueError as exc:
+                        warnings.append(
+                            f"tiempo_no_parseable bib={row.bib} cat={code} "
+                            f"raw={row.time_raw!r} err={type(exc).__name__}"
+                        )
+                        status, race_time_ms, laps_behind = ResultStatus.FINISHED, None, 0
+                    if (
+                        status == ResultStatus.FINISHED
+                        and race_time_ms is None
+                        and row.position is None
+                    ):
+                        warnings.append(
+                            f"fila_sin_posicion_ni_tiempo bib={row.bib} cat={code}"
+                        )
+                        cat_explicit_skips += 1
+                        continue
+
                     resolution = await self._resolve_competitor(
                         resolver, row, category, meta.season,
                         collision_discriminator=collisions.get((code, idx)),
@@ -458,16 +497,7 @@ class RaceIngestor:
                     # ¿Ya existe race_result (event, category, competitor)?
                     if competitor.id in existing_pairs:
                         results_skipped += 1
-                        continue
-
-                    # Parsear tiempo / status
-                    try:
-                        status, race_time_ms, laps_behind = parse_time(row.time_raw)
-                    except ValueError as exc:
-                        warnings.append(
-                            f"tiempo_no_parseable bib={row.bib} cat={code} "
-                            f"raw={row.time_raw!r} err={type(exc).__name__}"
-                        )
+                        cat_existing += 1
                         continue
 
                     # Warning tiempo anómalo (sin nombre, solo bib + code)
@@ -533,6 +563,18 @@ class RaceIngestor:
                     # si el PDF tuviera duplicados (defensa profundidad).
                     existing_pairs.add(competitor.id)
                     results_inserted += 1
+                    cat_inserted += 1
+
+                accounted = cat_inserted + cat_existing + cat_explicit_skips
+                if accounted != len(rows):
+                    # Error de programación, no del acta: aborta la transacción
+                    # completa antes que confirmar una categoría incompleta.
+                    raise RuntimeError(
+                        f"ingest_incompleto cat={code} leidas={len(rows)} "
+                        f"insertadas={cat_inserted} existentes={cat_existing} "
+                        f"saltos_explicitos={cat_explicit_skips}"
+                    )
+                results_skipped += cat_explicit_skips
 
             # --- 6b. Resultados adjuntados por decisión (feature 044) -----
             if attachments and not dry_run:
