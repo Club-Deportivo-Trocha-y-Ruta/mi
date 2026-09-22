@@ -359,14 +359,16 @@ snapshot schemas stay untouched.
 - the frozen category label (§2) and a `category_changed` flag, raised only when
   consecutive results carry a different `category_id` — a rename resolves to the same row,
   so it never raises the flag;
-- `avg_speed_kmh` via the existing `course/derived.py::derive_figures`, "sin dato" whenever
-  the válida has no course profile, never estimated;
 - per-season completion counts (finished over started).
 
+No `avg_speed_kmh` — removed from this cross-season history 2026-09-22 (owner decision,
+"no es un dato relevante" here); per-válida speed is unaffected on the Circuito tab and
+`EvolutionChart`/`EvolutionTable` (feature 043).
+
 `GET /api/athletes/{athlete_id}/race-analysis/history` sits behind `verify_athlete_access`,
-at most four statements (athlete results with event/series; field rows restricted to the
-athlete's own `(event_id, category_id)` pairs; categories; course setups) — asserted by a
-statement-count test, not just documented.
+at most three statements (athlete results with event/series; field rows restricted to the
+athlete's own `(event_id, category_id)` pairs; categories — no course-setups query since
+speed was removed) — asserted by a statement-count test, not just documented.
 
 ## 7. Family visibility
 
@@ -517,7 +519,8 @@ down an owner and a "before what" for each, so the debt has a trigger, not just 
   `tasks.md`.
 - `docs/10-race-results/upload-design.md` — the original Phase 1.7 import pipeline this
   feature extends rather than replaces (FR-023).
-- `docs/10-race-results/course-profile-design.md` — feature 043, reused unchanged by
-  `history.py`'s average-speed figure.
+- `docs/10-race-results/course-profile-design.md` — feature 043, per-válida course/speed
+  figures (`derive_figures`); untouched by this feature after `history.py` stopped using
+  `avg_speed_kmh` (2026-09-22).
 - `docs/implementation-status.md` — phase-by-phase status of this feature.
 - `docs/technical-notes.md` — dated changelog entries.
