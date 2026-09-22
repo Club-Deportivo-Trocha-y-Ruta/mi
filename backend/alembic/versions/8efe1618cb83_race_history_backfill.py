@@ -438,14 +438,10 @@ def downgrade() -> None:
     # esta revisión, no existía nada que preservar antes de ella. Las
     # decisiones de identidad ya tomadas SÍ se pierden — ese es el costo
     # documentado de revertir, y por eso el runbook exige backup previo.
-    op.drop_index(
-        "ix_race_competitor_signatures_competitor_id",
-        table_name="race_competitor_signatures",
-    )
+    # Sin `drop_index` previo: `DROP TABLE` se lleva sus índices en ambos
+    # dialectos, y en MySQL un índice que respalda una FK no se puede borrar
+    # suelto (error 1553) — así falló la primera verificación en MySQL 8.4.
     op.drop_table("race_competitor_signatures")
-    op.drop_index(
-        "ix_race_identity_candidates_state", table_name="race_identity_candidates"
-    )
     op.drop_table("race_identity_candidates")
     if dialect != "sqlite":
         # No-op en MySQL (el ENUM es inline en la columna, no un tipo con

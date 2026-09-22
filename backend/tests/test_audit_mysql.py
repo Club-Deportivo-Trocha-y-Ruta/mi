@@ -62,7 +62,7 @@ DOWN_REVISION = "2a8baa967cc6"
 # race_events.priority, race_series.short_name) sobre 2c0097aa48b8 (drop
 # race_event_roster) sobre 5ba077132b3b (043, perfil de circuito) sobre
 # d5b125474e2b (042, nueve columnas de trazabilidad) sobre 45cd705c6b54.
-CURRENT_HEAD = "c2314ccd7927"
+CURRENT_HEAD = "a7c3e5d91f20"
 
 
 def _require_test_url() -> URL:
