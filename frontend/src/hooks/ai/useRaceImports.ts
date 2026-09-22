@@ -15,6 +15,7 @@ import {
 import {
   acknowledgeRaceImportCategory,
   addRaceImportRowCorrection,
+  commitPendingRaceImport,
   commitRaceImport,
   dryRunRaceImport,
   getAcknowledgeReasons,
@@ -25,6 +26,7 @@ import type {
   AcknowledgeInput,
   AcknowledgeReasonsResponse,
   CategoryCompletenessResponse,
+  ImportCommitPendingResponse,
   ImportCommitRequest,
   ImportCommitResponse,
   ImportDryRunResponse,
@@ -74,6 +76,28 @@ export function useImportCommit() {
   return useMutation<ImportCommitResponse, unknown, UseImportCommitVariables>({
     mutationKey: ["race-imports", "commit"],
     mutationFn: ({ parseId, body }) => commitRaceImport(parseId, body),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: raceImportsKeys.all });
+      void queryClient.invalidateQueries({ queryKey: ["race-analysis"] });
+    },
+  });
+}
+
+/**
+ * `useCommitPendingRaceImport()` → mutation POST /imports/{id}/commit-pending
+ * (feature 044, US5). Misma invalidación que `useImportCommit()`: histórico
+ * de imports + race-analysis (standings/evolución de la válida recién
+ * completada).
+ */
+export function useCommitPendingRaceImport() {
+  const queryClient = useQueryClient();
+  return useMutation<
+    ImportCommitPendingResponse,
+    unknown,
+    { parseId: string }
+  >({
+    mutationKey: ["race-imports", "commit-pending"],
+    mutationFn: ({ parseId }) => commitPendingRaceImport(parseId),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: raceImportsKeys.all });
       void queryClient.invalidateQueries({ queryKey: ["race-analysis"] });

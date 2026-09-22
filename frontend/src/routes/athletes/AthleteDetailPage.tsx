@@ -14,6 +14,7 @@ import {
   Ruler,
   Sparkles,
   TrendingUp,
+  Trophy,
   Unlink,
   User,
 } from "lucide-react";
@@ -74,11 +75,25 @@ const AthleteHistoryPanel = lazy(() =>
   })),
 );
 
+// T075 (feature 044, US6), revisado tras T077 (ux-review.md, hallazgo
+// BLOCKER): la tarjeta de progresión histórica vive en su PROPIO tab
+// "Carreras" — no dentro de "Insights IA" (esa mezcla obligaba al coach a
+// entrar a un análisis IA solo para ver la progresión histórica, algo sin
+// relación). No depende de recharts para su primer pintado (ver comentario
+// de `HistoryProgressionCard`), pero sí carga recharts por dentro — mismo
+// patrón lazy-load que el resto de este archivo.
+const HistoryProgressionCard = lazy(() =>
+  import("@/components/race/history/HistoryProgressionCard").then((m) => ({
+    default: m.HistoryProgressionCard,
+  })),
+);
+
 type Tab =
   | "info"
   | "anthropometry"
   | "growth"
   | "ai_analysis"
+  | "races"
   | "newsletters"
   | "activities"
   | "history";
@@ -88,10 +103,17 @@ const VALID_TABS: readonly Tab[] = [
   "anthropometry",
   "growth",
   "ai_analysis",
+  "races",
   "newsletters",
   "activities",
   "history",
 ] as const;
+
+/** Tabs que un padre nunca puede ver — usado tanto para el botón (guardado
+ * inline con `!isParent`) como para el fallback de deep-link por query
+ * string. "races" (feature 044, T077): Fase 9/US7 lo habilita para padres
+ * quitándolo de esta lista, sin tocar el resto del componente. */
+const COACH_ONLY_TABS: readonly Tab[] = ["newsletters", "history", "races"];
 
 function parseTabParam(raw: string | null): Tab | null {
   if (raw && (VALID_TABS as readonly string[]).includes(raw)) {
@@ -434,6 +456,21 @@ function GrowthTabSkeleton() {
   );
 }
 
+// T075 (feature 044, US6) — fallback mientras se descarga el chunk lazy de
+// HistoryProgressionCard. Solo cubre la carga del chunk en sí; la tarjeta
+// ya tiene su propio estado de carga de datos (skeleton interno) una vez
+// montada.
+function HistoryProgressionCardSkeleton() {
+  return (
+    <div
+      role="status"
+      aria-busy="true"
+      aria-label="Cargando progresión histórica…"
+      className="h-24 w-full animate-pulse rounded-xl bg-light-gray"
+    />
+  );
+}
+
 export function AthleteDetailPage() {
   const { id } = useParams();
   const athleteId = Number(id);
@@ -450,11 +487,13 @@ export function AthleteDetailPage() {
   // FE-2: el tab inicial puede venir del query string (?tab=ai_analysis).
   // Permite que el combobox del tab "Insights históricos" en
   // RaceAnalysisPage enrute directo al histórico del deportista.
-  // Si el rol es parent y la URL pide "newsletters" → fallback silencioso a "info".
+  // Si el rol es parent y la URL pide un tab solo-coach → fallback silencioso a "info".
+  // "races" (feature 044, US6/T077) es solo-coach por ahora — Fase 9 (US7)
+  // lo habilita para padres quitándolo de esta lista, sin tocar nada más.
   const [searchParams, setSearchParams] = useSearchParams();
   const rawTabFromUrl = parseTabParam(searchParams.get("tab"));
   const tabFromUrl =
-    isParent && (rawTabFromUrl === "newsletters" || rawTabFromUrl === "history")
+    isParent && rawTabFromUrl && COACH_ONLY_TABS.includes(rawTabFromUrl)
       ? null
       : rawTabFromUrl;
   const [activeTab, setActiveTab] = useState<Tab>(tabFromUrl ?? "info");
@@ -476,11 +515,11 @@ export function AthleteDetailPage() {
   };
 
   // Reaccionar a cambios externos del query string (back/forward del navegador).
-  // Si el rol es parent y pide "newsletters" → fallback silencioso a "info".
+  // Si el rol es parent y pide un tab solo-coach → fallback silencioso a "info".
   useEffect(() => {
     const rawUrlTab = parseTabParam(searchParams.get("tab"));
     const urlTab =
-      isParent && (rawUrlTab === "newsletters" || rawUrlTab === "history")
+      isParent && rawUrlTab && COACH_ONLY_TABS.includes(rawUrlTab)
         ? null
         : rawUrlTab;
     if (urlTab && urlTab !== activeTab) {
@@ -648,6 +687,24 @@ export function AthleteDetailPage() {
           <Sparkles size={14} />
           Insights IA
         </button>
+
+        {/* T077 (feature 044, US6) — tab propio para la progresión
+            histórica, justo después de "Insights IA": el hallazgo BLOCKER
+            de la revisión UX fue que mezclarla dentro de Insights IA
+            obligaba al coach a entrar a un análisis IA para ver algo sin
+            relación. Solo-coach por ahora (`COACH_ONLY_TABS`); Fase 9/US7
+            la habilita para padres quitando "races" de esa lista. */}
+        {!isParent && (
+          <button
+            type="button"
+            className={tabClasses("races")}
+            onClick={() => updateTab("races")}
+            data-testid="athlete-tab-races"
+          >
+            <Trophy size={14} />
+            Carreras
+          </button>
+        )}
 
         {!isParent && (
           <button
@@ -848,6 +905,17 @@ export function AthleteDetailPage() {
             athlete={athlete}
             mode={isParent ? "parent" : "coach"}
           />
+        </Suspense>
+      )}
+
+      {/* Tab content — Carreras (progresión histórica entre temporadas).
+          T077 (feature 044, US6): tab propio, ya no mezclado dentro de
+          Insights IA (hallazgo BLOCKER de la revisión UX). Solo-coach por
+          ahora — `audience="coach"` fijo, Fase 9/US7 la reutiliza para
+          padres cambiando solo esta prop + la guarda `!isParent`. */}
+      {activeTab === "races" && !isParent && (
+        <Suspense fallback={<HistoryProgressionCardSkeleton />}>
+          <HistoryProgressionCard key={athlete.id} athleteId={athleteId} audience="coach" />
         </Suspense>
       )}
 

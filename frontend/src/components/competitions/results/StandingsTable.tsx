@@ -185,6 +185,18 @@ export function StandingsTable({ data, hideClubFilter = false }: StandingsTableP
 
   return (
     <div className="space-y-4" data-testid="standings-table-root">
+      {/* Feature 044 (US5) — temporada histórica: puntos = suma de
+          `points_awarded` impreso en el acta, sin recálculo contra ninguna
+          tabla de puntos oficial (contracts/historical-load.md). */}
+      {data.is_calculated && (
+        <p
+          className="rounded-lg bg-light-gray/60 px-3 py-2 text-xs text-mid-gray"
+          data-testid="standings-calculated-label"
+        >
+          Clasificación calculada por la plataforma
+        </p>
+      )}
+
       {/* ── Barra de controles ─────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-3">
         {/* Selector de categoría */}

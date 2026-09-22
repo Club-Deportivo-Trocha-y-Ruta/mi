@@ -365,6 +365,20 @@ export interface ImportCommitResponse {
 }
 
 // ---------------------------------------------------------------------------
+// POST /imports/{parse_id}/commit-pending — feature 044 (US5)
+// (`contracts/historical-load.md` §"Idempotence and resumption")
+// ---------------------------------------------------------------------------
+
+/**
+ * Ingiere solo las categorías que quedaron pendientes en un commit parcial
+ * anterior, una vez consistentes o reconocidas. Mismo shape de respuesta
+ * que `/commit` — `pending_categories` refleja lo que siga sin resolver.
+ * `409 nothing_pending` cuando no hay nada por ingerir; sujeto al mismo
+ * candado `409 identity_review_pending` que `/commit`.
+ */
+export type ImportCommitPendingResponse = ImportCommitResponse;
+
+// ---------------------------------------------------------------------------
 // GET /imports/
 // ---------------------------------------------------------------------------
 
@@ -382,6 +396,29 @@ export interface ImportListItem {
   original_filename: string;
   uploaded_by: ImportUploader;
   n_results: number;
+  // -------------------------------------------------------------------------
+  // Feature 044 (US5) — tablero de carga histórica
+  // (`contracts/historical-load.md` §"Board fields", `contracts/ui-history.md` §3).
+  //
+  // Siempre presentes (nunca `undefined`) — mirror exacto de
+  // `ImportListItem` en `backend/app/schemas/race_imports.py`. `season` /
+  // `valida_num` / `series_name` se resuelven de `parse_meta_json["header"]`
+  // mientras el import conserva meta, y de `RaceEvent`→`RaceSeries` una vez
+  // committeado sin pendientes; solo son `null` para un import roto sin
+  // meta ni evento resuelto (caso defensivo, no el flujo normal).
+  // -------------------------------------------------------------------------
+  /** Año de temporada del válida/evento asociado. `null` solo en un import roto. */
+  season: number | null;
+  /** Número de válida dentro de la serie (`null` en campeonatos, o en un import roto). */
+  valida_num: number | null;
+  /** Nombre de la serie (ej. "Copa Valle de Ciclomontañismo"). `null` solo en un import roto. */
+  series_name: string | null;
+  /**
+   * Categorías cuyo commit quedó pendiente (inconsistentes sin reconocer o
+   * de encabezado no reconocido) — mirror de
+   * `ImportCommitResponse.pending_categories`, contado.
+   */
+  pending_categories_count: number;
 }
 
 export interface ImportListResponse {

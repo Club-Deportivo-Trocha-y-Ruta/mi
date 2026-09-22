@@ -11,6 +11,7 @@ import type {
   AcknowledgeInput,
   AcknowledgeReasonsResponse,
   CategoryCompletenessResponse,
+  ImportCommitPendingResponse,
   ImportCommitRequest,
   ImportCommitResponse,
   ImportDryRunResponse,
@@ -111,6 +112,26 @@ export async function commitRaceImport(
   const response = await apiClient.post<ImportCommitResponse>(
     `${BASE}/${parseId}/commit`,
     body,
+    { signal: options?.signal },
+  );
+  return response.data;
+}
+
+/**
+ * POST /api/race-analysis/imports/{parse_id}/commit-pending — feature 044 (US5).
+ *
+ * Ingiere las categorías que quedaron fuera de un commit parcial anterior
+ * (`contracts/historical-load.md`). Sin body — reutiliza los matches ya
+ * resueltos en el commit inicial. `409 nothing_pending` cuando no hay nada
+ * pendiente; mismo candado `409 identity_review_pending` que `/commit`.
+ */
+export async function commitPendingRaceImport(
+  parseId: string,
+  options?: { signal?: AbortSignal },
+): Promise<ImportCommitPendingResponse> {
+  const response = await apiClient.post<ImportCommitPendingResponse>(
+    `${BASE}/${parseId}/commit-pending`,
+    {},
     { signal: options?.signal },
   );
   return response.data;

@@ -260,6 +260,14 @@ const IdentityReviewPage = lazy(() =>
     default: m.IdentityReviewPage,
   })),
 );
+// Tablero de carga histórica Copa Valle (feature 044, US5) — estado por
+// temporada/válida del mismo camino preview → dry-run → commit
+// (contracts/historical-load.md, contracts/ui-history.md §3).
+const HistoricalLoadPage = lazy(() =>
+  import("@/routes/competitions/history/HistoricalLoadPage").then((m) => ({
+    default: m.HistoricalLoadPage,
+  })),
+);
 
 // Strava Activity Sync (feature 025) — revisión de actividades, coach/admin only (lazy)
 const ActivityReviewPage = lazy(() =>
@@ -761,6 +769,16 @@ export default function App() {
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
               <Suspense fallback={<RouteFallback label="Cargando revisión de identidad..." />}>
                 <IdentityReviewPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/competitions/history"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <Suspense fallback={<RouteFallback label="Cargando carga histórica..." />}>
+                <HistoricalLoadPage />
               </Suspense>
             </ProtectedRoute>
           }

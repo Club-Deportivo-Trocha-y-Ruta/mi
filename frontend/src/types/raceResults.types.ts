@@ -222,6 +222,15 @@ export interface RaceEventStandingsResponse {
   location?: string;
   /** Estado del evento (ej. "completed", "scheduled"). */
   status?: string;
+  /**
+   * Feature 044 (US5, `contracts/historical-load.md` §"Points and standings")
+   * — `true` cuando los puntos vienen de sumar `points_awarded` impreso en
+   * el acta sin recálculo contra ninguna tabla de puntos (temporadas
+   * históricas 2024/2025, esquemas `copa_valle_2024`/`copa_valle_2025` con
+   * `is_official = false`). `undefined`/`false` para temporadas oficiales
+   * vigentes — comportamiento sin cambios.
+   */
+  is_calculated?: boolean;
 }
 
 /**

@@ -19,6 +19,7 @@ import {
   AlertCircle,
   CalendarPlus,
   Edit2,
+  History,
   Loader2,
   MoreHorizontal,
   RefreshCw,
@@ -208,6 +209,15 @@ export function CompetitionsListPage() {
             >
               <UserCheck size={14} aria-hidden="true" />
               Revisión de identidad
+            </Link>
+            {/* Feature 044 (US5) — entrada al tablero de carga histórica */}
+            <Link
+              to="/competitions/history"
+              className="inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
+              aria-label="Ver el tablero de carga histórica"
+            >
+              <History size={14} aria-hidden="true" />
+              Carga histórica
             </Link>
             {/* Acción primaria */}
             <Link

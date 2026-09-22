@@ -139,6 +139,25 @@ vi.mock("@/components/athletes/ai/AthleteAIAnalysisTab", () => {
   };
 });
 
+// T077 (feature 044, US6) — igual que AthleteAIAnalysisTab arriba: se
+// mockea porque su comportamiento interno ya está cubierto exhaustivamente
+// en `components/race/history/__tests__/HistoryProgressionCard.test.tsx`.
+// Este archivo solo verifica el WIRING del tab (botón, ?tab=races, oculto
+// para AthleteAIAnalysisTab en su lugar anterior).
+vi.mock("@/components/race/history/HistoryProgressionCard", () => ({
+  HistoryProgressionCard: ({
+    athleteId,
+    audience,
+  }: {
+    athleteId: number;
+    audience?: string;
+  }) => (
+    <div data-testid="mock-history-progression-card" data-audience={audience}>
+      history-progression-{athleteId}
+    </div>
+  ),
+}));
+
 // ---------------------------------------------------------------------------
 // Imports de producción (después de mocks)
 // ---------------------------------------------------------------------------
@@ -580,6 +599,69 @@ describe("AthleteDetailPage — refactor Opción C", () => {
       });
       expect(screen.queryByTestId("growth-curve")).not.toBeInTheDocument();
       expect(screen.queryByTestId("anthropometry-history")).not.toBeInTheDocument();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 7. Tab Carreras (progresión histórica, feature 044, T077)
+  // -------------------------------------------------------------------------
+
+  describe("Tab Carreras", () => {
+    beforeEach(() => {
+      vi.mocked(athletesApi.getAthlete).mockResolvedValue(mockAthlete);
+      vi.mocked(athletesApi.getAnthropometry).mockResolvedValue([]);
+    });
+
+    it("coach ve el tab Carreras en la barra de tabs", async () => {
+      renderPage();
+      await screen.findByTestId("athlete-info-card");
+      expect(screen.getByTestId("athlete-tab-races")).toBeInTheDocument();
+    });
+
+    it("navegar al tab Carreras renderiza HistoryProgressionCard con audience=coach", async () => {
+      renderPage();
+      await act(async () => {
+        await userEvent.click(await screen.findByTestId("athlete-tab-races"));
+      });
+      const card = await screen.findByTestId("mock-history-progression-card");
+      expect(card).toBeInTheDocument();
+      expect(card).toHaveAttribute("data-audience", "coach");
+    });
+
+    it("?tab=races abre directo el tab Carreras (deep-link)", async () => {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      });
+      render(
+        <MemoryRouter initialEntries={["/athletes/1?tab=races"]}>
+          <QueryClientProvider client={queryClient}>
+            <Routes>
+              <Route path="/athletes/:id" element={<AthleteDetailPage />} />
+            </Routes>
+          </QueryClientProvider>
+        </MemoryRouter>,
+      );
+      expect(await screen.findByTestId("mock-history-progression-card")).toBeInTheDocument();
+    });
+
+    it("el tab Insights IA ya NO mezcla la tarjeta de progresión histórica (T077 BLOCKER)", async () => {
+      renderPage();
+      await act(async () => {
+        await userEvent.click(await screen.findByTestId("athlete-tab-ai-analysis"));
+      });
+      expect(screen.getByTestId("mock-ai-analysis-tab")).toBeInTheDocument();
+      expect(
+        screen.queryByTestId("mock-history-progression-card"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("tab Carreras activo no renderiza AthleteAIAnalysisTab", async () => {
+      renderPage();
+      await act(async () => {
+        await userEvent.click(await screen.findByTestId("athlete-tab-races"));
+      });
+      await screen.findByTestId("mock-history-progression-card");
+      expect(screen.queryByTestId("mock-ai-analysis-tab")).not.toBeInTheDocument();
     });
   });
 
