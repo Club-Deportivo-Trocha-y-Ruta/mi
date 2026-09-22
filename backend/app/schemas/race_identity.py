@@ -144,13 +144,15 @@ class IdentityReversalOut(BaseModel):
 
 
 class RebuildResultRead(BaseModel):
-    """``RebuildResult``. ``imports_unreadable`` son ids de imports en
-    staging cuyo archivo no se pudo re-leer — sus filas NO entraron al
-    universo de este rebuild."""
+    """``RebuildResult``. ``removed`` cuenta los candidatos ``pending``
+    borrados por no involucrar a un atleta del club (decisión 2026-09-22).
+    ``imports_unreadable`` son ids de imports en staging cuyo archivo no se
+    pudo re-leer — sus filas NO entraron al universo de este rebuild."""
 
     model_config = ConfigDict(extra="forbid")
 
     created: int
     unchanged: int
     pending: int
+    removed: int
     imports_unreadable: list[int]

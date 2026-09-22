@@ -408,6 +408,9 @@ export function IdentityReviewPage() {
     rebuildMutation.mutate(undefined, {
       onSuccess: (data) => {
         let message = `Candidatos recalculados: ${data.created} nuevos, ${data.pending} pendientes.`;
+        if (data.removed > 0) {
+          message += ` ${data.removed} sin atletas del club se retiraron de la cola.`;
+        }
         if (data.imports_unreadable.length > 0) {
           message += ` ${data.imports_unreadable.length} archivo(s) no se pudieron leer y quedaron fuera del recálculo.`;
         }

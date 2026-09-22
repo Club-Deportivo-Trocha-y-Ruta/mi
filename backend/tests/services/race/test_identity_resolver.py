@@ -31,6 +31,7 @@ from app.services.race.identity_resolver import (
     IdentityUnresolved,
     ResolutionBranch,
     category_discriminator,
+    collision_discriminators,
     discriminator_compatible,
     signature_triple,
 )
@@ -123,13 +124,27 @@ async def test_signature_exact_hit_reuses_and_widens_seasons(db):
 
 @pytest.mark.asyncio
 async def test_name_hit_single_competitor_without_signal_attaches(db):
-    """Cambio de club solo: no es señal — se adjunta y se agrega una firma."""
+    """Cambio de club solo de un atleta del club: no es señal — se adjunta y
+    se agrega una firma."""
     first = await IdentityResolver(db).resolve(name=NAME, club=CLUB_A, city=CITY_A, season=2024)
+    first.competitor.athlete_id = 4242
     moved = await IdentityResolver(db).resolve(name=NAME, club=CLUB_B, city=CITY_A, season=2025)
     assert moved.branch == ResolutionBranch.name_attach
     assert moved.competitor.id == first.competitor.id
     assert await _count(db, RaceCompetitor) == 1
     assert await _count(db, RaceCompetitorSignature) == 2
+
+
+@pytest.mark.asyncio
+async def test_third_party_same_name_other_club_is_a_new_competitor(db):
+    """Decisión 2026-09-22: un tercero (sin ``athlete_id``) nunca recibe una
+    terna distinta por coincidir el nombre — se separa por defecto."""
+    first = await IdentityResolver(db).resolve(name=NAME, club=CLUB_A, city=CITY_A, season=2024)
+    other = await IdentityResolver(db).resolve(name=NAME, club=CLUB_B, city=CITY_A, season=2025)
+    assert other.created and other.branch == ResolutionBranch.new_competitor
+    assert other.competitor.id != first.competitor.id
+    assert await _count(db, RaceCompetitor) == 2
+    assert await _count(db, RaceIdentityCandidate) == 0
 
 
 @pytest.mark.asyncio
@@ -183,8 +198,9 @@ async def test_several_competitors_without_tie_break_raise(db):
         IdentityCandidateState.different_people,
         kind=IdentityCandidateKind.homonym_suspect,
     )
-    await IdentityResolver(db).resolve(name=NAME, club=CLUB_B, city=CITY_B, season=2025)
-    # Tercera forma impresa, sin decisión: dos competidores con ese nombre.
+    second = await IdentityResolver(db).resolve(name=NAME, club=CLUB_B, city=CITY_B, season=2025)
+    base.competitor.athlete_id, second.competitor.athlete_id = 4242, 4343
+    # Tercera forma impresa, sin decisión: dos atletas del club con ese nombre.
     with pytest.raises(IdentityUnresolved) as exc:
         await IdentityResolver(db).resolve(name=NAME, club="Club Tercero", city="Ciudad Tres", season=2026)
     assert exc.value.reason == "varios_competidores"
@@ -335,8 +351,8 @@ def test_resolution_is_idempotent(rows):
     first, second, n_comp, n_sig, n_comp2, n_sig2 = asyncio.run(_run_twice(rows))
     assert first == second
     assert (n_comp, n_sig) == (n_comp2, n_sig2)
-    # Sin decisiones ni homónimos con varios competidores, un nombre = un competidor.
-    assert n_comp == len({signature_triple(n, "", "")[0] for n, *_ in rows})
+    # Sin atletas del club, cada terna es un competidor (nunca se une por nombre).
+    assert n_comp == len({signature_triple(n, c, t) for n, c, t, _ in rows})
 
 
 # ---------------------------------------------------------------------------
@@ -383,10 +399,15 @@ def test_discriminator_compatibility(disc, cat, season, expected):
     )
 
 
-async def _separated_pair(db):
-    """Padre (Master A) e hijo (Infantil A), misma terna, ya separados."""
+async def _separated_pair(db, *, linked: bool = False):
+    """Padre (Master A) e hijo (Infantil A), misma terna, ya separados. Con
+    ``linked`` el hijo es atleta del club (la terna la gestiona el coach)."""
     parent = RaceCompetitor(normalized_name="mateo ficticio igual", display_name=PARENT_CHILD)
-    child = RaceCompetitor(normalized_name="mateo ficticio igual", display_name=PARENT_CHILD)
+    child = RaceCompetitor(
+        normalized_name="mateo ficticio igual",
+        display_name=PARENT_CHILD,
+        athlete_id=4242 if linked else None,
+    )
     db.add_all([parent, child])
     await db.flush()
     n, c, t = signature_triple(PARENT_CHILD, CLUB_A, CITY_A)
@@ -417,7 +438,7 @@ async def test_resolver_picks_the_right_person_by_category(db):
 
 @pytest.mark.asyncio
 async def test_separated_triple_without_compatible_category_raises(db):
-    await _separated_pair(db)
+    await _separated_pair(db, linked=True)
     with pytest.raises(IdentityUnresolved) as exc:
         await IdentityResolver(db).resolve(
             name=PARENT_CHILD, club=CLUB_A, city=CITY_A, season=2025, category=INF_A_F
@@ -464,3 +485,118 @@ async def test_intra_triple_decision_creates_each_side_on_first_sighting(db):
         s.discriminator for s in (await db.execute(select(RaceCompetitorSignature))).scalars()
     )
     assert discs == ["M:30-39@2025", "M:9-10@2025"]
+
+
+# ---------------------------------------------------------------------------
+# Terceros sin coach (decisión del dueño 2026-09-22)
+# ---------------------------------------------------------------------------
+
+
+def _coll_cat(code, sex, age_min, age_max):
+    return SimpleNamespace(
+        code=code, sex=SimpleNamespace(value=sex), age_min=age_min, age_max=age_max
+    )
+
+
+def test_collision_discriminators_rule():
+    inf = _coll_cat("INF_A", "M", 9, 10)
+    mas = _coll_cat("MAS_A", "M", 30, 39)
+    rows = [
+        ("a", PARENT_CHILD, CLUB_A, CITY_A, inf, "11"),
+        ("b", PARENT_CHILD, CLUB_A, CITY_A, mas, "12"),
+        ("c", "Otra Persona Sola", CLUB_A, CITY_A, inf, "13"),
+        ("d", "Doble Mismo Nombre", CLUB_A, CITY_A, inf, "21"),
+        ("e", "Doble Mismo Nombre", CLUB_A, CITY_A, inf, "22"),
+        ("f", "Triple Sin Dorsal", CLUB_A, CITY_A, inf, ""),
+        ("g", "Triple Sin Dorsal", CLUB_A, CITY_A, inf, ""),
+    ]
+    out = collision_discriminators(rows, 2025)
+    assert out == {
+        "a": "M:9-10@2025",
+        "b": "M:30-39@2025",
+        "d": "bib:21@2025",
+        "e": "bib:22@2025",
+        "f": "row:INF_A-0@2025",
+        "g": "row:INF_A-1@2025",
+    }
+    assert not discriminator_compatible("bib:21@2025", "M", 9, 10, 2025)
+
+
+@pytest.mark.asyncio
+async def test_third_party_collision_same_category_keeps_both_rows(db):
+    """Misma terna, misma válida, misma categoría: dos competidores por
+    dorsal, ningún candidato y ninguna fila perdida."""
+    report = await ingest(
+        db, 2025, 1,
+        {"INF_A": [row(PARENT_CHILD, bib="21"), row(PARENT_CHILD, bib="22", position=2)]},
+    )
+    assert report.results_inserted == 2
+    comps = (await db.execute(select(RaceCompetitor))).scalars().all()
+    assert len(comps) == 2
+    discs = sorted(
+        s.discriminator for s in (await db.execute(select(RaceCompetitorSignature))).scalars()
+    )
+    assert discs == ["bib:21@2025", "bib:22@2025"]
+    assert await _count(db, RaceIdentityCandidate) == 0
+
+    # Idempotente: reingestar las mismas firmas no crea nada nuevo.
+    resolver = IdentityResolver(db)
+    again = await resolver.resolve(
+        name=PARENT_CHILD, club=CLUB_A, city=CITY_A, season=2025,
+        category=INF_A, bib="21", collision_discriminator="bib:21@2025",
+    )
+    assert not again.created and again.branch == ResolutionBranch.third_party_split
+    # Una fila suelta posterior tampoco se queda sin resolver.
+    later = await resolver.resolve(
+        name=PARENT_CHILD, club=CLUB_A, city=CITY_A, season=2025, category=INF_A, bib="22"
+    )
+    owner_22 = (
+        await db.execute(
+            select(RaceCompetitorSignature.competitor_id).where(
+                RaceCompetitorSignature.discriminator == "bib:22@2025"
+            )
+        )
+    ).scalar_one()
+    assert later.competitor.id == owner_22 and not later.created
+    assert await _count(db, RaceCompetitor) == 2
+
+
+@pytest.mark.asyncio
+async def test_third_party_collision_two_categories_splits_by_category(db):
+    report = await ingest(
+        db, 2025, 1,
+        {"INF_A": [row(PARENT_CHILD, bib="11")], "MAS_A": [row(PARENT_CHILD, bib="12")]},
+    )
+    assert report.results_inserted == 2
+    discs = sorted(
+        s.discriminator for s in (await db.execute(select(RaceCompetitorSignature))).scalars()
+    )
+    assert discs == ["M:30-39@2025", "M:9-10@2025"]
+    assert await _count(db, RaceCompetitor) == 2
+
+
+@pytest.mark.asyncio
+async def test_separated_third_party_triple_without_compatible_category_falls_back(db):
+    """Terceros: sin discriminador compatible no hay 500 — firma ``bib:``."""
+    parent, child = await _separated_pair(db)
+    res = await IdentityResolver(db).resolve(
+        name=PARENT_CHILD, club=CLUB_A, city=CITY_A, season=2025, category=INF_A_F, bib="7"
+    )
+    assert res.created and res.branch == ResolutionBranch.third_party_split
+    assert res.competitor.id not in (parent.id, child.id)
+
+
+@pytest.mark.asyncio
+async def test_collision_on_a_club_triple_is_left_to_the_coach(db):
+    """Si la terna es de un atleta del club, el discriminador de colisión se
+    ignora: decide la cola (y el candado)."""
+    base = await IdentityResolver(db).resolve(
+        name=PARENT_CHILD, club=CLUB_A, city=CITY_A, season=2024, category=INF_A
+    )
+    base.competitor.athlete_id = 4242
+    res = await IdentityResolver(db).resolve(
+        name=PARENT_CHILD, club=CLUB_A, city=CITY_A, season=2025,
+        category=MAS_A, collision_discriminator="M:30-39@2025",
+    )
+    assert res.branch == ResolutionBranch.signature_hit
+    assert res.competitor.id == base.competitor.id

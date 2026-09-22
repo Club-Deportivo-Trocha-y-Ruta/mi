@@ -23,8 +23,10 @@ rebuild posterior recalcula el mismo hash, choca contra el UNIQUE y no crea
 una fila nueva ni pisa la decisión existente. Sin él, cada reconstrucción de
 la cola le devolvería al coach preguntas que ya respondió.
 
-No hay borrado: un candidato que desaparece de un rebuild posterior (porque
-los datos cambiaron) permanece como historia. La reversión de una decisión
+Un candidato que desaparece de un rebuild posterior (porque los datos
+cambiaron) permanece como historia. Única excepción (decisión del dueño
+2026-09-22): un ``pending`` nunca decidido que ya no involucra a un atleta
+del club se borra en el rebuild (``identity_review.remove_out_of_scope``). La reversión de una decisión
 devuelve ``state`` a ``pending`` y **conserva** los sellos ``decided_*``
 junto con los ``reversed_*``; la secuencia completa vive en ``record_audit``.
 

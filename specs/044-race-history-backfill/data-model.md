@@ -33,7 +33,7 @@ An observed way a competitor is printed. Owned by exactly one competitor.
 | `normalized_name` | `VARCHAR(160) NOT NULL` | `normalize_name` |
 | `club_norm` | `VARCHAR(150) NOT NULL DEFAULT ''` | `normalize_club` (placeholders → `''`) |
 | `city_norm` | `VARCHAR(100) NOT NULL DEFAULT ''` | same normalisation |
-| `discriminator` | `VARCHAR(32) NOT NULL DEFAULT ''` | revision `a7c3e5d91f20` (owner decision 2026-09-21). `''` for every signature that needs no tie-break; otherwise `"<sex>:<age_min>-<age_max>@<season>"` from the catalogue row of the category (see research R-06 §9) |
+| `discriminator` | `VARCHAR(32) NOT NULL DEFAULT ''` | revision `a7c3e5d91f20` (owner decision 2026-09-21). `''` for every signature that needs no tie-break; otherwise `"<sex>:<age_min>-<age_max>@<season>"` from the catalogue row of the category (see research R-06 §9); for third-party same-válida collisions also `"bib:<bib>@<season>"` or `"row:<code>-<index>@<season>"` (owner decision 2026-09-22, R-06 §10) — never category-compatible |
 | `first_season` / `last_season` | `SMALLINT NOT NULL` | widened on each sighting |
 | `source_candidate_id` | `INT NULL FK → race_identity_candidates.id ON DELETE SET NULL` | set when a `same_person` decision attached this signature (enables exact reversal) |
 | `created_at` | `DATETIME NOT NULL` | |

@@ -117,6 +117,7 @@ async def rebuild_identity_candidates(
         created=result.created,
         unchanged=result.unchanged,
         pending=result.pending,
+        removed=result.removed,
         imports_unreadable=result.imports_unreadable,
     )
 

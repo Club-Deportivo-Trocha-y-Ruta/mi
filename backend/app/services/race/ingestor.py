@@ -57,6 +57,7 @@ from app.services.race.identity_resolver import (
     IdentityResolver,
     ResolutionBranch,
     Triple,
+    collision_discriminators,
     signature_triple,
 )
 from app.services.race.identity_review import record_attached_results
@@ -381,6 +382,19 @@ class RaceIngestor:
                             competitors_updated += 1
 
             # --- 6. RESULTADOS — upsert competidor + insert race_result -
+            # Feature 044 (decisión 2026-09-22): dos filas con la misma terna
+            # en esta válida reciben un discriminador cada una, calculado
+            # sobre el archivo completo (no solo `only_categories`) para que
+            # `/commit-pending` produzca las mismas firmas. El resolver solo
+            # lo usa si la terna es de terceros.
+            collisions = collision_discriminators(
+                (
+                    ((code, idx), r.name, r.club, r.city, category_cache.get(code), r.bib)
+                    for code, rows in results_by_category.items()
+                    for idx, r in enumerate(rows)
+                ),
+                meta.season,
+            )
             for code, rows in results_by_category.items():
                 if only_categories is not None and code not in only_categories:
                     # Feature 044 (US5, T060): reingesta restringida — el
@@ -414,9 +428,10 @@ class RaceIngestor:
                     event_id=event.id, category_id=category.id
                 )
 
-                for row in rows:
+                for idx, row in enumerate(rows):
                     resolution = await self._resolve_competitor(
-                        resolver, row, category, meta.season
+                        resolver, row, category, meta.season,
+                        collision_discriminator=collisions.get((code, idx)),
                     )
                     competitor, was_created = resolution.competitor, resolution.created
                     if resolution.branch == ResolutionBranch.provisional:
@@ -810,6 +825,8 @@ class RaceIngestor:
         row: "ResultsRow | GeneralRow",
         category: RaceCategory,
         season: int,
+        *,
+        collision_discriminator: Optional[str] = None,
     ) -> "Resolution":
         """Resuelve la fila con ``IdentityResolver`` y actualiza en suave el
         competidor reusado (club y ciudad más recientes no vacíos, sexo si
@@ -824,6 +841,8 @@ class RaceIngestor:
                 season=season,
                 sex=sex_from_code,
                 category=category,
+                bib=row.bib,
+                collision_discriminator=collision_discriminator,
             )
         except ValueError:
             # Nombre vacío post-normalización: no debería ocurrir, defensivo.

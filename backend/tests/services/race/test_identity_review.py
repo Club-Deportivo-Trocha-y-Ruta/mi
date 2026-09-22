@@ -88,10 +88,15 @@ def _kinds(drafts):
     return [(d.kind, d.signals) for d in drafts]
 
 
+#: Lado "atleta del club": competidor existente vinculado (decisión
+#: 2026-09-22 — sin él, ningún par se pregunta).
+CLUB = {"competitor_id": 900, "linked": True}
+
+
 def test_extra_surname_is_same_person_suspect():
     drafts = ir.build_candidates(
         [
-            rec("Ana Prueba Uno", apps=((1, 2025, "INF_A_F", 9),)),
+            rec("Ana Prueba Uno", apps=((1, 2025, "INF_A_F", 9),), **CLUB),
             rec("Ana Prueba Uno Dos", apps=((1, 2024, "INF_A_F", 9),)),
         ]
     )
@@ -102,7 +107,7 @@ def test_extra_surname_is_same_person_suspect():
 def test_inverted_surnames_is_same_person_suspect():
     drafts = ir.build_candidates(
         [
-            rec("Ana Prueba Uno", apps=((1, 2025, "INF_A_F", 9),)),
+            rec("Ana Prueba Uno", apps=((1, 2025, "INF_A_F", 9),), **CLUB),
             rec("Ana Uno Prueba", apps=((2, 2025, "INF_A_F", 9),)),
         ]
     )
@@ -115,7 +120,7 @@ def test_accents_normalise_to_the_same_record_key():
         "Ana Prueba Uno", CLUB_A, CITY_A
     )
     drafts = ir.build_candidates(
-        [rec("Ána Pruéba Uno", club=CLUB_B), rec("Ana Prueba Uno", apps=((2, 2025, "INF_A_F", 9),))]
+        [rec("Ána Pruéba Uno", club=CLUB_B, **CLUB), rec("Ana Prueba Uno", apps=((2, 2025, "INF_A_F", 9),))]
     )
     assert drafts == []  # mismo nombre, cambio de club solo
 
@@ -123,7 +128,7 @@ def test_accents_normalise_to_the_same_record_key():
 def test_club_only_change_raises_nothing():
     drafts = ir.build_candidates(
         [
-            rec("Ana Prueba Uno", club=CLUB_A, apps=((1, 2024, "INF_A_F", 9),)),
+            rec("Ana Prueba Uno", club=CLUB_A, apps=((1, 2024, "INF_A_F", 9),), **CLUB),
             rec("Ana Prueba Uno", club=CLUB_B, apps=((1, 2025, "INF_A_F", 9),)),
         ]
     )
@@ -133,7 +138,7 @@ def test_club_only_change_raises_nothing():
 def test_club_and_city_both_differ_is_homonym_signal():
     drafts = ir.build_candidates(
         [
-            rec("Ana Prueba Uno", club=CLUB_A, city=CITY_A, apps=((1, 2024, "INF_A_F", 9),)),
+            rec("Ana Prueba Uno", club=CLUB_A, city=CITY_A, apps=((1, 2024, "INF_A_F", 9),), **CLUB),
             rec("Ana Prueba Uno", club="Escuadra Lejana", city="Pueblo Remoto", apps=((1, 2025, "INF_A_F", 9),)),
         ]
     )
@@ -143,7 +148,7 @@ def test_club_and_city_both_differ_is_homonym_signal():
 def test_empty_city_never_counts_as_divergent():
     drafts = ir.build_candidates(
         [
-            rec("Ana Prueba Uno", club=CLUB_A, city=""),
+            rec("Ana Prueba Uno", club=CLUB_A, city="", **CLUB),
             rec("Ana Prueba Uno", club="Escuadra Lejana", city="Pueblo Remoto", apps=((2, 2025, "INF_A_F", 9),)),
         ]
     )
@@ -153,7 +158,7 @@ def test_empty_city_never_counts_as_divergent():
 def test_same_valida_two_categories_is_homonym_signal():
     drafts = ir.build_candidates(
         [
-            rec("Ana Prueba Uno", club=CLUB_A, apps=((1, 2025, "INF_A_F", 9),)),
+            rec("Ana Prueba Uno", club=CLUB_A, apps=((1, 2025, "INF_A_F", 9),), **CLUB),
             rec("Ana Prueba Uno", club=CLUB_B, apps=((1, 2025, "MAS_F", None),)),
         ]
     )
@@ -165,7 +170,7 @@ def test_same_valida_two_categories_is_homonym_signal():
 def test_sex_conflict_is_homonym_signal():
     drafts = ir.build_candidates(
         [
-            rec("Ana Prueba Uno", club=CLUB_A, sex="F", apps=((1, 2024, "INF_A_F", 9),)),
+            rec("Ana Prueba Uno", club=CLUB_A, sex="F", apps=((1, 2024, "INF_A_F", 9),), **CLUB),
             rec("Ana Prueba Uno", club=CLUB_B, sex="M", apps=((1, 2025, "INF_A", 9),)),
         ]
     )
@@ -175,7 +180,7 @@ def test_sex_conflict_is_homonym_signal():
 def test_age_path_backwards_is_homonym_signal():
     drafts = ir.build_candidates(
         [
-            rec("Ana Prueba Uno", club=CLUB_A, apps=((1, 2024, "INF_B_F", 11),)),
+            rec("Ana Prueba Uno", club=CLUB_A, apps=((1, 2024, "INF_B_F", 11),), **CLUB),
             rec("Ana Prueba Uno", club=CLUB_B, apps=((1, 2025, "INF_A_F", 9),)),
         ]
     )
@@ -191,13 +196,13 @@ def test_age_path_backwards_is_homonym_signal():
     ],
 )
 def test_same_person_suspect_requires_compatible_evidence(other):
-    assert ir.build_candidates([rec("Ana Prueba Uno"), other]) == []
+    assert ir.build_candidates([rec("Ana Prueba Uno", **CLUB), other]) == []
 
 
 def test_blocking_needs_a_shared_surname_token():
     """Sin token de apellido compartido (≥ 3, sin el primero) no se compara."""
     drafts = ir.build_candidates(
-        [rec("Carla Ejemplo"), rec("Carla Ejemplos", apps=((2, 2025, "INF_A_F", 9),))]
+        [rec("Carla Ejemplo", **CLUB), rec("Carla Ejemplos", apps=((2, 2025, "INF_A_F", 9),))]
     )
     assert drafts == []
 
@@ -222,7 +227,7 @@ def test_two_existing_competitors_pair_only_as_same_person():
     assert homonyms == []
     merge_question = ir.build_candidates(
         [
-            rec("Ana Prueba Uno", competitor_id=5, apps=((1, 2024, "INF_A_F", 9),)),
+            rec("Ana Prueba Uno", competitor_id=5, linked=True, apps=((1, 2024, "INF_A_F", 9),)),
             rec("Ana Prueba Uno Dos", competitor_id=6),
         ]
     )
@@ -232,8 +237,8 @@ def test_two_existing_competitors_pair_only_as_same_person():
 def test_name_shared_by_several_competitors_raises_signal_for_staged_record():
     drafts = ir.build_candidates(
         [
-            rec("Ana Prueba Uno", club=CLUB_A, competitor_id=5, apps=((1, 2024, "INF_A_F", 9),)),
-            rec("Ana Prueba Uno", club=CLUB_B, competitor_id=6, apps=((2, 2024, "INF_A_F", 9),)),
+            rec("Ana Prueba Uno", club=CLUB_A, competitor_id=5, linked=True, apps=((1, 2024, "INF_A_F", 9),)),
+            rec("Ana Prueba Uno", club=CLUB_B, competitor_id=6, linked=True, apps=((2, 2024, "INF_A_F", 9),)),
             rec("Ana Prueba Uno", club="Club Tercero", apps=((3, 2025, "INF_A_F", 9),)),
         ]
     )
@@ -252,9 +257,58 @@ def test_linked_athlete_involved_flag():
 
 
 def test_pair_hash_is_order_independent_and_deterministic():
-    a, b = rec("Ana Prueba Uno"), rec("Ana Prueba Uno Dos", apps=((2, 2025, "INF_A_F", 9),))
+    a, b = rec("Ana Prueba Uno", **CLUB), rec("Ana Prueba Uno Dos", apps=((2, 2025, "INF_A_F", 9),))
     assert ir.pair_hash(a.key, b.key) == ir.pair_hash(b.key, a.key)
-    assert ir.build_candidates([a, b]) == ir.build_candidates([b, a])
+    assert ir.build_candidates([a, b]) == ir.build_candidates([b, a]) != []
+
+
+# --- Alcance: solo pares con un atleta del club (decisión 2026-09-22) -------
+
+_THIRD_PARTY_PAIRS = {
+    "extra_surname": (
+        rec("Ana Prueba Uno", apps=((1, 2025, "INF_A_F", 9),)),
+        rec("Ana Prueba Uno Dos", apps=((1, 2024, "INF_A_F", 9),)),
+    ),
+    "club_and_city_differ": (
+        rec("Ana Prueba Uno", apps=((1, 2024, "INF_A_F", 9),)),
+        rec("Ana Prueba Uno", club="Escuadra Lejana", city="Pueblo Remoto"),
+    ),
+    "same_valida_two_categories": (
+        rec("Ana Prueba Uno"),
+        rec("Ana Prueba Uno", club=CLUB_B, apps=((1, 2025, "MAS_F", None),)),
+    ),
+    "sex_conflict": (
+        rec("Ana Prueba Uno", sex="F", apps=((1, 2024, "INF_A_F", 9),)),
+        rec("Ana Prueba Uno", club=CLUB_B, sex="M", apps=((1, 2025, "INF_A", 9),)),
+    ),
+    "existing_unlinked_vs_staged": (
+        rec("Ana Prueba Uno", competitor_id=5, apps=((1, 2024, "INF_A_F", 9),)),
+        rec("Ana Prueba Uno Dos"),
+    ),
+}
+
+
+@pytest.mark.parametrize("pair", list(_THIRD_PARTY_PAIRS.values()), ids=list(_THIRD_PARTY_PAIRS))
+def test_third_party_pairs_raise_nothing(pair):
+    assert ir.build_candidates(list(pair)) == []
+
+
+@pytest.mark.parametrize(
+    "pair,kind",
+    [
+        (_THIRD_PARTY_PAIRS["extra_surname"], IdentityCandidateKind.same_person_suspect),
+        (_THIRD_PARTY_PAIRS["sex_conflict"], IdentityCandidateKind.homonym_suspect),
+    ],
+    ids=["same_person", "homonym"],
+)
+def test_the_same_pair_with_a_club_side_still_raises(pair, kind):
+    first, second = pair
+    club_side = ir.IdentityRecord(
+        **{**first.__dict__, "competitor_id": 900, "athlete_linked": True}
+    )
+    drafts = ir.build_candidates([club_side, second])
+    assert [d.kind for d in drafts] == [kind]
+    assert drafts[0].linked_athlete_involved is True
 
 
 # ---------------------------------------------------------------------------
@@ -280,11 +334,14 @@ async def _count(db, model, *where) -> int:
 async def _us4_universe(db):
     """Escenario de la prueba independiente de US4.
 
-    Confirmado 2026: "Ana Prueba Uno" (club A, ciudad A).
+    Confirmado 2026: "Ana Prueba Uno" (club A, ciudad A), vinculada a un
+    atleta del club.
     En staging 2025: la misma persona con segundo apellido y un homónimo de
     otro club y otra ciudad.
     """
     await ingest(db, 2026, 1, {"INF_A_F": [row("Ana Prueba Uno", club=CLUB_A, city=CITY_A)]})
+    # Atleta del club: sin él ningún par entra a la cola (decisión 2026-09-22).
+    (await db.execute(select(RaceCompetitor))).scalars().one().athlete_id = 4242
     imp = await stage_import(db, 2025, 3, sha="f" * 64)
     staged = {
         imp.id: {
@@ -339,6 +396,8 @@ async def test_partially_committed_import_keeps_its_pending_rows_in_the_universe
     sin pendientes sale del universo."""
     from app.models.race_import import RaceImportStatus
 
+    await ingest(db, 2026, 1, {"INF_A_F": [row("Ana Prueba Uno", club=CLUB_A, city=CITY_A)]})
+    (await db.execute(select(RaceCompetitor))).scalars().one().athlete_id = 4242
     partial = await stage_import(db, 2025, 3, sha="c" * 64)
     partial.status = RaceImportStatus.committed
     partial.parse_meta_json = {
@@ -349,16 +408,12 @@ async def test_partially_committed_import_keeps_its_pending_rows_in_the_universe
     await db.commit()
     rows = {
         # El loader real ya filtra a las categorías pendientes del import.
-        partial.id: {"INF_A_F": [row("Ana Prueba Uno", club=CLUB_A, city=CITY_A)]},
-        later.id: {
-            "INF_A_F": [
-                row("Ana Prueba Uno", club="Escuadra Lejana", city="Pueblo Remoto", bib="12")
-            ]
-        },
+        partial.id: {"INF_A_F": [row("Ana Prueba Uno Dos", club=CLUB_A, city=CITY_A)]},
+        later.id: {"INF_A_F": [row("Bruno Ficticio Tres", bib="12")]},
     }
     result = await ir.rebuild(db, rows_loader=loader_for(rows))
     assert result.pending == 1
-    assert (await _candidate_by_kind(db, IdentityCandidateKind.homonym_suspect)) is not None
+    assert (await _candidate_by_kind(db, IdentityCandidateKind.same_person_suspect)) is not None
 
     partial.parse_meta_json = {**partial.parse_meta_json, "pending_categories": []}
     await db.commit()
@@ -455,7 +510,6 @@ async def test_reverse_before_commit_only_returns_to_queue(db):
 async def test_reverse_same_person_after_commit_splits_and_clears_link(db):
     _imp, loader, staged_rows = await _us4_universe(db)
     original = (await db.execute(select(RaceCompetitor))).scalars().one()
-    original.athlete_id = 4242
     await db.commit()
     await ir.rebuild(db, rows_loader=loader)
     same = await _candidate_by_kind(db, IdentityCandidateKind.same_person_suspect)
@@ -624,14 +678,25 @@ async def _stage_parent_child(db):
     return loader_for({imp.id: rows}), rows
 
 
+async def _club_child(db, *, bib: str = "30"):
+    """El hijo ya confirmado en 2024 (Infantil A) y vinculado a un atleta del
+    club: la terna la gestiona la cola (decisión 2026-09-22)."""
+    await ingest(db, 2024, 1, {"INF_A": [row(PARENT_CHILD, bib=bib)]})
+    child = (await db.execute(select(RaceCompetitor))).scalars().one()
+    child.athlete_id = 4242
+    await db.commit()
+    return child
+
+
 @pytest.mark.asyncio
-async def test_parent_and_child_staged_end_as_two_competitors(db):
+async def test_parent_and_child_of_a_club_athlete_end_as_two_competitors(db):
+    child = await _club_child(db, bib="30")
     loader, rows = await _stage_parent_child(db)
     result = await ir.rebuild(db, rows_loader=loader)
     assert result.created == 1
     cand = (await db.execute(select(RaceIdentityCandidate))).scalars().one()
     assert cand.kind == IdentityCandidateKind.homonym_suspect
-    assert "same_valida_two_categories" in cand.signals
+    assert cand.linked_athlete_involved is True
     page = await ir.list_candidates(db)
     assert "discriminator" not in page.items[0]["left"]
 
@@ -641,8 +706,11 @@ async def test_parent_and_child_staged_end_as_two_competitors(db):
     assert report.results_inserted == 2
     comps = (await db.execute(select(RaceCompetitor))).scalars().all()
     assert len(comps) == 2
-    results = (await db.execute(select(RaceResult))).scalars().all()
-    assert len({r.competitor_id for r in results}) == 2
+    by_bib = {
+        r.bib_number: r.competitor_id
+        for r in (await db.execute(select(RaceResult))).scalars().all()
+    }
+    assert by_bib[31] == by_bib[30] == child.id and by_bib[32] != child.id
 
     # La válida siguiente se reparte sola por categoría.
     await ingest(
@@ -661,14 +729,69 @@ async def test_parent_and_child_staged_end_as_two_competitors(db):
 
 
 @pytest.mark.asyncio
-async def test_committed_mixture_is_split_on_different_people(db):
-    """Datos confirmados antes de la 044: padre e hijo quedaron en un solo
-    competidor. ``different_people`` los parte, resultados incluidos."""
+async def test_third_party_parent_and_child_split_without_asking(db):
+    """Solo terceros: la cola no pregunta y la ingesta los separa por
+    categoría (misma válida, dos categorías) sin perder filas."""
+    loader, rows = await _stage_parent_child(db)
+    result = await ir.rebuild(db, rows_loader=loader)
+    assert (result.created, result.pending) == (0, 0)
+
+    report = await ingest(db, 2025, 5, rows, sha="a" * 64)
+    assert report.results_inserted == 2
+    by_bib = {
+        r.bib_number: r.competitor_id
+        for r in (await db.execute(select(RaceResult))).scalars().all()
+    }
+    assert by_bib[31] != by_bib[32]
     await ingest(
         db, 2026, 1,
-        {"INF_A": [row(PARENT_CHILD, bib="51")], "MAS_A": [row(PARENT_CHILD, bib="52")]},
+        {"INF_B": [row(PARENT_CHILD, bib="41")], "MAS_A": [row(PARENT_CHILD, bib="42")]},
     )
+    by_bib = {
+        r.bib_number: r.competitor_id
+        for r in (await db.execute(select(RaceResult))).scalars().all()
+    }
+    assert by_bib[41] == by_bib[31] and by_bib[42] == by_bib[32]
+    assert await _count(db, RaceIdentityCandidate) == 0
+
+
+@pytest.mark.asyncio
+async def test_third_party_same_category_collision_keeps_every_row(db):
+    """Misma terna, misma válida y misma categoría (terceros): dos
+    competidores por dorsal, ninguna pregunta, ninguna fila perdida."""
+    imp = await stage_import(db, 2025, 6, sha="9" * 64)
+    rows = {"MAS_A": [row(PARENT_CHILD, bib="81"), row(PARENT_CHILD, bib="82", position=2)]}
+    await db.commit()
+    result = await ir.rebuild(db, rows_loader=loader_for({imp.id: rows}))
+    assert result.pending == 0
+    report = await ingest(db, 2025, 6, rows, sha="9" * 64)
+    assert report.results_inserted == 2
+    assert await _count(db, RaceCompetitor) == 2
+    assert await _count(db, RaceResult) == 2
+
+
+async def _mixture_across_validas(db):
+    """Padre e hijo de terceros confirmados en válidas distintas bajo una
+    misma terna: un solo competidor (datos previos al alcance por club)."""
+    await ingest(db, 2026, 1, {"INF_A": [row(PARENT_CHILD, bib="51")]})
+    await ingest(db, 2026, 2, {"MAS_A": [row(PARENT_CHILD, bib="52")]})
     assert await _count(db, RaceCompetitor) == 1
+
+
+@pytest.mark.asyncio
+async def test_third_party_committed_mixture_raises_nothing(db):
+    await _mixture_across_validas(db)
+    result = await ir.rebuild(db, rows_loader=loader_for({}))
+    assert (result.created, result.pending) == (0, 0)
+
+
+@pytest.mark.asyncio
+async def test_committed_mixture_is_split_on_different_people(db, monkeypatch):
+    """Un candidato previo a la decisión 2026-09-22 (fuera del alcance de
+    hoy, pero ya en la cola) sigue partiendo la mezcla, resultados
+    incluidos."""
+    await _mixture_across_validas(db)
+    monkeypatch.setattr(ir, "in_club_scope", lambda a, b: True)
     await ir.rebuild(db, rows_loader=loader_for({}))
     cand = (await db.execute(select(RaceIdentityCandidate))).scalars().one()
 
@@ -690,10 +813,7 @@ async def test_committed_mixture_is_split_on_different_people(db):
 
 @pytest.mark.asyncio
 async def test_committed_mixture_linked_to_an_athlete_is_refused(db):
-    await ingest(
-        db, 2026, 1,
-        {"INF_A": [row(PARENT_CHILD, bib="51")], "MAS_A": [row(PARENT_CHILD, bib="52")]},
-    )
+    await _mixture_across_validas(db)
     comp = (await db.execute(select(RaceCompetitor))).scalars().one()
     comp.athlete_id = 4242
     await db.commit()
@@ -706,9 +826,11 @@ async def test_committed_mixture_linked_to_an_athlete_is_refused(db):
 
 @pytest.mark.asyncio
 async def test_reversing_a_label_only_split_restores_the_plain_signature(db):
-    """Una sola persona confirmada + la otra en staging: la decisión solo
-    etiqueta la firma; revertir antes del commit la deja como estaba."""
+    """Una sola persona confirmada (atleta del club) + la otra en staging: la
+    decisión solo etiqueta la firma; revertir antes del commit la deja como
+    estaba."""
     await ingest(db, 2025, 1, {"MAS_A": [row(PARENT_CHILD, bib="61")]})
+    (await db.execute(select(RaceCompetitor))).scalars().one().athlete_id = 4242
     loader, _rows = await _stage_parent_child(db)
     await ir.rebuild(db, rows_loader=loader)
     cand = (await db.execute(select(RaceIdentityCandidate))).scalars().one()
@@ -725,6 +847,7 @@ async def test_reversing_a_label_only_split_restores_the_plain_signature(db):
 async def test_reversal_stays_exact_after_a_category_split(db):
     """Un par same_person sobre un competidor separado por categoría sigue
     revirtiendo exactamente sus resultados."""
+    await _club_child(db, bib="30")
     loader, rows = await _stage_parent_child(db)
     await ir.rebuild(db, rows_loader=loader)
     homonym = (await db.execute(select(RaceIdentityCandidate))).scalars().one()
@@ -746,7 +869,7 @@ async def test_reversal_stays_exact_after_a_category_split(db):
     ).scalars().all()
     child_pair = [
         c for c in same
-        if "M:9-10@2025" in (c.left_record.get("discriminator", ""), c.right_record.get("discriminator", ""))
+        if "M:9-10@2024" in (c.left_record.get("discriminator", ""), c.right_record.get("discriminator", ""))
     ]
     assert len(child_pair) == 1
     for other in same:
@@ -770,3 +893,53 @@ async def test_reversal_stays_exact_after_a_category_split(db):
     }
     assert by_bib[71] not in (by_bib[31], by_bib[32])
     assert by_bib[31] != by_bib[32]
+
+
+# ---------------------------------------------------------------------------
+# Rebuild: poda de la cola fuera de alcance (decisión 2026-09-22)
+# ---------------------------------------------------------------------------
+
+
+async def _seed_candidate(db, left, right, state, *, decided=False):
+    cand = RaceIdentityCandidate(
+        kind=IdentityCandidateKind.homonym_suspect,
+        pair_hash=ir.pair_hash(left.key, right.key),
+        left_record=left.snapshot(),
+        right_record=right.snapshot(),
+        score=100,
+        signals=["club_and_city_differ"],
+        state=state,
+        linked_athlete_involved=left.athlete_linked or right.athlete_linked,
+    )
+    if decided:
+        from datetime import datetime, timezone
+
+        cand.decided_at = datetime.now(timezone.utc)
+    db.add(cand)
+    await db.flush()
+    return cand
+
+
+@pytest.mark.asyncio
+async def test_rebuild_removes_out_of_scope_pending_but_keeps_decided(db):
+    _imp, loader, _rows = await _us4_universe(db)
+    third_a = rec("Bruno Ficticio Tres")
+    third_b = rec("Bruno Ficticio Tres", club="Escuadra Lejana", city="Pueblo Remoto")
+    third_c = rec("Carla Ejemplo")
+    third_d = rec("Carla Ejemplo", club="Escuadra Lejana", city="Pueblo Remoto")
+    stale = await _seed_candidate(db, third_a, third_b, IdentityCandidateState.pending)
+    decided = await _seed_candidate(
+        db, third_c, third_d, IdentityCandidateState.different_people, decided=True
+    )
+    stale_id, decided_id = stale.id, decided.id
+    await db.commit()
+
+    result = await ir.rebuild(db, rows_loader=loader)
+    await db.commit()
+    assert result.removed == 1
+    assert result.pending == 2  # los dos pares con el atleta del club
+    remaining = {c.id for c in (await db.execute(select(RaceIdentityCandidate))).scalars()}
+    assert stale_id not in remaining and decided_id in remaining
+
+    again = await ir.rebuild(db, rows_loader=loader)
+    assert again.removed == 0 and again.pending == 2

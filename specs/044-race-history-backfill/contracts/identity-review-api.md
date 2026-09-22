@@ -6,7 +6,7 @@ Router: `app/routers/race_identity.py`, prefix `/api/race-identity`, `require_ro
 
 | Method & path | Purpose | Notes |
 |---|---|---|
-| `POST /rebuild` | Recompute candidates over all staged (not committed) imports plus existing competitors | Worker thread, 30 s timeout, budget ≤ 10 s. Idempotent through `pair_hash`; never resets a decided candidate. Returns `{created, unchanged, pending}` |
+| `POST /rebuild` | Recompute candidates over all staged (not committed) imports plus existing competitors | Worker thread, 30 s timeout, budget ≤ 10 s. Idempotent through `pair_hash`; never resets a decided candidate. Returns `{created, unchanged, pending, removed, imports_unreadable}`; `removed` = pending, never-decided candidates deleted because no side involves a club athlete (owner decision 2026-09-22) |
 | `GET /candidates?state=&kind=&page=` | Paginated queue, ordered by `score DESC` | Response items: `id`, `kind`, `score`, `signals[]`, `left`, `right`, `state`, `linked_athlete_involved` |
 | `GET /summary` | `{pending, same_person, different_people}` | Drives the commit gate banner |
 | `POST /candidates/{id}/decide` | body `{answer: "same_person" \| "different_people"}` | 409 if not `pending`. `record_audit` with both record ids/hashes, never names |
@@ -16,6 +16,7 @@ Router: `app/routers/race_identity.py`, prefix `/api/race-identity`, `require_ro
 
 ## Candidate rules
 
+- **Scope (owner decision 2026-09-22)**: a candidate of either kind is raised only when at least one side is an existing competitor linked to a club athlete (`athlete_id` not null). Pairs between third parties raise nothing.
 - *same_person_suspect*: `normalized_name` differs; `token_set_ratio ≥ 90`; compatible sex; age path non-decreasing across seasons. Comparison blocked by shared surname token.
 - *homonym_suspect*: identical `normalized_name` and any of `same_valida_two_categories`, `sex_conflict`, `age_path_backwards`, `club_and_city_differ` (both fuzzy < 70 after normalisation). A changed club alone raises nothing.
 - `linked_athlete_involved = true` when either record's competitor has `athlete_id`.
@@ -23,11 +24,18 @@ Router: `app/routers/race_identity.py`, prefix `/api/race-identity`, `require_ro
 ## Resolver (ingest time)
 
 ```
+third-party triple repeated in the same válida
+                                         → per-row discriminator (category, else bib:<bib>@<season>,
+                                           else row:<code>-<i>@<season>); exact signature, else the single
+                                           compatible category signature, else new competitor
 signature exact hit                      → that competitor
-name hit, one competitor, no signal      → attach + add signature
+separated third-party triple, no single compatible discriminator
+                                         → '' signature, else bib:<bib>@<season> (created if missing)
+name hit, one LINKED competitor, no signal → attach + add signature
+name hit, only unlinked competitors      → new competitor + signature (never merge a third party by name)
 decision same_person                     → decided competitor + add signature (source_candidate_id)
 decision different_people                → new competitor + signature
-name hit, several competitors, no tie-break → impossible after the gate; raise IdentityUnresolved (500-class guard, tested)
+name hit, several linked competitors, no tie-break → impossible after the gate; raise IdentityUnresolved (500-class guard, tested)
 ```
 
 New results get `athlete_id = competitor.athlete_id` whenever the competitor is linked, whatever the row's club.

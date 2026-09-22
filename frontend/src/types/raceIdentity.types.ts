@@ -127,6 +127,8 @@ export interface IdentityRebuildResponse {
   created: number;
   unchanged: number;
   pending: number;
+  /** Candidatos pendientes retirados por no involucrar a un atleta del club. */
+  removed: number;
   /** Ids de imports en staging cuyo archivo no se pudo re-leer en este rebuild. */
   imports_unreadable: number[];
 }

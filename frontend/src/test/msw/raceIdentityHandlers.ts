@@ -146,6 +146,7 @@ const rebuildHandler = http.post(`${BASE}/rebuild`, () => {
     created: 0,
     unchanged: 2,
     pending: 2,
+    removed: 0,
     imports_unreadable: [],
   });
 });

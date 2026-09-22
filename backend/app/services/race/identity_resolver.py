@@ -21,8 +21,11 @@ partía en dos a una misma persona impresa con y sin segundo apellido.
    excluido de la búsqueda por nombre (paso 5), lo que termina en un
    competidor nuevo.
 4. **Candidato pendiente** que involucra la terna → ``IdentityUnresolved``.
-5. **Por nombre**: ninguno → competidor nuevo + firma; uno → se adjunta +
-   firma; varios sin desempate → ``IdentityUnresolved``.
+5. **Por nombre**, solo contra competidores **vinculados a un atleta del
+   club**: ninguno → competidor nuevo + firma; uno → se adjunta + firma;
+   varios sin desempate → ``IdentityUnresolved``. Un competidor de terceros
+   (sin ``athlete_id``) nunca recibe una terna distinta por coincidir el
+   nombre (decisión del dueño 2026-09-22): se crea otro competidor.
 
 ``IdentityUnresolved`` es una guarda de clase 500: con el candado de commit
 (``409 identity_review_pending``) no debería alcanzarse nunca. En ``strict=False``
@@ -50,6 +53,29 @@ discriminador desplazado por los años transcurridos, con
 por año de nacimiento). Un niño de Infantil A en 2025 sigue siendo compatible
 con Infantil B en 2026; un Master A nunca lo es con un Infantil.
 
+Terceros (decisión del dueño 2026-09-22, "revisión acotada al club")
+--------------------------------------------------------------------
+La revisión de identidad solo pregunta por pares con un atleta del club; lo
+que involucra solo a terceros se resuelve sin preguntar y **por defecto
+separado**. Una terna es *de terceros* cuando ninguna de sus firmas es de un
+competidor vinculado y ningún candidato la involucra (salvo decisiones
+``different_people`` con otra terna, que solo excluyen). Para ella:
+
+- **Colisión en la misma válida** (dos filas con la misma terna en un mismo
+  archivo): el ingestor calcula con ``collision_discriminators`` un
+  discriminador por fila — el de categoría si es único entre las filas que
+  chocan; si no, ``bib:<dorsal>@<temporada>``; si el dorsal falta o se
+  repite, ``row:<code>-<índice>@<temporada>``. Cada fila va a la firma
+  exacta de su discriminador; si no existe, a la única firma de categoría ya
+  existente y compatible (la misma persona en válidas anteriores); si no,
+  crea la suya. Nunca se usa la firma ``''`` y una firma tomada por otra
+  fila de la colisión no se reusa, así ninguna fila se pierde ni dos
+  personas se funden.
+- **Terna ya separada sin discriminador compatible** (o con varios): se usa
+  la firma ``''`` si existe; si no, la firma ``bib:<dorsal>@<temporada>``
+  (``bib:-@<temporada>`` sin dorsal), creándola si falta. Nunca
+  ``IdentityUnresolved`` para terceros.
+
 Privacidad: ningún log ni mensaje de excepción lleva nombre, club ni ciudad —
 solo ids y conteos.
 """
@@ -58,6 +84,7 @@ from __future__ import annotations
 import enum
 import logging
 from dataclasses import dataclass
+from collections.abc import Hashable, Iterable
 from typing import Any, Optional
 
 from sqlalchemy import select
@@ -107,6 +134,50 @@ def category_discriminator(category: Any, season: int) -> str:
     return band_discriminator(sex, category.age_min, category.age_max, season)
 
 
+def bib_discriminator(bib: str | None, season: int) -> str:
+    """``"bib:<dorsal>@<temporada>"`` (``bib:-@…`` sin dorsal) — terceros."""
+    return f"bib:{(bib or '').strip() or '-'}@{season}"[:32]
+
+
+def collision_discriminators(
+    rows: Iterable[tuple[Hashable, str, str | None, str | None, Any, str | None]],
+    season: int,
+) -> dict[Hashable, str]:
+    """Discriminadores de las filas que comparten terna en una misma válida.
+
+    ``rows`` = ``(clave, nombre, club, ciudad, categoría, dorsal)``; devuelve
+    ``{clave: discriminador}`` solo para las filas que chocan. Regla (en
+    orden): el discriminador de categoría si es único entre las filas que
+    chocan; si no, ``bib:<dorsal>@<temporada>`` si el dorsal es único; si
+    no, ``row:<code>-<posición en el grupo>@<temporada>``. Determinista para
+    un mismo archivo, así el dry-run, el commit y ``/commit-pending`` dan las
+    mismas firmas.
+    """
+    groups: dict[Triple, list[tuple[Hashable, Any, str]]] = {}
+    for key, name, club, city, category, bib in rows:
+        triple = signature_triple(name, club, city)
+        if triple[0]:
+            groups.setdefault(triple, []).append((key, category, (bib or "").strip()))
+    out: dict[Hashable, str] = {}
+    for members in groups.values():
+        if len(members) < 2:
+            continue
+        bands = [
+            category_discriminator(cat, season) if cat is not None else ""
+            for _, cat, _ in members
+        ]
+        bibs = [b for _, _, b in members]
+        for idx, ((key, cat, bib), band) in enumerate(zip(members, bands)):
+            if band and bands.count(band) == 1:
+                out[key] = band
+            elif bib and bibs.count(bib) == 1:
+                out[key] = bib_discriminator(bib, season)
+            else:
+                code = getattr(cat, "code", "") or ""
+                out[key] = f"row:{code}-{idx}@{season}"[:32]
+    return out
+
+
 def discriminator_compatible(
     discriminator: str,
     sex: str | None,
@@ -115,7 +186,10 @@ def discriminator_compatible(
     season: int,
 ) -> bool:
     """¿Puede la persona de ``discriminator`` correr en esta categoría en
-    ``season``? Ver la regla en el docstring del módulo."""
+    ``season``? Ver la regla en el docstring del módulo. Los discriminadores
+    de terceros (``bib:`` / ``row:``) no son de categoría: nunca compatibles."""
+    if discriminator.startswith(("bib:", "row:")):
+        return False
     try:
         d_sex, rest = discriminator.split(":", 1)
         band, ref = rest.split("@", 1)
@@ -184,6 +258,8 @@ class ResolutionBranch(str, enum.Enum):
     decision_same_person = "decision_same_person"
     decision_different_people = "decision_different_people"
     new_competitor = "new_competitor"
+    #: Terna de terceros resuelta sin coach (colisión o terna ya separada).
+    third_party_split = "third_party_split"
     provisional = "provisional"
 
 
@@ -221,6 +297,9 @@ class IdentityResolver:
         self.db = db
         self.strict = strict
         self._decisions: Optional[dict[Triple, list[_DecisionHit]]] = None
+        #: Firmas ya usadas por una fila en colisión de esta ingesta (una
+        #: válida): dos filas que chocan nunca caen en el mismo competidor.
+        self._claimed: set[int] = set()
 
     # ------------------------------------------------------------------
     # API pública
@@ -235,24 +314,36 @@ class IdentityResolver:
         season: int,
         sex: CompetitorSex | None = None,
         category: Any = None,
+        bib: str | None = None,
+        collision_discriminator: str | None = None,
     ) -> Resolution:
         """Resuelve una fila impresa. Ver la tabla del docstring del módulo.
 
         ``category`` (``RaceCategory`` de la fila) solo se usa cuando la terna
-        está separada por categoría; sin ella, una terna separada no se
-        resuelve."""
+        está separada por categoría; sin ella, una terna separada del club no
+        se resuelve. ``collision_discriminator`` lo calcula el ingestor
+        (``collision_discriminators``) cuando la terna se repite en la misma
+        válida; ``bib`` alimenta el respaldo de terceros."""
         triple = signature_triple(name, club, city)
         if not triple[0]:
             raise ValueError("nombre vacío tras normalizar")
 
-        # 1. Firma exacta — o, si la terna está separada, por discriminador.
         signatures = await self._signatures_for(triple)
+
+        # 0. Colisión de terceros en la misma válida: firma por fila.
+        if collision_discriminator and await self._is_third_party(triple, signatures):
+            return await self._resolve_collision(
+                triple, signatures, collision_discriminator, season, category,
+                name=name, club=club, city=city, sex=sex,
+            )
+
+        # 1. Firma exacta — o, si la terna está separada, por discriminador.
         discriminators = {s.discriminator for s in signatures if s.discriminator}
         discriminators |= await self._intra_discriminators(triple)
         if discriminators:
             return await self._resolve_by_discriminator(
                 triple, signatures, discriminators, season, category,
-                name=name, club=club, city=city, sex=sex,
+                name=name, club=club, city=city, sex=sex, bib=bib,
             )
         signature = next((s for s in signatures if not s.discriminator), None)
         if signature is not None:
@@ -300,9 +391,11 @@ class IdentityResolver:
                 "candidato_pendiente", 0, triple, season, name, club, city, sex
             )
 
-        # 5. Por nombre.
+        # 5. Por nombre — solo competidores vinculados a un atleta del club.
         by_name = [
-            c for c in await self._competitors_by_name(triple[0]) if c.id not in excluded
+            c
+            for c in await self._competitors_by_name(triple[0])
+            if c.id not in excluded and c.athlete_id is not None
         ]
         if len(by_name) > 1:
             return await self._unresolved(
@@ -407,6 +500,20 @@ class IdentityResolver:
         found.discard("")
         return found
 
+    async def _is_third_party(
+        self, triple: Triple, signatures: list[RaceCompetitorSignature]
+    ) -> bool:
+        """Terna que la revisión no gestiona: ninguna firma es de un
+        competidor vinculado y ningún candidato la involucra, salvo decisiones
+        ``different_people`` con otra terna (solo excluyen)."""
+        for hit in await self._decisions_for(triple):
+            if hit.other_triple == triple or hit.state != IdentityCandidateState.different_people:
+                return False
+        for competitor_id in sorted({s.competitor_id for s in signatures}):
+            if (await self._competitor_by_id(competitor_id)).athlete_id is not None:
+                return False
+        return True
+
     async def _resolve_other_side(self, hit: _DecisionHit) -> Optional[int]:
         """Competidor actual del otro lado del par: primero por su firma (la
         fuente de verdad), luego por el id del snapshot si aún existe."""
@@ -437,11 +544,26 @@ class IdentityResolver:
         club: str | None,
         city: str | None,
         sex: CompetitorSex | None,
+        bib: str | None = None,
     ) -> Resolution:
         """Terna separada por categoría: la única firma compatible con la
         categoría de la fila. Si el discriminador compatible viene de una
-        decisión y aún no tiene firma, se crea el competidor de ese lado."""
+        decisión y aún no tiene firma, se crea el competidor de ese lado.
+        Sin una única compatible, una terna de terceros cae al respaldo
+        (firma ``''`` o ``bib:``) en vez de quedar sin resolver."""
+        async def third_party_fallback() -> Optional[Resolution]:
+            if not await self._is_third_party(triple, signatures):
+                return None
+            blank = next((s for s in signatures if not s.discriminator), None)
+            disc = "" if blank is not None else bib_discriminator(bib, season)
+            return await self._resolve_third_party(
+                triple, signatures, disc, season, name=name, club=club, city=city, sex=sex
+            )
+
         if category is None:
+            fallback = await third_party_fallback()
+            if fallback is not None:
+                return fallback
             return await self._unresolved(
                 "terna_separada_sin_categoria", 0, triple, season, name, club, city, sex
             )
@@ -457,6 +579,9 @@ class IdentityResolver:
             len(owners) == 1 and all(d in by_disc for d in compatible)
         )
         if not compatible or not unique_person:
+            fallback = await third_party_fallback()
+            if fallback is not None:
+                return fallback
             return await self._unresolved(
                 "discriminador_ambiguo" if compatible else "discriminador_incompatible",
                 len(compatible),
@@ -482,6 +607,83 @@ class IdentityResolver:
             sex=sex,
             branch=ResolutionBranch.decision_different_people,
             discriminator=chosen,
+        )
+
+    async def _resolve_collision(
+        self,
+        triple: Triple,
+        signatures: list[RaceCompetitorSignature],
+        discriminator: str,
+        season: int,
+        category: Any,
+        *,
+        name: str,
+        club: str | None,
+        city: str | None,
+        sex: CompetitorSex | None,
+    ) -> Resolution:
+        """Fila de terceros cuya terna se repite en esta válida: la firma
+        exacta de su discriminador; si no, la única firma de categoría ya
+        existente y compatible (la persona de válidas anteriores); si no, un
+        competidor nuevo. Una firma usada por otra fila de la colisión no se
+        reusa."""
+        free = [s for s in signatures if s.id not in self._claimed]
+        chosen = next((s for s in free if s.discriminator == discriminator), None)
+        if chosen is None and category is not None:
+            row_sex = getattr(category.sex, "value", category.sex)
+            compatible = [
+                s for s in free
+                if s.discriminator
+                and discriminator_compatible(
+                    s.discriminator, row_sex, category.age_min, category.age_max, season
+                )
+            ]
+            if len(compatible) == 1:
+                chosen = compatible[0]
+        if chosen is not None:
+            discriminator = chosen.discriminator
+        resolution = await self._resolve_third_party(
+            triple, signatures, discriminator, season,
+            name=name, club=club, city=city, sex=sex,
+        )
+        claimed = chosen or await self._find_signature(triple, discriminator)
+        if claimed is not None:
+            self._claimed.add(claimed.id)
+        return resolution
+
+    async def _resolve_third_party(
+        self,
+        triple: Triple,
+        signatures: list[RaceCompetitorSignature],
+        discriminator: str,
+        season: int,
+        *,
+        name: str,
+        club: str | None,
+        city: str | None,
+        sex: CompetitorSex | None,
+    ) -> Resolution:
+        """Firma exacta ``(terna, discriminator)`` o un competidor nuevo con
+        ella. Solo para ternas de terceros (``_is_third_party``)."""
+        signature = next((s for s in signatures if s.discriminator == discriminator), None)
+        if signature is not None:
+            _widen(signature, season)
+            competitor = await self._competitor_by_id(signature.competitor_id)
+            return Resolution(
+                competitor=competitor,
+                created=False,
+                branch=ResolutionBranch.third_party_split,
+                source_candidate_id=signature.source_candidate_id,
+            )
+        return await self._create(
+            triple,
+            season,
+            name=name,
+            club=club,
+            city=city,
+            sex=sex,
+            branch=ResolutionBranch.third_party_split,
+            discriminator=discriminator,
         )
 
     async def _attach(

@@ -587,15 +587,15 @@ async def test_rebuild_is_idempotent_over_existing_candidates(coach_client, seed
     response = await coach_client.post("/api/race-identity/rebuild")
     assert response.status_code == 200
     body = response.json()
-    # `merge_candidate` (comp_left/comp_right) se regenera con el mismo
-    # `pair_hash` → unchanged. `homonym_candidate` (comp_c/comp_d) NO: ambos
-    # lados ya son competitors confirmados y distintos, y `build_candidates`
-    # no vuelve a preguntar por un par ya separado (docstring del servicio) —
-    # sigue en la cola tal como se sembró, sin tocarse ni desaparecer.
+    # `merge_candidate` (comp_left/comp_right, con atleta del club) se
+    # regenera con el mismo `pair_hash` → unchanged. `homonym_candidate`
+    # (comp_c/comp_d) es un par solo de terceros, nunca decidido: queda
+    # fuera de alcance (decisión 2026-09-22) y el rebuild lo borra.
     assert body["unchanged"] == 1
     assert body["created"] == 0
-    assert body["pending"] == 2
+    assert body["removed"] == 1
+    assert body["pending"] == 1
     assert body["imports_unreadable"] == []
 
     summary = await coach_client.get("/api/race-identity/summary")
-    assert summary.json()["pending"] == 2
+    assert summary.json()["pending"] == 1

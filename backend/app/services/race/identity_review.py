@@ -16,7 +16,13 @@ Estructura — núcleo puro + cáscara de base de datos:
   muy por debajo de n².
 - ``persist_candidates`` (async): idempotente por ``pair_hash``; nunca pisa
   una decisión tomada.
-- ``rebuild`` compone los tres con un timeout opcional.
+- ``rebuild`` compone los tres con un timeout opcional y borra los
+  candidatos ``pending`` que quedaron fuera de alcance.
+
+Alcance (decisión del dueño 2026-09-22): la cola solo pregunta por pares en
+los que **al menos un lado es un competidor vinculado a un atleta del club**
+(``athlete_id`` no nulo). Lo que involucra solo a terceros lo resuelve
+``IdentityResolver`` sin preguntar y, por defecto, separado.
 
 La clave de un registro es su terna, no el id del competidor: así el
 ``pair_hash`` de un par es el mismo antes y después del commit, y una
@@ -266,12 +272,15 @@ class Universe:
 @dataclass(frozen=True)
 class RebuildResult:
     """Retorno de ``rebuild``: ``{created, unchanged, pending}`` del contrato
-    más ``imports_unreadable`` (ids de imports en staging cuyo archivo no se
-    pudo leer — sus filas NO entraron al universo)."""
+    más ``removed`` (candidatos ``pending`` borrados por quedar fuera de
+    alcance, decisión 2026-09-22) e ``imports_unreadable`` (ids de imports en
+    staging cuyo archivo no se pudo leer — sus filas NO entraron al
+    universo)."""
 
     created: int
     unchanged: int
     pending: int
+    removed: int = 0
     imports_unreadable: list[int] = field(default_factory=list)
 
 
@@ -440,8 +449,17 @@ def _draft(
     )
 
 
+def in_club_scope(a: IdentityRecord, b: IdentityRecord) -> bool:
+    """¿El par involucra a un atleta del club? (decisión 2026-09-22)."""
+    return a.athlete_linked or b.athlete_linked
+
+
 def build_candidates(records: Sequence[IdentityRecord]) -> list[CandidateDraft]:
     """Núcleo puro y síncrono (apto para ``asyncio.to_thread``).
+
+    Alcance: solo se levanta un candidato (de cualquier tipo) si al menos un
+    lado es un competidor vinculado a un atleta del club (``in_club_scope``);
+    un par entre terceros no levanta nada.
 
     Reglas (contrato §Candidate rules, research R-06):
 
@@ -476,6 +494,8 @@ def build_candidates(records: Sequence[IdentityRecord]) -> list[CandidateDraft]:
             continue
         existing_ids = {r.competitor_id for r in group if r.competitor_id is not None}
         for a, b in combinations(group, 2):
+            if not in_club_scope(a, b):
+                continue
             same_triple = a.triple == b.triple
             if a.competitor_id is not None and b.competitor_id is not None:
                 # Dos competidores distintos ya están separados; el mismo
@@ -516,6 +536,8 @@ def build_candidates(records: Sequence[IdentityRecord]) -> list[CandidateDraft]:
                 continue
             seen.add(pair)
             a, b = records[pair[0]], records[pair[1]]
+            if not in_club_scope(a, b):
+                continue
             if a.normalized_name == b.normalized_name:
                 continue
             if a.competitor_id is not None and a.competitor_id == b.competitor_id:
@@ -929,23 +951,72 @@ async def rebuild(
     work = asyncio.to_thread(build_candidates, universe.records)
     drafts = await (asyncio.wait_for(work, timeout_s) if timeout_s else work)
     created, unchanged = await persist_candidates(db, drafts)
+    removed = await remove_out_of_scope(db, universe.records, drafts)
     pending = await _count_state(db, IdentityCandidateState.pending)
     logger.info(
         "race_identity_rebuild records=%d imports=%d unreadable=%d created=%d "
-        "unchanged=%d pending=%d",
+        "unchanged=%d removed=%d pending=%d",
         len(universe.records),
         universe.imports_scanned,
         len(universe.imports_unreadable),
         created,
         unchanged,
+        removed,
         pending,
     )
     return RebuildResult(
         created=created,
         unchanged=unchanged,
         pending=pending,
+        removed=removed,
         imports_unreadable=list(universe.imports_unreadable),
     )
+
+
+async def remove_out_of_scope(
+    db: AsyncSession,
+    records: Sequence[IdentityRecord],
+    drafts: Sequence[CandidateDraft],
+) -> int:
+    """Borra los candidatos ``pending`` que ya no involucran a un atleta del
+    club (decisión 2026-09-22); devuelve cuántos. Un candidato decidido
+    nunca se toca — tampoco uno revertido a ``pending``, que ya tiene
+    historia (``decided_at``) —, ni uno que este rebuild volvió a producir. Un lado cuenta
+    como del club si su competidor está vinculado hoy o si su registro del
+    universo actual lo está (el snapshot puede ser viejo). Solo ``flush``."""
+    keep = {d.pair_hash for d in drafts}
+    linked_keys = {r.key for r in records if r.athlete_linked}
+    linked_ids = set(
+        (
+            await db.execute(
+                select(RaceCompetitor.id).where(RaceCompetitor.athlete_id.is_not(None))
+            )
+        ).scalars().all()
+    )
+
+    def side_linked(record: Mapping[str, Any]) -> bool:
+        return record.get("key") in linked_keys or record.get("competitor_id") in linked_ids
+
+    stale = [
+        c.id
+        for c in (
+            await db.execute(
+                select(RaceIdentityCandidate).where(
+                    RaceIdentityCandidate.state == IdentityCandidateState.pending
+                )
+            )
+        ).scalars().all()
+        if c.pair_hash not in keep
+        and c.decided_at is None
+        and not side_linked(c.left_record or {})
+        and not side_linked(c.right_record or {})
+    ]
+    if stale:
+        await db.execute(
+            delete(RaceIdentityCandidate).where(RaceIdentityCandidate.id.in_(stale))
+        )
+        await db.flush()
+    return len(stale)
 
 
 # ---------------------------------------------------------------------------

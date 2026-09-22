@@ -212,6 +212,9 @@ class TestCompetitorSoftUpdate:
         )
         comp_first = next(iter(fake_session.store.competitors.values()))
         assert comp_first.club_text == "Club X"
+        # Solo un competidor vinculado a un atleta del club recibe otra terna
+        # por nombre (decisión 2026-09-22); uno de terceros se separaría.
+        comp_first.athlete_id = 1
 
         # Ingest 2: distinta válida, mismo nombre, club "Club Y"
         await ingestor.ingest_event(

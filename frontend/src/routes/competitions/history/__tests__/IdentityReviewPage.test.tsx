@@ -173,6 +173,28 @@ describe("IdentityReviewPage", () => {
     });
   });
 
+  it("recalcular informa los candidatos retirados por no involucrar al club", async () => {
+    mswServer.use(
+      http.post("*/api/race-identity/rebuild", () =>
+        HttpResponse.json({
+          created: 0,
+          unchanged: 1,
+          pending: 1,
+          removed: 3,
+          imports_unreadable: [],
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(await screen.findByTestId("rebuild-candidates"));
+    await waitFor(() => {
+      expect(toast.success).toHaveBeenCalledWith(
+        "Candidatos recalculados: 0 nuevos, 1 pendientes. 3 sin atletas del club se retiraron de la cola.",
+      );
+    });
+  });
+
   it("409 al decidir: muestra el toast de error específico", async () => {
     mswServer.use(raceIdentityDecideConflictHandler);
     const user = userEvent.setup();
