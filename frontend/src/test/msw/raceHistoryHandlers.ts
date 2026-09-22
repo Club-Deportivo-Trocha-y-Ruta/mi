@@ -36,6 +36,7 @@ export function makeRaceHistoryPoint(
     category_label: "PREJUVENIL A",
     category_changed: false,
     previous_category_label: null,
+    category_change_kind: null,
     status: "finished",
     position: 9,
     field_size: 23,
@@ -96,6 +97,10 @@ export function makeAthleteRaceHistoryRead(
       category_label: "PREJUVENIL A",
       category_changed: true,
       previous_category_label: "INFANTIL B",
+      // "other": este fixture reproduce una reestructuración del catálogo
+      // entre temporadas, no un ascenso real — mantiene la copia familiar
+      // neutral en los tests que ya la pinan (T077/T082).
+      category_change_kind: "other",
       position: 9,
       field_size: 23,
       timed_finishers: 21,

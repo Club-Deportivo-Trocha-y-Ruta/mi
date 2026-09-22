@@ -12,7 +12,7 @@ Datos: 100% ficticios. Atleta "Juan Ficticio Pérez", ``athlete_id=300``.
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 from typing import AsyncGenerator
 
@@ -30,7 +30,11 @@ from sqlalchemy.pool import StaticPool
 from app.dependencies import get_current_user, get_db
 from app.main import app
 from app.models import Base
+from app.config import settings
+from app.models.athlete import Athlete
 from app.models.club import ClubRole
+from app.models.privacy_policy import PrivacyPolicy
+from app.models.race_result import RaceResult
 from app.models.race_series import RaceSeriesKind
 from app.models.user import UserRole
 
@@ -70,6 +74,7 @@ _TABLES = (
     "race_results",
     "race_course_variants",
     "race_course_category_setups",
+    "privacy_policies",
 )
 
 
@@ -190,6 +195,14 @@ async def client_factory(history_seeded):
 _URL = f"/api/athletes/{_ATHLETE_ID}/race-analysis/history"
 
 
+async def _set_registration(factory: async_sessionmaker[AsyncSession], when: datetime) -> None:
+    """Fija ``athletes.created_at`` (fecha de registro, R-09) del atleta sembrado."""
+    async with factory() as s:
+        athlete = await s.get(Athlete, _ATHLETE_ID)
+        athlete.created_at = when
+        await s.commit()
+
+
 @pytest.mark.asyncio
 async def test_coach_gets_200_with_full_series(client_factory):
     async with await client_factory(_user(10, UserRole.coach, club_id=1)) as ac:
@@ -208,7 +221,10 @@ async def test_admin_gets_200(client_factory):
 
 
 @pytest.mark.asyncio
-async def test_own_parent_gets_200(client_factory):
+async def test_own_parent_gets_200(client_factory, history_seeded):
+    # Registro anterior a toda la serie → nada que retener aunque la compuerta
+    # de familia esté cerrada (ver sección US7 más abajo).
+    await _set_registration(history_seeded, datetime(2023, 12, 1))
     async with await client_factory(_user(20, UserRole.parent)) as ac:
         resp = await ac.get(_URL)
     assert resp.status_code == 200
@@ -262,7 +278,8 @@ async def test_response_has_no_third_party_field(client_factory):
         assert set(point.keys()) <= {
             "event_id", "event_date", "season", "label", "series_id",
             "series_name", "series_kind", "category_code", "category_label",
-            "category_changed", "previous_category_label", "status",
+            "category_changed", "previous_category_label",
+            "category_change_kind", "status",
             "position", "field_size", "timed_finishers", "percentile",
             "gap_to_median_pct", "gap_to_winner_pct", "avg_speed_kmh",
             "points_awarded",
@@ -321,3 +338,194 @@ async def test_unknown_athlete_returns_404(client_factory):
     async with await client_factory(_user(10, UserRole.coach, club_id=1)) as ac:
         resp = await ac.get("/api/athletes/999999/race-analysis/history")
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# US7 (T078) — compuerta de familia sobre resultados previos al registro
+# (FR-040/041, R-09, data-model §10 invariante 6, contrato "Parent filter").
+# Registro del atleta: 2024-02-15 → V1 (2024-02-01) es previa, V2
+# (2024-03-01) y el campeonato (2024-06-01) son posteriores.
+# ---------------------------------------------------------------------------
+
+_REGISTERED = datetime(2024, 2, 15, 12, 0)
+_POLICY_LIVE = "hist-live"
+_POLICY_FUTURE = "hist-future"
+_POLICY_DEPRECATED = "hist-old"
+
+
+@pytest_asyncio.fixture
+async def gated(history_seeded) -> async_sessionmaker[AsyncSession]:
+    await _set_registration(history_seeded, _REGISTERED)
+    async with history_seeded() as s:
+        today = date.today()
+        for pid, version, effective, deprecated in (
+            (1, _POLICY_LIVE, today - timedelta(days=30), None),
+            (2, _POLICY_FUTURE, today + timedelta(days=30), None),
+            (3, _POLICY_DEPRECATED, today - timedelta(days=90), today - timedelta(days=30)),
+        ):
+            s.add(
+                PrivacyPolicy(
+                    id=pid, version=version, effective_date=effective, deprecated_at=deprecated,
+                    title="Política ficticia", content_html="<p>Ficticia</p>",
+                    content_hash="0" * 64,
+                )
+            )
+        await s.commit()
+    return history_seeded
+
+
+def _gate(monkeypatch: pytest.MonkeyPatch, version: str) -> None:
+    monkeypatch.setattr(settings, "race_history_family_policy_version", version)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("version", ["", _POLICY_FUTURE, _POLICY_DEPRECATED, "hist-no-existe"])
+async def test_parent_gate_closed_hides_pre_registration_results(
+    client_factory, gated, monkeypatch, version
+):
+    _gate(monkeypatch, version)
+    async with await client_factory(_user(20, UserRole.parent)) as ac:
+        resp = await ac.get(_URL)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert [p["event_id"] for p in body["points"]] == [_EVENT_V2]
+    assert all(p["event_date"] >= _REGISTERED.date().isoformat() for p in body["points"])
+    # ``seasons`` recalculado sobre lo que queda, no sobre la serie completa.
+    assert body["seasons"] == [{"season": 2024, "started": 1, "finished": 1}]
+
+
+@pytest.mark.asyncio
+async def test_parent_gate_closed_applies_to_all_series_kinds(client_factory, gated, monkeypatch):
+    _gate(monkeypatch, "")
+    async with await client_factory(_user(20, UserRole.parent)) as ac:
+        resp = await ac.get(_URL, params={"series_kind": "all"})
+    body = resp.json()
+    assert [p["event_id"] for p in body["points"]] == [_EVENT_V2, _EVENT_CHAMP]
+    assert body["seasons"] == [{"season": 2024, "started": 2, "finished": 2}]
+
+
+@pytest.mark.asyncio
+async def test_parent_gate_open_returns_everything(client_factory, gated, monkeypatch):
+    _gate(monkeypatch, _POLICY_LIVE)
+    async with await client_factory(_user(20, UserRole.parent)) as ac:
+        resp = await ac.get(_URL)
+    body = resp.json()
+    assert [p["event_id"] for p in body["points"]] == [_EVENT_V1, _EVENT_V2]
+    assert body["seasons"] == [{"season": 2024, "started": 2, "finished": 2}]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role,user_id,club_id", [(UserRole.coach, 10, 1), (UserRole.admin, 99, None)])
+async def test_staff_never_filtered_with_gate_closed(
+    client_factory, gated, monkeypatch, role, user_id, club_id
+):
+    _gate(monkeypatch, "")
+    async with await client_factory(_user(user_id, role, club_id=club_id)) as ac:
+        resp = await ac.get(_URL)
+    body = resp.json()
+    assert [p["event_id"] for p in body["points"]] == [_EVENT_V1, _EVENT_V2]
+    assert body["seasons"] == [{"season": 2024, "started": 2, "finished": 2}]
+
+
+@pytest.mark.asyncio
+async def test_parent_gate_closed_leaks_no_hint_of_withheld_rows(client_factory, gated, monkeypatch):
+    """Invariante 6: ni cuenta, ni flag, ni caveat, ni temporada vacía.
+
+    Se compara la respuesta filtrada con la de un atleta cuyo historial es
+    todo posterior al registro (mismo atleta, registro movido a 2024-02-20
+    y V1 ya retirada por borrado lógico → misma vista "natural").
+    Además V1 se mueve a otra categoría: el primer punto visible NO debe
+    delatar el cambio frente a un punto oculto.
+    """
+    async with gated() as s:
+        v1_own = (
+            await s.execute(
+                RaceResult.__table__.select().where(
+                    RaceResult.event_id == _EVENT_V1, RaceResult.athlete_id == _ATHLETE_ID
+                )
+            )
+        ).first()
+        await create_race_category(s, category_id=_CATEGORY_ID + 1, code="PINF", label="Preinfantil")
+        row = await s.get(RaceResult, v1_own.id)
+        row.category_id = _CATEGORY_ID + 1
+        await s.commit()
+
+    _gate(monkeypatch, "")
+    async with await client_factory(_user(10, UserRole.coach, club_id=1)) as ac:
+        coach_body = (await ac.get(_URL)).json()
+    async with await client_factory(_user(20, UserRole.parent)) as ac:
+        gated_resp = await ac.get(_URL)
+    gated_body = gated_resp.json()
+
+    # Control: el coach sí ve el cambio de categoría en V2.
+    coach_v2 = next(p for p in coach_body["points"] if p["event_id"] == _EVENT_V2)
+    assert coach_v2["category_changed"] is True
+
+    # Vista "natural": sin resultados previos al registro en absoluto.
+    async with gated() as s:
+        row = await s.get(RaceResult, v1_own.id)
+        row.deleted_at = datetime(2026, 1, 1)
+        await s.commit()
+    async with await client_factory(_user(10, UserRole.coach, club_id=1)) as ac:
+        natural_body = (await ac.get(_URL)).json()
+
+    assert set(gated_body) == set(natural_body) == {"points", "seasons", "caveats"}
+    assert gated_body == natural_body
+    assert gated_body["caveats"] == coach_body["caveats"]
+    gated_v2 = gated_body["points"][0]
+    assert gated_v2["category_changed"] is False
+    assert gated_v2["previous_category_label"] is None
+    assert gated_v2["category_change_kind"] is None
+    # Métricas de campo del punto restante intactas frente a la vista del coach.
+    for key in ("position", "field_size", "timed_finishers", "percentile", "gap_to_median_pct", "gap_to_winner_pct"):
+        assert gated_v2[key] == coach_v2[key]
+    raw = gated_resp.text.lower()
+    for hint in ("withheld", "hidden", "omit", "retenid", "pre_registration", "total"):
+        assert hint not in raw
+
+
+@pytest.mark.asyncio
+async def test_parent_gate_closed_all_pre_registration_yields_plain_empty(client_factory, history_seeded, monkeypatch):
+    # Registro por defecto = ahora → todo es previo; la respuesta debe ser
+    # idéntica a la de un atleta sin resultados (ninguna temporada fantasma).
+    _gate(monkeypatch, "")
+    async with await client_factory(_user(20, UserRole.parent)) as ac:
+        resp = await ac.get(_URL)
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "points": [],
+        "seasons": [],
+        "caveats": [
+            "different_courses", "weather_surface", "small_fields",
+            "non_finishers_excluded", "three_rider_categories",
+        ],
+    }
+
+
+@pytest.mark.asyncio
+async def test_other_parent_still_403_with_gate_open(client_factory, gated, monkeypatch):
+    _gate(monkeypatch, _POLICY_LIVE)
+    async with await client_factory(_user(21, UserRole.parent)) as ac:
+        resp = await ac.get(_URL)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_parent_statement_budget(client_factory, gated, engine, monkeypatch):
+    """Compuerta vacía: 0 queries extra; con versión: exactamente +1 (la
+    resolución de la política vía ``services/privacy.py``). El cargador
+    sigue en ≤ 4 en ambos casos."""
+    async with await client_factory(_user(20, UserRole.parent)) as ac:
+        _gate(monkeypatch, "")
+        async with count_selects(engine) as closed_empty:
+            assert (await ac.get(_URL)).status_code == 200
+        _gate(monkeypatch, _POLICY_LIVE)
+        async with count_selects(engine) as with_version:
+            assert (await ac.get(_URL)).status_code == 200
+    async with await client_factory(_user(10, UserRole.coach, club_id=1)) as ac:
+        async with count_selects(engine) as coach:
+            assert (await ac.get(_URL)).status_code == 200
+    assert with_version[0] == closed_empty[0] + 1
+    assert coach[0] <= 5
+    # verify_athlete_access para un padre: carga del atleta + vínculo.
+    assert closed_empty[0] <= 6

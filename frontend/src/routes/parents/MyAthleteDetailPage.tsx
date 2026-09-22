@@ -5,6 +5,7 @@ import {
   Info,
   Sparkles,
   TrendingUp,
+  Trophy,
   User,
 } from "lucide-react";
 
@@ -41,7 +42,19 @@ const GrowthTab = lazy(() =>
   })),
 );
 
-type Tab = "info" | "growth" | "activities" | "ai-analysis";
+// T082 (feature 044, US7): `HistoryProgressionCard` compartida con la vista
+// coach (`AthleteDetailPage.tsx`, tab "Carreras") — acá se monta con
+// `audience="family"`, que solo cambia el matiz de texto (ver el override
+// de copy de `HistoryTable.tsx`: nada de lenguaje comparativo sobre el
+// hijo/a). Mismo patrón lazy-load que el resto de tabs de esta página, así
+// recharts (dentro de `HistoryChart`) no pesa el chunk de entrada.
+const HistoryProgressionCard = lazy(() =>
+  import("@/components/race/history/HistoryProgressionCard").then((m) => ({
+    default: m.HistoryProgressionCard,
+  })),
+);
+
+type Tab = "info" | "growth" | "activities" | "ai-analysis" | "races";
 
 const ACTIVITIES_PAGE_SIZE = 10;
 
@@ -122,6 +135,21 @@ function GrowthTabSkeleton() {
       </div>
       <Skeleton className="h-64 w-full rounded-xl" />
     </div>
+  );
+}
+
+// T082 (feature 044, US7) — fallback mientras se descarga el chunk lazy de
+// HistoryProgressionCard. Mismo criterio que AiTabSkeleton/GrowthTabSkeleton
+// de arriba: solo cubre la carga del chunk en sí, la propia tarjeta gestiona
+// sus estados de carga de datos (skeleton interno) una vez montada.
+function RacesTabSkeleton() {
+  return (
+    <div
+      role="status"
+      aria-busy="true"
+      aria-label="Cargando progresión histórica…"
+      className="h-24 w-full animate-pulse rounded-xl bg-light-gray"
+    />
   );
 }
 
@@ -303,6 +331,18 @@ export function MyAthleteDetailPage() {
           <Bike size={14} />
           Actividades
         </button>
+        {/* T082 (feature 044, US7) — progresión histórica entre temporadas
+            de Copa Valle, mismo tab "Carreras" que el coach ve en
+            `AthleteDetailPage.tsx` pero con `audience="family"`. */}
+        <button
+          type="button"
+          className={tabClasses("races")}
+          onClick={() => setActiveTab("races")}
+          data-testid="parent-tab-races"
+        >
+          <Trophy size={14} />
+          Carreras
+        </button>
         <button
           type="button"
           className={tabClasses("ai-analysis")}
@@ -391,6 +431,23 @@ export function MyAthleteDetailPage() {
       {activeTab === "growth" && records.length > 0 && (
         <Suspense fallback={<GrowthTabSkeleton />}>
           <GrowthTab key={athlete.id} athlete={athlete} mode="parent" />
+        </Suspense>
+      )}
+
+      {/* Tab content — Carreras (feature 044, US7, T082). Reutiliza
+          `HistoryProgressionCard` (misma tarjeta que el coach en
+          `AthleteDetailPage.tsx`, tab "Carreras") con `audience="family"`:
+          mismo texto-primero (chips + últimos resultados) antes de la
+          gráfica lazy, sin lenguaje comparativo ni ranking entre atletas
+          del club — solo el hecho de un cambio de categoría y la
+          explicación de por qué el puesto no se compara directamente. */}
+      {activeTab === "races" && (
+        <Suspense fallback={<RacesTabSkeleton />}>
+          <HistoryProgressionCard
+            key={athlete.id}
+            athleteId={athleteId}
+            audience="family"
+          />
         </Suspense>
       )}
 

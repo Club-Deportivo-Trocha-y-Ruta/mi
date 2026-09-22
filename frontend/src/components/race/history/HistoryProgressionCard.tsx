@@ -2,11 +2,14 @@
  * HistoryProgressionCard — tarjeta de progresión histórica entre
  * temporadas de un atleta (feature 044, US6/US7).
  *
- * `audience` decide solo el matiz de texto (ver `HistoryTable`'s nota de
- * cambio de categoría para familias) — la Fase 8 (US6) monta esta tarjeta
+ * `audience` decide el matiz de texto — nunca el dato mostrado (ver
+ * `HistoryTable`'s nota de cambio de categoría para familias, el
+ * explicador familiar de percentil/brecha, el subtítulo "tu hijo o hija"
+ * vs. "el atleta" y el tag corto exclusivo del coach en
+ * `CategoryChangesList`, todos T083) — la Fase 8 (US6) monta esta tarjeta
  * únicamente con `audience="coach"` desde `AthleteDetailPage.tsx`; la
  * Fase 9 (US7) la reutiliza con `audience="family"` en la página del
- * padre, sin tocar este archivo.
+ * padre.
  *
  * "Texto primero" (SC-008 — el coach debe poder responder en menos de un
  * minuto si el atleta mejoró y dónde cambió de categoría, desde una sola
@@ -58,7 +61,22 @@ function summarizeResult(p: RaceHistoryPoint): string {
   return "sin dato";
 }
 
-function CategoryChangesList({ points }: { points: RaceHistoryPoint[] }) {
+/** Etiqueta corta del cambio de categoría para el coach (T083, FR-042) —
+ * `"promotion"` es el único caso respaldado por el backend para afirmar un
+ * ascenso; cualquier otro valor se queda en la etiqueta neutral. Solo
+ * `audience="coach"`: la familia ya recibe la explicación completa dentro
+ * de `HistoryTable`'s aviso por grupo, un tag adicional acá sería ruido. */
+function categoryChangeTagLabel(kind: RaceHistoryPoint["category_change_kind"]): string {
+  return kind === "promotion" ? "Subió de categoría" : "Cambió de categoría";
+}
+
+function CategoryChangesList({
+  points,
+  audience,
+}: {
+  points: RaceHistoryPoint[];
+  audience: HistoryAudience;
+}) {
   const changes = points.filter((p) => p.category_changed);
   if (changes.length === 0) return null;
   return (
@@ -71,6 +89,14 @@ function CategoryChangesList({ points }: { points: RaceHistoryPoint[] }) {
           <li key={p.event_id}>
             {p.previous_category_label ?? "?"} → {p.category_label} — {p.label}{" "}
             ({formatRaceDateShort(p.event_date)})
+            {audience === "coach" && (
+              <span
+                data-testid={`history-category-change-tag-${p.event_id}`}
+                className="ml-1.5 inline-flex items-center rounded-full bg-light-gray px-1.5 py-0.5 text-[10px] font-medium text-charcoal"
+              >
+                {categoryChangeTagLabel(p.category_change_kind)}
+              </span>
+            )}
           </li>
         ))}
       </ul>
@@ -100,7 +126,13 @@ export function HistoryProgressionCard({
           Progresión histórica
         </h3>
         <p className="mt-0.5 text-xs text-mid-gray">
-          Cómo ha cambiado el atleta entre temporadas de Copa Valle.
+          {/* T083 (ux-review.md, MINOR) — "el atleta" queda para el coach;
+              la familia ya lee "tu hijo o hija" en el resto de la vista
+              (ej. `history-family-notice.md`). Sin enhebrar el nombre real
+              del menor — instrucción explícita del líder. */}
+          {audience === "family"
+            ? "Cómo ha cambiado tu hijo o hija entre temporadas de Copa Valle."
+            : "Cómo ha cambiado el atleta entre temporadas de Copa Valle."}
         </p>
       </header>
 
@@ -152,7 +184,7 @@ export function HistoryProgressionCard({
               </ul>
             </div>
 
-            <CategoryChangesList points={query.data.points} />
+            <CategoryChangesList points={query.data.points} audience={audience} />
 
             <div aria-describedby={CAVEATS_NOTE_ID}>
               <Suspense fallback={<Skeleton className="h-72 w-full rounded-lg" />}>

@@ -382,3 +382,99 @@ class TestNoThirdPartyLeak:
         points = build_history_points(**dataset, athlete_id=_ATHLETE_ID)
         for p in points:
             assert not hasattr(p, "competitor_id")
+
+
+class TestWithholdBefore:
+    """Filtro puro de la compuerta de familia (T080)."""
+
+    def test_drops_own_and_field_rows_of_earlier_events_only(self):
+        from app.services.race.history import withhold_before
+
+        events = [
+            SimpleNamespace(id=1, event_date=date(2024, 2, 1)),
+            SimpleNamespace(id=2, event_date=date(2024, 3, 1)),
+            SimpleNamespace(id=3, event_date=None),
+        ]
+        results = [SimpleNamespace(id=i, event_id=e) for i, e in enumerate((1, 1, 2, 2, 3))]
+        kept = withhold_before(results, events, date(2024, 3, 1))
+        assert [r.event_id for r in kept] == [2, 2]
+
+
+def _aged_category(cid: int, code: str, label: str, *, sex=CategoryGender.M, age_min: int | None) -> RaceCategory:
+    cat = _category(cid, code, label)
+    cat.sex = sex
+    cat.age_min = age_min
+    return cat
+
+
+def _two_valida_points(prev: RaceCategory, new: RaceCategory, *, same_season: bool = False):
+    """Dos válidas del atleta: la primera en ``prev``, la segunda en ``new``."""
+    series = [_series(1, 2024), _series(2, 2025)]
+    events = [
+        _event(101, 1, 1, date(2024, 2, 1)),
+        _event(201, 1 if same_season else 2, 2 if same_season else 1, date(2025, 2, 1)),
+    ]
+    results = [
+        _result(1, 101, prev.id, 1, athlete_id=_ATHLETE_ID, position=1, time_ms=3_000_000),
+        _result(2, 201, new.id, 1, athlete_id=_ATHLETE_ID, position=1, time_ms=3_000_000),
+    ]
+    return build_history_points(
+        results, events, series, [prev, new], [], _ATHLETE_ID
+    )
+
+
+class TestCategoryChangeKind:
+    """``category_change_kind`` (FR-042, revisión UX T083)."""
+
+    def test_older_band_same_sex_is_promotion(self):
+        points = _two_valida_points(
+            _aged_category(20, "INF_A", "Infantil A", age_min=11),
+            _aged_category(21, "PJUV_A", "Prejuvenil A", age_min=13),
+        )
+        assert [p.category_change_kind for p in points] == [None, "promotion"]
+
+    @pytest.mark.parametrize("prev_age,new_age", [(None, 13), (11, None), (None, None)])
+    def test_unknown_ages_are_other(self, prev_age, new_age):
+        points = _two_valida_points(
+            _aged_category(20, "INF_A", "Infantil A", age_min=prev_age),
+            _aged_category(21, "PJUV_A", "Prejuvenil A", age_min=new_age),
+        )
+        assert points[1].category_change_kind == "other"
+
+    def test_sex_change_is_other(self):
+        points = _two_valida_points(
+            _aged_category(20, "INF_A", "Infantil A", sex=CategoryGender.MIXED, age_min=11),
+            _aged_category(21, "PJUV_V", "Prejuvenil Varones", sex=CategoryGender.M, age_min=13),
+        )
+        assert points[1].category_change_kind == "other"
+
+    def test_younger_band_is_other(self):
+        points = _two_valida_points(
+            _aged_category(20, "PJUV_A", "Prejuvenil A", age_min=13),
+            _aged_category(21, "INF_A", "Infantil A", age_min=11),
+        )
+        assert points[1].category_change_kind == "other"
+
+    def test_season_specific_restructure_is_other(self):
+        # MASTER B se parte en B1/B2 para 2025: misma edad mínima → no es subir.
+        points = _two_valida_points(
+            _aged_category(20, "MASTER_B", "Master B", age_min=40),
+            _aged_category(21, "MASTER_B1", "Master B1", age_min=40),
+        )
+        assert points[1].category_changed is True
+        assert points[1].category_change_kind == "other"
+
+    def test_restructure_within_the_same_season_is_other(self):
+        points = _two_valida_points(
+            _aged_category(20, "MASTER_B", "Master B", age_min=None),
+            _aged_category(21, "MASTER_B2", "Master B2", age_min=45),
+            same_season=True,
+        )
+        assert points[1].category_change_kind == "other"
+
+    def test_no_change_is_none(self, dataset):
+        points = build_history_points(**dataset, athlete_id=_ATHLETE_ID)
+        by_event = _by_event(points)
+        assert all(p.category_change_kind is None for p in points if not p.category_changed)
+        # Catálogo del fixture sin edades → el cambio real A → B cae en "other".
+        assert by_event[201].category_change_kind == "other"

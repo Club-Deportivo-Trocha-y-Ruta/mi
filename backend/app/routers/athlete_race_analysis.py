@@ -79,11 +79,15 @@ from app.services.race.ai.budget_guard import BudgetExceededError, check_budget
 from app.services.race.ai.runner import RunBackpressureError, submit_run
 from app.services.race.group_launch import find_active_run
 from app.services.notification.race_event_tier import RaceTier, get_race_tier
-from app.services.privacy import athlete_has_ai_processing_consent
+from app.services.privacy import (
+    athlete_has_ai_processing_consent,
+    is_policy_version_in_force,
+)
 from app.services.race.history import (
     HISTORY_CAVEATS,
     build_history_points,
     build_season_completions,
+    withhold_before,
 )
 from app.services.race.insights_history import (
     get_athlete_insight,
@@ -1184,21 +1188,22 @@ async def get_history(
     ``competitor_id`` en ningún punto de este contrato — la serie está
     indexada por ``athlete_id`` (ver ``services/race/history.py``).
 
-    Gate de familia (FR-040/041, R-09) — **enganche documentado, no
-    implementado aquí a propósito** (Fase 9 / T080 de
-    ``specs/044-race-history-backfill/tasks.md``): cuando
-    ``current_user.role == UserRole.parent`` y
-    ``RACE_HISTORY_FAMILY_POLICY_VERSION`` (o el gate de
-    ``app/services/privacy.py`` que lo resuelva) siga cerrado, este punto
-    debe filtrar ``response.points`` a
-    ``event_date >= athlete.created_at.date()``, recalcular ``seasons`` a
-    partir de lo que quede, y no emitir ninguna cuenta ni señal de lo
-    retirado (data-model §10 invariante 6). Hoy TODO caller autorizado ve la
-    serie completa.
+    Gate de familia (FR-040/041, R-09, data-model §10 invariante 6): para
+    rol ``parent``, mientras ``RACE_HISTORY_FAMILY_POLICY_VERSION`` esté
+    vacía o nombre una versión no vigente (``privacy.is_policy_version_in_force``,
+    +1 query solo si la variable tiene valor), se descartan en el servidor
+    los resultados con ``event_date < athlete.created_at.date()`` ANTES de
+    construir puntos y temporadas. La respuesta no lleva cuenta, flag ni
+    caveat de lo retirado. Coach y admin nunca se filtran.
     """
     results, events, series, categories, setups = await _load_history_inputs(
         db, athlete_id=athlete.id
     )
+
+    if current_user.role == UserRole.parent and not await is_policy_version_in_force(
+        settings.race_history_family_policy_version, db
+    ):
+        results = withhold_before(results, events, athlete.created_at.date())
 
     points = build_history_points(
         results, events, series, categories, setups, athlete.id, series_kind=series_kind

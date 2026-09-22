@@ -6,7 +6,7 @@ Principio append-only (Ley 1581/2012):
   Toda renovación es INSERT de un nuevo registro.
 """
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -53,6 +53,26 @@ async def get_policy_by_version(version: str, db: AsyncSession) -> PrivacyPolicy
     stmt = select(PrivacyPolicy).where(PrivacyPolicy.version == version)
     result = await db.execute(stmt)
     return result.scalar_one_or_none()
+
+
+async def is_policy_version_in_force(
+    version: str, db: AsyncSession, *, today: date | None = None
+) -> bool:
+    """Indica si la versión de política dada está vigente hoy.
+
+    Vigente = existe, su ``effective_date`` ya llegó y no fue deprecada en o
+    antes de hoy. Versión vacía o desconocida → ``False`` (compuerta
+    cerrada). Una sola query; con versión vacía no toca la BD.
+    """
+    if not version:
+        return False
+    policy = await get_policy_by_version(version, db)
+    if policy is None:
+        return False
+    today = today or datetime.now(timezone.utc).date()
+    if policy.effective_date > today:
+        return False
+    return policy.deprecated_at is None or policy.deprecated_at > today
 
 
 # ---------------------------------------------------------------------------

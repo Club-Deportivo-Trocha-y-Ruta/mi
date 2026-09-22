@@ -721,6 +721,16 @@ class HistoryPoint(BaseModel):
         default=None,
         description="Etiqueta (congelada si existe) de la categoría anterior, solo cuando ``category_changed``.",
     )
+    category_change_kind: Optional[Literal["promotion", "other"]] = Field(
+        default=None,
+        description=(
+            "Solo cuando ``category_changed``: ``promotion`` si la categoría "
+            "anterior y la nueva tienen el mismo ``sex``, ambas con ``age_min`` "
+            "conocido y el nuevo mayor (subió a deportistas mayores); ``other`` "
+            "en cualquier otro caso (reestructuración del catálogo, edades "
+            "desconocidas, cambio de sexo, banda menor). ``None`` sin cambio."
+        ),
+    )
     status: Literal["finished", "dnf", "dns", "dsq", "minus_laps"]
     position: Optional[int] = Field(default=None, ge=1)
     field_size: Optional[int] = Field(

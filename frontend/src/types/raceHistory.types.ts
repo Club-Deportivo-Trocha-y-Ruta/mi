@@ -86,6 +86,17 @@ export interface RaceHistoryPoint {
    * fecha del mismo atleta; el primer punto de la serie siempre es `false`. */
   category_changed: boolean;
   previous_category_label: string | null;
+  /** Solo relevante cuando `category_changed`; `null` en cualquier otro
+   * caso. `"promotion"`: misma sexo, ambas categorías con edad mínima
+   * conocida y la nueva mayor — un ascenso real a deportistas mayores.
+   * `"other"`: cualquier otro cambio (reestructuración del catálogo entre
+   * temporadas, edades desconocidas, cambio de sexo, banda menor) — los
+   * datos no sostienen afirmar un ascenso, así que la copia familiar se
+   * queda en el hecho neutral. T083 (revisión UX) — sin este campo, T077
+   * había descartado la redacción "Subió de categoría… deportistas
+   * mayores…" por afirmar un ascenso que no todo `category_changed` prueba;
+   * con `"promotion"` el dato sí lo sostiene. */
+  category_change_kind: "promotion" | "other" | null;
   status: RaceHistoryResultStatus;
   position: number | null;
   /** Finishers incluyendo quien perdió vueltas (`minus_laps`). */

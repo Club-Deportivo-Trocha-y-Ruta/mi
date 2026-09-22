@@ -2,15 +2,30 @@
  * HistoryTable — alternativa textual de `HistoryChart`, agrupada
  * temporada → categoría (feature 044, US6/US7, `contracts/ui-history.md` §1).
  *
- * Cada grupo es su propio `<tbody>`: ninguna fila ni línea visual une dos
- * grupos (una fila de Infantil B 2024 nunca comparte borde/continuidad con
- * la siguiente de Prejuvenil A 2025 — son pelotones distintos, no una
- * misma serie continua). "sin dato" en cualquier campo que llegue `null`
- * de la API — nunca un guion ni un cero.
+ * Cada grupo es su propia unidad visual: ninguna fila ni línea visual une
+ * dos grupos (una fila de Infantil B 2024 nunca comparte borde/continuidad
+ * con la siguiente de Prejuvenil A 2025 — son pelotones distintos, no una
+ * misma serie continua). "sin dato" en cualquier campo que llegue `null` de
+ * la API — nunca un guion ni un cero.
  *
- * Variante familia (`audience="family"`): al inicio del grupo que arranca
- * con un cambio de categoría, un aviso sin lenguaje comparativo sobre el
- * hijo/a — nunca "bajó" o "empeoró", solo el hecho y la expectativa normal.
+ * Responsive (T083 ux-review.md, BLOCKER — mismo patrón que
+ * `AnthropometryHistory.tsx`): `<md` renderiza una lista de tarjetas
+ * apiladas (una por resultado, agrupadas por temporada/categoría);
+ * `md:` renderiza la tabla completa de 7 columnas. Ambas vistas se montan
+ * siempre (el toggle es puramente CSS, igual que `AnthropometryHistory`) —
+ * los tests que necesiten desambiguar contenido duplicado deben escopear
+ * por `history-table` (desktop) o `history-table-mobile`.
+ *
+ * Variante familia (`audience="family"`):
+ *  - Al inicio del grupo que arranca con un cambio de categoría, un aviso
+ *    de tono según `category_change_kind` (T083, FR-042): `"promotion"` —
+ *    dato respaldado por el backend, sí se explica el porqué ("ahora corre
+ *    con deportistas mayores… es normal que el puesto baje al comienzo");
+ *    `"other"`/`null` — el dato no sostiene esa afirmación, se queda en el
+ *    hecho neutral (T077).
+ *  - Un explicador de una línea para "Percentil"/"Brecha a la mediana"
+ *    (T083, MAJOR) — la vista coach no lo necesita (vocabulario de uso
+ *    diario), la familia sí.
  */
 import { cn } from "@/lib/utils";
 import {
@@ -38,6 +53,7 @@ interface TableGroup {
   season: number;
   categoryLabel: string;
   categoryChanged: boolean;
+  categoryChangeKind: RaceHistoryPoint["category_change_kind"];
   previousCategoryLabel: string | null;
   rows: RaceHistoryPoint[];
 }
@@ -59,6 +75,7 @@ function groupPoints(points: RaceHistoryPoint[]): TableGroup[] {
         season: p.season,
         categoryLabel: p.category_label,
         categoryChanged: p.category_changed,
+        categoryChangeKind: p.category_change_kind,
         previousCategoryLabel: p.previous_category_label,
         rows: [p],
       });
@@ -77,6 +94,72 @@ function positionCell(point: RaceHistoryPoint): string {
   return formatPosition(point.position);
 }
 
+/** Texto del aviso familiar de cambio de categoría — T083/FR-042.
+ * `"promotion"` es el único caso donde el dato sostiene explicar el porqué;
+ * cualquier otro valor se queda en el hecho neutral (T077). */
+function familyCategoryChangeNote(group: TableGroup): string {
+  if (group.categoryChangeKind === "promotion") {
+    return "Subió de categoría: ahora corre con deportistas mayores. Es normal que el puesto baje al comienzo.";
+  }
+  return `Cambió de categoría (de ${group.previousCategoryLabel ?? "—"} a ${group.categoryLabel}). En la nueva categoría compite con otro grupo, así que el puesto no se compara directamente con el anterior.`;
+}
+
+/** Explicador de una línea para "Percentil"/"Brecha a la mediana" —
+ * T083 MAJOR. Evita "el atleta": el resto de la vista familiar dice
+ * "tu hijo o hija" (T083 MINOR), sin enhebrar el nombre real del menor. */
+function FamilyMetricsExplainer() {
+  return (
+    <p
+      role="note"
+      data-testid="history-family-metrics-explainer"
+      className="rounded-lg bg-light-gray/40 px-3 py-2 text-xs text-mid-gray"
+    >
+      <strong className="font-medium text-charcoal">Percentil:</strong> de
+      cada 100 corredores de la categoría de tu hijo o hija en esa válida,
+      cuántos terminaron detrás.{" "}
+      <strong className="font-medium text-charcoal">
+        Brecha a la mediana:
+      </strong>{" "}
+      qué tan lejos, en porcentaje, estuvo del tiempo típico (mediana) del
+      grupo — negativo es más rápido, positivo es más lento.
+    </p>
+  );
+}
+
+function FamilyCategoryNote({
+  group,
+  testId,
+}: {
+  group: TableGroup;
+  testId: string;
+}) {
+  return (
+    <p
+      role="note"
+      className="rounded-lg bg-blue-50 px-3 py-1.5 text-xs text-blue-900"
+      data-testid={testId}
+    >
+      {familyCategoryChangeNote(group)}
+    </p>
+  );
+}
+
+const METRIC_FORMATTERS = {
+  position: positionCell,
+  percentile: (p: RaceHistoryPoint) => formatPercentile(p.percentile),
+  field_size: (p: RaceHistoryPoint) => formatFieldSize(p.field_size),
+  gap_to_median_pct: (p: RaceHistoryPoint) => formatGapPct(p.gap_to_median_pct),
+  avg_speed_kmh: (p: RaceHistoryPoint) => formatSpeedKmh(p.avg_speed_kmh),
+} as const;
+
+const METRIC_ROW_LABELS: { key: keyof typeof METRIC_FORMATTERS; label: string }[] = [
+  { key: "position", label: "Puesto" },
+  { key: "percentile", label: "Percentil" },
+  { key: "field_size", label: "Parrilla" },
+  { key: "gap_to_median_pct", label: "Brecha" },
+  { key: "avg_speed_kmh", label: "Velocidad" },
+];
+
 export function HistoryTable({
   points,
   audience = "coach",
@@ -86,74 +169,114 @@ export function HistoryTable({
   const groups = groupPoints(points);
 
   return (
-    <table
-      className={cn("w-full text-sm", className)}
-      data-testid="history-table"
-    >
-      <caption className="sr-only">
-        Progresión histórica entre temporadas — vista de tabla
-      </caption>
-      <thead>
-        <tr className="text-left text-xs uppercase tracking-wide text-mid-gray">
-          <th className="px-3 py-2 font-medium">Fecha</th>
-          <th className="px-3 py-2 font-medium">Válida</th>
-          <th className="px-3 py-2 font-medium">Puesto</th>
-          <th className="px-3 py-2 font-medium">Percentil</th>
-          <th className="px-3 py-2 font-medium">Parrilla</th>
-          <th className="px-3 py-2 font-medium">Brecha</th>
-          <th className="px-3 py-2 font-medium">Velocidad</th>
-        </tr>
-      </thead>
-      {groups.map((group) => (
-        <tbody
-          key={group.key}
-          className="border-t border-[rgba(34,42,53,0.08)]"
-          data-testid={`history-table-group-${group.key}`}
-        >
-          <tr className="bg-light-gray/30">
-            <th
-              colSpan={7}
-              scope="rowgroup"
-              className="px-3 py-1.5 text-left text-xs font-semibold text-charcoal"
-            >
+    <div className={cn("space-y-3", className)} data-testid="history-table-container">
+      {audience === "family" && <FamilyMetricsExplainer />}
+
+      {/* Vista mobile: tarjetas apiladas (<md) — T083 BLOCKER, mismo patrón
+          que `AnthropometryHistory.tsx`. */}
+      <ul
+        role="list"
+        className="flex flex-col gap-3 md:hidden"
+        data-testid="history-table-mobile"
+        aria-label="Progresión histórica entre temporadas — vista de tarjetas"
+      >
+        {groups.map((group) => (
+          <li key={group.key} className="space-y-2" data-testid={`history-table-mobile-group-${group.key}`}>
+            <p className="rounded-lg bg-light-gray/30 px-3 py-1.5 text-xs font-semibold text-charcoal">
               {group.season} · {group.categoryLabel}
-            </th>
-          </tr>
-          {audience === "family" && group.categoryChanged && (
-            <tr>
-              <td colSpan={7} className="px-3 py-1.5">
-                {/* MAJOR 3 (T077 ux-review.md) — la redacción anterior
-                    ("Subió de categoría… es normal que el puesto baje")
-                    afirmaba un ascenso y una expectativa de peor
-                    desempeño; se reemplaza por un hecho neutral: cambió de
-                    categoría, y el puesto de una no se compara con el de
-                    la otra porque compite con otro grupo. */}
-                <p
-                  role="note"
-                  className="rounded-lg bg-blue-50 px-3 py-1.5 text-xs text-blue-900"
-                  data-testid={`history-family-category-note-${group.key}`}
+            </p>
+            {audience === "family" && group.categoryChanged && (
+              <FamilyCategoryNote
+                group={group}
+                testId={`history-family-category-note-mobile-${group.key}`}
+              />
+            )}
+            <ul role="list" className="space-y-2">
+              {group.rows.map((p) => (
+                <li
+                  key={p.event_id}
+                  className="rounded-lg border border-[rgba(34,42,53,0.08)] p-3"
                 >
-                  Cambió de categoría (de {group.previousCategoryLabel ?? "—"}{" "}
-                  a {group.categoryLabel}). En la nueva categoría compite con
-                  otro grupo, así que el puesto no se compara directamente
-                  con el anterior.
-                </p>
-              </td>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-sm font-medium text-charcoal">{p.label}</span>
+                    <span className="shrink-0 text-xs text-mid-gray">
+                      {formatRaceDateShort(p.event_date)}
+                    </span>
+                  </div>
+                  <dl className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                    {METRIC_ROW_LABELS.map(({ key, label }) => (
+                      <div key={key} className="flex gap-1">
+                        <dt className="text-mid-gray">{label}:</dt>
+                        <dd className="font-medium text-charcoal">
+                          {METRIC_FORMATTERS[key](p)}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                </li>
+              ))}
+            </ul>
+          </li>
+        ))}
+      </ul>
+
+      {/* Vista desktop: tabla completa (md+) */}
+      <div className="hidden overflow-x-auto md:block" data-testid="history-table-desktop">
+        <table className="w-full text-sm" data-testid="history-table">
+          <caption className="sr-only">
+            Progresión histórica entre temporadas — vista de tabla
+          </caption>
+          <thead>
+            <tr className="text-left text-xs uppercase tracking-wide text-mid-gray">
+              <th className="px-3 py-2 font-medium">Fecha</th>
+              <th className="px-3 py-2 font-medium">Válida</th>
+              <th className="px-3 py-2 font-medium">Puesto</th>
+              <th className="px-3 py-2 font-medium">Percentil</th>
+              <th className="px-3 py-2 font-medium">Parrilla</th>
+              <th className="px-3 py-2 font-medium">Brecha</th>
+              <th className="px-3 py-2 font-medium">Velocidad</th>
             </tr>
-          )}
-          {group.rows.map((p) => (
-            <tr key={p.event_id} className="text-charcoal">
-              <td className="px-3 py-1.5">{formatRaceDateShort(p.event_date)}</td>
-              <td className="px-3 py-1.5">{p.label}</td>
-              <td className="px-3 py-1.5">{positionCell(p)}</td>
-              <td className="px-3 py-1.5">{formatPercentile(p.percentile)}</td>
-              <td className="px-3 py-1.5">{formatFieldSize(p.field_size)}</td>
-              <td className="px-3 py-1.5">{formatGapPct(p.gap_to_median_pct)}</td>
-              <td className="px-3 py-1.5">{formatSpeedKmh(p.avg_speed_kmh)}</td>
-            </tr>
+          </thead>
+          {groups.map((group) => (
+            <tbody
+              key={group.key}
+              className="border-t border-[rgba(34,42,53,0.08)]"
+              data-testid={`history-table-group-${group.key}`}
+            >
+              <tr className="bg-light-gray/30">
+                <th
+                  colSpan={7}
+                  scope="rowgroup"
+                  className="px-3 py-1.5 text-left text-xs font-semibold text-charcoal"
+                >
+                  {group.season} · {group.categoryLabel}
+                </th>
+              </tr>
+              {audience === "family" && group.categoryChanged && (
+                <tr>
+                  <td colSpan={7} className="px-3 py-1.5">
+                    <FamilyCategoryNote
+                      group={group}
+                      testId={`history-family-category-note-${group.key}`}
+                    />
+                  </td>
+                </tr>
+              )}
+              {group.rows.map((p) => (
+                <tr key={p.event_id} className="text-charcoal">
+                  <td className="px-3 py-1.5">{formatRaceDateShort(p.event_date)}</td>
+                  <td className="px-3 py-1.5">{p.label}</td>
+                  <td className="px-3 py-1.5">{positionCell(p)}</td>
+                  <td className="px-3 py-1.5">{formatPercentile(p.percentile)}</td>
+                  <td className="px-3 py-1.5">{formatFieldSize(p.field_size)}</td>
+                  <td className="px-3 py-1.5">{formatGapPct(p.gap_to_median_pct)}</td>
+                  <td className="px-3 py-1.5">{formatSpeedKmh(p.avg_speed_kmh)}</td>
+                </tr>
+              ))}
+            </tbody>
           ))}
-        </tbody>
-      ))}
-    </table>
+        </table>
+      </div>
+    </div>
   );
 }

@@ -35,6 +35,8 @@ import { mswServer } from "@/test/setup";
 import {
   raceHistoryEmptyHandler,
   raceHistoryErrorHandler,
+  makeAthleteRaceHistoryRead,
+  makeRaceHistoryPoint,
 } from "@/test/msw/raceHistoryHandlers";
 import { HistoryProgressionCard } from "@/components/race/history/HistoryProgressionCard";
 
@@ -82,12 +84,51 @@ describe("HistoryProgressionCard", () => {
     expect(screen.getByTestId("history-category-changes")).toHaveTextContent(
       "INFANTIL B → PREJUVENIL A",
     );
+    // T083 — audience="coach" (default): tag corto junto al cambio. El
+    // fixture (event_id 41) trae category_change_kind="other".
+    expect(screen.getByTestId("history-category-change-tag-41")).toHaveTextContent(
+      "Cambió de categoría",
+    );
 
     await waitFor(() =>
       expect(screen.getByTestId("mock-history-chart")).toBeInTheDocument(),
     );
     expect(screen.getByTestId("history-table")).toBeInTheDocument();
     expect(screen.getByTestId("history-caveats-note")).toBeInTheDocument();
+  });
+
+  it("audience='family': no muestra el tag corto de cambio de categoría (exclusivo del coach, T083)", async () => {
+    wrap(<HistoryProgressionCard athleteId={99} audience="family" />);
+    expect(await screen.findByTestId("history-category-changes")).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("history-category-change-tag-41"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("category_change_kind='promotion': el tag corto del coach dice 'Subió de categoría'", async () => {
+    mswServer.use(
+      http.get("*/api/athletes/:athleteId/race-analysis/history", () =>
+        HttpResponse.json(
+          makeAthleteRaceHistoryRead({
+            points: [
+              makeRaceHistoryPoint({
+                event_id: 41,
+                season: 2025,
+                category_label: "PREJUVENIL A",
+                category_changed: true,
+                previous_category_label: "INFANTIL B",
+                category_change_kind: "promotion",
+              }),
+            ],
+            seasons: [{ season: 2025, started: 1, finished: 1 }],
+          }),
+        ),
+      ),
+    );
+    wrap(<HistoryProgressionCard athleteId={99} />);
+    expect(
+      await screen.findByTestId("history-category-change-tag-41"),
+    ).toHaveTextContent("Subió de categoría");
   });
 
   it("caveats siempre presente incluso si la API envía una lista con un solo código", async () => {

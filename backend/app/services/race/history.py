@@ -27,16 +27,16 @@ tercero.
 
 Gate de familia (FR-040/041, R-09)
 ===================================
-Este módulo NO implementa el filtro de resultados previos al ingreso de un
-padre (``RACE_HISTORY_FAMILY_POLICY_VERSION`` / ``app/services/privacy.py``)
-— eso es Fase 9 / T080, deliberadamente fuera de esta ronda. El punto de
-enganche documentado está en el router (``routers/athlete_race_analysis.py``,
-función ``get_history``): filtrar ``AthleteRaceHistoryRead.points`` por
-``event_date`` y recalcular ``seasons`` a partir de lo que quede, sin señal
-alguna de lo retirado.
+``withhold_before`` es el filtro puro; la decisión de aplicarlo (rol
+``parent`` + ``RACE_HISTORY_FAMILY_POLICY_VERSION`` no vigente según
+``app/services/privacy.py``) vive en el router (``get_history``). Se aplica
+a los resultados ANTES de construir puntos y temporadas, de modo que
+``category_changed``/``seasons`` se calculan como si lo retirado nunca
+hubiera existido — ninguna señal de lo omitido (data-model §10 inv. 6).
 """
 from __future__ import annotations
 
+from datetime import date
 from typing import Optional
 
 from app.models.race_category import RaceCategory
@@ -49,7 +49,13 @@ from app.services.race.course.derived import derive_figures
 from app.services.race.field_metrics import compute_field_metrics
 from app.services.race.race_labels import build_race_label
 
-__all__ = ["MIN_FIELD", "HISTORY_CAVEATS", "build_history_points", "build_season_completions"]
+__all__ = [
+    "MIN_FIELD",
+    "HISTORY_CAVEATS",
+    "build_history_points",
+    "build_season_completions",
+    "withhold_before",
+]
 
 #: Umbral mínimo de campo para publicar percentil (FR-032) y de finalistas
 #: cronometrados para publicar el gap a la mediana (FR-031).
@@ -74,6 +80,39 @@ _FINISHED_STATUSES = (ResultStatus.FINISHED, ResultStatus.MINUS_LAPS)
 
 def _status_value(status: ResultStatus) -> str:
     return status.value if hasattr(status, "value") else str(status)
+
+
+def _category_change_kind(
+    previous: Optional[RaceCategory], new: Optional[RaceCategory]
+) -> str:
+    """``promotion`` solo con evidencia de catálogo: mismo sexo y ``age_min``
+    conocido y mayor en la nueva. Todo lo demás es ``other`` (FR-042)."""
+    if (
+        previous is not None
+        and new is not None
+        and previous.sex == new.sex
+        and previous.age_min is not None
+        and new.age_min is not None
+        and new.age_min > previous.age_min
+    ):
+        return "promotion"
+    return "other"
+
+
+def withhold_before(
+    results: list[RaceResult], events: list[RaceEvent], cutoff: date
+) -> list[RaceResult]:
+    """Descarta TODAS las filas (propias y de campo) de válidas con
+    ``event_date < cutoff``.
+
+    Las métricas de campo son por válida (``compute_field_metrics``), así
+    que las válidas restantes conservan exactamente sus cifras. Una válida
+    sin fecha se descarta también: no se puede demostrar que sea posterior.
+    """
+    kept_event_ids = {
+        e.id for e in events if e.event_date is not None and e.event_date >= cutoff
+    }
+    return [r for r in results if r.event_id in kept_event_ids]
 
 
 def build_history_points(
@@ -192,6 +231,11 @@ def build_history_points(
 
         category_changed = previous_category_id is not None and r.category_id != previous_category_id
         prev_label_for_point = previous_category_label if category_changed else None
+        change_kind = (
+            _category_change_kind(categories_by_id.get(previous_category_id), category)
+            if category_changed
+            else None
+        )
 
         m = metrics_by_event.get(r.event_id, {})
         field_size = m.get("field_size")
@@ -231,6 +275,7 @@ def build_history_points(
                 category_label=category_label,
                 category_changed=category_changed,
                 previous_category_label=prev_label_for_point,
+                category_change_kind=change_kind,  # type: ignore[arg-type]
                 status=status_str,  # type: ignore[arg-type]
                 position=m.get("position"),
                 field_size=field_size,
