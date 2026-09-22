@@ -209,7 +209,11 @@ function buildYDomain(realValues: number[]): [number, number] {
   const max = Math.max(...values);
   const span = max - min;
   const pad = span > 0 ? span * 0.15 : Math.max(Math.abs(min) * 0.15, 1);
-  return [min - pad, max + pad];
+  // Redondeo a 2 decimales: sin él, `min - pad` arrastra el ruido binario del
+  // punto flotante (una brecha de +2.1 % daba marcas como "99999995 %" en el
+  // eje, reportado por el coach en producción).
+  const round2 = (v: number) => Math.round(v * 100) / 100;
+  return [round2(min - pad), round2(max + pad)];
 }
 
 /** Cantidad de marcas objetivo del eje X — recharts sigue pudiendo recortar
@@ -392,7 +396,7 @@ export function HistoryChart({ points, className }: HistoryChartProps) {
             reversed
             domain={yDomain}
             tick={{ fontSize: 12, fill: "var(--color-mid-gray)" }}
-            tickFormatter={(v: number) => `${v}%`}
+            tickFormatter={(v: number) => `${Math.round(v * 10) / 10} %`}
             width={70}
           />
           <Tooltip
