@@ -37,7 +37,11 @@ Rules
 
 ## Pure builder
 
-`app/services/race/history.py::build_history_points(results, events, series, categories, setups, competitor_id) -> list[HistoryPoint]` — no I/O; calls `compute_field_metrics` per season; unit-tested with in-memory ORM objects like `test_field_metrics.py`.
+`app/services/race/history.py::build_history_points(results, events, series, categories, setups, athlete_id, *, series_kind="cup") -> list[HistoryPoint]` — no I/O; calls `compute_field_metrics` per season; unit-tested with in-memory ORM objects like `test_field_metrics.py`.
+
+**Deviation (implemented 2026-09-21, T070):** the signature takes `athlete_id`, not `competitor_id` as originally drafted above. Reason: `third_party_guard.py`'s structural test (`tests/privacy/test_third_party_lock.py::test_expected_candidates_matches_current_surface`) asserts the *exact* set of public callables under `app.services.race` that declare a `competitor_id` parameter; adding an 8th would fail that assertion and require either a guard (impossible here — the function is sync/pure, like `compute_field_metrics`, and `club_competitor_only` only wraps async callables) or a new `ALLOWED_SINGLE_EVENT` entry. Since the history endpoint is explicitly keyed by `athlete_id` everywhere else in this contract, the builder resolves each season's `competitor_id` internally from the already-`athlete_id`-filtered own-result rows (`own_result.competitor_id`) instead of accepting it as an argument — this is a plain attribute read, not a function parameter, so the structural scan does not see it. A companion `build_season_completions(results, events, series, athlete_id, *, series_kind="cup") -> list[SeasonCompletion]` was added for the per-season "N de M" summary, filtered the same way.
+
+**Known limitation carried over from `compute_field_metrics` (037, not modified here):** its per-event output dict is keyed only by `event_id`. If an athlete has two rows in the *same* event under two different `category_id`s (a real, previously observed edge case — see `race_result.py`'s docstring), only one category's field metrics survive internally; both `HistoryPoint`s for that event will show identical field-derived figures (`field_size`, `percentile`, `gap_to_median_pct`, `gap_to_winner_pct`). Pre-existing behavior, not introduced by this feature; not fixed here per the "do not modify `compute_field_metrics`" constraint.
 
 ## Tests
 

@@ -44,9 +44,18 @@ Every recognised category of the file is staged and committed, whether or not a 
 | Same válida, different file | existing revision flow (`will_be_revision`), unchanged |
 | Load interrupted after some válidas | each válida is its own import; the board shows state per válida; committed ones are never redone |
 | Commit with some categories blocked | consistent/acknowledged categories are ingested; the rest listed in `pending_categories` |
-| `POST /{id}/commit-pending` | ingests only categories that have since become consistent or acknowledged; `409 nothing_pending` when none; **subject to the same `409 identity_review_pending` gate as `/commit`** |
+| `POST /{id}/commit-pending` | ingests only categories that have since become consistent or acknowledged; `409 nothing_pending` when none; **subject to the same `409 identity_review_pending` gate as `/commit`, and to the same `409 matches_unresolved` gate (below) for whichever categories it is ingesting this round** |
 
 Re-running any step creates no duplicate válida, competitor, signature or result (data-model invariant 8).
+
+## Board fields (`GET /race-imports/`) and `matches_unresolved`
+
+`HistoricalLoadPage` groups the board by season and always commits with `resolved_matches: []` (no per-row match-resolution UI there — that stays in the current-season Import Wizard). Two additions to support that:
+
+- `ImportListItem` gains `season: int | None`, `valida_num: int | None`, `series_name: str | None`, alongside the already-added `pending_categories_count: int`. Resolved from `parse_meta_json["header"]` while the import still carries meta (pending, or committed with `pending_categories` left); once an import is fully committed (meta cleared to `None`) they're resolved via `RaceEvent` → `RaceSeries` instead (`sequence_number`, `season_year`, `RaceSeries.name`), batched in one query per page. `None` only for a broken import with neither meta nor a resolved event.
+- `POST /{id}/commit` and `POST /{id}/commit-pending` return `409 {"code": "matches_unresolved", "missing_count": int, "examples": [<normalized slugs>], "message": str}` when the acta has a club-athlete (TyR) row with no matching entry in `resolved_matches` — distinct from `identity_review_pending` (candidates in the cross-season identity queue) and `nothing_pending` (nothing newly eligible). The board routes the coach to the Import Wizard on this code instead of silently committing an unlinked row. Previously this was an unstructured `422` (`detail` a plain string); the status and shape both changed as part of this addition — no other `/commit` error shape moved.
+
+`stage_results_file`'s actual signature carries a few parameters beyond the sketch above (`results_ext`, `general_bytes`, `kind_override`) needed to keep the current-season wizard's optional-GENERAL-upload and `kind`-override behaviour byte-identical; none of that is visible in the HTTP response shapes.
 
 ## Current season untouched (FR-029)
 
@@ -59,6 +68,6 @@ No historical import may be committed against real data before the third-party l
 ## Tests
 
 - `test_import_staging.py`: golden comparison — the extracted service yields the same `RaceImport` and response as today's `/parse` for a 2026 file; historical file staged with inputs taken verbatim; `header_mismatch` warning; GENERAL file rejected by the script.
-- `test_race_imports_history.py`: full start list committed (categories without club athletes included); partial commit + `commit-pending`; identity gate on both commit routes; re-stage and re-commit create nothing (row counts of `race_events`, `race_competitors`, `race_competitor_signatures`, `race_results`, `race_imports` unchanged); resume after interruption; `is_calculated` on standings; printed points kept verbatim.
+- `test_race_imports_history.py`: full start list committed (categories without club athletes included); partial commit + `commit-pending`; identity gate on both commit routes; re-stage and re-commit create nothing (row counts of `race_events`, `race_competitors`, `race_competitor_signatures`, `race_results`, `race_imports` unchanged); resume after interruption; `is_calculated` on standings; printed points kept verbatim; `season`/`valida_num`/`series_name` on the list endpoint from both meta and the `RaceEvent`/`RaceSeries` fallback; `matches_unresolved` on both commit routes; a second identity rebuild does not re-download/re-parse any staged file (G4).
 - `test_2026_unchanged.py`: byte-identical 2026 responses and analyst context with two historical seasons present.
 - Script: refuses in-repo paths; `--dry` stages nothing; output contains no name (regex sweep against the fake-name list).
