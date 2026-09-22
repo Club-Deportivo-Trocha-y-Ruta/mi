@@ -55,6 +55,49 @@ describe("HistoryTable", () => {
     expect(bodies[1]).not.toHaveTextContent("INFANTIL B 2024");
   });
 
+  it("un renombre del catálogo a mitad de temporada (mismo category_code) sigue siendo UN solo grupo — encabezado 'A / B', fila anota su etiqueta propia", () => {
+    render(
+      <HistoryTable
+        points={[
+          makeRaceHistoryPoint({
+            event_id: 41,
+            event_date: "2025-02-09",
+            label: "Válida 1 — Ginebra",
+            season: 2025,
+            category_code: "PJUV_A",
+            category_label: "PREJUVENIL A DAMAS",
+            category_changed: false,
+          }),
+          makeRaceHistoryPoint({
+            event_id: 42,
+            event_date: "2025-03-09",
+            label: "Válida 2 — Buga",
+            season: 2025,
+            category_code: "PJUV_A",
+            category_label: "PREJUVENIL A FEMENINO",
+            category_changed: false,
+          }),
+        ]}
+      />,
+    );
+    const table = screen.getByTestId("history-table");
+    // Un solo grupo — la renombrada frozen label NUNCA parte por category_id.
+    expect(table.querySelectorAll("tbody")).toHaveLength(1);
+    const heading = table.querySelector("tbody th");
+    expect(heading).toHaveTextContent("2025 · PREJUVENIL A DAMAS / PREJUVENIL A FEMENINO");
+    // Cada fila anota su propia etiqueta impresa, distinta del encabezado.
+    expect(within(table).getByText("PREJUVENIL A DAMAS")).toBeInTheDocument();
+    expect(within(table).getByText("PREJUVENIL A FEMENINO")).toBeInTheDocument();
+
+    // Misma cobertura en la vista mobile.
+    const mobile = screen.getByTestId("history-table-mobile");
+    expect(
+      within(mobile).getByText("2025 · PREJUVENIL A DAMAS / PREJUVENIL A FEMENINO"),
+    ).toBeInTheDocument();
+    expect(within(mobile).getByText("PREJUVENIL A DAMAS")).toBeInTheDocument();
+    expect(within(mobile).getByText("PREJUVENIL A FEMENINO")).toBeInTheDocument();
+  });
+
   it("un mismo código de categoría en dos temporadas distintas sigue siendo dos grupos", () => {
     render(
       <HistoryTable
@@ -80,7 +123,7 @@ describe("HistoryTable", () => {
     expect(table.querySelectorAll("tbody")).toHaveLength(2);
   });
 
-  it('muestra "sin dato" en percentil/parrilla/brecha/velocidad cuando la API envía null', () => {
+  it('muestra "sin dato" en percentil/parrilla/brecha cuando la API envía null', () => {
     render(
       <HistoryTable
         points={[
@@ -88,15 +131,15 @@ describe("HistoryTable", () => {
             percentile: null,
             field_size: null,
             gap_to_median_pct: null,
-            avg_speed_kmh: null,
           }),
         ]}
       />,
     );
     const row = screen.getByTestId("history-table").querySelector("tbody tr:last-child");
     expect(row).toHaveTextContent(/sin dato/i);
-    // 4 columnas con "sin dato" en esta fila.
-    expect(row?.textContent?.match(/sin dato/gi)).toHaveLength(4);
+    // 3 columnas con "sin dato" en esta fila — velocidad ya no es una
+    // columna (retirada 2026-09-22).
+    expect(row?.textContent?.match(/sin dato/gi)).toHaveLength(3);
   });
 
   it("un no-finalista muestra su estado en la columna de puesto, no 'sin dato' genérico", () => {
@@ -238,7 +281,7 @@ describe("HistoryTable", () => {
   });
 
   describe("vista mobile (T083 BLOCKER) — tarjetas apiladas, mismos datos que la tabla desktop", () => {
-    it("una tarjeta por resultado con Puesto/Percentil/Parrilla/Brecha/Velocidad", () => {
+    it("una tarjeta por resultado con Puesto/Percentil/Parrilla/Brecha", () => {
       render(
         <HistoryTable
           points={[
@@ -249,7 +292,6 @@ describe("HistoryTable", () => {
               field_size: 23,
               percentile: 63.6,
               gap_to_median_pct: -4.2,
-              avg_speed_kmh: null,
             }),
           ]}
         />,
@@ -259,7 +301,8 @@ describe("HistoryTable", () => {
       expect(within(mobile).getByText("9°")).toBeInTheDocument();
       expect(within(mobile).getByText("P64")).toBeInTheDocument();
       expect(within(mobile).getByText("-4.2 %")).toBeInTheDocument();
-      expect(within(mobile).getAllByText("sin dato").length).toBeGreaterThan(0);
+      // Velocidad ya no es una métrica de esta vista (retirada 2026-09-22).
+      expect(within(mobile).queryByText(/km\/h/)).not.toBeInTheDocument();
     });
 
     it("agrupa por temporada → categoría igual que la tabla, con el mismo encabezado de grupo", () => {

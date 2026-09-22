@@ -110,8 +110,6 @@ export interface RaceHistoryPoint {
   gap_to_median_pct: number | null;
   /** Misma regla de estado que `gap_to_median_pct`, sin umbral de tamaño. */
   gap_to_winner_pct: number | null;
-  /** `null` sin circuito configurado para esa válida — nunca estimado. */
-  avg_speed_kmh: number | null;
   points_awarded: number;
 }
 

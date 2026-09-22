@@ -44,7 +44,6 @@ export function makeRaceHistoryPoint(
     percentile: 63.6,
     gap_to_median_pct: -4.2,
     gap_to_winner_pct: 11.8,
-    avg_speed_kmh: null,
     points_awarded: 18,
     ...overrides,
   };

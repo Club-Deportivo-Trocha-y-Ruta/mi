@@ -103,17 +103,6 @@ def _result(
     )
 
 
-def _setup(event_id: int, category_id: int, *, laps: int, lap_distance_m: int) -> SimpleNamespace:
-    """Duck-typed fake — ``derive_figures`` solo necesita ``.laps`` y
-    ``.variant.lap_distance_m``/``.elevation_gain_m`` (ver su docstring)."""
-    return SimpleNamespace(
-        race_event_id=event_id,
-        category_id=category_id,
-        laps=laps,
-        variant=SimpleNamespace(lap_distance_m=lap_distance_m, elevation_gain_m=None),
-    )
-
-
 @pytest.fixture()
 def dataset():
     """Un atleta, 2024 en categoría A (6 válidas, umbrales de campo variados,
@@ -211,14 +200,11 @@ def dataset():
     )
     rid += 1
 
-    setups = [_setup(102, _CAT_A, laps=4, lap_distance_m=5000)]
-
     return {
         "results": results,
         "events": events,
         "series": series,
         "categories": categories,
-        "setups": setups,
     }
 
 
@@ -262,7 +248,6 @@ class TestNonFinishers:
         assert p4.status == "dnf"
         assert p4.position is None
         assert p4.gap_to_winner_pct is None
-        assert p4.avg_speed_kmh is None
 
     def test_dns_has_no_position_or_field_membership(self, dataset):
         points = build_history_points(**dataset, athlete_id=_ATHLETE_ID)
@@ -277,7 +262,6 @@ class TestNonFinishers:
         assert p5.position == 3
         assert p5.gap_to_winner_pct is None
         assert p5.gap_to_median_pct is None
-        assert p5.avg_speed_kmh is None
 
     def test_lapped_athlete_counts_as_field_member_but_has_no_time_figures(self, dataset):
         points = build_history_points(**dataset, athlete_id=_ATHLETE_ID)
@@ -319,14 +303,6 @@ class TestCategoryChange:
     def test_first_point_of_the_series_never_flags_a_change(self, dataset):
         points = build_history_points(**dataset, athlete_id=_ATHLETE_ID)
         assert points[0].category_changed is False
-
-
-class TestCourseSpeed:
-    def test_speed_present_only_where_a_setup_exists(self, dataset):
-        points = build_history_points(**dataset, athlete_id=_ATHLETE_ID)
-        by_event = _by_event(points)
-        assert by_event[102].avg_speed_kmh is not None
-        assert by_event[101].avg_speed_kmh is None
 
 
 class TestNoCrossSeasonAggregate:
@@ -419,7 +395,7 @@ def _two_valida_points(prev: RaceCategory, new: RaceCategory, *, same_season: bo
         _result(2, 201, new.id, 1, athlete_id=_ATHLETE_ID, position=1, time_ms=3_000_000),
     ]
     return build_history_points(
-        results, events, series, [prev, new], [], _ATHLETE_ID
+        results, events, series, [prev, new], _ATHLETE_ID
     )
 
 

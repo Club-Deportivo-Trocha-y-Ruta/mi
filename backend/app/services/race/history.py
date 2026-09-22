@@ -40,12 +40,10 @@ from datetime import date
 from typing import Optional
 
 from app.models.race_category import RaceCategory
-from app.models.race_course_category_setup import RaceCourseCategorySetup
 from app.models.race_event import RaceEvent
 from app.models.race_result import RaceResult, ResultStatus
 from app.models.race_series import RaceSeries
 from app.schemas.athlete_race_analysis import HistoryPoint, SeasonCompletion
-from app.services.race.course.derived import derive_figures
 from app.services.race.field_metrics import compute_field_metrics
 from app.services.race.race_labels import build_race_label
 
@@ -120,7 +118,6 @@ def build_history_points(
     events: list[RaceEvent],
     series: list[RaceSeries],
     categories: list[RaceCategory],
-    setups: list[RaceCourseCategorySetup],
     athlete_id: int,
     *,
     series_kind: str = "cup",
@@ -139,10 +136,6 @@ def build_history_points(
             solo agrupa.
         events / series / categories: catálogo ya cargado (no hace falta
             que cubra toda la BD, solo lo que aparece en ``results``).
-        setups: ``RaceCourseCategorySetup`` (con ``.variant`` cargado) de
-            las válidas donde el atleta compitió; ``avg_speed_kmh`` queda
-            ``None`` para cualquier ``(event_id, category_id)`` sin fila
-            aquí.
         athlete_id: PK de ``Athlete`` — identifica las filas "propias" vía
             ``RaceResult.athlete_id`` (nunca ``competitor_id``, ver
             docstring del módulo).
@@ -190,10 +183,6 @@ def build_history_points(
         if r.status == ResultStatus.FINISHED and r.race_time_ms is not None:
             key = (r.event_id, r.category_id)
             timed_finishers_by_pair[key] = timed_finishers_by_pair.get(key, 0) + 1
-
-    setup_by_pair: dict[tuple[int, int], RaceCourseCategorySetup] = {
-        (s.race_event_id, s.category_id): s for s in setups
-    }
 
     # --- métricas de campo por temporada — UNA llamada por (season, competitor_id)
     # presente entre las filas propias filtradas; se fusionan por event_id.
@@ -251,9 +240,7 @@ def build_history_points(
 
         kind_str = s.kind.value if hasattr(s.kind, "value") else str(s.kind)
 
-        setup = setup_by_pair.get((r.event_id, r.category_id))
         status_str = _status_value(r.status)
-        figures = derive_figures(setup, status_str, r.race_time_ms, r.laps_behind)
 
         label = build_race_label(
             s.kind,
@@ -283,7 +270,6 @@ def build_history_points(
                 percentile=percentile,
                 gap_to_median_pct=gap_to_median_pct,
                 gap_to_winner_pct=m.get("gap_pct"),
-                avg_speed_kmh=figures.avg_speed_kmh,
                 points_awarded=r.points_awarded or 0,
             )
         )

@@ -7,7 +7,6 @@
  */
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { axe } from "jest-axe";
 
 vi.mock("recharts", () => ({
@@ -26,8 +25,13 @@ vi.mock("recharts", () => ({
     </div>
   ),
   CartesianGrid: () => <div data-testid="grid" />,
-  XAxis: (props: { type?: string; scale?: string }) => (
-    <div data-testid="x-axis" data-type={props.type} data-scale={props.scale} />
+  XAxis: (props: { type?: string; scale?: string; ticks?: number[] }) => (
+    <div
+      data-testid="x-axis"
+      data-type={props.type}
+      data-scale={props.scale}
+      data-ticks={JSON.stringify(props.ticks ?? [])}
+    />
   ),
   YAxis: (props: { reversed?: boolean; domain?: [number, number] }) => (
     <div
@@ -116,40 +120,21 @@ describe("HistoryChart", () => {
     expect(screen.getAllByTestId("y-axis")).toHaveLength(1);
   });
 
-  it("por defecto grafica la brecha a la mediana con el eje invertido", () => {
+  it("grafica la brecha a la mediana con el eje invertido — sin toggle de métrica (velocidad retirada 2026-09-22)", () => {
     render(<HistoryChart points={BASE_POINTS} />);
     expect(screen.getByTestId("y-axis")).toHaveAttribute("data-reversed", "true");
+    expect(screen.queryByTestId("history-chart-metric-toggle")).not.toBeInTheDocument();
     // Línea de referencia en 0 con la etiqueta de la mediana.
     const refLines = screen.getAllByTestId("reference-line");
     const zeroLine = refLines.find((el) => el.getAttribute("data-y") === "0");
     expect(zeroLine).toHaveAttribute("data-label", "Mediana de su categoría");
   });
 
-  it("el toggle cambia a velocidad media y el eje deja de invertirse", async () => {
-    const user = userEvent.setup();
-    render(<HistoryChart points={BASE_POINTS} />);
-    await user.click(screen.getByTestId("history-chart-metric-speed"));
-    expect(screen.getByTestId("y-axis")).toHaveAttribute("data-reversed", "false");
-  });
-
-  it("MAJOR 4 (ux-review.md): el toggle de métrica cumple el objetivo táctil de 44px+", () => {
-    render(<HistoryChart points={BASE_POINTS} />);
-    expect(screen.getByTestId("history-chart-metric-gap").className).toMatch(
-      /min-h-12/,
-    );
-    expect(screen.getByTestId("history-chart-metric-speed").className).toMatch(
-      /min-h-12/,
-    );
-  });
-
-  it("muestra la pista de lectura del eje invertido solo para la métrica de brecha", async () => {
-    const user = userEvent.setup();
+  it("muestra siempre la pista de lectura del eje invertido (única métrica)", () => {
     render(<HistoryChart points={BASE_POINTS} />);
     expect(screen.getByTestId("history-chart-axis-hint")).toHaveTextContent(
       /más rápido.*↑.*más lento.*↓/i,
     );
-    await user.click(screen.getByTestId("history-chart-metric-speed"));
-    expect(screen.queryByTestId("history-chart-axis-hint")).not.toBeInTheDocument();
   });
 
   it("marca el cambio de categoría con una ReferenceLine vertical 'A → B'", () => {
@@ -243,60 +228,83 @@ describe("HistoryChart", () => {
     expect(hollowValues[0]).not.toBe(0);
   });
 
-  it("MAJOR 2 (ux-review.md): un rango de velocidad angosto + un DNF no arrastra el dominio a 0", async () => {
-    const user = userEvent.setup();
-    const points: RaceHistoryPoint[] = [
-      makeRaceHistoryPoint({
-        event_id: 30,
-        event_date: "2024-03-10",
-        season: 2024,
-        avg_speed_kmh: 40.2,
-        gap_to_median_pct: -3,
-      }),
-      makeRaceHistoryPoint({
-        event_id: 31,
-        event_date: "2024-04-14",
-        season: 2024,
-        avg_speed_kmh: 41.8,
-        gap_to_median_pct: -2,
-      }),
-      makeRaceHistoryPoint({
-        event_id: 43,
-        event_date: "2024-06-08",
-        season: 2024,
-        status: "dnf",
-        position: null,
-        gap_to_median_pct: null,
-        avg_speed_kmh: null,
-      }),
-    ];
-    render(<HistoryChart points={points} />);
-    await user.click(screen.getByTestId("history-chart-metric-speed"));
-
-    const domain = JSON.parse(
-      screen.getByTestId("y-axis").getAttribute("data-domain") ?? "[]",
-    );
-    // El rango real es 40.2–41.8 — el dominio (con margen) no debería
-    // acercarse a 0, ni el marcador hueco debería estar en 0.
-    expect(domain[0]).toBeGreaterThan(30);
-
-    const lines = screen.getAllByTestId("line");
-    const hollowLine = lines.find((l) => l.getAttribute("data-stroke") === "none");
-    const hollowValues = JSON.parse(hollowLine!.getAttribute("data-values") ?? "[]");
-    expect(hollowValues[0]).toBe(domain[0]);
-    expect(hollowValues[0]).not.toBe(0);
-  });
-
   it("todas las métricas nulas (campo chico) no rompe el render — línea principal con valores null", () => {
     const points: RaceHistoryPoint[] = BASE_POINTS.map((p) => ({
       ...p,
       gap_to_median_pct: null,
-      avg_speed_kmh: null,
     }));
     expect(() => render(<HistoryChart points={points} />)).not.toThrow();
     const mainLine = screen.getAllByTestId("line")[0];
     const values = JSON.parse(mainLine.getAttribute("data-values") ?? "[]");
     expect(values.every((v: number | null) => v === null)).toBe(true);
+  });
+
+  describe("marcas del eje X (bug: dejaban de avanzar a mitad de una serie multi-temporada)", () => {
+    it("la última marca cae en la fecha del último punto, aunque la serie cruce tres temporadas", () => {
+      const points: RaceHistoryPoint[] = [
+        makeRaceHistoryPoint({
+          event_id: 1,
+          event_date: "2024-02-01",
+          season: 2024,
+          label: "Válida 1 — Palmira",
+          category_code: "INF_B",
+          category_label: "INFANTIL B",
+        }),
+        makeRaceHistoryPoint({
+          event_id: 2,
+          event_date: "2024-06-01",
+          season: 2024,
+          label: "Válida 2 — Ginebra",
+          category_code: "INF_B",
+          category_label: "INFANTIL B",
+        }),
+        makeRaceHistoryPoint({
+          event_id: 3,
+          event_date: "2025-02-01",
+          season: 2025,
+          label: "Válida 1 — Ginebra",
+          category_code: "INF_B",
+          category_label: "INFANTIL B",
+        }),
+        makeRaceHistoryPoint({
+          event_id: 4,
+          event_date: "2025-06-01",
+          season: 2025,
+          label: "Válida 2 — Buga",
+          category_code: "INF_B",
+          category_label: "INFANTIL B",
+        }),
+        makeRaceHistoryPoint({
+          event_id: 5,
+          event_date: "2026-02-01",
+          season: 2026,
+          label: "Válida 1 — Palmira",
+          category_code: "INF_B",
+          category_label: "INFANTIL B",
+        }),
+        makeRaceHistoryPoint({
+          event_id: 6,
+          event_date: "2026-06-01",
+          season: 2026,
+          label: "Válida 2 — Ginebra",
+          category_code: "INF_B",
+          category_label: "INFANTIL B",
+        }),
+      ];
+      render(<HistoryChart points={points} />);
+      const ticks: number[] = JSON.parse(
+        screen.getByTestId("x-axis").getAttribute("data-ticks") ?? "[]",
+      );
+      expect(ticks.length).toBeGreaterThan(1);
+      const lastTickDate = new Date(ticks[ticks.length - 1]);
+      // El último punto real es 2026-06-01 — la última marca debe caer
+      // exactamente ahí, no a mitad de la serie (2025).
+      expect(lastTickDate.getUTCFullYear()).toBe(2026);
+      expect(lastTickDate.toISOString().slice(0, 10)).toBe("2026-06-01");
+      // La primera marca cae en el punto más antiguo.
+      const firstTickDate = new Date(ticks[0]);
+      expect(firstTickDate.toISOString().slice(0, 10)).toBe("2024-02-01");
+    });
   });
 
   it("no tiene violaciones de accesibilidad", async () => {

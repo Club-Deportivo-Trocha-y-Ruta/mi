@@ -32,7 +32,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import and_, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import contains_eager, joinedload
+from sqlalchemy.orm import contains_eager
 
 from app.config import settings
 from app.dependencies import get_current_user, get_db, require_role, verify_athlete_access
@@ -40,7 +40,6 @@ from app.models.athlete import Athlete
 from app.models.athlete_ai_insight import AthleteAiInsight
 from app.models.audit_log import AuditAction
 from app.models.race_category import RaceCategory
-from app.models.race_course_category_setup import RaceCourseCategorySetup
 from app.models.race_event import RaceEvent
 from app.models.race_result import RaceResult
 from app.models.race_series import RaceSeries
@@ -1106,9 +1105,8 @@ async def _load_history_inputs(
     list[RaceEvent],
     list[RaceSeries],
     list[RaceCategory],
-    list[RaceCourseCategorySetup],
 ]:
-    """Cuatro SELECT, sin excepción (contrato: presupuesto ≤ 4, asertado en
+    """Tres SELECT, sin excepción (contrato: presupuesto ≤ 3, asertado en
     ``tests/routers/test_athlete_race_history.py``).
 
     1. Resultados propios del atleta (cualquier temporada, cualquier estado),
@@ -1118,7 +1116,10 @@ async def _load_history_inputs(
        exactos ``(event_id, category_id)`` en los que el atleta compitió
        (data-model §10 invariante 4: nunca progresión cruzada de un tercero).
     3. Catálogo de categorías usadas.
-    4. Setups de recorrido de esas válidas, con ``variant`` en el mismo join.
+
+    No carga setups de recorrido: ``avg_speed_kmh`` se retiró del historial
+    (decisión del propietario 2026-09-22, "no es un dato relevante" en una
+    vista cruza-temporadas) — el presupuesto bajó de 4 a 3 SELECT.
     """
     own_stmt = (
         select(RaceResult)
@@ -1131,10 +1132,9 @@ async def _load_history_inputs(
     own_rows: list[RaceResult] = list(own_result.unique().scalars().all())
 
     if not own_rows:
-        return [], [], [], [], []
+        return [], [], [], []
 
     pairs = {(r.event_id, r.category_id) for r in own_rows}
-    event_ids = {r.event_id for r in own_rows}
     category_ids = {r.category_id for r in own_rows}
 
     field_stmt = select(RaceResult).where(
@@ -1149,14 +1149,6 @@ async def _load_history_inputs(
     )
     categories = list(categories_result.scalars().all())
 
-    setups_stmt = (
-        select(RaceCourseCategorySetup)
-        .options(joinedload(RaceCourseCategorySetup.variant))
-        .where(RaceCourseCategorySetup.race_event_id.in_(event_ids))
-    )
-    setups_result = await db.execute(setups_stmt)
-    setups = list(setups_result.unique().scalars().all())
-
     by_id: dict[int, RaceResult] = {r.id: r for r in own_rows}
     by_id.update({r.id: r for r in field_rows})
     all_results = list(by_id.values())
@@ -1164,7 +1156,7 @@ async def _load_history_inputs(
     events = [r.event for r in own_rows]
     series = [r.event.series for r in own_rows]
 
-    return all_results, events, series, categories, setups
+    return all_results, events, series, categories
 
 
 @router.get(
@@ -1196,7 +1188,7 @@ async def get_history(
     construir puntos y temporadas. La respuesta no lleva cuenta, flag ni
     caveat de lo retirado. Coach y admin nunca se filtran.
     """
-    results, events, series, categories, setups = await _load_history_inputs(
+    results, events, series, categories = await _load_history_inputs(
         db, athlete_id=athlete.id
     )
 
@@ -1206,7 +1198,7 @@ async def get_history(
         results = withhold_before(results, events, athlete.created_at.date())
 
     points = build_history_points(
-        results, events, series, categories, setups, athlete.id, series_kind=series_kind
+        results, events, series, categories, athlete.id, series_kind=series_kind
     )
     seasons = build_season_completions(
         results, events, series, athlete.id, series_kind=series_kind

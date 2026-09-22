@@ -4,9 +4,11 @@ Feature 044, US6 (T069) — contrato
 ``specs/044-race-history-backfill/contracts/history-progression-api.md``.
 
 Cubre: RBAC vía ``verify_athlete_access`` (sin cambios: admin/coach/padre
-propio → 200; otro coach / otro padre → 403), presupuesto de ≤4 SELECT,
-ausencia de cualquier campo de tercero en la respuesta, y el filtro
-``series_kind``.
+propio → 200; otro coach / otro padre → 403), presupuesto de ≤3 SELECT
+(decisión del propietario 2026-09-22: se retiró ``avg_speed_kmh`` del
+historial, así que el cargador ya no consulta setups de recorrido — el
+presupuesto bajó de 4 a 3), ausencia de cualquier campo de tercero en la
+respuesta, y el filtro ``series_kind``.
 
 Datos: 100% ficticios. Atleta "Juan Ficticio Pérez", ``athlete_id=300``.
 """
@@ -281,7 +283,7 @@ async def test_response_has_no_third_party_field(client_factory):
             "category_changed", "previous_category_label",
             "category_change_kind", "status",
             "position", "field_size", "timed_finishers", "percentile",
-            "gap_to_median_pct", "gap_to_winner_pct", "avg_speed_kmh",
+            "gap_to_median_pct", "gap_to_winner_pct",
             "points_awarded",
         }
 
@@ -323,14 +325,14 @@ async def test_seasons_completion_present(client_factory):
 
 
 @pytest.mark.asyncio
-async def test_statement_count_at_most_four(client_factory, engine):
+async def test_statement_count_at_most_three(client_factory, engine):
     async with await client_factory(_user(10, UserRole.coach, club_id=1)) as ac:
         async with count_selects(engine) as counter:
             resp = await ac.get(_URL)
     assert resp.status_code == 200
     # +1 por la query de ``verify_athlete_access`` (carga del Athlete),
-    # que no forma parte del presupuesto de 4 del cargador de historia.
-    assert counter[0] <= 5
+    # que no forma parte del presupuesto de 3 del cargador de historia.
+    assert counter[0] <= 4
 
 
 @pytest.mark.asyncio
@@ -514,7 +516,7 @@ async def test_other_parent_still_403_with_gate_open(client_factory, gated, monk
 async def test_parent_statement_budget(client_factory, gated, engine, monkeypatch):
     """Compuerta vacía: 0 queries extra; con versión: exactamente +1 (la
     resolución de la política vía ``services/privacy.py``). El cargador
-    sigue en ≤ 4 en ambos casos."""
+    sigue en ≤ 3 en ambos casos."""
     async with await client_factory(_user(20, UserRole.parent)) as ac:
         _gate(monkeypatch, "")
         async with count_selects(engine) as closed_empty:
@@ -526,6 +528,6 @@ async def test_parent_statement_budget(client_factory, gated, engine, monkeypatc
         async with count_selects(engine) as coach:
             assert (await ac.get(_URL)).status_code == 200
     assert with_version[0] == closed_empty[0] + 1
-    assert coach[0] <= 5
+    assert coach[0] <= 4
     # verify_athlete_access para un padre: carga del atleta + vínculo.
-    assert closed_empty[0] <= 6
+    assert closed_empty[0] <= 5

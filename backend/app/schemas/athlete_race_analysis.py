@@ -760,10 +760,6 @@ class HistoryPoint(BaseModel):
         default=None,
         description="Sin umbral de tamaño de campo — se mantiene por continuidad con 037/039.",
     )
-    avg_speed_kmh: Optional[float] = Field(
-        default=None,
-        description="Derivado con ``course.derived.derive_figures``. ``None`` sin recorrido configurado.",
-    )
     points_awarded: int = Field(..., ge=0)
 
 

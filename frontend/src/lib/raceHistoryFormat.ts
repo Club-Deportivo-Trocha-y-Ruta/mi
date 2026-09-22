@@ -19,11 +19,6 @@ export function formatGapPct(value: number | null): string {
   return `${sign}${value.toFixed(1)} %`;
 }
 
-export function formatSpeedKmh(value: number | null): string {
-  if (value === null) return SIN_DATO;
-  return `${value.toFixed(1)} km/h`;
-}
-
 export function formatPercentile(value: number | null): string {
   if (value === null) return SIN_DATO;
   return `P${Math.round(value)}`;

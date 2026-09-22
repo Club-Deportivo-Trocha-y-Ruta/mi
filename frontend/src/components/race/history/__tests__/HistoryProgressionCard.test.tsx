@@ -155,7 +155,6 @@ describe("HistoryProgressionCard", () => {
               percentile: null,
               gap_to_median_pct: null,
               gap_to_winner_pct: 0,
-              avg_speed_kmh: null,
               points_awarded: 25,
             },
           ],
