@@ -722,6 +722,13 @@ async def _load_correctable_import(
 
 _PARSED_CACHE_MAX_ENTRIES = 32
 
+# PRIVACIDAD (auditoría T090, 2026-09-22): estas dos cachés guardan la
+# parrilla COMPLETA sin filtrar — nombre, club y ciudad de cada fila, incluidos
+# cientos de menores ajenos al club. Son seguras solo porque todos sus
+# llamadores (dry-run, commit, commit-pending, corrections, acknowledge y el
+# rebuild de identidad vía ``load_identity_rows``) exigen
+# ``require_role([admin, coach])``. Un llamador nuevo DEBE tener el mismo
+# guard; nunca sirvas su contenido a un padre, a un atleta ni a un log.
 _RAW_PARSE_CACHE: "OrderedDict[str, ParsedResults]" = OrderedDict()
 _CORRECTED_CATEGORIES_CACHE: "OrderedDict[tuple[str, int], list[ParsedCategory]]" = (
     OrderedDict()

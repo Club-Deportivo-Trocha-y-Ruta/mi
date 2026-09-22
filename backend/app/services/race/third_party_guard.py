@@ -21,6 +21,12 @@ terceros en la tabla, "convención de llamado" dejó de ser suficiente.
 
 Modelo de enforcement
 ---------------------
+(Nota de la auditoría T090, 2026-09-22: no existe un primitivo por lotes
+— ``require_club_competitors`` — para listas de ``competitor_ids``. El test
+estructural ya detecta parámetros ``competitor_ids``, pero ninguna función
+pública los recibe hoy. Si alguna vez hace falta, créalo aquí y protégelo con
+el mismo marcador; no asumas que existe.)
+
 1. :func:`require_club_competitor` — el primitivo. Lee el estado de vínculo
    **en cada llamada** (no cachea), así una desvinculación surte efecto
    inmediato. Devuelve el ``athlete_id`` vinculado o lanza

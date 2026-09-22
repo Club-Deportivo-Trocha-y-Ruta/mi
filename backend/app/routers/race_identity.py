@@ -24,8 +24,9 @@ bloqueados (403). El commit de un import histórico (``POST
 candado antes de mutar nada (``routers/race_imports.py`` T050); este router
 es la superficie que el coach usa para resolver la cola manualmente.
 
-Privacidad: ``IdentityRecordRead`` (``left``/``right``) es el único schema
-del sistema que serializa ``city`` — coach/admin only, nunca a un padre.
+Privacidad: fuera del asistente de importación, ``IdentityRecordRead``
+(``left``/``right``) es el único schema que serializa ``city`` — coach/admin
+only, nunca a un padre.
 """
 from __future__ import annotations
 

@@ -5,8 +5,9 @@ Servicio: ``app/services/race/identity_review.py`` (``record_view`` /
 ``candidate_view`` construyen exactamente estas formas desde los snapshots
 persistidos — nunca se arma una respuesta desde JSON crudo).
 
-Privacidad: ``IdentityRecordRead`` es el ÚNICO schema de toda la plataforma
-que serializa ``city`` (ver ``tests/privacy/test_city_not_serialised.py``).
+Privacidad: fuera de la familia del asistente de importación (que devuelve al
+coach las filas del mismo PDF que subió), ``IdentityRecordRead`` es el único
+schema que serializa ``city`` (ver ``tests/privacy/test_city_not_serialised.py``).
 ``extra="forbid"`` en cada schema: un campo interno del snapshot (terna
 normalizada, ids de resultados adjuntados) que se cuele por error revienta
 la respuesta en vez de filtrarse en silencio.
