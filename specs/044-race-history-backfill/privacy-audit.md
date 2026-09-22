@@ -109,3 +109,80 @@ El candado (T034/T035) cubre correctamente todo lo que existe hoy en el árbol p
 **Condición para el gate G3** (no bloqueante, pero debe registrarse y resolverse antes de cerrar la feature, no antes de cargar): el mensaje de `ThirdPartyProgressionForbidden` queda persistido tal cual en `agent_run_events` vía `with_events`/`GET /runs/{run_id}/status` cuando el rechazo ocurre dentro de `compute_metrics` — visible a coach/admin del club dueño del run (nunca a un tercero ni a una familia), y sólo contiene `competitor_id` + `reason` (nunca nombre/club/ciudad), pero contradice la intención declarada de "sólo al log del servidor". Recomiendo que `with_events` sustituya el `msg` por un texto genérico cuando la excepción sea `ThirdPartyProgressionForbidden`, antes de que la feature se dé por cerrada. No bloquea T037 porque hoy no existe ninguna vía real para que el `competitor_id` de un tercero genuino llegue a ese nodo (R-15).
 
 **Puntos a vigilar en fases siguientes** (no hallazgos de hoy, registrados para no repetir el análisis): una futura función con `competitor_ids: list[int]` (US4, identity review) no sería detectada por el barrido estructural tal como está escrito — revisar explícitamente cuando esa fase se implemente; y la serialización de `city_text` deberá reverificarse contra FR-014 cuando US4 empiece a poblarlo.
+
+---
+
+## §2 — Auditoría obligatoria de cierre (T090)
+
+**Alcance de esta sección**: `git diff main...HEAD` más el árbol de trabajo completo de la rama al día de hoy — parser (`pdf_parser.py`, `completeness.py`), staging (`import_staging.py`, `routers/race_imports.py`, sus cachés de filas parseadas), identidad (`identity_review.py`, `identity_resolver.py`, `routers/race_identity.py`, `schemas/race_identity.py`, snapshots de candidatos), el candado de terceros y su extensión a listas (`third_party_guard.py` + `tests/privacy/test_third_party_lock.py`), el endpoint de historial y la compuerta familiar (`history.py`, `routers/athlete_race_analysis.py`, `services/privacy.py::is_policy_version_in_force`), ambas audiencias de UI (pestaña Carreras del coach y de la familia, `IdentityReviewPage`, `HistoricalLoadPage`), el script `backend/scripts/stage_race_history.py`, migraciones, fixtures nuevas y el borrador `docs/10-race-results/history-family-notice.md`. Auditor: `data-privacy-guard`. Fecha: 2026-09-22. Rama: `feat/044-race-history-backfill`.
+
+**Metodología**: el alcance no cabía en una sola pasada, así que se dividió en cinco sub-revisiones independientes (cada una otro `data-privacy-guard` con su propio recorrido de archivos y sus propias corridas de tests), y esta sección sintetiza sus cinco reportes. Cada sub-revisión corrió los tests relevantes a su porción por su cuenta (la de historial/candado corrió 90 tests en vivo, todos verdes); no repetí aquí la suite completa porque §1 ya documentó que la suite general está verde salvo los 16 fallos preexistentes y ajenos ya explicados allí, y nada en esta ronda tocó esos archivos.
+
+**Sub-revisiones y sus veredictos**:
+
+| Slice | Alcance | CRÍTICO | ALTO | MEDIO | Veredicto |
+|---|---|---|---|---|---|
+| A — Parser y staging | `pdf_parser.py`, `completeness.py`, `import_staging.py`, `routers/race_imports.py`, `stage_race_history.py` | 0 | 0 | 1 | Requiere corrección (no bloqueante) |
+| B — Identidad | `identity_resolver.py`, `identity_review.py`, `routers/race_identity.py`, `schemas/race_identity.py`, modelos de firma/candidato | 0 | 0 | 1 | Aprobado |
+| C — Historial y extensión del candado | `history.py`, `routers/athlete_race_analysis.py`, `services/privacy.py`, `third_party_guard.py` (delta desde §1), `test_third_party_lock.py` | 0 | 0 | 1 | Aprobado |
+| D — Frontend | `HistoricalLoadPage.tsx`, `IdentityReviewPage.tsx`, pestaña Carreras (coach y familia), componentes de historial, hooks y API clients | 0 | 0 | 0 | Aprobado |
+| E — Migraciones, fixtures y documentos | Las dos migraciones, 14 archivos de fixtures/tests nuevos, `history-family-notice.md`, `history-backfill-design.md`, grep de cédulas/direcciones/teléfonos en todo el diff | 0 | 0 | 0 | Aprobado |
+
+### Hallazgo A — cachés de proceso con filas sin filtrar (MEDIO)
+
+`backend/app/routers/race_imports.py:701-838` mantiene dos `OrderedDict` a nivel de módulo (`_RAW_PARSE_CACHE` por sha256, `_CORRECTED_CATEGORIES_CACHE` por `(sha256, len(corrections))`), de vida igual a la del proceso, acotadas por LRU a 32 entradas cada una, sin TTL. Guardan el `ParsedResults`/`ParsedCategory` completo — nombre, ciudad y club de cada fila de la parrilla, club propio y varios cientos de menores ajenos por igual — sin ningún control de acceso dentro de la propia caché o de sus funciones de carga. Hoy es seguro sólo porque los 6 puntos de entrada que la alcanzan (`dry_run_import`, `commit_import`, `commit_pending_import`, `add_correction`, `acknowledge_category`, `rebuild_identity_candidates`) están detrás de `require_role([admin, coach])` en el router — verificado en cada uno.
+
+**Recomendación** (no bloqueante para G5 ni para la carga real, porque el único perímetro de acceso hoy — RBAC de router — sí se cumple en los seis casos): dejar explícito en un comentario junto a `_RAW_PARSE_CACHE`/`_CORRECTED_CATEGORIES_CACHE` que contienen PII de menores sin filtrar y que cualquier función nueva que las lea debe heredar `require_role([admin, coach])`, para que el control de acceso no dependa silenciosamente de que nadie olvide ese guard en el router al añadir un séptimo llamador.
+
+### Hallazgo B — docstring inexacto sobre el alcance de `city` (MEDIO) — **RESUELTO 2026-09-22**
+
+`backend/app/schemas/race_identity.py:8-9` y `backend/app/routers/race_identity.py:27-28` afirmaban que `IdentityRecordRead` es el *único* schema de toda la plataforma que serializa `city`. Era falso tal como estaba escrito: `backend/app/schemas/race_imports.py:160` (`ParsedResultsRowRead`) y `:219` (`ResultsRowIn`) también llevan `city` — del mismo modo protegido (mismo nivel RBAC, `require_role([admin, coach])` verificado en los 9 endpoints del wizard de importación), así que nunca hubo exposición real, pero el comentario inducía a error a quien lo tomara como base para un chequeo futuro basado en grep.
+
+**Resuelto por `team-lead`** el mismo día: ambos docstrings ahora dicen "fuera de la familia del asistente de importación... es el único schema que serializa `city`", referenciando explícitamente esa familia en vez de afirmar unicidad absoluta. Verificado en el archivo.
+
+### Hallazgo C — la extensión "a listas de competidores" del candado no existe en runtime (MEDIO, informativo)
+
+El mensaje del commit `8ffa380` dice que el candado se extendió "a parámetros con listas de competidores", y en efecto `tests/privacy/test_third_party_lock.py:171` amplió su regex de barrido para reconocer también `competitor_ids: list[int]`. Pero no hay ningún `require_club_competitors` (plural) en `third_party_guard.py`, y un grep de `competitor_ids` en `app/services/race/` (incluyendo `identity_review.py`) no encuentra ese parámetro en ningún lado hoy — nada dispara el regex ampliado, `EXPECTED_CANDIDATES` sigue en 7. No es explotable porque no hay primitivo que bypasear: `identity_review.py` no necesita el candado de un solo competidor porque su trabajo es precisamente comparar competidores no vinculados entre sí (su propio control de acceso correcto es `require_role([admin, coach])` en `race_identity.py`, no el candado de terceros, que protege otra cosa: la progresión longitudinal de alguien no vinculado).
+
+**Recomendación** (no bloqueante): una línea en el docstring de `third_party_guard.py` dejando constancia de que el primitivo por lote aún no existe, para que un cambio futuro de identity-review no asuma que sí.
+
+### Verificaciones limpias, sin hallazgo, por slice
+
+- **A**: ningún `logger.*` en `pdf_parser.py`/`completeness.py`/`import_staging.py`/`race_imports.py` incluye nombre/ciudad/club (sólo ids, conteos, sha256, texto de encabezado de categoría). Ningún mensaje de error al llamador API embebe datos de fila. El flujo de "reconocer un hueco" usa un enum cerrado (`AcknowledgeReasonCode`) con `extra="forbid"` — no existe campo de texto libre. `record_audit` sólo lleva nombres de campo, nunca contenido. Fixtures nuevas de este slice son ficticias ("Ciclista Fantasma", "Club Ficticio Uno/Dos").
+- **B**: `city`/`city_text` sólo aparece en `race_identity.py` y `race_imports.py`, ambos coach/admin. Los 5 endpoints de `race_identity.py` exigen `[admin, coach]`. Logs y `record_audit` sólo llevan ids/conteos/códigos de razón. El candado de terceros vive en `require_club_competitor` sin caché, evaluado en vivo. La reversión de una decisión no re-loguea el par de nombres. Fixtures ficticias ("Mateo Ficticio Igual", "Ana Prueba Uno").
+- **C**: `get_history` reutiliza `verify_athlete_access` sin modificar — un padre nunca ve el historial de otro atleta (403/404 confirmados por test). `AthleteRaceHistoryRead` (`extra="forbid"`) no lleva `competitor_id` ni lista de la parrilla. El umbral de 5 corredores sigue ocultando percentil/brecha a la mediana; `field_size` queda visible por diseño (conteo puro, no dato comparativo — coherente con el resto del código). `is_policy_version_in_force` falla cerrado (vacío/desconocido/no vigente/deprecado → `False`); `withhold_before` no filtra ninguna pista de cuántas filas se ocultaron. Cero logs en `history.py`.
+- **D**: sin `console.*` con datos de fila, sin `localStorage`/`sessionStorage`, rutas y enlaces por id numérico opaco (nunca nombre). `IdentityReviewPage` (que sí renderiza `city`) está detrás de `ProtectedRoute allowedRoles=[coach, admin]` en `App.tsx`, igual que `HistoricalLoadPage`. La vista de familia (`MyAthleteDetailPage`) usa el mismo hook que el coach pero con `audience="family"`, nunca importa `useIdentityReview`/`raceIdentity.ts`, y ninguno de sus componentes (`HistoryTable`/`HistoryChart`/`SeasonCompletionChips`/`CaveatsNote`) tiene siquiera un campo `city`/`club` en sus props — no hay forma estructural de que la vista familiar renderice el dato de un tercero. Fixtures ficticias ("Ana Prueba").
+- **E**: las dos migraciones son DDL/backfill genérico, sin nombres reales hardcodeados (`club_norm`/`city_norm`/`normalized_name` son nombres de columna, no valores). Las 14 fixtures nuevas revisadas siguen la convención explícita de marcador ficticio ("Ficticio", "Prueba", "Ejemplar", "Simulado", "Demostrativo", "Sintetico") documentada y forzada por construcción en `identity_support.py`/`results_pdf_builder.py`. `history-family-notice.md` es un borrador genérico sin nombre real, describe el alcance con precisión (no promete anonimato que no entrega, no minimiza que ahora existen datos de otros niños en el sistema), en español neutro (Colombia), detrás de `RACE_HISTORY_FAMILY_POLICY_VERSION` — listo para enviar en cuanto haya visto bueno legal/del dueño del club. `history-backfill-design.md` no usa ningún nombre real como ejemplo. Grep de todo el diff por patrones de cédula/dirección/teléfono: sin coincidencias. `copa_valle_participantes.py` lee credenciales sólo por nombre de variable, nunca las imprime, y sus queries son de solo lectura y agregadas (conteos, nunca nombres).
+
+## Dictamen §2
+
+**APROBADO CON CONDICIONES**
+
+Ninguna de las cinco sub-revisiones encontró un hallazgo CRÍTICO ni ALTO. Los tres MEDIO (A: cachés de proceso sin filtro propio, dependientes del RBAC del router; B: un comentario inexacto sobre el alcance de `city`; C: una extensión "de lista" documentada en el mensaje de commit y en el test de barrido que aún no tiene primitivo real que proteger) son todos no bloqueantes: ninguno tiene hoy una vía de explotación real, y los tres se reducen a dejar una intención por escrito antes de que un cambio futuro la dé por sentada.
+
+**Condiciones para cerrar la feature** (no bloquean la carga real de datos ni el gate G5; deben resolverse antes de dar la 044 por terminada):
+1. Documentar en `race_imports.py`, junto a `_RAW_PARSE_CACHE`/`_CORRECTED_CATEGORIES_CACHE`, que contienen PII de menores sin filtro propio y que todo llamador nuevo debe heredar `require_role([admin, coach])`.
+2. ~~Corregir el docstring de `IdentityRecordRead`/`race_identity.py`...~~ — **resuelta el mismo día** por `team-lead` (ver Hallazgo B).
+3. Anotar en `third_party_guard.py` que el primitivo por lote (`competitor_ids: list[int]`) que el test de barrido ya sabe reconocer no existe todavía en runtime, para que un futuro cambio de identity-review no lo asuma.
+
+Quedan dos condiciones abiertas (1 y 3); la 2 ya está cerrada.
+
+Ningún hallazgo de esta sección exige tocar el candado de terceros de §1 ni reabrir su condición pendiente (el mensaje de `ThirdPartyProgressionForbidden` en `agent_run_events`, aún sin resolver y registrada allí). Ninguna sub-revisión encontró que un nombre, club o ciudad de un menor llegara a un log de servidor, a una traza servida por API a un rol equivocado, a un mensaje de commit, a un prompt de IA, o a una respuesta que una familia o un tercero pudieran leer.
+
+## §3 — Revisión del dictamen §2 (T091, lead de datos y privacidad, 2026-09-22)
+
+**Dictamen §2 confirmado: APROBADO CON CONDICIONES. Las tres condiciones quedan cerradas en la rama.**
+
+- **Hallazgo A (cachés)**: comentario de privacidad en la declaración de `_RAW_PARSE_CACHE` / `_CORRECTED_CATEGORIES_CACHE` (`backend/app/routers/race_imports.py`) que nombra a todos los llamadores autorizados y exige el mismo `require_role([admin, coach])` a cualquier llamador nuevo. Se revisó además que las cachés viven solo en memoria del proceso (32 entradas cada una), se vacían en cada despliegue o reinicio de Render y nunca se serializan a disco ni a logs. Retenerlas más allá de eso no es posible con el despliegue actual.
+- **Hallazgo B (docstrings de `city`)**: corregidos en `schemas/race_identity.py` y `routers/race_identity.py` ("fuera del asistente de importación…").
+- **Hallazgo C (primitivo por lotes)**: nota en el docstring de `third_party_guard.py`. El primitivo `require_club_competitors` no existe y no debe asumirse.
+
+**Pendientes de FR-043, escritos con responsable** (siguiente feature, no bloquean la carga real):
+
+| Pendiente | Responsable | Cuándo |
+|---|---|---|
+| Borrado a solicitud de los datos de un tercero (nombre, club, ciudad, resultados) y de sus firmas y candidatos de identidad | Dueño del club (responsable del tratamiento) + la feature siguiente a la 044 | Antes de publicar la versión de aviso de privacidad que abre la compuerta familiar |
+| Plazo de retención de los PDF oficiales en el almacenamiento SFTP y de `parse_meta_json` de los imports históricos | Dueño del club | Misma feature |
+| Base legal (interés legítimo) y texto del aviso con visto bueno legal | Dueño del club | Antes de fijar `RACE_HISTORY_FAMILY_POLICY_VERSION` |
+
+Revisado también el runbook de carga real (T096): se agregó el respaldo obligatorio de MySQL antes de cada carga y se reescribió el rollback de una temporada (§12.6). Solo `race_results` guarda `imported_from_id`, así que borrar por ese campo dejaba competidores, firmas y candidatos huérfanos que el siguiente recálculo habría tratado como personas reales.

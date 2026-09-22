@@ -798,3 +798,174 @@ between them. That is now blocked instead of guessed:
   is the legacy-shaped `valida:{season}:{n}` rather than `event:{id}`) —
   those are the ones this fix cannot retroactively correct, and the owner
   repairs them manually in production, not by re-running the analysis.
+
+---
+
+## 12. Real-load runbook — Copa Valle 2024–2025 history (feature 044)
+
+> Scope: loading the fifteen historical válidas (2024: 7, 2025: 8) with the real official
+> files. Owner-only steps (`specs/044-race-history-backfill/tasks.md` T105–T107) — this
+> section exists so the owner (or an operator acting on the owner's behalf) has the checklist
+> in one place. Design detail: `docs/10-race-results/history-backfill-design.md`. This is
+> **not** section §11 in the feature's own planning documents (`plan.md`, `quickstart.md`
+> §8 reference "§11") — that number was already taken by the multi-cup hotfix above by the
+> time this section was written, so the real-load runbook lives at §12 instead.
+
+### 12.1 Pre-deploy checklist (T097)
+
+Run this once, before the deploy that will carry the feature 044 code to production — it is
+about the deploy itself, not yet about staging real files (that's §12.2).
+
+- [ ] **Single Alembic head**: `alembic heads` prints exactly one line, `a7c3e5d91f20`.
+- [ ] **Backup first**: take a fresh MySQL backup immediately before running the migration —
+      same backup discipline as §12.2's pre-load backup, but this one is for the schema
+      change itself, before any historical data exists to lose.
+- [ ] **Migration timing**: `8efe1618cb83` → `a7c3e5d91f20` measured **4.2 s wall on an empty
+      MySQL 8.4 database** (T086, 2026-09-22, throwaway container). **Production-sized timing
+      is still unmeasured** — `race_results`, `race_competitors` and `race_categories` are not
+      empty in production, and the backfill statements in `8efe1618cb83` (frozen columns,
+      one signature per existing competitor) scale with their row counts. Run a dry-run
+      migration against a production-sized copy before the real deploy and record the timing
+      here; do not assume 4.2 s holds.
+- [ ] **`RACE_HISTORY_FAMILY_POLICY_VERSION` unset in Render** — same reasoning as §12.2's own
+      line on this setting: leaving it unset is a deliberate choice (the family gate stays
+      closed) until the notice is actually published, not a missing feature.
+- [ ] **Seeds to run after migrate, not before**: `entrypoint.sh` does **not** run either of
+      these automatically (verified — only `app.seed_growth_data`, the anthropometry
+      backfill, and, in `APP_ENV=development` only, `scripts.seed` run on container start;
+      neither touches `race_categories` or `race_points_schemes`). Run manually, once, after
+      `alembic upgrade head` reaches `a7c3e5d91f20`:
+      - `python -m scripts.seed_race_categories` — 26 active 2026 categories + the 3 inactive
+        historical rows (`MAS_B_2025`, `MAS_C_2025`, `PRE_F_U`) this feature adds. Idempotent
+        UPSERT by `code`; safe to re-run.
+      - `python -m scripts.seed_race_points_schemes` — the two descriptive, non-official rows
+        (`copa_valle_2024`, `copa_valle_2025`). Idempotent UPSERT by `code`; safe to re-run.
+
+### 12.2 Pre-load checklist
+
+Do not stage a single real file until every line below is true:
+
+- [ ] **Third-party lock green**: `pytest tests/privacy/test_third_party_lock.py -q` passes
+      on the exact commit being deployed. This is the one item the spec (US3) requires
+      in force *before* any historical commit, not merely before the interface offers one.
+- [ ] Deployed with the lock and the identity-review commit gate in place; `/health` and one
+      authenticated endpoint smoke-checked post-deploy.
+- [ ] Single Alembic head (`alembic heads` — one line), migration applied. `8efe1618cb83`'s
+      upgrade→downgrade→upgrade round-trip is now verified against real MySQL 8.4 (T086,
+      2026-09-22) — a downgrade bug was found and fixed there (dropping
+      `ix_race_competitor_signatures_competitor_id` before its own table failed with MySQL
+      error 1553, since that index backs a foreign key); confirm the deployed build includes
+      the fix, not an earlier commit of this migration.
+- [ ] `RACE_HISTORY_FAMILY_POLICY_VERSION` (`race_history_family_policy_version` in
+      `app/config.py`) left **unset** in Render until the family notice (§12.6) is actually
+      published — the setting and the parent-side gate are implemented (US7 landed
+      2026-09-22), so leaving it unset is now a deliberate choice, not a missing feature.
+- [ ] **Fresh MySQL backup** of production taken immediately before the first stage, and
+      again before each season's commit — the rollback in §12.7 and the migration downgrade
+      both assume one exists.
+- [ ] **Reminder, not a check-box**: a local backend pointed at the production `MYSQL_*`
+      variables is exactly as real as Render — a `stage`/`commit` run from a developer's
+      laptop against the production database writes to production. `scripts/stage_race_history.py`
+      only ever stages; commit happens from the UI, so the audit trail names a real person —
+      never run a commit-equivalent script action.
+
+### 12.3 Staging the fifteen files
+
+1. Obtain the fifteen official RESULTADOS files (not the organiser's GENERAL/cumulative
+   files — those are never ingested, FR-024) and write a manifest — season, válida number,
+   date, venue, file path — **outside the repository**. Neither the manifest nor the files
+   are ever committed (Ley 1581; a real file also fails the "synthetic fixtures only" rule
+   that governs this repo's test data).
+2. Dry-run the manifest first: `python scripts/stage_race_history.py --manifest
+   /path/outside/repo/manifest.json --dry` lists what would be staged without writing
+   anything.
+3. Stage for real, ideally one season at a time so a problem in the second season doesn't
+   block review of the first: `python scripts/stage_race_history.py --manifest
+   /path/outside/repo/manifest.json`. The script stages through the same service function
+   the `/parse` endpoint uses (`import_staging.py`) — there is no separate, less-audited
+   path.
+
+### 12.4 Resolving what the preview flags
+
+4. Open **Carga histórica** in the coach UI. For every staged import with pending
+   categories: correct the row by hand in the preview, or acknowledge a genuine source
+   defect with a reason from the closed list (`source_duplicate_ordinal`,
+   `source_missing_ordinal`, `source_disqualification_gap`, `verified_against_source`).
+   A category with an incomplete position sequence cannot commit until one of these two
+   things happens (US1).
+5. Open **Revisión de identidad**. Every `pending` candidate blocks the commit of *every*
+   historical válida, not just the one it came from (FR-018) — resolve the whole queue
+   before attempting a commit, not just the candidates that look related to the season
+   about to be committed. Decide "misma persona" or "personas distintas" one candidate at a
+   time; a candidate involving an already-linked club athlete is flagged in its own chip —
+   read it carefully, a wrong call there touches a real athlete's history.
+6. Re-run *Recalcular* (`POST /race-identity/rebuild`) after a batch of decisions if the UI
+   doesn't do it automatically — it is idempotent and never re-asks a decided candidate.
+
+### 12.5 Committing
+
+7. Commit **season by season**, oldest first (2024, then 2025), never all fifteen válidas in
+   one action — this keeps a mistake in one season from blocking review of the next, and
+   matches the audit trail's granularity (one commit, one author, one timestamp per válida).
+8. For a válida that partially committed because a category was still pending: once that
+   category is corrected or acknowledged, call `commit-pending` on the same import rather
+   than re-staging the file — the ingestor is idempotent per `(event, category, competitor)`,
+   so this only ingests what was missing.
+9. Re-staging or re-committing a file that content-matches one already loaded creates
+   nothing new (SHA-256 dedupe, unchanged from the current-season behaviour) — the coach is
+   told it was already loaded rather than seeing a silent no-op.
+
+### 12.6 Spot-check and publish
+
+10. Spot-check **three club athletes** against the official files: position, time, category
+    and points match what was printed. This is a manual cross-check, not an automated gate —
+    the platform's calculated standings are explicitly informative, not a guarantee against a
+    transcription error in a printed points table (spec Edge Cases).
+11. Confirm a parent account of one of those three athletes shows **no pre-registration
+    result** yet — this is the expected state until step 12 below, not a bug.
+12. Publish the drafted privacy-notice
+    paragraph (`docs/10-race-results/history-family-notice.md` — drafted, not yet published
+    as a policy version as of this writing; contact line already in it is
+    `privacidad@trochyruta.com`, the same address the stage-log email template
+    (`templates/email/athlete_stage_log.html`) already gives families) through the existing
+    policy-version mechanism, then set `RACE_HISTORY_FAMILY_POLICY_VERSION` to that version.
+    Re-check the same parent account: pre-registration results should now appear, with no
+    count or hint of what had been withheld before.
+
+**Recurring gotcha, not a one-time step**: `is_policy_version_in_force`
+(`app/services/privacy.py:58`) treats a **deprecated** policy version as no longer in force —
+it returns `False` once `policy.deprecated_at` is on or before today, not only when the
+version is unknown or not yet effective. So every time the owner publishes a *newer* privacy
+policy version that supersedes the one currently named in `RACE_HISTORY_FAMILY_POLICY_VERSION`,
+that env var must be updated to the new version **in the same change**, in Render. Forgetting
+this does not error or warn — it silently closes the family gate again: pre-registration
+results disappear from every parent account until someone notices and updates the variable.
+Treat "publish a new privacy-policy version" and "bump `RACE_HISTORY_FAMILY_POLICY_VERSION`"
+as one atomic operational step, not two.
+
+### 12.7 If a season needs to be rolled back
+
+Reviewed by the data lead (T096, 2026-09-22). Only `race_results` carries
+`imported_from_id`; competitors, signatures, events and series do **not**, so "delete by
+`imported_from_id`" alone leaves debris that the next identity rebuild would treat as real
+people. Do it in this order, inside one transaction, on a database you have just backed up
+(§12.2), and only after confirming no parent has been shown the season (family gate closed or
+the season is post-registration):
+
+1. Record the import ids of the bad season (`race_imports` rows of that series).
+2. Delete their results: `race_results` where `imported_from_id IN (…)`.
+3. Delete identity candidates whose snapshots only reference competitors left without any
+   result — or simply every candidate still `pending`; decided candidates that still involve a
+   surviving competitor stay (their decision remains valid).
+4. Delete competitors that now have **zero** results **and** no `athlete_id` (never delete a
+   linked competitor — unlink first, as a separate, deliberate step), together with their
+   `race_competitor_signatures`. Competitors that raced in another season keep their
+   signatures; a widened `first_season`/`last_season` may now be too wide — harmless for
+   resolution, but note it.
+5. Delete `race_events` of that series with no remaining results, then the series if empty.
+6. Set the imports' status back so they can be re-staged, or delete them.
+7. Run `POST /race-identity/rebuild` and confirm `pending` is what you expect; re-run the
+   third-party lock test on the deployed commit.
+
+There is no one-click "undo a season" by design. Write the SQL against a restored copy first,
+compare row counts, then run it on production.

@@ -1018,3 +1018,50 @@ real infrastructure in any session of this feature.
 | Frontend | `raceLabel`/`raceLabelForInsight` replace `validaLabel`, every hardcoded Copa Valle calendar removed, Comparator scoped by event with priority-mismatch banner, priority select on the event form, short-name dialog on InfoTab, cup selector on `SeasonInsightsPage`, `PanoramaView` scoped to the primary cup | ✅ Complete 2026-09-16 |
 | Verification | Throwaway MySQL 8.4 container (migration round-trip with legacy data, `pytest -m mysql` 27/27), full race suite 1278 passed, `vitest` 4351/4352 (pre-existing unrelated failure), `npm run build` clean, `data-privacy-guard` audit APPROVED with 0 findings | ✅ Complete 2026-09-16 |
 | Still owed | `pytest -m golden` with a real key (composite ≥ 0.75 incl. `case_013`) + baseline regen; manual production repair of the 3 bad insights already approved; deploy + post-deploy smoke; coach sets priority/short_name for cups other than Copa Valle; no two-cup season-summary golden case | ⏳ Pending |
+
+## Implementation status — Race History Backfill (specs/044-race-history-backfill)
+
+> Loads Copa Valle 2024 (7 válidas) and 2025 (8 válidas) with the full start list and gives
+> each club athlete one continuous cross-season progression (2024–2026) that stays truthful
+> across a category change. Full technical detail in
+> `docs/10-race-results/history-backfill-design.md`; real-load procedure in
+> `docs/10-race-results/runbook-ops.md` §12. Spec, plan, research (R-01…R-16), data model,
+> six contracts and the quickstart are in `specs/044-race-history-backfill/`; spec and
+> planning were pushed to `main` on 2026-09-18 by explicit owner decision, implementation
+> runs on `feat/044-race-history-backfill` (12 commits as of 2026-09-22 — 10 feat/fix + 2
+> docs, none merged, no PR yet), plus substantial further uncommitted work on top (US7, the
+> T086/T085 MySQL fixes, T087 Playwright, the full T090 privacy audit, T097, and this doc's
+> own updates across three passes the same day).
+
+| Phase | Scope | Status |
+|---|---|---|
+| 1 — Setup | Synthetic historical-layout PDF builder (`results_pdf_builder.py`, WeasyPrint), `RACE_HISTORY_FAMILY_POLICY_VERSION` setting | ✅ Complete 2026-09-18 |
+| 2 — Foundational | Migration `8efe1618cb83` (`down_revision=c2314ccd7927`): three frozen columns on `race_results`, `race_competitors.normalized_name` unique → index + `city_text`, new `race_competitor_signatures` / `race_identity_candidates` tables, three inactive category seeds, two descriptive points-scheme seeds. Gate G1 passed | ✅ Complete 2026-09-18 |
+| 3 — US1: no result lost in silence | Band-first, stream-ordered row reader in `pdf_parser.py` (recovers 100 % of rows on the sample files vs. 75–84 % before); unknown-header listing; `completeness.py`'s 1…N check with manual correction and a closed-catalogue acknowledgement; partial commit + `commit-pending`. Gate G2 passed — also recovered 2 real rows the 2026 fixture was silently losing | ✅ Complete 2026-09-18 |
+| 4 — US2: historical categories keep their meaning | 8 season-agnostic header aliases in `normalizer.py`; 3 season-specific inactive categories (`MAS_B_2025`, `MAS_C_2025`, `PRE_F_U`); frozen `category_label_raw`/`category_age_min_raw`/`category_age_max_raw` written once at insert, backfilled for existing 2026 results | ✅ Complete 2026-09-18 |
+| 5 — US3: third-party progression lock | `third_party_guard.py` (`require_club_competitor`, `@club_competitor_only`), structural test walking `app/services/race/*` for any public `competitor_id` callable, identical 403 body regardless of unknown-vs-unlinked. Gate G3 passed; shipped and verified green **before** any commit task, per the spec's hard ordering rule | ✅ Complete 2026-09-18 |
+| 6 — US4: identity review before any merge | `race_identity_review.py` (`build_candidates`, same-person/homonym signals, `SAME_PERSON_MIN_SCORE=90`, `DIVERGENCE_MAX_SCORE=70`), `identity_resolver.py` (`IdentityResolver`, signature discriminator for same-name/same-club/same-city pairs, owner decision 2026-09-21), `race_identity.py` router (5 endpoints), commit gate (`409 identity_review_pending`), structural lock extended to `competitor_ids`/public methods. Gate G4 passed; parsed-rows cache mitigation cut a 15-file rebuild from 1.513 s to 0.002 s on a second call | ✅ Complete 2026-09-21 |
+| 7 — US5: the fifteen válidas through the same trusted path | `import_staging.py` (parse body extracted from the router, shared by `/parse` and `stage_race_history.py`), `stage_race_history.py` (manifest-driven, stages only, never commits), full-start-list ingest, printed points kept as awarded, standings labelled `is_calculated`. Gate G5 passed — found and fixed one identity-universe gap for partially committed imports | ✅ Complete 2026-09-22 |
+| 8 — US6: is the athlete improving across seasons | `history.py::build_history_points` (reuses `field_metrics.compute_field_metrics`, adds thresholds/frozen label/category-change flag/average speed/completion), `GET /{athlete_id}/race-analysis/history` (≤ 4 statements), `HistoryProgressionCard`/`HistoryChart`/`HistoryTable`/`CaveatsNote`/`SeasonCompletionChips`, mounted on a dedicated **Carreras** tab (not "Insights IA", not the audit-log "Historial" tab — fixes the ux-review BLOCKER finding on tab collision) | ✅ Complete 2026-09-22 |
+| 9 — US7: families see their child's complete history | `race_history_family_policy_version` gate wired into `GET .../race-analysis/history` via `is_policy_version_in_force` + `history.py::withhold_before`, parent-only, no count/flag withheld; `audience="family"` `HistoryProgressionCard` on the parent's **Carreras** tab; T081 family notice drafted (uncommitted). T083 (360 px UX review) closed the loop: `HistoryTable` gained mobile stacked cards (was a bare 7-column table, a BLOCKER); `HistoryPoint.category_change_kind` (`"promotion" \| "other" \| null`, evidence-gated on catalogue sex+age comparison, never inferred from the id/label diff alone) lets the family explainer restore the original "subió de categoría… deportistas mayores" copy **only** for a genuine promotion, neutral wording otherwise; plain-language Percentil/Brecha explainer added; "tu hijo o hija" replaces "el atleta" for the family audience. **Gate G6 PASSED** (224 backend + 387 frontend tests; SC-010 confirmed end to end by the Playwright run in Phase 10) | ✅ Complete 2026-09-22 |
+| 10 — Polish & Cross-Cutting | `pytest -m mysql` (T085/T086) run for real, 33 passed — one migration bug (downgrade order, MySQL 1553) and one test bug (missing `created_at`/`updated_at` on a raw INSERT, MySQL 1364) found and fixed. Playwright `race-history.spec.ts` (T087) run for real once Docker became available: 1 passed, four real bugs found and fixed getting there (see `history-backfill-design.md` §4.6). `pytest -m golden` (T088) closed deliberately without a real run — no prompt/pipeline change, `test_2026_unchanged.py` already proves it, reasoning recorded in `tasks.md`. Full offline gates (T089) done: typecheck/build clean, lazy chunks confirmed, no new failures vs. `main`. **Mandatory full-feature privacy audit (T090) done**: five independent sub-reviews, 0 critical/high, 3 non-blocking MEDIUM findings closed or explicitly tracked — verdict APROBADO CON CONDICIONES, confirmed by the lead's review (T091), FR-043's deferred items written down with an owner each. Runbook reviewed by the data lead (T096): mandatory pre-load MySQL backup added, rollback procedure (§12.7) rewritten from a one-line "delete by `imported_from_id`" to a 7-step ordered procedure. T097 (pre-deploy checklist) done — new `runbook-ops.md` §12.1: single head, migration timing on an empty DB (**production-sized timing still unmeasured, flagged explicitly**), `RACE_HISTORY_FAMILY_POLICY_VERSION` unset, the two post-migrate seed commands verified against `entrypoint.sh` and each script's own docstring. T101–T103 (español-copy sweep, a11y inventory note, mutmut scope) done. **Still open**: T098 (Gate G7, hand-over for deploy), T099 (post-deploy smoke), T100 (production pre-load privacy check), T104 (final SC-001…SC-012 acceptance on the deployed build) | 🚧 Nearly done — only deploy-dependent tasks remain 2026-09-22 |
+| Owner-only (T105–T107) | Obtain the fifteen real files, stage them, resolve pending categories and identity candidates, commit season by season, spot-check, publish the family notice | ⏳ Not started — blocked on T098–T100 (deploy + smoke + pre-load privacy check) |
+
+**What is verified and what is not, stated plainly**: every gate through G6 is recorded
+PASSED with a date in `tasks.md` — all seven user stories, all nine phases through Polish's
+own core tasks, are done. Real infrastructure came available mid-implementation and was used
+for real, not simulated: the migration's upgrade/downgrade round-trip and the full `-m mysql`
+lane both ran against a throwaway MySQL 8.4 container (T085/T086, 33 passed, one migration
+bug and one test bug found and fixed — `history-backfill-design.md` §4.5), and
+`frontend/e2e/race-history.spec.ts` ran against a real Docker/Playwright stack (T087, 1
+passed, four real bugs found and fixed — §4.6). The mandatory `data-privacy-guard` audit is
+**done in full**: the third-party lock (T036, US3, 2026-09-18) plus the whole-feature audit
+(T090, five independent sub-reviews, 2026-09-22) both APROBADO CON CONDICIONES, every
+condition closed or explicitly tracked, confirmed by the data-privacy lead's own review
+(T091). `pytest -m golden` (T088) is the one gate closed by a documented decision rather
+than a run — no prompt or pipeline change in this feature, proven by an existing regression
+test, so a real-model run wouldn't add signal beyond what CI's own `race-eval.yml` already
+guards on every push. What genuinely remains untouched by this implementation environment:
+an actual deploy, and everything that depends on one (T098–T100, T104, and the owner-only
+real load, T105–T107). No historical file, real or synthetic-as-real, has been staged
+against production, and no real data has been loaded.

@@ -14,7 +14,7 @@ Query: `series_kind: cup|championship|all = cup`.
     "event_id": 41, "event_date": "2025-02-09", "season": 2025, "label": "Válida 1 — Ginebra",
     "series_id": 7, "series_name": "Copa Valle de Ciclomontañismo", "series_kind": "cup",
     "category_code": "PJUV_A", "category_label": "PREJUVENIL A",
-    "category_changed": true, "previous_category_label": "INFANTIL B",
+    "category_changed": true, "previous_category_label": "INFANTIL B", "category_change_kind": "promotion",
     "status": "finished", "position": 9, "field_size": 23, "timed_finishers": 21,
     "percentile": 63.6, "gap_to_median_pct": -4.2, "gap_to_winner_pct": 11.8,
     "avg_speed_kmh": null, "points_awarded": 18
@@ -30,6 +30,7 @@ Rules
 - `percentile = null` when `field_size < 5`. `gap_to_median_pct = null` when `timed_finishers < 5`, or the athlete's status is not `finished`, or the athlete has no time. `gap_to_winner_pct` follows the same status rule (no threshold; kept for continuity).
 - `avg_speed_kmh` from `course/derived.py::derive_figures`; `null` without a course setup. Never estimated.
 - `category_changed` compares `category_id` with the athlete's previous point in date order; the first point is `false`. `category_label` prefers the frozen label.
+- `category_change_kind` (added 2026-09-22 after the T083 UX review, FR-042): `null` when `category_changed` is `false`; otherwise `"promotion"` only when the previous and the new catalogue category have the same `sex`, both `age_min` are known and the new `age_min` is greater; `"other"` for everything else (catalogue restructure such as MASTER B → B1/B2, unknown ages, sex change, move to a younger band). Derived from the catalogue rows already loaded — no extra statement — and, like `category_changed`, computed on the parent-filtered set, so it never hints at a withheld point.
 - `seasons[].started` excludes DNS; `finished` counts `finished` and `minus_laps`.
 - No cross-season aggregate of any kind; no points total across seasons (FR-039).
 - **Parent filter**: when the caller is a parent and the policy gate is closed (`RACE_HISTORY_FAMILY_POLICY_VERSION` empty or not yet effective), points with `event_date < athlete.created_at.date()` are removed, `seasons` is recomputed from what remains, and nothing signals the removal.
