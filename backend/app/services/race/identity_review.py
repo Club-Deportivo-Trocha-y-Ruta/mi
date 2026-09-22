@@ -575,7 +575,8 @@ def _apps_sex(apps: Iterable[Appearance], fallback: Optional[str]) -> Optional[s
 async def load_universe(db: AsyncSession, rows_loader: RowsLoader) -> Universe:
     """Carga el universo de registros: competidores existentes (una entrada
     por firma) + filas de los imports en staging (``pending``/``dry_run``,
-    ``kind != general``, cuyo sha no esté ya confirmado).
+    ``kind != general``, cuyo sha no esté ya confirmado) + las categorías aún
+    pendientes de un import confirmado a medias (``pending_categories``).
 
     ``rows_loader(import)`` devuelve ``{code: [ResultsRow, ...]}`` con las
     correcciones ya aplicadas (el router pasa su propio recargador del
@@ -657,14 +658,27 @@ async def load_universe(db: AsyncSession, rows_loader: RowsLoader) -> Universe:
     staged_imports = (
         await db.execute(
             select(RaceImport)
-            .where(RaceImport.status.in_(_STAGED_STATUSES))
+            .where(
+                RaceImport.status.in_(_STAGED_STATUSES)
+                | (RaceImport.status == RaceImportStatus.committed)
+            )
             .order_by(RaceImport.id)
         )
     ).scalars().all()
     unreadable: list[int] = []
     scanned = 0
     for imp in staged_imports:
-        if imp.kind == RaceImportKind.general or imp.sha256 in committed_shas:
+        if imp.kind == RaceImportKind.general:
+            continue
+        # Un import confirmado a medias (feature 044, US5) sigue en el
+        # universo mientras le queden ``pending_categories``: esas filas aún
+        # no son resultados y ``/commit-pending`` las ingestará después. El
+        # ``rows_loader`` devuelve solo esas categorías, así que lo ya
+        # confirmado nunca se cuenta dos veces.
+        if imp.status == RaceImportStatus.committed:
+            if not (imp.parse_meta_json or {}).get("pending_categories"):
+                continue
+        elif imp.sha256 in committed_shas:
             continue
         header = (imp.parse_meta_json or {}).get("header") or {}
         try:

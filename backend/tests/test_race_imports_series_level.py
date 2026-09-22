@@ -193,6 +193,9 @@ def stub_parsers(monkeypatch):
     monkeypatch.setattr(
         router_mod, "_parse_general_with_timeout", fake_parse_general
     )
+    from app.services.race import import_staging as import_staging_mod
+    monkeypatch.setattr(import_staging_mod, "_parse_results_with_timeout", fake_parse_results)
+    monkeypatch.setattr(import_staging_mod, "_parse_general_with_timeout", fake_parse_general)
 
 
 @pytest_asyncio.fixture
@@ -356,7 +359,10 @@ class TestSeriesLevelInvalid:
         que este `pytest.raises(ValueError)` FALLA por la razón correcta
         (falta implementar T020).
         """
-        from app.routers.race_imports import _get_or_create_series
+        # Feature 044 (US5, T059): el helper se extrajo a
+        # `app.services.race.import_staging` (contracts/historical-load.md
+        # §"Staging service"); el router ya no lo re-exporta.
+        from app.services.race.import_staging import _get_or_create_series
 
         async with db_session_factory() as session:
             with pytest.raises(ValueError):

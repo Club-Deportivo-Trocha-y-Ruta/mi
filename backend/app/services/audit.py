@@ -390,6 +390,10 @@ META_ALLOWLIST: frozenset[str] = frozenset(
         "left_competitor_id",
         "right_competitor_id",
         "pair_hash",
+        # Feature 044 (US5) — POST .../commit-pending: nunca nombres, solo
+        # el flag y un conteo de categorías restantes.
+        "commit_pending",
+        "pending_categories_remaining",
     }
 )
 
@@ -1119,6 +1123,12 @@ _RACE_RESULTS: dict[tuple[str, str], AuditPolicy] = {
         "Settled as a §4.14 exemption, not pending instrumentation."
     ),
     ("POST", "/api/race-analysis/imports/{parse_id}/commit"): Audited(
+        frozenset({AuditEntityType.race_import})
+    ),
+    # Feature 044 (US5, T061): termina de ingestar las categorías que un
+    # commit parcial dejó `pending_categories` — mismo entity_type que
+    # `/commit`, mismo `record_audit(action=execute, ...)`.
+    ("POST", "/api/race-analysis/imports/{parse_id}/commit-pending"): Audited(
         frozenset({AuditEntityType.race_import})
     ),
     # Feature 044 (US1, research R-05): corrección manual de una fila y

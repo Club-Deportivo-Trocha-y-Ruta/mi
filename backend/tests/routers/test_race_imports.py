@@ -13,7 +13,7 @@ Cubre los códigos HTTP del contrato (upload-design.md §4):
 - 409 sha duplicado (committed previo con mismo sha)
 - 413 archivo > RACE_MAX_PDF_MB
 - 422 PDF/CSV inválido o parser sin resultados
-- 422 resolved_matches incompletos
+- 409 matches_unresolved (resolved_matches incompletos, feature 044 US5)
 - list paginado + filter status
 """
 from __future__ import annotations
@@ -262,6 +262,9 @@ def stub_parsers(monkeypatch):
     monkeypatch.setattr(
         router_mod, "_parse_general_with_timeout", fake_parse_general
     )
+    from app.services.race import import_staging as import_staging_mod
+    monkeypatch.setattr(import_staging_mod, "_parse_results_with_timeout", fake_parse_results)
+    monkeypatch.setattr(import_staging_mod, "_parse_general_with_timeout", fake_parse_general)
 
 
 @pytest.fixture
@@ -283,6 +286,9 @@ def stub_parsers_empty(monkeypatch):
     monkeypatch.setattr(
         router_mod, "_parse_general_with_timeout", fake_general_empty
     )
+    from app.services.race import import_staging as import_staging_mod
+    monkeypatch.setattr(import_staging_mod, "_parse_results_with_timeout", fake_empty)
+    monkeypatch.setattr(import_staging_mod, "_parse_general_with_timeout", fake_general_empty)
 
 
 @pytest.fixture
@@ -1233,10 +1239,17 @@ class TestFullFlowWithStubIngestor:
         assert dry["counts"]["ambiguous"] == 0
 
     @pytest.mark.asyncio
-    async def test_commit_missing_resolved_matches_422(
+    async def test_commit_missing_resolved_matches_409(
         self, coach_client, stub_parsers, stub_ingestor, db_session_factory
     ):
-        """Si el TyR detectado no tiene resolved_match → 422."""
+        """Si el TyR detectado no tiene resolved_match → 409 matches_unresolved.
+
+        Feature 044 (US5): antes era un 422 con `detail` como string libre;
+        ahora es un código estructurado (`HistoricalLoadPage` commitea
+        siempre con `resolved_matches: []` y necesita distinguir esto de
+        `identity_review_pending`/`nothing_pending` para mandar al coach al
+        Import Wizard).
+        """
         # Parse para crear el pending
         files = {"resultados_pdf": _pdf_file(b"flow content missing matches")}
         r = await coach_client.post(
@@ -1251,8 +1264,10 @@ class TestFullFlowWithStubIngestor:
             f"/api/race-analysis/imports/{parse_id}/commit",
             json={"resolved_matches": []},
         )
-        assert r.status_code == 422
-        assert "resolved_matches" in r.json()["detail"].lower()
+        assert r.status_code == 409
+        detail = r.json()["detail"]
+        assert detail["code"] == "matches_unresolved"
+        assert detail["missing_count"] >= 1
 
     @pytest.mark.asyncio
     async def test_dry_run_410_when_storage_file_missing(
@@ -1298,6 +1313,7 @@ class TestFullFlowWithStubIngestor:
     ):
         """Test directo del helper: si asyncio.wait_for lanza TimeoutError → 422."""
         from app.routers import race_imports as router_mod
+        from app.services.race import import_staging as import_staging_mod
         from app.services.race.pdf_parser import parse_results_pdf
 
         async def fake_wait_for(coro, timeout):
@@ -1309,7 +1325,10 @@ class TestFullFlowWithStubIngestor:
             import asyncio
             raise asyncio.TimeoutError()
 
-        monkeypatch.setattr(router_mod, "wait_for", fake_wait_for)
+        # Feature 044 (US5, T059): el helper vive ahora en `import_staging` —
+        # `wait_for` se resuelve en el namespace de ESE módulo, no en el del
+        # router (que solo re-exporta la función para retrocompatibilidad).
+        monkeypatch.setattr(import_staging_mod, "wait_for", fake_wait_for)
 
         with pytest.raises(HTTPException) as exc_info:
             await router_mod._parse_results_with_timeout(Path("/x.pdf"), "pdf")
@@ -1322,6 +1341,7 @@ class TestFullFlowWithStubIngestor:
     ):
         """Helper general: cualquier excepción del parser → 422."""
         from app.routers import race_imports as router_mod
+        from app.services.race import import_staging as import_staging_mod
 
         async def fake_wait_for(coro, timeout):
             try:
@@ -1330,7 +1350,7 @@ class TestFullFlowWithStubIngestor:
                 pass
             raise ValueError("simulated parse failure")
 
-        monkeypatch.setattr(router_mod, "wait_for", fake_wait_for)
+        monkeypatch.setattr(import_staging_mod, "wait_for", fake_wait_for)
 
         with pytest.raises(HTTPException) as exc_info:
             await router_mod._parse_general_with_timeout(Path("/x.pdf"))
@@ -1548,6 +1568,9 @@ class TestFullFlowWithStubIngestor:
         monkeypatch.setattr(
             router_mod, "_parse_general_with_timeout", fake_g
         )
+        from app.services.race import import_staging as import_staging_mod
+        monkeypatch.setattr(import_staging_mod, "_parse_results_with_timeout", fake_no_tyr)
+        monkeypatch.setattr(import_staging_mod, "_parse_general_with_timeout", fake_g)
 
         # Parse
         files = {"resultados_pdf": _pdf_file(b"no tyr content")}
@@ -1609,6 +1632,9 @@ class TestFullFlowWithStubIngestor:
 
         monkeypatch.setattr(router_mod, "_parse_results_with_timeout", fake_unknown_cat)
         monkeypatch.setattr(router_mod, "_parse_general_with_timeout", fake_g)
+        from app.services.race import import_staging as import_staging_mod
+        monkeypatch.setattr(import_staging_mod, "_parse_results_with_timeout", fake_unknown_cat)
+        monkeypatch.setattr(import_staging_mod, "_parse_general_with_timeout", fake_g)
 
         # El ingestor real lanza ValueError cuando no encuentra la categoría.
         # Lo replicamos con un stub que no toca la DB pero reproduce el error.

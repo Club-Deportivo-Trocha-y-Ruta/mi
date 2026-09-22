@@ -231,3 +231,14 @@ class EventStandingsRead(BaseModel):
     series_id: int
     season_year: int
     categories: list[CategoryStandings]
+    # Feature 044 (US5, T062, research R-10): siempre True — esta tabla SIEMPRE
+    # es una suma de `points_awarded` calculada por la plataforma directamente
+    # sobre `race_results` (ver docstring del módulo), nunca una copia de la
+    # clasificación final que publica el organizador. Se hace explícito porque
+    # las temporadas históricas (2024/2025) no tienen ningún esquema de puntos
+    # oficial contra el cual reconciliar — la UI muestra "Clasificación
+    # calculada por la plataforma" a partir de este flag.
+    is_calculated: bool = Field(
+        default=True,
+        description="True (siempre): la tabla es una suma de puntos impresos, no la clasificación oficial del organizador.",
+    )

@@ -332,6 +332,41 @@ async def test_rebuild_never_resets_a_decided_candidate(db):
 
 
 @pytest.mark.asyncio
+async def test_partially_committed_import_keeps_its_pending_rows_in_the_universe(db):
+    """US5: tras un commit parcial, las categorías pendientes siguen en el
+    universo — un homónimo entre ellas y una carga posterior se levanta, así
+    que ``/commit-pending`` queda detrás del mismo gate. Un import confirmado
+    sin pendientes sale del universo."""
+    from app.models.race_import import RaceImportStatus
+
+    partial = await stage_import(db, 2025, 3, sha="c" * 64)
+    partial.status = RaceImportStatus.committed
+    partial.parse_meta_json = {
+        **partial.parse_meta_json,
+        "pending_categories": ["INFANTIL A DAMAS"],
+    }
+    later = await stage_import(db, 2025, 4, sha="d" * 64)
+    await db.commit()
+    rows = {
+        # El loader real ya filtra a las categorías pendientes del import.
+        partial.id: {"INF_A_F": [row("Ana Prueba Uno", club=CLUB_A, city=CITY_A)]},
+        later.id: {
+            "INF_A_F": [
+                row("Ana Prueba Uno", club="Escuadra Lejana", city="Pueblo Remoto", bib="12")
+            ]
+        },
+    }
+    result = await ir.rebuild(db, rows_loader=loader_for(rows))
+    assert result.pending == 1
+    assert (await _candidate_by_kind(db, IdentityCandidateKind.homonym_suspect)) is not None
+
+    partial.parse_meta_json = {**partial.parse_meta_json, "pending_categories": []}
+    await db.commit()
+    universe = await ir.load_universe(db, loader_for(rows))
+    assert universe.imports_scanned == 1
+
+
+@pytest.mark.asyncio
 async def test_unreadable_staged_import_is_reported_not_silenced(db):
     await stage_import(db, 2025, 4, sha="e" * 64)
     result = await ir.rebuild(db, rows_loader=loader_for({}))

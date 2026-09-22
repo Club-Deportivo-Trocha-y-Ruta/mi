@@ -49,10 +49,8 @@ import hashlib
 import logging
 import os
 import re
-import tempfile
-import uuid
-from asyncio import wait_for
-from datetime import datetime, timezone
+from collections import OrderedDict
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path as PathLib
 from typing import Annotated, Optional
@@ -78,6 +76,7 @@ from app.models.audit_log import AuditAction
 from app.models.club import ClubMember, ClubRole
 from app.models.race_category import RaceCategory
 from app.models.race_import import RaceImport, RaceImportKind, RaceImportStatus
+from app.models.race_event import RaceEvent
 from app.models.race_series import RaceSeries, RaceSeriesKind, RaceSeriesLevel
 from app.models.user import User, UserRole
 from app.schemas.race import EventMeta
@@ -96,9 +95,6 @@ from app.schemas.race_imports import (
     ImportParseRequestFields,
     ImportParseResponse,
     MatchPreview,
-    ParsedCategoryRead,
-    ParsedResultsRowRead,
-    ParseHeaderInfo,
     ParseWarning,
     RaceEventDiffResponse,
     REVISION_REASON_LABELS,
@@ -107,7 +103,6 @@ from app.schemas.race_imports import (
     RevisionReasonsResponse,
     RowCorrectionIn,
     TyrAthleteRef,
-    UnreadableRowRead,
     UploadUserRef,
 )
 from app.services.audit import AuditEntityType, record_audit
@@ -121,16 +116,20 @@ from app.services.race.completeness import (
     check_category,
 )
 from app.services.race import identity_review
+from app.services.race.import_staging import (
+    _category_headers_raw,
+    _legacy_results_by_category,
+    _parse_general_with_timeout,
+    _parse_results_with_timeout,
+    stage_results_file,
+)
 from app.services.race.ingestor import RaceIngestor
 from app.services.race.matcher import match_athletes
-from app.services.race.normalizer import mapping_kind_for
 from app.services.race.pdf_parser import (
     ParsedCategory,
     ParsedResults,
     ResultsRow,
-    parse_results_document,
 )
-from app.services.race.revision import detect_revision
 from app.services.race.revision_diff_view import build_event_diff_view
 from app.services.race.run_staleness import invalidate_runs_for_event
 from app.services.request_context import AuditContext, get_request_context
@@ -245,208 +244,21 @@ def _validate_general_magic(content: bytes, filename: str) -> None:
 
 # ---------------------------------------------------------------------------
 # Helpers internos — series + parsing
+#
+# Feature 044 (US5, T059): ``_get_or_create_series``, ``_parse_results_with_
+# timeout``, ``_parse_general_with_timeout``, ``_legacy_results_by_category``,
+# ``_category_headers_raw``, ``_categories_read``, ``_categories_meta`` y
+# ``_unreadable_rows_meta`` se extrajeron a
+# ``app.services.race.import_staging`` (contracts/historical-load.md
+# §"Staging service") y se re-importan arriba — el script de carga
+# histórica los reutiliza sin pasar por FastAPI, y este router queda como
+# llamador delgado. La re-exportación mantiene los tests existentes que
+# hacen ``monkeypatch.setattr(router_mod, "_parse_..._with_timeout", ...)``
+# funcionando para el camino dry-run/commit (que sigue viviendo aquí); los
+# tests que ejercitan ``POST /parse`` parchan además
+# ``app.services.race.import_staging`` (única copia que ``stage_results_
+# file`` usa internamente).
 # ---------------------------------------------------------------------------
-
-
-async def _get_or_create_series(
-    db: AsyncSession,
-    series_name: str,
-    season: int,
-    kind: RaceSeriesKind,
-    level: RaceSeriesLevel | str = RaceSeriesLevel.departmental,
-) -> RaceSeries:
-    """Resuelve o crea una serie por (name, season_year), honrando el kind del cliente.
-
-    Bug fix (spec 014 / T017): la versión anterior ignoraba ``series_name`` y
-    siempre usaba el hardcoded ``_SERIES_NAME`` ("Copa Valle de Ciclomontañismo").
-    Esta versión usa el nombre real enviado por el cliente.
-
-    Spec 023 (D5 / R5): el default de organizer ``"Liga Vallecaucana de
-    Ciclismo"`` solo se aplica a series NUEVAS de tipo ``kind == cup``. Los
-    campeonatos nuevos (departamentales o nacionales) quedan con
-    ``organizer=None`` — el organizador real lo aporta el flujo de import
-    ligado a la competencia (feature 015).
-
-    Args:
-        db: Sesión async.
-        series_name: Nombre de la serie (enviado por el cliente en el Form).
-        season: Año de temporada.
-        kind: Tipo de serie (cup | championship).
-        level: Ámbito territorial (departmental | national). Solo relevante
-            para campeonatos nuevos; se acepta ``str`` para validar el valor
-            crudo del Form field ``series_level`` (lanza ``ValueError`` si es
-            inválido).
-
-    Raises:
-        ValueError: si ``level`` es una cadena que no corresponde a ningún
-            valor de ``RaceSeriesLevel``.
-    """
-    resolved_level = (
-        level if isinstance(level, RaceSeriesLevel) else RaceSeriesLevel(level)
-    )
-    result = await db.execute(
-        select(RaceSeries).where(
-            RaceSeries.name == series_name,
-            RaceSeries.season_year == season,
-        )
-    )
-    series = result.scalar_one_or_none()
-    if series is not None:
-        return series
-    series = RaceSeries(
-        name=series_name,
-        season_year=season,
-        organizer=(
-            "Liga Vallecaucana de Ciclismo" if kind == RaceSeriesKind.cup else None
-        ),
-        points_scheme_code="copa_valle_2026",
-        kind=kind,
-        level=resolved_level,
-    )
-    db.add(series)
-    await db.flush()
-    return series
-
-
-async def _parse_results_with_timeout(path: PathLib, ext: str) -> ParsedResults:
-    """Parsea RESULTADOS con timeout; mapea TimeoutError/excepción a 422.
-
-    Feature 044 (US1, research R-01): el PDF ahora usa el lector por banda
-    (``parse_results_document``), que devuelve categorías en orden de
-    documento — incluidas las de encabezado no reconocido, con sus filas — y
-    las bandas ilegibles (``unreadable_rows``), en vez del dict legado
-    ``{code: [rows]}`` que descartaba ambas cosas en silencio.
-
-    El CSV de la Liga no tiene el defecto de desborde de columna que motiva
-    el lector por banda (research R-01 es específico del layout PDF), así
-    que sigue usando ``csv_parser.parse_results_csv`` — su dict legado se
-    envuelve en un ``ParsedResults`` sin filas ilegibles para que el llamador
-    tenga una única forma de salida.
-    """
-    import asyncio
-
-    from app.services.race.csv_parser import parse_results_csv
-
-    async def _run() -> ParsedResults:
-        if ext == "pdf":
-            return await asyncio.to_thread(parse_results_document, path)
-        legacy = await asyncio.to_thread(parse_results_csv, path)
-        categories = [
-            ParsedCategory(header_raw=code, code=code, rows=rows)
-            for code, rows in legacy.items()
-        ]
-        return ParsedResults(categories=categories, unreadable_rows=[])
-
-    try:
-        return await wait_for(_run(), timeout=settings.race_parse_timeout_seconds)
-    except asyncio.TimeoutError:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=(
-                f"PDF demasiado complejo (parse > "
-                f"{settings.race_parse_timeout_seconds}s). Verifique formato oficial."
-            ),
-        )
-    except HTTPException:
-        raise
-    except Exception:  # noqa: BLE001
-        logger.exception("race_import_parse RESULTADOS failed")
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="No se pudo procesar el PDF RESULTADOS. Verifique que sea el formato oficial de la Federación.",
-        )
-
-
-def _legacy_results_by_category(parsed: ParsedResults) -> dict[str, list[ResultsRow]]:
-    """Colapsa un ``ParsedResults`` a la forma legada ``{code: [rows]}`` que
-    ``RaceIngestor.ingest_event`` sigue esperando. Categorías de encabezado no
-    reconocido se excluyen — igual que hacía ``pdf_parser.parse_results_pdf``
-    — su commit queda bloqueado hasta que exista un mapeo (research R-03).
-    """
-    out: dict[str, list[ResultsRow]] = {}
-    for category in parsed.categories:
-        if category.code is None:
-            continue
-        out.setdefault(category.code, []).extend(category.rows)
-    return out
-
-
-def _category_headers_raw(parsed: ParsedResults) -> dict[str, str]:
-    """``{code: header_raw}`` — el encabezado tal como venía impreso, para
-    que el ingestor congele ``category_label_raw`` con el header REAL del
-    acta en vez de la etiqueta vigente del catálogo (research R-04). Si un
-    code se repite entre categorías del mismo documento (no esperado), se
-    conserva el primero.
-    """
-    out: dict[str, str] = {}
-    for category in parsed.categories:
-        if category.code and category.code not in out:
-            out[category.code] = category.header_raw
-    return out
-
-
-def _categories_read(
-    parsed: ParsedResults, cat_by_code: dict[str, "RaceCategory"]
-) -> list[ParsedCategoryRead]:
-    """Construye el ``categories[]`` de la respuesta de ``/parse`` — header
-    crudo, code resuelto, ``mapping_kind`` y completitud por categoría
-    (contracts/reading-integrity.md).
-    """
-    out: list[ParsedCategoryRead] = []
-    for category in parsed.categories:
-        cat_obj = cat_by_code.get(category.code) if category.code else None
-        mapping_kind = mapping_kind_for(f"CAT: {category.header_raw}", cat_obj)
-        report = check_category(category)
-        out.append(
-            ParsedCategoryRead(
-                header_raw=category.header_raw,
-                code=category.code,
-                mapping_kind=mapping_kind,
-                rows=[
-                    ParsedResultsRowRead(
-                        position=row.position,
-                        bib=row.bib,
-                        name=row.name,
-                        city=row.city,
-                        club=row.club,
-                        time_raw=row.time_raw,
-                        points=row.points,
-                    )
-                    for row in category.rows
-                ],
-                completeness=CompletenessRead(
-                    status=report.status,
-                    missing=report.missing,
-                    duplicated=report.duplicated,
-                ),
-            )
-        )
-    return out
-
-
-def _categories_meta(parsed: ParsedResults, categories_read: list[ParsedCategoryRead]) -> list[dict]:
-    """Forma persistida en ``parse_meta_json["categories"]`` (data-model.md §7):
-    a diferencia de la respuesta HTTP, ``rows`` es un CONTEO, nunca la lista —
-    el archivo almacenado ya es la fuente de verdad de las filas, y esta
-    caché es solo para lectura rápida (histórico, futuras corridas)."""
-    return [
-        {
-            "header_raw": read.header_raw,
-            "code": read.code,
-            "mapping_kind": read.mapping_kind,
-            "rows": len(read.rows),
-            "completeness": {
-                "status": read.completeness.status,
-                "missing": read.completeness.missing,
-                "duplicated": read.completeness.duplicated,
-            },
-        }
-        for read in categories_read
-    ]
-
-
-def _unreadable_rows_meta(parsed: ParsedResults) -> list[dict]:
-    return [{"page": r.page, "ordinal": r.ordinal} for r in parsed.unreadable_rows]
 
 
 def _update_category_cache(
@@ -483,29 +295,6 @@ def _update_category_cache(
         }
     )
     return updated
-
-
-async def _parse_general_with_timeout(path: PathLib) -> dict[str, list]:
-    import asyncio
-
-    from app.services.race.pdf_parser import parse_general_pdf
-
-    try:
-        return await wait_for(
-            asyncio.to_thread(parse_general_pdf, path),
-            timeout=settings.race_parse_timeout_seconds,
-        )
-    except asyncio.TimeoutError:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="GENERAL demasiado complejo (parse > timeout).",
-        )
-    except Exception:  # noqa: BLE001
-        logger.exception("race_import_parse GENERAL failed")
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="No se pudo procesar el PDF GENERAL. Verifique que sea el formato oficial de la Federación.",
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -580,6 +369,11 @@ async def parse_import(
     se consulta cuando ``_get_or_create_series`` crea una serie de tipo
     ``championship``; el organizer "Liga Vallecaucana de Ciclismo" NO se
     aplica a campeonatos nuevos (D5).
+
+    Feature 044 (US5, T059): el cuerpo de este endpoint vive ahora en
+    ``app.services.race.import_staging.stage_results_file`` — este handler
+    solo valida el multipart/Form (magic bytes, tamaño, enums crudos, fecha
+    ISO) y delega. ``contracts/historical-load.md`` §"Staging service".
     """
     # Validar y resolver series_kind
     resolved_series_kind: RaceSeriesKind = RaceSeriesKind.cup
@@ -645,263 +439,59 @@ async def parse_import(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=jsonable_encoder(exc.errors(include_url=False)),
         )
-    # 1. Leer + validar magic bytes RESULTADOS
+
+    # Validar fecha ISO — antes solo se validaba al re-construir EventMeta en
+    # dry-run (`_build_event_meta_from_parse_meta`); feature 044 la valida ya
+    # en /parse porque ``stage_results_file`` la recibe tipada (``date``).
+    try:
+        event_date_obj = date.fromisoformat(event_date)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"event_date inválido: '{event_date}'. Formato esperado YYYY-MM-DD.",
+        )
+
+    # Leer + validar magic bytes RESULTADOS
     resultados_bytes = await _read_with_cap(resultados_pdf, settings.race_max_pdf_mb)
     results_ext = _validate_results_magic(
         resultados_bytes, resultados_pdf.filename or "upload.pdf"
     )
-    results_sha = _compute_sha256(resultados_bytes)
 
-    # 2. (Opcional) GENERAL — solo PDF
+    # (Opcional) GENERAL — solo PDF
     general_bytes: Optional[bytes] = None
-    general_sha: Optional[str] = None
     if general_pdf is not None and (general_pdf.filename or ""):
         general_bytes = await _read_with_cap(general_pdf, settings.race_max_pdf_mb)
         _validate_general_magic(general_bytes, general_pdf.filename or "general.pdf")
-        general_sha = _compute_sha256(general_bytes)
-        if general_sha == results_sha:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="RESULTADOS y GENERAL no pueden ser el mismo archivo.",
-            )
 
-    # 3. Detectar duplicado SHA committed (409)
-    duplicate = await db.execute(
-        select(RaceImport).where(
-            RaceImport.sha256 == results_sha,
-            RaceImport.status == RaceImportStatus.committed,
-        )
-    )
-    if duplicate.scalar_one_or_none() is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                f"PDF RESULTADOS con sha256={results_sha[:8]}... ya fue commiteado. "
-                "Use force_reingest=True (admin only) si necesita re-procesar."
-            ),
-        )
-
-    # Liberar conexión MySQL antes de SFTP upload + pdfplumber parse (pueden
-    # tardar minutos). Hostinger cierra sockets ociosos por wait_timeout y
-    # NullPool no detecta la conexión muerta dentro de una transacción abierta.
-    # SQLAlchemy autobegin abrirá una conexión fresca en el próximo execute.
-    await db.commit()
-
-    # 4. Determinar kind (override del cliente sobre auto-detection)
-    if kind is None:
-        kind_value = (
-            RaceImportKind.both if general_bytes else RaceImportKind.resultados
-        )
-    else:
+    # Determinar override de `kind` (auto-detección vive en el service)
+    kind_override: Optional[RaceImportKind] = None
+    if kind is not None:
         try:
-            kind_value = RaceImportKind(kind)
+            kind_override = RaceImportKind(kind)
         except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"kind inválido: {kind}. Permitidos: resultados, general, both.",
             )
 
-    # 5. Subir PDFs a storage pending/{uuid}/...
-    parse_uuid = uuid.uuid4().hex
-    safe_results_name = _sanitize_filename(resultados_pdf.filename)
-    results_rel = (
-        f"race-imports/pending/{parse_uuid}/resultados.{results_ext}"
-    )
-    results_storage_path, results_storage_url = await storage_sftp.upload_bytes(
-        resultados_bytes, results_rel
-    )
-    general_storage_path: Optional[str] = None
-    general_storage_url: Optional[str] = None
-    if general_bytes:
-        _sanitize_filename(general_pdf.filename)  # type: ignore[union-attr]  # sanitized name preserved for future use
-        general_rel = f"race-imports/pending/{parse_uuid}/general.pdf"
-        general_storage_path, general_storage_url = await storage_sftp.upload_bytes(
-            general_bytes, general_rel
-        )
-
-    # 6. Parsear con timeout — escribimos a tmp para Path-only API
-    warnings_collected: list[ParseWarning] = []
-    with tempfile.NamedTemporaryFile(
-        suffix=f".{results_ext}", delete=False
-    ) as tmp_results:
-        tmp_results.write(resultados_bytes)
-        tmp_results.flush()
-        results_path = PathLib(tmp_results.name)
-    try:
-        parsed_doc = await _parse_results_with_timeout(results_path, results_ext)
-    finally:
-        try:
-            results_path.unlink(missing_ok=True)
-        except OSError:
-            pass
-
-    # Feature 044 (US1): el total cuenta TODAS las filas parseadas, incluidas
-    # las de encabezado no reconocido — FR-002 las conserva, no las descarta,
-    # así que un archivo con solo categorías desconocidas ya no cae en el 422
-    # de abajo como si no se hubiera extraído nada.
-    n_rows_resultados = sum(len(c.rows) for c in parsed_doc.categories)
-    if n_rows_resultados == 0:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Parser no extrajo ninguna fila válida. PDF/CSV no oficial?",
-        )
-
-    # Categorías por code, para resolver `mapping_kind` (necesita `.is_active`).
-    parsed_codes = {c.code for c in parsed_doc.categories if c.code}
-    cat_by_code: dict[str, RaceCategory] = {}
-    if parsed_codes:
-        cat_stmt = select(RaceCategory).where(RaceCategory.code.in_(parsed_codes))
-        cat_by_code = {
-            c.code: c for c in (await db.execute(cat_stmt)).scalars().all()
-        }
-    categories_read = _categories_read(parsed_doc, cat_by_code)
-    unreadable_rows_read = [
-        UnreadableRowRead(page=r.page, ordinal=r.ordinal)
-        for r in parsed_doc.unreadable_rows
-    ]
-
-    parsed_results = _legacy_results_by_category(parsed_doc)
-
-    n_rows_general: Optional[int] = None
-    if general_bytes:
-        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp_g:
-            tmp_g.write(general_bytes)
-            tmp_g.flush()
-            general_path = PathLib(tmp_g.name)
-        try:
-            parsed_general = await _parse_general_with_timeout(general_path)
-            n_rows_general = sum(len(v) for v in parsed_general.values())
-        finally:
-            try:
-                general_path.unlink(missing_ok=True)
-            except OSError:
-                pass
-
-    # 7. Crear RaceImport status=pending con parse_meta_json
-    series = await _get_or_create_series(
-        db, series_name, season, resolved_series_kind, resolved_series_level
-    )
-    parse_meta = {
-        "header": {
-            "series_name": series_name,
-            "season": season,
-            "valida_num": valida_num,
-            "event_name": event_name,
-            "event_date": event_date,
-            "location": location,
-        },
-        # Condiciones de carrera — None si el coach no las capturó aún;
-        # el commit las propagará a EventMeta → RaceIngestor → race_events.
-        "conditions": {
-            "climate": conditions_fields.climate,
-            "temperature_c": (
-                str(conditions_fields.temperature_c)
-                if conditions_fields.temperature_c is not None
-                else None
-            ),
-            "surface_condition": (
-                conditions_fields.surface_condition.value
-                if conditions_fields.surface_condition is not None
-                else None
-            ),
-            "altitude_msnm": conditions_fields.altitude_msnm,
-            "weather_notes": conditions_fields.weather_notes,
-        },
-        "results_ext": results_ext,
-        "results_storage_path": results_storage_path,
-        "general_storage_path": general_storage_path,
-        "categories_found": sorted(parsed_results.keys()),
-        "n_rows_resultados": n_rows_resultados,
-        "n_rows_general": n_rows_general,
-        "parse_uuid": parse_uuid,
-        # Feature 044 (US1, data-model.md §7): caché de solo lectura — el
-        # archivo almacenado sigue siendo la fuente de verdad, se re-parsea
-        # en cada dry-run/commit (`_reload_parsed_from_storage`). `rows` aquí
-        # es un CONTEO, nunca la lista (que sí lleva nombres de menores).
-        "categories": _categories_meta(parsed_doc, categories_read),
-        "unreadable_rows": _unreadable_rows_meta(parsed_doc),
-    }
-    race_import = RaceImport(
-        filename=safe_results_name,
-        original_filename=resultados_pdf.filename,
-        sha256=results_sha,
-        series_id=series.id,
-        status=RaceImportStatus.pending,
-        stats_json={},
-        imported_by_user_id=current_user.id,
-        kind=kind_value,
-        storage_path=results_storage_path,
-        storage_url=results_storage_url,
-        general_storage_path=general_storage_path,
-        general_storage_url=general_storage_url,
-        general_sha256=general_sha,
-        parse_meta_json=parse_meta,
-    )
-    db.add(race_import)
-    await db.flush()
-
-    await record_audit(
+    return await stage_results_file(
         db,
-        action=AuditAction.create,
-        entity_type=AuditEntityType.race_import,
-        entity_id=race_import.id,
-        actor=ctx.actor,
-        actor_kind=ctx.actor_kind,
-        club_id=None,
-        request_id=ctx.request_id,
-    )
-
-    # F-UP-REV2: detección de revisión post-parse
-    # Si existe `(series, valida_num)` con committed previo y SHA distinto,
-    # marcamos `will_be_revision=true`. SHA byte-exacto ya fue bloqueado arriba
-    # con 409, no llegamos aquí.
-    # BUG-1 fix: usamos series.id (ya resuelto arriba) para que detect_revision
-    # opere sobre la misma serie que el ingestor usará en dry-run/commit.
-    # Esto evita la divergencia cuando series_name del cliente no coincide
-    # exactamente con el name persisted (ej. "Copa Valle" vs "Copa Valle...").
-    revision_ctx = await detect_revision(
-        db,
+        file_bytes=resultados_bytes,
+        original_filename=resultados_pdf.filename or "upload.pdf",
+        results_ext=results_ext,
         series_name=series_name,
         season=season,
         valida_num=valida_num,
-        series_id=series.id,
-    )
-    will_be_revision = revision_ctx is not None
-
-    logger.info(
-        "race_import_parse parse_id=%s sha=%s user_id=%s kind=%s rows=%d "
-        "will_be_revision=%s",
-        race_import.id,
-        results_sha[:12],
-        current_user.id,
-        kind_value.value,
-        n_rows_resultados,
-        will_be_revision,
-    )
-
-    return ImportParseResponse(
-        parse_id=race_import.id,
-        sha256=results_sha,
-        header=ParseHeaderInfo(
-            series_name=series_name,
-            season=season,
-            valida_num=valida_num,
-            event_name=event_name,
-        ),
-        n_rows_resultados=n_rows_resultados,
-        n_rows_general=n_rows_general,
-        warnings=warnings_collected,
-        categories=categories_read,
-        unreadable_rows=unreadable_rows_read,
-        will_be_revision=will_be_revision,
-        parent_event_id=revision_ctx.parent_event_id if revision_ctx else None,
-        parent_import_id=revision_ctx.parent_import_id if revision_ctx else None,
-        parent_committed_at=(
-            revision_ctx.parent_committed_at if revision_ctx else None
-        ),
-        parent_n_results=(
-            revision_ctx.n_results_persisted if revision_ctx else None
-        ),
+        event_name=event_name,
+        event_date=event_date_obj,
+        location=location,
+        series_kind=resolved_series_kind,
+        series_level=resolved_series_level,
+        conditions=conditions_fields,
+        general_bytes=general_bytes,
+        kind_override=kind_override,
+        actor=current_user,
+        ctx=ctx,
     )
 
 
@@ -949,6 +539,215 @@ async def _load_pending_import(
     return imp
 
 
+async def _load_committed_import_with_pending(
+    db: AsyncSession,
+    parse_id: int,
+    current_user: User,
+    *,
+    for_update: bool = False,
+) -> RaceImport:
+    """Carga un RaceImport ``committed`` con categorías pendientes — soporte
+    de ``POST /{parse_id}/commit-pending`` (contracts/historical-load.md
+    §"Idempotence and resumption"). Un commit parcial deja el import
+    ``committed`` (sin un enum nuevo, research R-05) con
+    ``parse_meta_json["pending_categories"]`` no vacío; esta carga es su
+    contraparte de ``_load_pending_import``.
+
+    404 si el id no existe o el import nunca llegó a ``committed``; 409
+    ``nothing_pending`` si ya no queda ninguna categoría pendiente en el
+    caché de meta (chequeo barato antes de tocar SFTP — el commit-pending
+    vuelve a verificarlo tras re-parsear, por si las correcciones dejaron
+    todo consistente pero nadie limpió el contador).
+    """
+    stmt = select(RaceImport).where(RaceImport.id == parse_id)
+    if for_update:
+        stmt = stmt.with_for_update()
+    result = await db.execute(stmt)
+    imp = result.scalar_one_or_none()
+    if imp is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"parse_id={parse_id} no existe.",
+        )
+    if imp.status != RaceImportStatus.committed:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"parse_id={parse_id} no está en estado committed "
+                f"(actual: {imp.status.value}). No se puede commit-pending."
+            ),
+        )
+    await ensure_import_club_access(db, imp, current_user)
+    pending = (imp.parse_meta_json or {}).get("pending_categories") or []
+    if not pending:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "nothing_pending",
+                "message": "No quedan categorías pendientes en este cargue.",
+            },
+        )
+    return imp
+
+
+def _matches_unresolved_error(missing: set[str]) -> HTTPException:
+    """``409 matches_unresolved`` — el coach del `HistoricalLoadPage` commitea
+    con ``resolved_matches: []`` siempre (no hay UI de resolución de matches
+    en el tablero); si el acta trae competidores TyR sin decisión, el board
+    debe poder distinguir esto de ``identity_review_pending``/
+    ``nothing_pending`` y mandar al coach al Import Wizard en vez de
+    commitear sin vincular en silencio. ``missing`` son slugs normalizados
+    (``competitor_normalized_name``), nunca el nombre de pila — misma
+    sensibilidad que el resto de la cola de identidad.
+    """
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "code": "matches_unresolved",
+            "missing_count": len(missing),
+            "examples": sorted(missing)[:3],
+            "message": (
+                f"Faltan resolved_matches para {len(missing)} atleta(s) TyR. "
+                "Resuélvelos en el Import Wizard antes de confirmar la carga."
+            ),
+        },
+    )
+
+
+def _eligible_and_pending_categories(
+    categories: list[ParsedCategory],
+    parse_meta: dict,
+    *,
+    restrict_to_headers: Optional[set[str]] = None,
+) -> tuple[set[str], list[str]]:
+    """Separa las categorías re-parseadas (con correcciones ya aplicadas) en
+    ``(eligible_codes, pending_categories)`` — contracts/historical-load.md
+    §"Idempotence and resumption": elegible es ``status == "ok"`` o
+    reconocida (``AcknowledgeIn``); todo lo demás (inconsistente sin
+    reconocer, o header sin ``code`` resuelto) queda pendiente. ``pending_
+    categories`` lleva el ``header_raw`` — el mismo identificador que usan
+    ``/corrections`` y ``/acknowledge`` — nunca un ``code`` que podría ser
+    ``None``.
+
+    ``restrict_to_headers``, usado por ``/commit-pending``: limita la
+    evaluación a estos headers (los que quedaron ``pending_categories`` del
+    commit anterior) — sin esto, una categoría YA commiteada en una pasada
+    previa (consistente desde el inicio) volvería a contarse como
+    "elegible" en cada ``/commit-pending`` posterior, y el gate ``409
+    nothing_pending`` nunca dispararía aunque nada nuevo se hubiera vuelto
+    consistente. ``None`` (el caso de ``/commit``) evalúa todas las
+    categorías, como siempre.
+    """
+    acknowledged_headers = {
+        a.get("category_header") for a in (parse_meta.get("acknowledged") or [])
+    }
+    eligible_codes: set[str] = set()
+    pending_categories: list[str] = []
+    for cat in categories:
+        if restrict_to_headers is not None and cat.header_raw not in restrict_to_headers:
+            continue
+        if cat.code is None:
+            pending_categories.append(cat.header_raw)
+            continue
+        report = check_category(cat)
+        if report.status == "ok" or cat.header_raw in acknowledged_headers:
+            eligible_codes.add(cat.code)
+        else:
+            pending_categories.append(cat.header_raw)
+    return eligible_codes, pending_categories
+
+
+async def _load_correctable_import(
+    db: AsyncSession, parse_id: int, current_user: User
+) -> RaceImport:
+    """Carga un import sobre el que ``/corrections``/``/acknowledge`` pueden
+    operar: ``pending`` (aún no commiteado, el caso de siempre) o
+    ``committed`` con ``pending_categories`` (feature 044, US5) — un commit
+    parcial deja categorías por resolver y el coach necesita poder
+    corregirlas/reconocerlas antes de ``/commit-pending``, sin que el import
+    haya vuelto a ``pending``. 404 en cualquier otro caso (id inexistente, o
+    un import ya sin nada pendiente).
+    """
+    result = await db.execute(select(RaceImport).where(RaceImport.id == parse_id))
+    imp = result.scalar_one_or_none()
+    if imp is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"parse_id={parse_id} no existe.",
+        )
+    has_pending_categories = bool(
+        (imp.parse_meta_json or {}).get("pending_categories")
+    )
+    is_correctable = imp.status == RaceImportStatus.pending or (
+        imp.status == RaceImportStatus.committed and has_pending_categories
+    )
+    if not is_correctable:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"parse_id={parse_id} no admite corrección/reconocimiento "
+                f"(estado: {imp.status.value})."
+            ),
+        )
+    await ensure_import_club_access(db, imp, current_user)
+    return imp
+
+
+# ---------------------------------------------------------------------------
+# G4 mitigation (plan.md Complexity Tracking, nota sobre T060/T061):
+# ``load_identity_rows`` re-descarga y re-parsea cada import en staging en
+# CADA ``/rebuild`` y en cada gate de commit (que hace un rebuild primero) —
+# medido en 0.60 s/archivo de 229 filas, ≈9 s para las quince válidas
+# históricas más latencia SFTP. Dos cachés LRU acotadas y locales al proceso
+# (el filesystem de Render es efímero — no hay nada que persistir entre
+# deploys, así que un dict en memoria basta):
+#
+# - ``_RAW_PARSE_CACHE`` — el parseo crudo (sin correcciones), por
+#   ``sha256``. El archivo almacenado nunca cambia para un import ya creado
+#   (una revisión sube un import NUEVO con su propio sha), así que esta
+#   entrada nunca se invalida — solo se desaloja por LRU.
+# - ``_CORRECTED_CATEGORIES_CACHE`` — categorías con correcciones ya
+#   aplicadas, por ``(sha256, corrections_revision)``. ``corrections`` en
+#   ``parse_meta_json`` solo crece por *append* (nunca se edita/borra una ya
+#   guardada — ver ``add_correction``), así que ``len(corrections)`` es una
+#   revisión válida y barata: una corrección nueva cambia la clave y la
+#   entrada vieja simplemente deja de pedirse (invalidación implícita, sin
+#   lógica extra).
+#
+# Ambas cachés son puramente de lectura para sus consumidores (el ingestor,
+# ``_categories_read``, ``check_category`` no mutan lo que reciben;
+# ``apply_corrections`` hace ``copy.deepcopy`` antes de tocar nada), así que
+# reusar el mismo objeto entre llamadas es seguro.
+# ---------------------------------------------------------------------------
+
+_PARSED_CACHE_MAX_ENTRIES = 32
+
+_RAW_PARSE_CACHE: "OrderedDict[str, ParsedResults]" = OrderedDict()
+_CORRECTED_CATEGORIES_CACHE: "OrderedDict[tuple[str, int], list[ParsedCategory]]" = (
+    OrderedDict()
+)
+
+
+def _lru_get(cache: "OrderedDict", key):
+    value = cache.get(key)
+    if value is not None:
+        cache.move_to_end(key)
+    return value
+
+
+def _lru_put(cache: "OrderedDict", key, value) -> None:
+    cache[key] = value
+    cache.move_to_end(key)
+    while len(cache) > _PARSED_CACHE_MAX_ENTRIES:
+        cache.popitem(last=False)
+
+
+def clear_parsed_rows_caches() -> None:
+    """Vacía ambas cachés — usado por tests para aislar casos entre sí."""
+    _RAW_PARSE_CACHE.clear()
+    _CORRECTED_CATEGORIES_CACHE.clear()
+
+
 async def _reload_results_document(imp: RaceImport) -> ParsedResults:
     """Descarga + parsea solo RESULTADOS desde storage, SIN aplicar las
     correcciones guardadas (research R-05). Building block de
@@ -959,7 +758,16 @@ async def _reload_results_document(imp: RaceImport) -> ParsedResults:
     En producción (SFTP configurado) el ``storage_path`` es un path remoto
     Hostinger que no existe en el disco del contenedor. Se descarga vía FTPS
     a un archivo temporal, se parsea y se borra en el finally.
+
+    G4: cacheado por ``sha256`` (ver comentario arriba) — un import pending
+    referencia siempre el mismo archivo, así que el segundo llamador en
+    adelante (otra corrección, otro rebuild) no vuelve a tocar SFTP.
     """
+    if imp.sha256:
+        cached = _lru_get(_RAW_PARSE_CACHE, imp.sha256)
+        if cached is not None:
+            return cached
+
     meta = imp.parse_meta_json or {}
     results_ext = meta.get("results_ext", "pdf")
 
@@ -979,20 +787,26 @@ async def _reload_results_document(imp: RaceImport) -> ParsedResults:
     # ¿Es el path un temporal nuevo (SFTP) o el mismo local ya existente?
     results_is_tmp = str(results_tmp_path) != str(imp.storage_path or "")
     try:
-        return await _parse_results_with_timeout(results_tmp_path, results_ext)
+        parsed = await _parse_results_with_timeout(results_tmp_path, results_ext)
     finally:
         if results_is_tmp:
             try:
                 os.unlink(results_tmp_path)
             except OSError:
                 pass
+    if imp.sha256:
+        _lru_put(_RAW_PARSE_CACHE, imp.sha256, parsed)
+    return parsed
 
 
 async def _reload_parsed_from_storage(
     imp: RaceImport,
-) -> tuple[dict[str, list], Optional[dict[str, list]], str, dict[str, str]]:
+) -> tuple[
+    dict[str, list], Optional[dict[str, list]], str, dict[str, str], list[ParsedCategory]
+]:
     """Re-carga RESULTADOS (+ GENERAL opcional) desde el storage path persistido
-    durante /parse. Retorna ``(results, general, results_ext, category_headers_raw)``.
+    durante /parse. Retorna ``(results, general, results_ext,
+    category_headers_raw, categories)``.
 
     Necesario para dry-run/commit: el bytes original ya está en SFTP/local; lo
     descargamos a tmp, parseamos, descartamos.
@@ -1002,17 +816,35 @@ async def _reload_parsed_from_storage(
     resultado llegue al ingestor — las filas parseadas se re-derivan del
     archivo almacenado en cada dry-run/commit, así que una corrección que no
     se reaplicara en este punto se perdería en silencio.
+
+    Feature 044 (US5, T060/T061): también se retorna ``categories`` (la lista
+    completa, incluidas las de encabezado no reconocido) — el commit la usa
+    para decidir qué categorías son elegibles y cuáles quedan en
+    ``pending_categories``, algo que ``parsed_results`` (que ya excluye las de
+    ``code=None``) no puede responder por sí solo.
+
+    G4: cacheado por ``(sha256, corrections_revision)`` — ver comentario
+    sobre ``_CORRECTED_CATEGORIES_CACHE`` más arriba.
     """
     meta = imp.parse_meta_json or {}
     results_ext = meta.get("results_ext", "pdf")
-
-    parsed_doc = await _reload_results_document(imp)
     corrections = meta.get("corrections") or []
-    if corrections:
-        parsed_doc = apply_corrections(parsed_doc, corrections)
 
-    category_headers_raw = _category_headers_raw(parsed_doc)
-    parsed_results = _legacy_results_by_category(parsed_doc)
+    categories: Optional[list[ParsedCategory]] = None
+    cache_key = (imp.sha256, len(corrections)) if imp.sha256 else None
+    if cache_key is not None:
+        categories = _lru_get(_CORRECTED_CATEGORIES_CACHE, cache_key)
+    if categories is None:
+        parsed_doc = await _reload_results_document(imp)
+        if corrections:
+            parsed_doc = apply_corrections(parsed_doc, corrections)
+        categories = parsed_doc.categories
+        if cache_key is not None:
+            _lru_put(_CORRECTED_CATEGORIES_CACHE, cache_key, categories)
+
+    categories_doc = ParsedResults(categories=categories, unreadable_rows=[])
+    category_headers_raw = _category_headers_raw(categories_doc)
+    parsed_results = _legacy_results_by_category(categories_doc)
 
     # --- GENERAL (opcional) ---
     parsed_general: Optional[dict[str, list]] = None
@@ -1038,7 +870,7 @@ async def _reload_parsed_from_storage(
             )
             parsed_general = None
 
-    return parsed_results, parsed_general, results_ext, category_headers_raw
+    return parsed_results, parsed_general, results_ext, category_headers_raw, categories
 
 
 #: Presupuesto del contrato (``identity-review-api.md`` §Rebuild): trabajo
@@ -1059,7 +891,13 @@ async def load_identity_rows(imp: RaceImport) -> dict[str, list[ResultsRow]]:
     identidad no debe importar el router (contrato §Resolver, docstring de
     ``identity_review.load_universe``).
     """
-    parsed_results, _general, _ext, _headers = await _reload_parsed_from_storage(imp)
+    parsed_results, _general, _ext, _headers, cats = await _reload_parsed_from_storage(imp)
+    if imp.status == RaceImportStatus.committed:
+        # Import confirmado a medias: solo sus categorías pendientes siguen
+        # en el universo de identidad; las ya ingestadas son resultados.
+        pending = set((imp.parse_meta_json or {}).get("pending_categories") or [])
+        pending_codes = {c.code for c in cats if c.header_raw in pending and c.code}
+        return {code: rows for code, rows in parsed_results.items() if code in pending_codes}
     return parsed_results
 
 
@@ -1135,7 +973,7 @@ async def dry_run_import(
     # expire_on_commit=False mantiene los atributos de `imp` accesibles tras commit.
     await db.commit()
 
-    parsed_results, parsed_general, _, category_headers_raw = (
+    parsed_results, parsed_general, _, category_headers_raw, _categories = (
         await _reload_parsed_from_storage(imp)
     )
 
@@ -1296,8 +1134,19 @@ async def commit_import(
     # expire_on_commit=False mantiene los atributos de `imp` accesibles tras commit.
     await db.commit()
 
-    parsed_results, parsed_general, _, category_headers_raw = (
+    parsed_results, parsed_general, _, category_headers_raw, categories = (
         await _reload_parsed_from_storage(imp)
+    )
+
+    # Feature 044 (US5, T060/T061): categorías elegibles para ESTE commit
+    # (consistentes o reconocidas) vs. las que quedan `pending_categories`
+    # (inconsistentes sin reconocer, o de encabezado no reconocido) —
+    # contracts/historical-load.md §"Idempotence and resumption". Un commit
+    # de temporada corriente con todo en orden tiene `pending_categories=[]`
+    # y `eligible_codes` cubre todos los codes presentes — cero cambio de
+    # comportamiento frente a antes de esta feature.
+    eligible_codes, pending_categories = _eligible_and_pending_categories(
+        categories, parse_meta
     )
 
     # Feature 044 (US4, T050) — candado de revisión de identidad. Mientras
@@ -1350,9 +1199,16 @@ async def commit_import(
     # Validar que resolved_matches cubra todos los matches ambiguos (TyR detectados)
     from app.services.race.normalizer import is_trocha_y_ruta, normalize_name
 
+    # Feature 044 (US5): la validación de resolved_matches solo exige
+    # decisión del coach para las categorías que SÍ se van a ingestar en este
+    # commit — una categoría pendiente no le ha sido mostrada todavía en un
+    # dry-run útil, y su turno de pedir resolved_matches es el futuro
+    # `commit-pending`.
     tyr_normalized: set[str] = set()
     bib_by_normalized: dict[str, str] = {}
     for code, rows in parsed_results.items():
+        if code not in eligible_codes:
+            continue
         for row in rows:
             if is_trocha_y_ruta(getattr(row, "club", None)):
                 norm = normalize_name(row.name) or ""
@@ -1363,13 +1219,7 @@ async def commit_import(
     resolved_normalized = {rm.competitor_normalized_name for rm in body.resolved_matches}
     missing = tyr_normalized - resolved_normalized
     if missing:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=(
-                f"Faltan resolved_matches para {len(missing)} atleta(s) TyR. "
-                f"Ejemplos: {sorted(missing)[:3]}"
-            ),
-        )
+        raise _matches_unresolved_error(missing)
 
     # Construir match_decisions {bib: athlete_id|None} para el ingestor
     match_decisions: dict[str, Optional[int]] = {}
@@ -1404,6 +1254,7 @@ async def commit_import(
             dry_run=False,
             series_id=imp_series_id,
             category_headers_raw=category_headers_raw,
+            only_categories=eligible_codes,
         )
     except IntegrityError:
         await db.rollback()
@@ -1464,9 +1315,21 @@ async def commit_import(
                 exc,
             )
 
-    # Limpiar parse_meta_json y enlazar event_id en RaceImport
+    # Limpiar parse_meta_json y enlazar event_id en RaceImport — feature 044
+    # (US5): si quedaron categorías pendientes, el meta se PRESERVA (header,
+    # corrections, acknowledged, caché de categorías) para que un futuro
+    # `commit-pending` pueda re-parsear y decidir sin volver a pedirle nada
+    # al coach; solo se anota `pending_categories` para que el listado y el
+    # gate 404/409 de `commit-pending` lo lean en O(1). Un import totalmente
+    # consistente (el caso común, sin cambio de comportamiento) sigue
+    # limpiando el meta como antes.
     imp.event_id = report.event_id
-    imp.parse_meta_json = None
+    if pending_categories:
+        new_meta = dict(parse_meta)
+        new_meta["pending_categories"] = pending_categories
+        imp.parse_meta_json = new_meta
+    else:
+        imp.parse_meta_json = None
     # PR4: persistir el motivo de revisión (catálogo cerrado) si se envió.
     # Pydantic ya validó que sea un RevisionReasonCode válido. Guardamos el
     # code (string) — nunca texto libre.
@@ -1531,6 +1394,212 @@ async def commit_import(
         n_results_inserted=report.results_inserted,
         n_competitors_created=report.competitors_created,
         n_competitors_linked=report.tyr_count,
+        pending_categories=pending_categories,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Endpoint 3b: POST /{parse_id}/commit-pending (feature 044, US5, T061)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/{parse_id}/commit-pending", response_model=ImportCommitResponse)
+async def commit_pending_import(
+    parse_id: int,
+    body: ImportCommitRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
+) -> ImportCommitResponse:
+    """Termina de ingestar un import ``committed`` cuyas categorías
+    pendientes se corrigieron o reconocieron después del primer ``/commit``
+    (contracts/historical-load.md §"Idempotence and resumption", FR-027).
+
+    Mismo candado de identidad que ``/commit`` (FR-018): recalcula la cola
+    antes de decidir, ``409 identity_review_pending`` si algo sigue sin
+    decidir. ``409 nothing_pending`` si no queda ninguna categoría pendiente
+    (ni en el caché de meta, ni tras re-verificar contra el acta corregida).
+    """
+    imp = await _load_committed_import_with_pending(
+        db, parse_id, current_user, for_update=True
+    )
+    parse_meta = imp.parse_meta_json or {}
+
+    # Liberar conexión MySQL antes de SFTP download + pdfplumber parse.
+    await db.commit()
+
+    parsed_results, parsed_general, _, category_headers_raw, categories = (
+        await _reload_parsed_from_storage(imp)
+    )
+
+    # Mismo candado de identidad que /commit — reutiliza el patrón
+    # rebuild-then-check (FR-018).
+    try:
+        identity_result = await identity_review.rebuild(
+            db, rows_loader=load_identity_rows, timeout_s=IDENTITY_REBUILD_TIMEOUT_S
+        )
+    except TimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "identity_rebuild_timeout",
+                "message": (
+                    "El recálculo de identidad tardó demasiado antes del "
+                    "commit-pending. Intenta de nuevo en unos minutos."
+                ),
+            },
+        )
+    await db.commit()
+    if identity_result.pending > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "identity_review_pending",
+                "pending": identity_result.pending,
+                "message": (
+                    "Hay candidatos de identidad sin decidir. Resuélvelos en "
+                    "la revisión de identidad antes de confirmar la carga."
+                ),
+            },
+        )
+
+    try:
+        meta_obj = _build_event_meta_from_parse_meta(parse_meta, imp.filename)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"parse_meta inválido: {exc}",
+        )
+
+    eligible_codes, pending_categories = _eligible_and_pending_categories(
+        categories,
+        parse_meta,
+        restrict_to_headers=set(parse_meta.get("pending_categories") or []),
+    )
+    if not eligible_codes:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "nothing_pending",
+                "message": (
+                    "Ninguna categoría pendiente pasó a ser consistente o "
+                    "reconocida todavía."
+                ),
+            },
+        )
+
+    from app.services.race.normalizer import is_trocha_y_ruta, normalize_name
+
+    tyr_normalized: set[str] = set()
+    bib_by_normalized: dict[str, str] = {}
+    for code, rows in parsed_results.items():
+        if code not in eligible_codes:
+            continue
+        for row in rows:
+            if is_trocha_y_ruta(getattr(row, "club", None)):
+                norm = normalize_name(row.name) or ""
+                if norm:
+                    tyr_normalized.add(norm)
+                    bib_by_normalized.setdefault(norm, str(row.bib))
+
+    resolved_normalized = {rm.competitor_normalized_name for rm in body.resolved_matches}
+    missing = tyr_normalized - resolved_normalized
+    if missing:
+        raise _matches_unresolved_error(missing)
+
+    match_decisions: dict[str, Optional[int]] = {}
+    for rm in body.resolved_matches:
+        bib = bib_by_normalized.get(rm.competitor_normalized_name)
+        if bib is not None:
+            match_decisions[bib] = rm.athlete_id
+
+    # Re-adquirir el lock justo antes de mutar (mismo patrón que /commit).
+    imp = await _load_committed_import_with_pending(
+        db, parse_id, current_user, for_update=True
+    )
+    imp_sha256 = imp.sha256
+    imp_general_sha256 = imp.general_sha256
+    imp_series_id = imp.series_id
+
+    ingestor = RaceIngestor(db)
+    try:
+        report = await ingestor.ingest_event(
+            meta=meta_obj,
+            results_by_category=parsed_results,
+            general_by_category=parsed_general,
+            match_decisions=match_decisions,
+            pdf_results_sha256=imp_sha256,
+            pdf_general_sha256=imp_general_sha256,
+            ingested_by_user_id=current_user.id,
+            dry_run=False,
+            series_id=imp_series_id,
+            category_headers_raw=category_headers_raw,
+            only_categories=eligible_codes,
+        )
+    except IntegrityError:
+        await db.rollback()
+        logger.warning(
+            "race_import_commit_pending integrity_conflict parse_id=%s", parse_id
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Los resultados de este evento ya fueron registrados por otra "
+                "operación. Refresca la página para ver el estado actual."
+            ),
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        )
+
+    await db.refresh(imp)
+    if pending_categories:
+        new_meta = dict(parse_meta)
+        new_meta["pending_categories"] = pending_categories
+        imp.parse_meta_json = new_meta
+    else:
+        imp.parse_meta_json = None
+    await db.flush()
+
+    await record_audit(
+        db,
+        action=AuditAction.execute,
+        entity_type=AuditEntityType.race_import,
+        entity_id=imp.id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=None,
+        changed_fields=["parse_meta_json"],
+        meta={
+            "race_event_id": int(report.event_id) if report.event_id is not None else None,
+            "commit_pending": True,
+            "results_count": report.results_inserted,
+            "competitors_count": report.competitors_created,
+            "pending_categories_remaining": len(pending_categories),
+        },
+        request_id=ctx.request_id,
+    )
+
+    logger.info(
+        "race_import_commit_pending parse_id=%s event_id=%s results_inserted=%d "
+        "competitors_created=%d tyr_count=%d pending_remaining=%d",
+        parse_id,
+        report.event_id,
+        report.results_inserted,
+        report.competitors_created,
+        report.tyr_count,
+        len(pending_categories),
+    )
+
+    return ImportCommitResponse(
+        parse_id=parse_id,
+        race_event_id=report.event_id,
+        n_results_inserted=report.results_inserted,
+        n_competitors_created=report.competitors_created,
+        n_competitors_linked=report.tyr_count,
+        pending_categories=pending_categories,
     )
 
 
@@ -1566,7 +1635,7 @@ async def add_correction(
     ``parse_meta_json.corrections``, misma clase de sensibilidad que
     ``race_competitors`` per data-model.md §7).
     """
-    imp = await _load_pending_import(db, parse_id, current_user)
+    imp = await _load_correctable_import(db, parse_id, current_user)
     meta = dict(imp.parse_meta_json or {})
 
     existing_corrections = list(meta.get("corrections") or [])
@@ -1654,7 +1723,7 @@ async def acknowledge_category(
     categoría, no todo el cargue) es de T060/T061 — esta tarea (T019) solo
     persiste la decisión y la audita.
     """
-    imp = await _load_pending_import(db, parse_id, current_user)
+    imp = await _load_correctable_import(db, parse_id, current_user)
     meta = dict(imp.parse_meta_json or {})
 
     corrections = meta.get("corrections") or []
@@ -1825,6 +1894,31 @@ async def list_imports(
         )
         users_by_id = {u.id: u for u in users_result.scalars().all()}
 
+    # Feature 044 (US5): season/valida_num/series_name para agrupar el
+    # tablero histórico por temporada (contracts/historical-load.md). Un
+    # import con meta viva (pending, o committed con `pending_categories`)
+    # los trae en `parse_meta_json["header"]`; uno ya committed sin nada
+    # pendiente (meta en `None`) los resuelve vía `RaceEvent` → `RaceSeries`
+    # — batched, un solo query para toda la página.
+    event_ids_needing_lookup = {
+        i.event_id for i in imports
+        if i.parse_meta_json is None and i.event_id is not None
+    }
+    event_header_by_id: dict[int, tuple[int, int, str]] = {}
+    if event_ids_needing_lookup:
+        rows = await db.execute(
+            select(
+                RaceEvent.id,
+                RaceEvent.sequence_number,
+                RaceSeries.season_year,
+                RaceSeries.name,
+            )
+            .join(RaceSeries, RaceSeries.id == RaceEvent.series_id)
+            .where(RaceEvent.id.in_(event_ids_needing_lookup))
+        )
+        for event_id, seq, season_year, series_name in rows.all():
+            event_header_by_id[event_id] = (season_year, seq, series_name)
+
     items: list[ImportListItem] = []
     for imp in imports:
         u = users_by_id.get(imp.imported_by_user_id)
@@ -1838,6 +1932,21 @@ async def list_imports(
             full_name=joined_name or "Usuario no disponible",
         )
         n_results = (imp.stats_json or {}).get("results_inserted", 0)
+        pending_categories_count = len(
+            (imp.parse_meta_json or {}).get("pending_categories") or []
+        )
+
+        season: Optional[int] = None
+        valida_num: Optional[int] = None
+        series_name: Optional[str] = None
+        header = (imp.parse_meta_json or {}).get("header")
+        if header:
+            season = header.get("season")
+            valida_num = header.get("valida_num")
+            series_name = header.get("series_name")
+        elif imp.event_id is not None and imp.event_id in event_header_by_id:
+            season, valida_num, series_name = event_header_by_id[imp.event_id]
+
         items.append(
             ImportListItem(
                 id=imp.id,
@@ -1848,6 +1957,10 @@ async def list_imports(
                 original_filename=imp.original_filename or imp.filename,
                 uploaded_by=uploader,
                 n_results=n_results,
+                pending_categories_count=pending_categories_count,
+                season=season,
+                valida_num=valida_num,
+                series_name=series_name,
             )
         )
 

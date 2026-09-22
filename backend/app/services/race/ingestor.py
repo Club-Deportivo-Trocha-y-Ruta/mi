@@ -196,6 +196,7 @@ class RaceIngestor:
         dry_run: bool = False,
         series_id: Optional[int] = None,
         category_headers_raw: Optional[dict[str, str]] = None,
+        only_categories: Optional[set[str]] = None,
     ) -> IngestReport:
         """Ingest atómico de una válida completa.
 
@@ -234,6 +235,19 @@ class RaceIngestor:
                 del catálogo (``category.label``) en el momento del insert en
                 vez del header crudo — sigue siendo una congelación válida,
                 solo que la fuente es el catálogo y no el PDF.
+            only_categories: (feature 044, US5, T060) restringe la ingesta a
+                estos codes de ``results_by_category`` — el resto se ignora
+                en silencio (el caller, ``routers/race_imports.py``, ya sabe
+                que esos quedaron en ``pending_categories``). Además de
+                filtrar, un ``only_categories`` no-``None`` **desactiva el
+                corto-circuito de idempotencia por SHA256** (paso 3): un
+                ``POST /commit-pending`` reingesta bajo el mismo
+                ``pdf_results_sha256`` de un import que el primer commit ya
+                marcó ``committed`` — sin este bypass, ``_find_committed_
+                import`` encontraría esa fila y abortaría sin insertar nada.
+                ``None`` (default) preserva el comportamiento previo en
+                todos los demás llamadores (CLI, dry-run, commit de
+                temporada corriente con todo consistente).
 
         Returns:
             ``IngestReport`` con conteos y warnings (sin nombres completos).
@@ -275,10 +289,15 @@ class RaceIngestor:
             event = await self._upsert_event(series.id, meta, ingested_by_user_id)
 
             # --- 3. Idempotencia por SHA256 (RESULTADOS) ----------------
+            # Feature 044 (US5, T060): un ``only_categories`` no-``None``
+            # marca una reingesta restringida (``POST /commit-pending``) —
+            # el sha256 YA está ``committed`` a propósito (el primer commit
+            # lo dejó así con categorías pendientes) y no debe tratarse como
+            # el no-op idempotente de siempre.
             race_import: Optional[RaceImport] = None
             if pdf_results_sha256:
                 existing = await self._find_committed_import(pdf_results_sha256)
-                if existing is not None:
+                if existing is not None and only_categories is None:
                     # Abortar idempotente: no escribimos filas
                     warnings.append(
                         f"sha256 ya commiteado import_id={existing.id} "
@@ -303,22 +322,30 @@ class RaceIngestor:
                         is_revision=False,
                     )
 
-                # PR5 (FR-018): detect revision — a different SHA being committed
-                # for an event that already has prior committed results.  We check
-                # this AFTER the identical-SHA abort above, so we only flag a true
-                # content change.  The flag is recorded now but only set on the
-                # returned report after the commit succeeds (not in dry_run).
-                prior_committed = await self._find_any_committed_import_for_event(
-                    event.id
-                )
-                if prior_committed is not None and not dry_run:
-                    is_revision = True
+                if existing is not None:
+                    # Reingesta restringida (commit-pending): reusamos el
+                    # mismo RaceImport ya committed — no es una revisión (el
+                    # contenido del archivo no cambió, solo terminamos de
+                    # ingestar categorías que antes quedaron pendientes) ni
+                    # requiere buscar/crear otro row.
+                    race_import = existing
+                else:
+                    # PR5 (FR-018): detect revision — a different SHA being committed
+                    # for an event that already has prior committed results.  We check
+                    # this AFTER the identical-SHA abort above, so we only flag a true
+                    # content change.  The flag is recorded now but only set on the
+                    # returned report after the commit succeeds (not in dry_run).
+                    prior_committed = await self._find_any_committed_import_for_event(
+                        event.id
+                    )
+                    if prior_committed is not None and not dry_run:
+                        is_revision = True
 
-                # F-UP2: en dry_run buscamos un RaceImport pending previo (creado
-                # por el endpoint /parse). Si existe, lo reusamos sin promoverlo.
-                # En commit (dry_run=False), también lo reusamos pero lo promovemos
-                # a committed al final. Si no existe, lo creamos (compat CLI F1.7).
-                race_import = await self._find_pending_import(pdf_results_sha256)
+                    # F-UP2: en dry_run buscamos un RaceImport pending previo (creado
+                    # por el endpoint /parse). Si existe, lo reusamos sin promoverlo.
+                    # En commit (dry_run=False), también lo reusamos pero lo promovemos
+                    # a committed al final. Si no existe, lo creamos (compat CLI F1.7).
+                    race_import = await self._find_pending_import(pdf_results_sha256)
                 if race_import is None:
                     race_import = RaceImport(
                         filename=meta.pdf_results_filename or f"valida_{meta.valida_num}_resultados.pdf",
@@ -355,6 +382,12 @@ class RaceIngestor:
 
             # --- 6. RESULTADOS — upsert competidor + insert race_result -
             for code, rows in results_by_category.items():
+                if only_categories is not None and code not in only_categories:
+                    # Feature 044 (US5, T060): reingesta restringida — el
+                    # caller ya decidió que este code queda en
+                    # `pending_categories`; ni siquiera se resuelve el
+                    # catálogo para él.
+                    continue
                 category = category_cache.get(code)
                 if category is None:
                     raise ValueError(

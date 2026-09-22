@@ -39,6 +39,28 @@ async def client():
         yield ac
 
 
+@pytest.fixture(autouse=True)
+def _clear_parsed_rows_caches():
+    """Feature 044 (G4 mitigation): ``race_imports`` cachea el parseo crudo
+    y las categorías corregidas por ``sha256``/``(sha256, corrections_revision)``
+    en dos LRU de proceso (comentario en ``routers/race_imports.py``, antes de
+    ``_reload_results_document``).
+
+    Muchos tests de imports reusan placeholders cortos (``sha256="a"``,
+    ``"b"``, ...) entre archivos distintos con parseos monkeypatcheados
+    diferentes — sin este fixture, un test que corre después de otro con el
+    mismo placeholder leería el resultado cacheado del primero en vez de
+    llamar a su propio stub. Autouse y global: la caché es un singleton de
+    módulo compartido por todo el proceso de pytest, así que se limpia antes
+    y después de cada test sin que cada suite tenga que acordarse.
+    """
+    from app.routers.race_imports import clear_parsed_rows_caches
+
+    clear_parsed_rows_caches()
+    yield
+    clear_parsed_rows_caches()
+
+
 # ---------------------------------------------------------------------------
 # MySQL opt-in fixtures (marker: mysql)
 # ---------------------------------------------------------------------------

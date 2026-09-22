@@ -528,6 +528,19 @@ class ImportListItem(BaseModel):
     original_filename: Optional[str] = None
     uploaded_by: UploadUserRef
     n_results: int = 0  # extraído de stats_json.results_inserted
+    # Feature 044 (US5, T061): cantidad de categorías que un commit parcial
+    # dejó en `parse_meta_json["pending_categories"]` — 0 en un import ya
+    # commiteado por completo (o previo a esta feature, meta ya en None).
+    pending_categories_count: int = 0
+    # Feature 044 (US5): agrupación del tablero histórico por temporada
+    # (contracts/historical-load.md). Vienen de `parse_meta_json["header"]`
+    # mientras el import conserve su meta (pending, o committed con
+    # `pending_categories`); para un import ya committed sin nada pendiente
+    # (meta en `None`) se resuelven vía `RaceEvent`/`RaceSeries`. `None` solo
+    # en el caso defensivo de un import roto sin evento ni meta.
+    season: Optional[int] = None
+    valida_num: Optional[int] = None
+    series_name: Optional[str] = None
 
 
 class ImportListResponse(BaseModel):

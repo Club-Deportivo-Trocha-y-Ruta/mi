@@ -230,6 +230,9 @@ def stub_parsers(monkeypatch):
 
     monkeypatch.setattr(router_mod, "_parse_results_with_timeout", fake_parse_results)
     monkeypatch.setattr(router_mod, "_parse_general_with_timeout", fake_parse_general)
+    from app.services.race import import_staging as import_staging_mod
+    monkeypatch.setattr(import_staging_mod, "_parse_results_with_timeout", fake_parse_results)
+    monkeypatch.setattr(import_staging_mod, "_parse_general_with_timeout", fake_parse_general)
 
 
 @pytest.fixture
