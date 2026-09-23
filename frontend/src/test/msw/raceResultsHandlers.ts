@@ -27,18 +27,59 @@
  */
 import { http, HttpResponse } from "msw";
 
+import { LEADER_GAP_METRIC_KEYS } from "@/types/raceResults.types";
 import type {
+  CoachMetricSet,
+  FamilyMetricSet,
   RaceEventResultsResponse,
   RaceEventStandingsResponse,
   RaceResultRow,
   StandingRow,
 } from "@/types/raceResults.types";
 
+import { omitKeys } from "./omitKeys";
+
 const BASE = "*/api/race-analysis/race-events";
+
+// ---------------------------------------------------------------------------
+// Factory helpers — MetricSet (feature 045)
+// ---------------------------------------------------------------------------
+
+/** Métricas de coach/admin: incluye brechas contra 1.ª posición y podio. */
+export function makeCoachMetricSet(
+  overrides?: Partial<CoachMetricSet>,
+): CoachMetricSet {
+  return {
+    field_size: 12,
+    timed_finishers: 11,
+    position: 4,
+    percentile: 73,
+    gap_to_median_pct: -3.4,
+    gap_to_winner_pct: 5.2,
+    gap_to_winner_ms: 184_000,
+    gap_to_podium_pct: 2.1,
+    gap_to_podium_ms: 72_000,
+    ...overrides,
+  };
+}
+
+/**
+ * Métricas de familia: el backend **elimina** `gap_to_winner_pct`,
+ * `gap_to_winner_ms`, `gap_to_podium_pct` y `gap_to_podium_ms` (las claves
+ * no existen — no son `null`), así que este fixture también las omite.
+ */
+export function makeFamilyMetricSet(
+  overrides?: Partial<FamilyMetricSet>,
+): FamilyMetricSet {
+  return omitKeys(makeCoachMetricSet(overrides), LEADER_GAP_METRIC_KEYS);
+}
 
 // ---------------------------------------------------------------------------
 // Factory helpers — RaceResultRow
 // ---------------------------------------------------------------------------
+
+/** Fila sin `metrics`: neutral respecto a la audiencia. Los builders de
+ * respuesta completa agregan `makeCoachMetricSet`/`makeFamilyMetricSet`. */
 
 export function makeRaceResultRow(
   overrides?: Partial<RaceResultRow>,
@@ -154,6 +195,13 @@ export function makeParentRaceEventResultsResponse(
             is_our_club: true,
             position: 3,
             race_time_ms: 3_720_000,
+            metrics: makeFamilyMetricSet({
+              position: 3,
+              field_size: 3,
+              timed_finishers: 3,
+              percentile: null,
+              gap_to_median_pct: null,
+            }),
           }),
         ],
       },
@@ -241,9 +289,34 @@ export function makeRaceEventResultsResponse(
         category_id: 1,
         code: "INF_M",
         label: "Infantil Masculino",
+        // 3 cronometrados (< 5): percentil y brecha a la mediana son `null`.
         rows: [
-          makeRaceResultRow(),
-          makeRaceResultRowRival(),
+          makeRaceResultRow({
+            metrics: makeCoachMetricSet({
+              position: 1,
+              field_size: 3,
+              timed_finishers: 3,
+              percentile: null,
+              gap_to_median_pct: null,
+              gap_to_winner_pct: 0,
+              gap_to_winner_ms: 0,
+              gap_to_podium_pct: -3.3,
+              gap_to_podium_ms: -120_000,
+            }),
+          }),
+          makeRaceResultRowRival({
+            metrics: makeCoachMetricSet({
+              position: 2,
+              field_size: 3,
+              timed_finishers: 3,
+              percentile: null,
+              gap_to_median_pct: null,
+              gap_to_winner_pct: 1.7,
+              gap_to_winner_ms: 60_000,
+              gap_to_podium_pct: -1.6,
+              gap_to_podium_ms: -60_000,
+            }),
+          }),
           makeRaceResultRow({
             position: 3,
             competitor_id: 303,
@@ -254,6 +327,17 @@ export function makeRaceEventResultsResponse(
             race_time_ms: 3_660_000,
             points_awarded: 16,
             bib_number: 23,
+            metrics: makeCoachMetricSet({
+              position: 3,
+              field_size: 3,
+              timed_finishers: 3,
+              percentile: null,
+              gap_to_median_pct: null,
+              gap_to_winner_pct: 3.4,
+              gap_to_winner_ms: 120_000,
+              gap_to_podium_pct: 0,
+              gap_to_podium_ms: 0,
+            }),
           }),
         ],
       },
@@ -270,6 +354,18 @@ export function makeRaceEventResultsResponse(
             is_our_club: true,
             race_time_ms: 4_020_000,
             bib_number: 1,
+            // Sin tercer puesto: no existe tiempo de podio de referencia.
+            metrics: makeCoachMetricSet({
+              position: 1,
+              field_size: 2,
+              timed_finishers: 2,
+              percentile: null,
+              gap_to_median_pct: null,
+              gap_to_winner_pct: 0,
+              gap_to_winner_ms: 0,
+              gap_to_podium_pct: null,
+              gap_to_podium_ms: null,
+            }),
           }),
           makeRaceResultRowRival({
             position: 2,
@@ -278,6 +374,17 @@ export function makeRaceEventResultsResponse(
             club_text: "Club Rival XCO",
             race_time_ms: 4_080_000,
             bib_number: 8,
+            metrics: makeCoachMetricSet({
+              position: 2,
+              field_size: 2,
+              timed_finishers: 2,
+              percentile: null,
+              gap_to_median_pct: null,
+              gap_to_winner_pct: 1.5,
+              gap_to_winner_ms: 60_000,
+              gap_to_podium_pct: null,
+              gap_to_podium_ms: null,
+            }),
           }),
         ],
       },
@@ -345,6 +452,31 @@ export function makeRaceEventStandingsResponse(
 }
 
 /**
+ * Métricas de coach para la fila `rowIdx` (0-based) de una categoría de 10
+ * cronometrados con tiempos `3_600_000 + rowIdx * 30_000` ms — mismas
+ * fórmulas del motor (`data-model.md` §1) para que el fixture sea coherente.
+ */
+function fullFieldMetrics(rowIdx: number): CoachMetricSet {
+  const FIELD = 10;
+  const t = (i: number) => 3_600_000 + i * 30_000;
+  const median = (t(4) + t(5)) / 2;
+  const podium = t(2);
+  const pct = (value: number, ref: number) =>
+    Math.round((1000 * (value - ref)) / ref) / 10;
+  return makeCoachMetricSet({
+    position: rowIdx + 1,
+    field_size: FIELD,
+    timed_finishers: FIELD,
+    percentile: Math.round(100 * (1 - rowIdx / (FIELD - 1))),
+    gap_to_median_pct: pct(t(rowIdx), median),
+    gap_to_winner_pct: pct(t(rowIdx), t(0)),
+    gap_to_winner_ms: t(rowIdx) - t(0),
+    gap_to_podium_pct: pct(t(rowIdx), podium),
+    gap_to_podium_ms: t(rowIdx) - podium,
+  });
+}
+
+/**
  * Crea un fixture con las 26 categorías de la Copa Valle para probar
  * rendimiento con el dataset completo.
  *
@@ -403,6 +535,7 @@ export function makeFullFieldResultsResponse(
           points_awarded: 25 - rowIdx * 2,
           bib_number: competitorId,
           laps_behind: rowIdx >= 5 ? rowIdx - 4 : null,
+          metrics: fullFieldMetrics(rowIdx),
         });
       }),
     })),

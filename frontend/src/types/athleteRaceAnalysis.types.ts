@@ -321,7 +321,15 @@ export interface ComparisonGroupOption {
   n_points: number;
 }
 
-export interface EvolutionPoint {
+/**
+ * Punto de evolución para coach/admin. Es la única definición de la forma;
+ * `FamilyEvolutionPoint` se deriva de ella.
+ *
+ * Feature 045: `percentile`, `field_size`, `position` y `gap_to_median_pct`
+ * vienen del motor único de métricas (`MetricSet`, ver
+ * `raceResults.types.ts`).
+ */
+export interface CoachEvolutionPoint {
   valida_num: number;
   event_id: number;
   event_date: string;
@@ -349,6 +357,11 @@ export interface EvolutionPoint {
    * aplica). Expuestos para cualquier `metric` — no dependen del selector
    * activo (`contracts/evolution-api.md`). Opcionales por el mismo motivo
    * aditivo que el resto de campos de esta sección.
+   *
+   * Feature 045: `gap_pct` es la brecha vs. 1.ª posición (nombre heredado
+   * de `MetricSet.gap_to_winner_pct`) — **coach only**: el backend la
+   * omite en los puntos de un padre, y por eso no existe en
+   * `FamilyEvolutionPoint`.
    */
   position?: number | null;
   gap_pct?: number | null;
@@ -373,6 +386,14 @@ export interface EvolutionPoint {
    */
   avg_speed_kmh?: number | null;
 }
+
+/** Punto de evolución para familia: sin `gap_pct` (ausente, no `null`).
+ * Código de familia que lo lea no compila. */
+export type FamilyEvolutionPoint = Omit<CoachEvolutionPoint, "gap_pct">;
+
+/** Lo que puede llegar por el cable; `"gap_pct" in point` estrecha a
+ * `CoachEvolutionPoint`. */
+export type EvolutionPoint = CoachEvolutionPoint | FamilyEvolutionPoint;
 
 export interface EvolutionResponse {
   season: number;

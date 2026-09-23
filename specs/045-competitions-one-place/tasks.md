@@ -30,12 +30,12 @@ description: "Task list — feature 045 Competitions in one place"
 
 ## Phase 1: Setup (shared)
 
-- [ ] T001 Run `alembic heads` in `backend/` and confirm exactly one head (`b4e8d2f61a93` on 2026-09-23). Record the result in `specs/045-competitions-one-place/baseline.md`.
-- [ ] T002 Record the pre-existing failures in `specs/045-competitions-one-place/baseline.md` so later gates can tell them apart:
+- [X] T001 Run `alembic heads` in `backend/` and confirm exactly one head (`b4e8d2f61a93` on 2026-09-23). Record the result in `specs/045-competitions-one-place/baseline.md`.
+- [X] T002 Record the pre-existing failures in `specs/045-competitions-one-place/baseline.md` so later gates can tell them apart:
   - `tests/test_langchain_provider.py` (collection ImportError, `ModelError`);
   - `test_invariants_v2.py::test_resolve_age_*`;
   - `frontend/src/routes/training/SessionWizardRouteNotify.test.tsx`.
-- [ ] T003 [P] Add a "Local test DB lane" section to `specs/045-competitions-one-place/quickstart.md`:
+- [X] T003 [P] Add a "Local test DB lane" section to `specs/045-competitions-one-place/quickstart.md`:
   - create `trocha_ruta_test` through `docker compose exec mysql` using the container's root env, without echoing secrets;
   - `alembic upgrade head` with `MYSQL_HOST=127.0.0.1 MYSQL_DB=trocha_ruta_test`;
   - run the full `pytest` with the same overrides.
@@ -46,22 +46,22 @@ description: "Task list — feature 045 Competitions in one place"
 
 **Purpose**: `backend/app/services/race/field_metrics.py` becomes the single metrics engine (research R-01..R-04, data-model §1).
 
-- [ ] T004 Write failing-first tests in `backend/tests/services/race/test_field_metrics.py` for the time-based percentile:
+- [X] T004 Write failing-first tests in `backend/tests/services/race/test_field_metrics.py` for the time-based percentile:
   - fastest = 100, slowest = 0;
   - ties get equal values;
   - `t_max == t_min` → `None`;
   - fewer than 5 FINISHED-with-time rows → `None`;
   - a MINUS_LAPS rider → `None` percentile, but counted in `field_size`;
   - DNF/DNS/DSQ → `None`.
-- [ ] T005 Write failing-first tests in `backend/tests/services/race/test_field_metrics.py`:
+- [X] T005 Write failing-first tests in `backend/tests/services/race/test_field_metrics.py`:
   - for `timed_finishers`;
   - for `gap_to_podium_pct` (official P3 time; `None` when there is no P3 time);
   - showing that `gap_to_median_pct` stays `None` below 5 timed finishers.
-- [ ] T006 Implement the time-based percentile in `backend/app/services/race/field_metrics.py`:
+- [X] T006 Implement the time-based percentile in `backend/app/services/race/field_metrics.py`:
   - use `round(100 × (1 − (t − t_min) ÷ (t_max − t_min)))` over FINISHED rows with `race_time_ms`, replacing the position formula (~l.161);
   - apply `MIN_FIELD = 5` inside the engine for percentile and median gap.
-- [ ] T007 Add `timed_finishers`, `gap_to_podium_pct` (keep `gap_to_p3_ms`) and a documented MetricSet shape to the output of `compute_field_metrics` in `backend/app/services/race/field_metrics.py`. Update the docstring (inputs, outputs, gates).
-- [ ] T008 Add `compute_category_metrics(results, event_id, category_id) -> dict[result_id, MetricSet]` in `backend/app/services/race/field_metrics.py`. It is pure, O(n), and does not query the DB. Share the per-category math with `compute_field_metrics` and test it in `backend/tests/services/race/test_field_metrics.py`.
+- [X] T007 Add `timed_finishers`, `gap_to_podium_pct` (keep `gap_to_p3_ms`) and a documented MetricSet shape to the output of `compute_field_metrics` in `backend/app/services/race/field_metrics.py`. Update the docstring (inputs, outputs, gates).
+- [X] T008 Add `compute_category_metrics(results, event_id, category_id) -> dict[result_id, MetricSet]` in `backend/app/services/race/field_metrics.py`. It is pure, O(n), and does not query the DB. Share the per-category math with `compute_field_metrics` and test it in `backend/tests/services/race/test_field_metrics.py`.
 
 **Checkpoint**: T004/T005 pass and every existing test in `backend/tests/services/race/test_field_metrics.py` passes, or has an updated expectation because of the percentile change. Document each updated expectation in the test with a comment.
 
@@ -73,25 +73,25 @@ description: "Task list — feature 045 Competitions in one place"
 
 **Independent Test**: the consistency test (T018) passes, and parent payloads omit the winner and podium fields (T013–T015).
 
-- [ ] T009 [P] [US2] Write a failing-first regression test in `backend/tests/services/race/test_analytics_charts.py`: a 2-rider category exposes `percentile=None` on `EvolutionPoint`. Today it shows a value.
-- [ ] T010 [US2] Make `build_evolution` in `backend/app/services/race/analytics_charts.py` take `percentile`, `gap_pct`, `gap_to_median_pct` and `field_size` from `compute_field_metrics`:
+- [X] T009 [P] [US2] Write a failing-first regression test in `backend/tests/services/race/test_analytics_charts.py`: a 2-rider category exposes `percentile=None` on `EvolutionPoint`. Today it shows a value.
+- [X] T010 [US2] Make `build_evolution` in `backend/app/services/race/analytics_charts.py` take `percentile`, `gap_pct`, `gap_to_median_pct` and `field_size` from `compute_field_metrics`:
   - delete the homegrown formulas (~l.492-514, ~l.563-589) and the separate `cat_size` query (~l.279-280);
   - `EvolutionMetric.PERCENTILE` returns the engine value;
   - update `backend/tests/services/race/test_analytics_charts.py`.
-- [ ] T011 [US2] Make `build_distribution` in `backend/app/services/race/analytics_charts.py` take the athlete's percentile from the engine, replacing the count formula (~l.827-831). Update `backend/tests/routers/test_athlete_race_analysis_distribution.py`.
-- [ ] T012 [P] [US2] Simplify `backend/app/services/race/history.py` to read `timed_finishers` and the already-gated values from the engine: remove the local counting (~l.180-186) and the re-gating (~l.233-239). Add `gap_to_podium_pct` to the points and update `backend/tests/services/race/test_history.py`.
-- [ ] T013 [US2] Write a failing-first test, then implement: the history route in `backend/app/routers/athlete_race_analysis.py` (`get_history`) serializes the parent variant **without** `gap_to_winner_pct` and `gap_to_podium_pct` (excluded, not nulled; data-model §2). Tests go in `backend/tests/routers/test_athlete_race_history.py` and cover coach (present), parent (absent) and another parent's athlete (denied).
-- [ ] T014 [US2] Write a failing-first test, then implement: the evolution route in `backend/app/routers/athlete_race_analysis.py` returns 403 when a parent sends `metric=podium_gap_ms` (or any winner or podium metric), and parent points omit `gap_pct`. Tests go in `backend/tests/routers/test_athlete_race_analysis_evolution.py`.
-- [ ] T015 [US2] Attach `metrics` per row in `backend/app/services/race/results_read.py` (`get_event_results`) through `compute_category_metrics`, and add the schema to `backend/app/schemas/race_results.py` (`EventResultsRead` rows). The parent variant carries only `field_size`, `timed_finishers`, `position`, `percentile` and `gap_to_median_pct`. Include a query-count test (no per-row queries) and parent/coach tests in `backend/tests/services/race/test_results_read_metrics.py`.
-- [ ] T016 [P] [US2] Update the schemas in `backend/app/schemas/athlete_race_analysis.py`: add `HistoryPoint.gap_to_podium_pct` and update the field descriptions for the time-based `percentile` and `field_size` = Parrilla.
-- [ ] T017 [US2] Verify that `backend/app/services/race/ai/nodes/compute_metrics.py` (~l.378-385) feeds the analyst from the engine. Update any race-AI test that asserts a position-based percentile (grep `percentile` under `backend/tests/services/race/`). Do not change prompts or golden fixtures (research R-02).
-- [ ] T018 [US2] Write the SC-002 consistency test in `backend/tests/services/race/test_metrics_consistency.py`. It uses one category with 6 timed finishers, 1 MINUS_LAPS and 1 DNF. The history, evolution, results-read and analyst-context metrics must be identical per athlete, and every value must be `None` when there are 4 timed finishers.
-- [ ] T019 [P] [US2] Update the frontend types and fixtures:
+- [X] T011 [US2] Make `build_distribution` in `backend/app/services/race/analytics_charts.py` take the athlete's percentile from the engine, replacing the count formula (~l.827-831). Update `backend/tests/routers/test_athlete_race_analysis_distribution.py`.
+- [X] T012 [P] [US2] Simplify `backend/app/services/race/history.py` to read `timed_finishers` and the already-gated values from the engine: remove the local counting (~l.180-186) and the re-gating (~l.233-239). Add `gap_to_podium_pct` to the points and update `backend/tests/services/race/test_history.py`.
+- [X] T013 [US2] Write a failing-first test, then implement: the history route in `backend/app/routers/athlete_race_analysis.py` (`get_history`) serializes the parent variant **without** `gap_to_winner_pct` and `gap_to_podium_pct` (excluded, not nulled; data-model §2). Tests go in `backend/tests/routers/test_athlete_race_history.py` and cover coach (present), parent (absent) and another parent's athlete (denied).
+- [X] T014 [US2] Write a failing-first test, then implement: the evolution route in `backend/app/routers/athlete_race_analysis.py` returns 403 when a parent sends `metric=podium_gap_ms` (or any winner or podium metric), and parent points omit `gap_pct`. Tests go in `backend/tests/routers/test_athlete_race_analysis_evolution.py`.
+- [X] T015 [US2] Attach `metrics` per row in `backend/app/services/race/results_read.py` (`get_event_results`) through `compute_category_metrics`, and add the schema to `backend/app/schemas/race_results.py` (`EventResultsRead` rows). The parent variant carries only `field_size`, `timed_finishers`, `position`, `percentile` and `gap_to_median_pct`. Include a query-count test (no per-row queries) and parent/coach tests in `backend/tests/services/race/test_results_read_metrics.py`.
+- [X] T016 [P] [US2] Update the schemas in `backend/app/schemas/athlete_race_analysis.py`: add `HistoryPoint.gap_to_podium_pct` and update the field descriptions for the time-based `percentile` and `field_size` = Parrilla.
+- [X] T017 [US2] Verify that `backend/app/services/race/ai/nodes/compute_metrics.py` (~l.378-385) feeds the analyst from the engine. Update any race-AI test that asserts a position-based percentile (grep `percentile` under `backend/tests/services/race/`). Do not change prompts or golden fixtures (research R-02).
+- [X] T018 [US2] Write the SC-002 consistency test in `backend/tests/services/race/test_metrics_consistency.py`. It uses one category with 6 timed finishers, 1 MINUS_LAPS and 1 DNF. The history, evolution, results-read and analyst-context metrics must be identical per athlete, and `percentile` and `gap_to_median_pct` must be `None` when there are 4 timed finishers (the official winner/podium gaps carry no size gate, R-04).
+- [X] T019 [P] [US2] Update the frontend types and fixtures:
   - `frontend/src/types/raceHistory.types.ts` (`gap_to_podium_pct`);
   - `frontend/src/types/athleteRaceAnalysis.types.ts`;
   - `frontend/src/types/raceResults.types.ts` (row `metrics`, `MetricSet`);
   - the MSW handlers under `frontend/src/test/msw/`.
-- [ ] T020 [US2] GATE G1. Run:
+- [X] T020 [US2] GATE G1. Run:
   - backend `pytest` (default lane plus the local test DB lane from T003);
   - `ruff check` on the changed backend files;
   - `npm run typecheck`;

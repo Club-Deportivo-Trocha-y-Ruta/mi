@@ -30,6 +30,8 @@ import type {
   SeriesLevel,
 } from "@/types/athleteRaceAnalysis.types";
 
+import { omitKeys } from "./omitKeys";
+
 // ---------------------------------------------------------------------------
 // Factory helpers
 // ---------------------------------------------------------------------------
@@ -339,6 +341,22 @@ export function mockEvolution(
   };
 }
 
+/**
+ * Evolución tal como la recibe un padre (feature 045): el backend omite
+ * `gap_pct` (brecha vs. 1.ª posición) de cada punto — la clave no existe,
+ * no es `null`.
+ */
+export function mockFamilyEvolution(
+  overrides?: Partial<EvolutionResponse>,
+): EvolutionResponse {
+  const coach = mockEvolution();
+  return {
+    ...coach,
+    series: coach.series.map((point) => omitKeys(point, ["gap_pct"])),
+    ...overrides,
+  };
+}
+
 export function mockDistribution(
   overrides?: Partial<DistributionResponse>,
 ): DistributionResponse {
@@ -465,6 +483,13 @@ export const athleteRaceAnalysisHandlers = [
 ];
 
 // Variantes para escenarios específicos
+
+/** GET .../evolution → payload de un padre (sin `gap_pct`). */
+export const familyEvolutionHandler = http.get(
+  "*/api/athletes/:athleteId/race-analysis/evolution",
+  () => HttpResponse.json(mockFamilyEvolution()),
+);
+
 export const emptyInsightsHandler = http.get(
   "*/api/athletes/:athleteId/race-analysis/insights",
   () => {

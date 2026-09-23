@@ -488,9 +488,10 @@ class EvolutionPoint(BaseModel):
         default=None,
         ge=0,
         description=(
-            "Número de corredores que terminaron (FINISHED) en la misma "
-            "(evento, categoría) del atleta — incluye al propio atleta si "
-            "terminó. ``None`` si no hay datos de la categoría."
+            "« Parrilla » (feature 045): corredores que cruzaron meta en la "
+            "misma (evento, categoría) del atleta — ``FINISHED`` + "
+            "``MINUS_LAPS``; incluye al propio atleta si terminó. ``None`` si "
+            "no hay datos de la categoría."
         ),
     )
     percentile: Optional[float] = Field(
@@ -498,12 +499,14 @@ class EvolutionPoint(BaseModel):
         ge=0.0,
         le=100.0,
         description=(
-            "Percentil posicional (research D3): "
-            "``100 * (1 - (position - 1) / (field_size - 1))``, "
-            "``field_size <= 1`` → ``100.0``. Distinto del percentil por "
-            "tiempo de ``EvolutionMetric.PERCENTILE`` — este campo se "
-            "calcula siempre, independiente de la métrica solicitada. "
-            "``None`` si el atleta no finalizó (DNF/DNS/DSQ)."
+            "Percentil por TIEMPO (feature 045, mismo valor que "
+            "``HistoryPoint.percentile``): "
+            "``round(100 × (1 − (t − t_min) ÷ (t_max − t_min)))`` sobre los "
+            "``FINISHED`` con tiempo de la categoría — el más rápido saca "
+            "100, el más lento 0. Se calcula siempre, independiente de la "
+            "métrica solicitada. ``None`` si hay menos de 5 cronometrados, "
+            "si el atleta no terminó con tiempo o si todos los tiempos "
+            "empatan."
         ),
     )
     position: Optional[int] = Field(
@@ -522,7 +525,9 @@ class EvolutionPoint(BaseModel):
             "039, B-2): ``100 * (race_time_ms - winner_time_ms) / "
             "winner_time_ms``, redondeado a 1 decimal. ``0.0`` para el "
             "propio ganador. Se expone para cualquier métrica solicitada. "
-            "``None`` si no finalizó o no hay tiempo del ganador."
+            "``None`` si no finalizó o no hay tiempo del ganador. SOLO "
+            "COACH (feature 045): la variante de familia omite la clave — "
+            "``services/race/audience.py``."
         ),
     )
     gap_to_median_pct: Optional[float] = Field(
@@ -537,7 +542,7 @@ class EvolutionPoint(BaseModel):
             "cualquier métrica solicitada (no solo "
             "``metric=gap_to_median_pct``), igual que ``gap_pct``. "
             "``None`` si el atleta no finalizó o si la categoría del "
-            "evento tiene menos de ``history.MIN_FIELD`` (5) finalistas "
+            "evento tiene menos de ``field_metrics.MIN_FIELD`` (5) finalistas "
             "CON tiempo registrado — mismo umbral que "
             "``AthleteRaceHistoryRead``."
         ),
@@ -684,7 +689,16 @@ class DistributionResponse(BaseModel):
     stddev_ms: Optional[float] = Field(default=None, ge=0.0)
     athlete_time_ms: Optional[int] = Field(default=None, ge=0)
     athlete_z_score: Optional[float] = None
-    athlete_percentile: Optional[float] = Field(default=None, ge=0.0, le=100.0)
+    athlete_percentile: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=100.0,
+        description=(
+            "Percentil por tiempo del motor (``field_metrics``): 100 = más rápido, "
+            "0 = más lento entre los que terminaron con tiempo. ``None`` con menos "
+            "de 5 cronometrados o si el atleta no terminó con tiempo."
+        ),
+    )
     points: list[DistributionPoint] = Field(default_factory=list)
     curve: list[DistributionCurvePoint] = Field(default_factory=list)
     confidence: AnalysisConfidence
@@ -758,29 +772,60 @@ class HistoryPoint(BaseModel):
     field_size: Optional[int] = Field(
         default=None,
         ge=0,
-        description="Finalistas de la categoría/válida, incluidos los que perdieron vueltas (FR-030).",
+        description=(
+            "«Parrilla»: quienes cruzaron meta en la categoría/válida — "
+            "``FINISHED`` + ``MINUS_LAPS`` (perder vueltas no saca a nadie "
+            "del pelotón). Feature 045, data-model §1."
+        ),
     )
     timed_finishers: Optional[int] = Field(
         default=None,
         ge=0,
-        description="Finalistas FINISHED estricto con tiempo registrado (FR-030/031).",
+        description=(
+            "``FINISHED`` estricto con tiempo registrado: el denominador real "
+            "de ``percentile`` y ``gap_to_median_pct`` (FR-030/031). Un "
+            "``MINUS_LAPS`` nunca cuenta aquí aunque sí cuente en ``field_size``."
+        ),
     )
     percentile: Optional[float] = Field(
         default=None,
         ge=0.0,
         le=100.0,
-        description="``None`` si ``field_size < 5`` (FR-032) o el atleta no finalizó.",
+        description=(
+            "Percentil por TIEMPO (feature 045): "
+            "``round(100 × (1 − (t − t_min) ÷ (t_max − t_min)))`` sobre los "
+            "``timed_finishers`` — el más rápido saca 100, el más lento 0. "
+            "``None`` si ``timed_finishers < 5`` (FR-032), si el atleta no "
+            "terminó con tiempo (DNF/DNS/DSQ/MINUS_LAPS) o si todos los "
+            "tiempos empatan. Ya viene con la puerta aplicada por el motor "
+            "``field_metrics``."
+        ),
     )
     gap_to_median_pct: Optional[float] = Field(
         default=None,
         description=(
-            "``None`` si ``timed_finishers < 5``, o el atleta no finalizó la "
-            "distancia completa con tiempo (FR-031)."
+            "« Brecha vs. mediana ». ``None`` si ``timed_finishers < 5``, o el "
+            "atleta no finalizó la distancia completa con tiempo (FR-031). "
+            "Misma puerta que ``percentile``, aplicada por el motor."
         ),
     )
     gap_to_winner_pct: Optional[float] = Field(
         default=None,
-        description="Sin umbral de tamaño de campo — se mantiene por continuidad con 037/039.",
+        description=(
+            "« Brecha vs. 1.ª posición » contra el tiempo oficial de la "
+            "posición 1. Sin umbral de tamaño de campo. SOLO COACH: la "
+            "variante de familia omite la clave (no la envía en ``null``) — "
+            "``services/race/audience.py``."
+        ),
+    )
+    gap_to_podium_pct: Optional[float] = Field(
+        default=None,
+        description=(
+            "« Brecha vs. podio » contra el tiempo oficial de la posición 3 "
+            "(feature 045). ``None`` sin tiempo oficial de P3 o sin tiempo "
+            "propio. Sin umbral de tamaño de campo. SOLO COACH: la variante "
+            "de familia omite la clave — ``services/race/audience.py``."
+        ),
     )
     points_awarded: int = Field(..., ge=0)
 

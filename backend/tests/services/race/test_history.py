@@ -15,6 +15,7 @@ from app.models.race_category import CategoryGender, RaceCategory
 from app.models.race_event import RaceEvent, RaceEventStatus
 from app.models.race_result import RaceResult, ResultStatus
 from app.models.race_series import RaceSeries, RaceSeriesKind, RaceSeriesLevel
+from app.services.race import field_metrics
 from app.services.race.history import (
     HISTORY_CAVEATS,
     MIN_FIELD,
@@ -239,6 +240,81 @@ class TestFieldThresholds:
 
     def test_min_field_constant_is_five(self):
         assert MIN_FIELD == 5
+
+
+def _lapped_field_dataset(*, own_time_ms: int, own_position: int) -> dict:
+    """Una válida con Parrilla de 5 (4 cronometrados + 1 MINUS_LAPS) — el
+    denominador del percentil es ``timed_finishers`` (4), no ``field_size``."""
+    series = [_series(1, 2024)]
+    events = [_event(301, 1, 1, date(2024, 4, 1))]
+    categories = [_category(_CAT_A, "INF_A", "Infantil A")]
+    results = [
+        _result(1, 301, _CAT_A, 1, athlete_id=_ATHLETE_ID, position=own_position, time_ms=own_time_ms),
+        _result(2, 301, _CAT_A, 2, position=1, time_ms=2_900_000),
+        _result(3, 301, _CAT_A, 3, position=2, time_ms=3_000_000),
+        _result(4, 301, _CAT_A, 4, position=3, time_ms=3_100_000),
+        _result(
+            5, 301, _CAT_A, 5, position=5, status=ResultStatus.MINUS_LAPS,
+            time_ms=None, laps_behind=1,
+        ),
+    ]
+    return {"results": results, "events": events, "series": series, "categories": categories}
+
+
+class TestEngineIsTheSingleSource:
+    """T012 (feature 045): ``history.py`` no cuenta ni re-puertea — lee del
+    motor ``field_metrics`` los valores ya cerrados."""
+
+    def test_percentile_is_gated_by_timed_finishers_not_by_parrilla(self):
+        points = build_history_points(
+            **_lapped_field_dataset(own_time_ms=3_200_000, own_position=4),
+            athlete_id=_ATHLETE_ID,
+        )
+        (p,) = points
+        assert p.field_size == 5  # Parrilla incluye al MINUS_LAPS
+        assert p.timed_finishers == 4
+        assert p.percentile is None
+        assert p.gap_to_median_pct is None
+
+    def test_percentile_is_time_based_not_position_based(self):
+        dataset = _lapped_field_dataset(own_time_ms=3_200_000, own_position=4)
+        # Quinto cronometrado (el MINUS_LAPS se reemplaza por un FINISHED lento)
+        # para superar la puerta: tiempos 2.9 / 3.0 / 3.1 / 3.2 / 4.0.
+        dataset["results"][-1] = _result(5, 301, _CAT_A, 5, position=5, time_ms=4_000_000)
+        (p,) = build_history_points(**dataset, athlete_id=_ATHLETE_ID)
+        assert p.timed_finishers == 5
+        # 100 × (1 − (3.2 − 2.9) ÷ (4.0 − 2.9)) = 72.7 → 73. Por posición saldría 25.
+        assert p.percentile == 73.0
+
+    def test_gap_to_podium_pct_uses_the_official_third_place_time(self, dataset):
+        by_event = _by_event(build_history_points(**dataset, athlete_id=_ATHLETE_ID))
+        # V1: P3 = 3_200_000, atleta 3_100_000 → -3.125 % → -3.1.
+        assert by_event[101].gap_to_podium_pct == -3.1
+        # V2: P3 = 3_100_000, atleta 2_900_000 → -6.45 % → -6.5.
+        assert by_event[102].gap_to_podium_pct == -6.5
+
+    def test_gap_to_podium_pct_is_none_without_own_time_or_third_place_time(self, dataset):
+        by_event = _by_event(build_history_points(**dataset, athlete_id=_ATHLETE_ID))
+        assert by_event[104].gap_to_podium_pct is None  # DNF
+        assert by_event[105].gap_to_podium_pct is None  # FINISHED sin tiempo
+        assert by_event[106].gap_to_podium_pct is None  # MINUS_LAPS
+
+    def test_every_metric_equals_the_engine_output(self, dataset):
+        """SC-002 en pequeño: mismo (evento, categoría) → mismos números."""
+        by_event = _by_event(build_history_points(**dataset, athlete_id=_ATHLETE_ID))
+        engine = field_metrics.compute_field_metrics(
+            dataset["results"], dataset["events"], dataset["series"],
+            dataset["categories"], competitor_id=1, season=2024,
+        )
+        assert engine  # sanity: el motor sí produjo entradas
+        for event_id, metrics in engine.items():
+            p = by_event[event_id]
+            assert p.field_size == metrics["field_size"]
+            assert p.timed_finishers == metrics["timed_finishers"]
+            assert p.percentile == metrics["percentile"]
+            assert p.gap_to_median_pct == metrics["gap_to_median_pct"]
+            assert p.gap_to_winner_pct == metrics["gap_pct"]
+            assert p.gap_to_podium_pct == metrics["gap_to_podium_pct"]
 
 
 class TestNonFinishers:

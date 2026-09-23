@@ -11,7 +11,16 @@
  * Cuando el llamante es un padre, el backend ya filtra los puntos previos
  * a la vinculación del atleta (ver el contrato, "Parent filter") — el
  * frontend no vuelve a filtrar nada, solo renderiza lo que llega.
+ *
+ * Feature 045: las métricas del punto vienen del motor único (`MetricSet`,
+ * ver `raceResults.types.ts`). Para un padre el backend omite las brechas
+ * contra el líder y el podio (`gap_to_winner_pct`, `gap_to_podium_pct`).
  */
+
+import type {
+  CoachMetricSet,
+  FamilyMetricSet,
+} from "@/types/raceResults.types";
 
 /** Estado del corredor al cierre de la válida — mirror de `ResultStatus`
  * (`backend/app/models/race_result.py`). */
@@ -70,9 +79,11 @@ export const RACE_HISTORY_CAVEAT_LABELS: Record<
     "Con tres corredores o menos en la categoría, la posición dice poco sobre el nivel real.",
 };
 
-/** Un punto de la serie histórica — una fila de `race_results` con su
- * contexto de válida/serie/categoría ya resuelto por el backend. */
-export interface RaceHistoryPoint {
+/** Contexto de válida/serie/categoría de un punto — idéntico para coach y
+ * familia. Las métricas (`position`, `percentile`, brechas…) van aparte, en
+ * `CoachRaceHistoryPoint` / `FamilyRaceHistoryPoint`, derivadas de
+ * `MetricSet` para que la forma se defina una sola vez. */
+interface RaceHistoryPointContext {
   event_id: number;
   event_date: string;
   season: number;
@@ -98,20 +109,32 @@ export interface RaceHistoryPoint {
    * con `"promotion"` el dato sí lo sostiene. */
   category_change_kind: "promotion" | "other" | null;
   status: RaceHistoryResultStatus;
-  position: number | null;
-  /** Finishers incluyendo quien perdió vueltas (`minus_laps`). */
-  field_size: number | null;
-  /** `FINISHED` estricto con tiempo — subconjunto de `field_size`. */
-  timed_finishers: number | null;
-  /** `null` cuando `field_size < 5`. */
-  percentile: number | null;
-  /** `null` cuando `timed_finishers < 5`, o el atleta no terminó, o no
-   * tiene tiempo. Negativo = más rápido que la mediana. */
-  gap_to_median_pct: number | null;
-  /** Misma regla de estado que `gap_to_median_pct`, sin umbral de tamaño. */
-  gap_to_winner_pct: number | null;
   points_awarded: number;
 }
+
+type Nullable<T> = { [K in keyof T]: T[K] | null };
+
+/** Métricas del punto: las del `MetricSet` (cada una puede ser `null`, p. ej.
+ * sin resultado cronometrado) menos las brechas absolutas
+ * (`gap_to_winner_ms`, `gap_to_podium_ms`) — el punto lleva solo las brechas
+ * en %. */
+type HistoryMetrics<M> = Nullable<Omit<M, "gap_to_winner_ms" | "gap_to_podium_ms">>;
+
+/** Punto para coach/admin: incluye `gap_to_winner_pct` y `gap_to_podium_pct`. */
+export type CoachRaceHistoryPoint = RaceHistoryPointContext &
+  HistoryMetrics<CoachMetricSet>;
+
+/** Punto para familia: el backend **omite** `gap_to_winner_pct` y
+ * `gap_to_podium_pct` (no llegan como `null`); código de familia que los
+ * lea no compila. */
+export type FamilyRaceHistoryPoint = RaceHistoryPointContext &
+  HistoryMetrics<FamilyMetricSet>;
+
+/** Un punto de la serie histórica — una fila de `race_results` con su
+ * contexto de válida/serie/categoría ya resuelto por el backend. Es una
+ * unión por audiencia: `"gap_to_winner_pct" in point` estrecha a
+ * `CoachRaceHistoryPoint`. */
+export type RaceHistoryPoint = CoachRaceHistoryPoint | FamilyRaceHistoryPoint;
 
 /** Resumen de asistencia por temporada. */
 export interface RaceHistorySeasonCompletion {

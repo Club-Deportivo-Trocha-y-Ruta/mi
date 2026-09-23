@@ -16,15 +16,16 @@ The engine produces one MetricSet per result (`field_metrics.py`, R-01).
 | `gap_to_winner_pct` («Brecha vs. 1.ª posición») | float \| null | against the official P1 time; `null` when no P1 time exists | ✓ | **never** |
 | `gap_to_podium_pct` («Brecha vs. podio») | float \| null | against the official P3 time; `null` when no P3 time exists | ✓ | **never** |
 | `gap_to_podium_ms` | int \| null | existing `gap_to_p3_ms` | ✓ | **never** |
+| `gap_to_winner_ms` | int \| null | against the official P1 time (existing `gap_to_p1_ms`); added during W1 so evolution reads per-result metrics | ✓ | **never** |
 
 **Invariants**:
 - **Single source**: every consumer gets these values from the engine and recomputes nothing.
-- **Enforced server-side for families**: parent-facing responses omit `gap_to_winner_pct`, `gap_to_podium_pct` and `gap_to_podium_ms`. They are removed from the payload, not merely hidden.
+- **Enforced server-side for families**: parent-facing responses omit `gap_to_winner_pct`, `gap_to_winner_ms`, `gap_to_podium_pct` and `gap_to_podium_ms`. They are removed from the payload, not merely hidden.
 - **Minimum field**: `MIN_FIELD = 5` applies inside the engine.
 
 **Entry points**:
 - `compute_field_metrics(...)` (existing, per athlete and season) returns MetricSets keyed by `event_id`.
-- `compute_category_metrics(event_id, category_id, rows)` (new) returns MetricSets keyed by `result_id`. It serves the competition detail.
+- `compute_category_metrics(results, event_id, category_id)` (new) returns MetricSets keyed by `result_id`. It serves the competition detail and the evolution chart. Keying by `result_id` rather than `event_id` keeps an athlete with two results in one event (two categories) from sharing one MetricSet.
 
 ## 2. HistoryPoint (response; `schemas/athlete_race_analysis.py`)
 

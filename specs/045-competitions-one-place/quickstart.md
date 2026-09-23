@@ -22,9 +22,34 @@ Pre-existing failures that are not caused by 045 (see research R-15):
 - `test_invariants_v2.py::test_resolve_age_*`;
 - `SessionWizardRouteNotify.test.tsx`.
 
+## Local test DB lane
+
+Local `.env` points at production MySQL, so every run that can open a MySQL connection overrides the target to the local `trocha_ruta_test` database (docker compose `mysql` service, port 3306 on the host). Never pass credentials on the command line in a transcript — read them from the container's own environment.
+
+```bash
+# 1. Create the database once, using the container's root password (never echoed)
+docker compose exec mysql sh -c \
+  'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "CREATE DATABASE IF NOT EXISTS trocha_ruta_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"'
+
+# 2. Migrate it to head
+cd backend && MYSQL_HOST=127.0.0.1 MYSQL_DB=trocha_ruta_test .venv/bin/alembic upgrade head
+
+# 3. Full pytest with the same overrides (default lane stays aiosqlite; the overrides
+#    guarantee nothing falls through to the production host)
+MYSQL_HOST=127.0.0.1 MYSQL_DB=trocha_ruta_test PYTHONPATH=. \
+  DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib .venv/bin/python -m pytest
+
+# 4. The mysql lane: TEST_DATABASE_URL must name a database ending in `_test`
+#    (conftest refuses anything else); build it from the same local credentials.
+MYSQL_HOST=127.0.0.1 MYSQL_DB=trocha_ruta_test TEST_DATABASE_URL="mysql+aiomysql://<user>:<pass>@127.0.0.1:3306/trocha_ruta_test" \
+  PYTHONPATH=. DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib .venv/bin/python -m pytest -m mysql
+```
+
+Invoke `python -m pytest`, not the `pytest` script: macOS SIP drops `DYLD_*` variables on the shebang re-exec and WeasyPrint then fails to load.
+
 ## Scenario checks (each one maps to a spec story)
 
-1. **Metrics agree (US2, SC-002).** A backend consistency test builds one category with 5 timed finishers, one who lost laps and one DNF. It then asserts that the history, evolution, competition-results and analyst-context metrics are identical per athlete.
+1. **Metrics agree (US2, SC-002).** A backend consistency test builds one category with 6 timed finishers, one who lost laps and one DNF. It then asserts that the history, evolution, competition-results and analyst-context metrics are identical per athlete.
    - Time-based percentile: the fastest rider gets 100 and the slowest 0.
    - The rider who lost laps gets `null` for percentile and gaps, and is counted in Parrilla.
    - With 4 timed finishers, percentile and median gap are `null` everywhere.

@@ -433,3 +433,198 @@ async def test_evolution_series_ordered_by_event_date(coach_client):
     assert dates[0] == "2026-01-31", (
         f"El primer punto debería ser Copa Válida I (2026-01-31). Recibí: {dates[0]}"
     )
+
+
+# ---------------------------------------------------------------------------
+# T014 (feature 045, contracts/api.md §evolution) — audiencia de familia.
+# Un padre NUNCA recibe métricas de 1.ª posición / podio: la métrica
+# ``podium_gap_ms`` responde 403 (sin calcularse) y los puntos que sí recibe
+# no traen ``gap_pct`` (brecha al ganador; excluida, no en null).
+# ---------------------------------------------------------------------------
+
+from unittest.mock import AsyncMock  # noqa: E402
+
+from tests.fixtures.race_history_fixtures import link_parent_to_athlete  # noqa: E402
+
+from app.schemas.athlete_race_analysis import EvolutionMetric  # noqa: E402
+from app.services.race.audience import FAMILY_FORBIDDEN_EVOLUTION_METRICS  # noqa: E402
+
+_EVOLUTION_URL = "/api/athletes/201/race-analysis/evolution"
+_PARENT_ID = 20
+_OTHER_PARENT_ID = 21
+_ALLOWED_FAMILY_METRICS = sorted(
+    m.value for m in EvolutionMetric if m not in FAMILY_FORBIDDEN_EVOLUTION_METRICS
+)
+_FAMILY_POINT_KEYS = ("position", "field_size", "percentile", "gap_to_median_pct")
+
+
+def _user_with_role(user_id: int, role: UserRole, *, club_id: int | None = None) -> SimpleNamespace:
+    memberships = (
+        [] if club_id is None else [SimpleNamespace(club_id=club_id, role_in_club=ClubRole.coach)]
+    )
+    return SimpleNamespace(
+        id=user_id,
+        first_name="Test",
+        last_name="User",
+        role=role,
+        can_login=True,
+        is_active=True,
+        club_memberships=memberships,
+    )
+
+
+@pytest_asyncio.fixture
+async def family_seeded(evolution_seeded) -> async_sessionmaker[AsyncSession]:
+    """``evolution_seeded`` + un padre vinculado al atleta 201 y otro sin vínculo."""
+    async with evolution_seeded() as s:
+        await create_user(s, user_id=_PARENT_ID, role=UserRole.parent, email="padre_evo@test.com")
+        await link_parent_to_athlete(s, parent_user_id=_PARENT_ID, athlete_id=201)
+        await create_user(s, user_id=_OTHER_PARENT_ID, role=UserRole.parent, email="otro_padre_evo@test.com")
+        await s.commit()
+    return evolution_seeded
+
+
+@pytest_asyncio.fixture
+async def client_for(family_seeded):
+    """Fábrica ``await client_for(user)`` sobre la DB sembrada compartida."""
+
+    def _override_db():
+        async def _inner():
+            async with family_seeded() as s:
+                try:
+                    yield s
+                    await s.commit()
+                except Exception:
+                    await s.rollback()
+                    raise
+
+        return _inner
+
+    async def _make(user: SimpleNamespace) -> AsyncClient:
+        app.dependency_overrides[get_db] = _override_db()
+        app.dependency_overrides[get_current_user] = lambda: user
+        return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+
+    yield _make
+    app.dependency_overrides.clear()
+
+
+def test_the_forbidden_family_metric_is_the_podium_gap():
+    # Contrato explícito (contracts/api.md): la métrica de brecha al podio.
+    assert {m.value for m in FAMILY_FORBIDDEN_EVOLUTION_METRICS} == {"podium_gap_ms"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("metric", sorted(m.value for m in FAMILY_FORBIDDEN_EVOLUTION_METRICS))
+async def test_parent_requesting_a_winner_or_podium_metric_gets_403(client_for, metric):
+    async with await client_for(_user_with_role(_PARENT_ID, UserRole.parent)) as ac:
+        resp = await ac.get(_EVOLUTION_URL, params={"season": 2026, "metric": metric})
+    assert resp.status_code == 403
+    body = resp.json()
+    assert "series" not in body
+    assert isinstance(body["detail"], str)
+
+
+@pytest.mark.asyncio
+async def test_forbidden_metric_is_never_computed_for_a_parent(client_for, monkeypatch):
+    spy = AsyncMock()
+    monkeypatch.setattr("app.routers.athlete_race_analysis.build_evolution", spy)
+    async with await client_for(_user_with_role(_PARENT_ID, UserRole.parent)) as ac:
+        resp = await ac.get(_EVOLUTION_URL, params={"season": 2026, "metric": "podium_gap_ms"})
+    assert resp.status_code == 403
+    spy.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_forbidden_metric_is_not_bypassed_by_the_group_filter(client_for):
+    async with await client_for(_user_with_role(_PARENT_ID, UserRole.parent)) as ac:
+        resp = await ac.get(
+            _EVOLUTION_URL,
+            params={"season": 2026, "metric": "podium_gap_ms", "series_id": 50},
+        )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_default_metric_is_the_median_gap_for_a_parent(client_for):
+    """Sin ``metric`` el default es ``gap_to_median_pct`` (spec: la brecha vs.
+    mediana es la métrica por defecto para todas las audiencias): el padre
+    recibe 200 con valores de mediana — nunca un 403 por omitir el parámetro
+    ni la brecha al podio por omisión."""
+    async with await client_for(_user_with_role(_PARENT_ID, UserRole.parent)) as ac:
+        resp = await ac.get(_EVOLUTION_URL, params={"season": 2026})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["metric"] == "gap_to_median_pct"
+    assert body["series"]
+    assert any(p["value"] is not None for p in body["series"])
+    assert all(p["unit"] == "pct_signed" for p in body["series"])
+    assert "gap_pct" not in resp.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role,user_id,club_id", [(UserRole.coach, 10, 1), (UserRole.admin, 99, None)])
+async def test_default_metric_is_the_median_gap_for_staff(client_for, role, user_id, club_id):
+    async with await client_for(_user_with_role(user_id, role, club_id=club_id)) as ac:
+        resp = await ac.get(_EVOLUTION_URL, params={"season": 2026})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["metric"] == "gap_to_median_pct"
+    assert any(p["value"] is not None for p in body["series"])
+    # El coach sigue recibiendo la brecha al ganador en cada punto.
+    assert all("gap_pct" in p for p in body["series"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("metric", _ALLOWED_FAMILY_METRICS)
+async def test_parent_points_omit_gap_pct(client_for, metric):
+    async with await client_for(_user_with_role(_PARENT_ID, UserRole.parent)) as ac:
+        resp = await ac.get(_EVOLUTION_URL, params={"season": 2026, "metric": metric})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["series"], "el atleta ficticio compitió en 3 eventos"
+    for point in body["series"]:
+        assert "gap_pct" not in point  # excluida, no en null
+        for key in _FAMILY_POINT_KEYS:
+            assert key in point
+    assert "gap_pct" not in resp.text
+
+
+@pytest.mark.asyncio
+async def test_parent_group_filter_still_omits_gap_pct(client_for):
+    async with await client_for(_user_with_role(_PARENT_ID, UserRole.parent)) as ac:
+        resp = await ac.get(
+            _EVOLUTION_URL, params={"season": 2026, "metric": "ranking", "series_id": 50}
+        )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["series"]
+    assert all("gap_pct" not in p for p in body["series"])
+    assert body["selected_group"] == "cup:50"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role,user_id,club_id", [(UserRole.coach, 10, 1), (UserRole.admin, 99, None)])
+async def test_staff_keeps_podium_gap_metric_and_gap_pct(client_for, role, user_id, club_id):
+    async with await client_for(_user_with_role(user_id, role, club_id=club_id)) as ac:
+        resp = await ac.get(_EVOLUTION_URL, params={"season": 2026, "metric": "podium_gap_ms"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["metric"] == "podium_gap_ms"
+    assert body["series"]
+    for point in body["series"]:
+        assert "gap_pct" in point
+    # El atleta ficticio termina 3.º: hay brecha al ganador calculable.
+    assert any(p["gap_pct"] is not None for p in body["series"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("metric", ["podium_gap_ms", "ranking"])
+async def test_other_parent_is_denied_and_nothing_is_computed(client_for, monkeypatch, metric):
+    spy = AsyncMock()
+    monkeypatch.setattr("app.routers.athlete_race_analysis.build_evolution", spy)
+    async with await client_for(_user_with_role(_OTHER_PARENT_ID, UserRole.parent)) as ac:
+        resp = await ac.get(_EVOLUTION_URL, params={"season": 2026, "metric": metric})
+    assert resp.status_code == 403
+    assert "series" not in resp.json()
+    spy.assert_not_called()

@@ -14,9 +14,74 @@ Privacidad Ley 1581:
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Optional
+from typing import Optional, Union
 
 from pydantic import BaseModel, Field, field_validator
+
+
+# ---------------------------------------------------------------------------
+# Per-row metrics (feature 045, data-model.md §1 / §4)
+# ---------------------------------------------------------------------------
+
+
+class FamilyMetricSet(BaseModel):
+    """Metrics a family (parent) may see for a result row — the typed wire
+    shape of the family variant.
+
+    *What* a family may see is decided by ``services.race.audience``
+    (``FAMILY_EXCLUDED_METRIC_FIELDS``, the audience policy); this class only
+    gives that decision a schema. Both must agree: this field set equals
+    ``MetricSet`` minus the excluded fields, and a test pins it
+    (``test_results_read_metrics.py``), so the two cannot drift apart.
+
+    Values come from ``services.race.field_metrics.compute_category_metrics``
+    (the one metrics engine); nothing is recomputed in the schema layer.
+    """
+
+    field_size: int = Field(
+        ..., description="«Parrilla»: finishers (FINISHED + MINUS_LAPS) in the category."
+    )
+    timed_finishers: int = Field(
+        ...,
+        description="FINISHED riders with a time — the denominator of percentile and median gap.",
+    )
+    position: Optional[int] = Field(
+        None, description="Official position. None for DNF/DNS/DSQ."
+    )
+    percentile: Optional[float] = Field(
+        None,
+        description=(
+            "Time-based percentile (100 = fastest, 0 = slowest). None below 5 "
+            "timed finishers, for non-timed results, or when all times tie."
+        ),
+    )
+    gap_to_median_pct: Optional[float] = Field(
+        None,
+        description="«Brecha vs. mediana» (%). Same None rules as ``percentile``.",
+    )
+
+
+class CoachMetricSet(FamilyMetricSet):
+    """Full metric set — coach / admin only (never serialized for parents).
+
+    The extra fields are *required* (nullable, no default) on purpose: a
+    family payload lacks them, so it can never validate as a
+    ``CoachMetricSet`` when FastAPI re-validates the response through the
+    ``Coach | Family`` union — which would re-introduce them as ``null``.
+    """
+
+    gap_to_winner_pct: Optional[float] = Field(
+        ..., description="«Brecha vs. 1.ª posición» (%) against the official P1 time."
+    )
+    gap_to_winner_ms: Optional[int] = Field(
+        ..., description="Milliseconds behind the official P1 time."
+    )
+    gap_to_podium_pct: Optional[float] = Field(
+        ..., description="«Brecha vs. podio» (%) against the official P3 time."
+    )
+    gap_to_podium_ms: Optional[int] = Field(
+        ..., description="Milliseconds behind the official P3 time."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +162,19 @@ class ResultRow(BaseModel):
     elevation_gain_m: Optional[int] = Field(
         None,
         description="Desnivel positivo acumulado de la variante de recorrido. None sin dato de altitud.",
+    )
+    # ``CoachMetricSet`` first: with a plain dict (FastAPI re-validates the
+    # dumped response) it is the only member that accepts the 8-key coach
+    # payload; the 5-key family payload cannot satisfy it and falls through
+    # to ``FamilyMetricSet``.
+    metrics: Optional[Union[CoachMetricSet, FamilyMetricSet]] = Field(
+        None,
+        description=(
+            "Feature 045: per-row metrics computed over the WHOLE category "
+            "(not just the rows this caller may see). Coach/admin get "
+            "``CoachMetricSet``; parents get ``FamilyMetricSet`` — winner and "
+            "podium gaps are omitted from their payload, not nulled."
+        ),
     )
 
     model_config = {"from_attributes": True}

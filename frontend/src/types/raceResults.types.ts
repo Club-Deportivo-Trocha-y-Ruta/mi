@@ -28,6 +28,66 @@
 export type RaceResultStatus = "finished" | "dnf" | "dns" | "dsq";
 
 // ---------------------------------------------------------------------------
+// MetricSet — motor único de métricas de carrera (feature 045)
+// ---------------------------------------------------------------------------
+
+/**
+ * Métricas de un resultado, tal como las calcula el motor del backend
+ * (`field_metrics.py`, `data-model.md` §1). Ningún consumidor las recalcula.
+ *
+ * Esta es la vista de coach/admin (completa) y la única definición de la
+ * forma: la vista de familia y las variantes por endpoint
+ * (`RaceHistoryPoint`, `RaceResultRow.metrics`) se derivan de aquí.
+ */
+export interface CoachMetricSet {
+  /** «Parrilla»: FINISHED + MINUS_LAPS de la categoría. */
+  field_size: number;
+  /** FINISHED con tiempo — denominador real de percentil y brecha a la mediana. */
+  timed_finishers: number;
+  position: number | null;
+  /** «Percentil» por tiempo; `null` con menos de 5 cronometrados. */
+  percentile: number | null;
+  /** «Brecha vs. mediana» (%); negativo = más rápido. Mismas reglas de `null`. */
+  gap_to_median_pct: number | null;
+  /** «Brecha vs. 1.ª posición» (%) contra el tiempo oficial de P1. */
+  gap_to_winner_pct: number | null;
+  /** Brecha absoluta a la 1.ª posición (ms). */
+  gap_to_winner_ms: number | null;
+  /** «Brecha vs. podio» (%) contra el tiempo oficial de P3. */
+  gap_to_podium_pct: number | null;
+  /** Brecha absoluta al podio (ms). */
+  gap_to_podium_ms: number | null;
+}
+
+/**
+ * Claves que el backend NUNCA envía a una familia: brechas (% y ms) contra
+ * el líder o el podio (Ley 1581 + salvaguarda 045). Se **eliminan** del
+ * payload — no llegan como `null`. Única lista de lo oculto: `FamilyMetricSet`
+ * y los fixtures de familia se derivan de ella.
+ */
+export const LEADER_GAP_METRIC_KEYS = [
+  "gap_to_winner_pct",
+  "gap_to_winner_ms",
+  "gap_to_podium_pct",
+  "gap_to_podium_ms",
+] as const satisfies readonly (keyof CoachMetricSet)[];
+
+export type LeaderGapMetricKey = (typeof LEADER_GAP_METRIC_KEYS)[number];
+
+/**
+ * Vista de familia: `CoachMetricSet` sin las brechas contra líder/podio.
+ * Código de familia que lea cualquiera de esas brechas no compila.
+ */
+export type FamilyMetricSet = Omit<CoachMetricSet, LeaderGapMetricKey>;
+
+/**
+ * Lo que puede llegar por el cable. Las claves de líder/podio están
+ * ausentes (no `null`) en la variante de familia, así que su presencia
+ * discrimina: `"gap_to_winner_pct" in metrics` estrecha a `CoachMetricSet`.
+ */
+export type MetricSet = CoachMetricSet | FamilyMetricSet;
+
+// ---------------------------------------------------------------------------
 // Results — per-event finishing order
 // ---------------------------------------------------------------------------
 
@@ -97,6 +157,15 @@ export interface RaceResultRow {
    * Opcional por el mismo motivo aditivo.
    */
   elevation_gain_m?: number | null;
+  /**
+   * Feature 045 — métricas de la fila calculadas por el motor único
+   * (`compute_category_metrics`). Coach/admin reciben `CoachMetricSet`; una
+   * familia recibe solo `FamilyMetricSet` (claves de líder/podio ausentes).
+   * `null` cuando el backend no pudo calcularlas para la fila. Opcional
+   * (aditivo, `data-model.md` §4): ausente en respuestas/fixtures previas a
+   * la 045. Ver `MetricSet` para cómo discriminar la variante.
+   */
+  metrics?: MetricSet | null;
 }
 
 /**

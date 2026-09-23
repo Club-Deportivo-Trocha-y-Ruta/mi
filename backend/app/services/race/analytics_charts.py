@@ -25,16 +25,18 @@ from __future__ import annotations
 
 import logging
 import math
+from dataclasses import dataclass
+from datetime import date
 from types import SimpleNamespace
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.race_course_category_setup import RaceCourseCategorySetup
-from app.models.race_event import RaceEvent, RaceEventPriority
-from app.models.race_result import RaceResult, ResultStatus
+from app.models.race_event import RaceEventPriority
+from app.models.race_result import RaceResult
 from app.models.race_series import RaceSeriesKind, RaceSeriesLevel
 from app.schemas.athlete_race_analysis import (
     AnalysisConfidence,
@@ -51,8 +53,7 @@ from app.schemas.athlete_race_analysis import (
 from app.services.notification.race_event_tier import RaceTier, get_race_tier
 from app.services.race.comparison_groups import build_comparison_group, group_label
 from app.services.race.course.derived import derive_figures
-from app.services.race.field_metrics import compute_field_metrics
-from app.services.race.history import MIN_FIELD
+from app.services.race.field_metrics import MetricSet, compute_category_metrics
 from app.services.race.race_labels import build_race_label
 
 logger = logging.getLogger(__name__)
@@ -184,6 +185,269 @@ def _normal_pdf(x: float, mu: float, sigma: float) -> float:
 # 1. build_evolution
 # ---------------------------------------------------------------------------
 
+# Unidad por métrica. ``pct_signed`` (2026-09-23): a diferencia de ``pct``
+# (percentil, solo positivo, sin signo), la brecha vs. mediana puede ser
+# negativa (más rápido que la mediana) — el formateador del cliente antepone
+# "+"/"-".
+_EVOLUTION_UNITS: dict[EvolutionMetric, str] = {
+    EvolutionMetric.PODIUM_GAP_MS: "ms",
+    EvolutionMetric.TIME_MS: "ms",
+    EvolutionMetric.RANKING: "position",
+    EvolutionMetric.PERCENTILE: "pct",
+    EvolutionMetric.GAP_TO_MEDIAN_PCT: "pct_signed",
+}
+
+# Métrica → campo de ``field_metrics.MetricSet`` que la sirve (feature 045,
+# R-01). ``build_evolution`` NO calcula ninguna de ellas: reenvía el valor del
+# motor único, así Evolución, Historial y Detalle de competencia nunca
+# discrepan (SC-002). ``TIME_MS`` no es una métrica derivada: es el tiempo
+# oficial del propio resultado, que ya viene en la fila (ver ``_metric_value``).
+_ENGINE_FIELD_BY_METRIC: dict[EvolutionMetric, str] = {
+    EvolutionMetric.PODIUM_GAP_MS: "gap_to_winner_ms",
+    EvolutionMetric.RANKING: "position",
+    EvolutionMetric.PERCENTILE: "percentile",
+    EvolutionMetric.GAP_TO_MEDIAN_PCT: "gap_to_median_pct",
+}
+
+# ``race_series.name`` es NOT NULL hoy, pero ``EvolutionPoint.series_name``
+# declara ``min_length=1``: un NULL debe degradar a un placeholder, no romper
+# con un 500 (F-10).
+_SERIES_NAME_FALLBACK = "Serie"
+
+# Una fila por resultado propio del atleta en la temporada. Los agregados de
+# la categoría (tamaño, percentil, brechas) NO viven aquí: los calcula el
+# motor único en Python (``field_metrics``). ``ix_race_results_athlete_event``
+# evita el full scan; ``deleted_at IS NULL`` aplica siempre.
+_ATHLETE_RESULTS_SQL = text(
+    """
+    SELECT
+        rr.id             AS result_id,
+        rr.event_id,
+        rr.category_id,
+        rr.status,
+        rr.race_time_ms,
+        rr.laps_behind,
+        e.sequence_number AS valida_num,
+        e.event_date,
+        e.location        AS location,
+        s.id              AS series_id,
+        s.name            AS series_name,
+        s.kind            AS series_kind,
+        s.level           AS series_level
+    FROM race_results rr
+    JOIN race_events e ON e.id = rr.event_id
+    JOIN race_series s ON s.id = e.series_id
+    WHERE rr.athlete_id = :athlete_id
+      AND rr.deleted_at IS NULL
+      AND s.season_year = :season
+    ORDER BY e.event_date ASC, rr.id ASC
+    """
+)
+
+
+@dataclass(frozen=True)
+class _AthleteRaceRow:
+    """Fila cruda ya normalizada de ``_ATHLETE_RESULTS_SQL`` (sin métricas)."""
+
+    # ``None`` solo con dobles de prueba que no traen la columna.
+    result_id: Optional[int]
+    event_id: int
+    valida_num: int
+    # ``date`` en MySQL, ``str`` ISO en SQLite (SQL crudo sin tipos): pydantic
+    # normaliza ambos al construir ``EvolutionPoint``.
+    event_date: date | str
+    category_id: Optional[int]
+    status: str
+    race_time_ms: Optional[int]
+    laps_behind: Optional[int]
+    series_id: int
+    series_name: str
+    series_kind: RaceSeriesKind
+    series_level: RaceSeriesLevel
+    location: Optional[str]
+
+
+def _optional_int(value: Any) -> Optional[int]:
+    return None if value is None else int(value)
+
+
+def _as_float(value: Optional[float]) -> Optional[float]:
+    return None if value is None else float(value)
+
+
+def _as_series_kind(raw: Any) -> RaceSeriesKind:
+    """``RaceSeriesKind`` desde el enum o su valor string (según el driver)."""
+    return RaceSeriesKind(raw)
+
+
+def _as_series_level(raw: Any) -> RaceSeriesLevel:
+    """``RaceSeriesLevel`` desde el enum o su valor string; vacío → departamental."""
+    return RaceSeriesLevel(raw) if raw else RaceSeriesLevel.departmental
+
+
+def _parse_athlete_row(row: Any) -> Optional[_AthleteRaceRow]:
+    """Normaliza una fila cruda; ``None`` si le falta la identidad del evento
+    o de la serie (no se puede construir un punto sin ellas)."""
+    m = row._mapping
+    if m.get("event_id") is None or m.get("event_date") is None or m.get("series_id") is None:
+        return None
+    status = m.get("status")
+    location = m.get("location")
+    series_name = m.get("series_name")
+    valida_num = m.get("valida_num")
+    return _AthleteRaceRow(
+        result_id=_optional_int(m.get("result_id")),
+        event_id=int(m["event_id"]),
+        valida_num=int(valida_num) if valida_num is not None else 0,
+        event_date=m["event_date"],
+        category_id=_optional_int(m.get("category_id")),
+        status=str(status) if status is not None else "",
+        race_time_ms=_optional_int(m.get("race_time_ms")),
+        laps_behind=_optional_int(m.get("laps_behind")),
+        series_id=int(m["series_id"]),
+        series_name=str(series_name) if series_name is not None else _SERIES_NAME_FALLBACK,
+        series_kind=_as_series_kind(m.get("series_kind")),
+        series_level=_as_series_level(m.get("series_level")),
+        location=str(location) if location else None,
+    )
+
+
+async def _fetch_athlete_race_rows(
+    db: AsyncSession, *, athlete_id: int, season: int
+) -> list[_AthleteRaceRow]:
+    result = await db.execute(_ATHLETE_RESULTS_SQL, {"athlete_id": athlete_id, "season": season})
+    parsed = (_parse_athlete_row(row) for row in result.fetchall())
+    return [row for row in parsed if row is not None]
+
+
+def _own_event_category_pairs(rows: list[_AthleteRaceRow]) -> set[tuple[int, int]]:
+    """Pares (event_id, category_id) propios del atleta. Delimitan todo lo
+    que se carga de terceros: nunca otras categorías/eventos del club."""
+    return {(r.event_id, r.category_id) for r in rows if r.category_id is not None}
+
+
+async def _load_course_setups(
+    db: AsyncSession, pairs: set[tuple[int, int]]
+) -> dict[tuple[int, int], RaceCourseCategorySetup]:
+    """Setups de recorrido (feature 043, R-11) en UNA sola query para toda la
+    llamada (nunca por punto), indexados por (event_id, category_id): el
+    setup de una categoría es propio de cada válida, no de la temporada.
+    ``avg_speed_kmh`` queda ``None`` para todo par sin setup."""
+    if not pairs:
+        return {}
+    event_ids = {event_id for event_id, _ in pairs}
+    result = await db.execute(
+        select(RaceCourseCategorySetup)
+        .options(selectinload(RaceCourseCategorySetup.variant))
+        .where(RaceCourseCategorySetup.race_event_id.in_(event_ids))
+    )
+    return {(s.race_event_id, s.category_id): s for s in result.scalars().all()}
+
+
+async def _load_engine_metrics(
+    db: AsyncSession, pairs: set[tuple[int, int]]
+) -> dict[int, MetricSet]:
+    """``MetricSet`` del motor único por ``result_id`` (feature 045).
+
+    UNA sola query ORM para toda la llamada: los ``RaceResult`` de cualquier
+    competidor restringidos a los pares propios (candado de terceros: nunca
+    otras categorías/eventos del club). ``compute_category_metrics`` es puro
+    y da un ``MetricSet`` por fila, así que dos resultados del mismo atleta
+    en un mismo evento (dos categorías) reciben cada uno los suyos.
+    """
+    if not pairs:
+        return {}
+    event_ids = {event_id for event_id, _ in pairs}
+    results = await db.execute(
+        select(RaceResult).where(
+            RaceResult.event_id.in_(event_ids),
+            RaceResult.deleted_at.is_(None),
+        )
+    )
+    field_rows = [r for r in results.scalars().all() if (r.event_id, r.category_id) in pairs]
+
+    metrics_by_result: dict[int, MetricSet] = {}
+    for event_id, category_id in pairs:
+        metrics_by_result.update(compute_category_metrics(field_rows, event_id, category_id))
+    return metrics_by_result
+
+
+def _metric_value(
+    metric: EvolutionMetric, row: _AthleteRaceRow, metrics: Mapping[str, Any]
+) -> Optional[float]:
+    if metric == EvolutionMetric.TIME_MS:
+        # Hecho del propio resultado, no una métrica derivada: el CHECK
+        # ``ck_race_results_time_consistent_with_status`` garantiza que solo
+        # un FINISHED tiene ``race_time_ms`` (DNF/DNS/DSQ/MINUS_LAPS → NULL).
+        return _as_float(row.race_time_ms)
+    return _as_float(metrics.get(_ENGINE_FIELD_BY_METRIC[metric]))
+
+
+def _avg_speed_kmh(row: _AthleteRaceRow, setup: Optional[RaceCourseCategorySetup]) -> Optional[float]:
+    return derive_figures(setup, row.status, row.race_time_ms, row.laps_behind).avg_speed_kmh
+
+
+def _build_point(
+    row: _AthleteRaceRow,
+    metrics: Mapping[str, Any],
+    *,
+    metric: EvolutionMetric,
+    setup: Optional[RaceCourseCategorySetup],
+) -> EvolutionPoint:
+    """Un punto de la serie. Toda cifra de campo/posición viene de ``metrics``
+    (el ``MetricSet`` del motor para ESTE resultado); aquí no se calcula nada.
+
+    ``field_size``/``percentile``/``position``/``gap_pct``/``gap_to_median_pct``
+    se exponen SIEMPRE, sea cual sea ``metric`` — la tarjeta de campeonato del
+    frontend los necesita aunque la métrica pedida sea otra (feature 039)."""
+    return EvolutionPoint(
+        valida_num=row.valida_num,
+        event_id=row.event_id,
+        event_date=row.event_date,
+        value=_metric_value(metric, row, metrics),
+        unit=_EVOLUTION_UNITS[metric],
+        series_kind=row.series_kind.value,
+        label=build_race_label(row.series_kind, row.valida_num, row.location, level=row.series_level),
+        series_id=row.series_id,
+        series_name=row.series_name,
+        series_level=row.series_level.value,
+        comparison_group=build_comparison_group(row.series_kind, row.series_id),
+        field_size=metrics.get("field_size"),
+        percentile=metrics.get("percentile"),
+        position=metrics.get("position"),
+        gap_pct=metrics.get("gap_to_winner_pct"),
+        gap_to_median_pct=metrics.get("gap_to_median_pct"),
+        avg_speed_kmh=_avg_speed_kmh(row, setup),
+    )
+
+
+def _group_row(row: _AthleteRaceRow, point: EvolutionPoint) -> dict[str, Any]:
+    """Insumo de ``_build_comparison_groups`` para un punto."""
+    return {
+        "series_id": row.series_id,
+        "series_name": row.series_name,
+        "kind": row.series_kind.value,
+        "level": row.series_level.value,
+        "location": row.location,
+        "event_date": row.event_date,
+        "value": point.value,
+    }
+
+
+def _filter_by_series(
+    points: list[EvolutionPoint],
+    groups: list[ComparisonGroupOption],
+    series_id: Optional[int],
+) -> tuple[list[EvolutionPoint], Optional[str]]:
+    """Aplica el filtro opcional ``series_id`` DESPUÉS de derivar ``groups``
+    de la temporada completa (research D4). Devuelve los puntos filtrados y
+    el eco del grupo aplicado (``None`` si no hay filtro o no coincide)."""
+    if series_id is None:
+        return points, None
+    matched_group = next((g for g in groups if g.series_id == series_id), None)
+    selected_group = matched_group.comparison_group if matched_group is not None else None
+    return [p for p in points if p.series_id == series_id], selected_group
+
 
 async def build_evolution(
     db: AsyncSession,
@@ -198,7 +462,8 @@ async def build_evolution(
     Args:
         athlete_id: PK ``athletes.id`` (el verificación de acceso vive en el router).
         season: Año de temporada — filtra vía ``race_series.season_year``.
-        metric: ``podium_gap_ms`` / ``ranking`` / ``time_ms``.
+        metric: ``podium_gap_ms`` / ``ranking`` / ``time_ms`` / ``percentile``
+            / ``gap_to_median_pct``.
         series_id: filtro opcional de grupo de comparación (feature 039,
             research D4). Restringe ``series`` a esa sola serie —
             ``groups`` sigue viniendo completo (temporada entera) y
@@ -209,448 +474,52 @@ async def build_evolution(
 
     Returns:
         :class:`EvolutionResponse` con un punto por evento donde el atleta
-        compitió. Valores ``None`` para DNF/DNS/DSQ o cuando no se puede
-        calcular gap (p.ej. el atleta es P1 → gap=0 explícito). Incluye
+        compitió. Valores ``None`` para DNF/DNS/DSQ o cuando el motor no
+        puede calcular la cifra (p.ej. percentil con menos de
+        ``field_metrics.MIN_FIELD`` finalistas cronometrados). Incluye
         ``groups`` (grupos de comparación derivados, feature 039) y
         ``selected_group`` (eco del filtro aplicado).
 
+    Fuente de las cifras (feature 045, R-01):
+        ``field_size``, ``percentile``, ``position``, ``gap_pct``
+        (``gap_to_winner_pct``), ``gap_to_median_pct`` y el ``value`` de toda
+        métrica salen del ``MetricSet`` de ``field_metrics`` — el motor único
+        — de CADA resultado (por ``result_id``, no por evento). Solo
+        ``metric=time_ms`` lee el tiempo del propio resultado. Esta función no
+        calcula ninguna fórmula propia.
+
     Notas SQL:
-        - ``ix_race_results_athlete_event`` evita full scan.
-        - JOIN con ``race_events`` + ``race_series`` para filtrar season.
-        - Subquery ``cat_stats`` calcula tiempo de P1 por (event, category)
-          para podium_gap — sus agregados FINISHED-only también sirven de
-          ``field_size`` (research D3, mismo criterio que
-          ``field_metrics.compute_field_metrics``).
-        - Filtro ``rr.deleted_at IS NULL`` aplica siempre.
-        - Una sola query: el filtro ``series_id`` se aplica en Python
-          DESPUÉS de calcular ``groups`` sobre el resultado completo — no
-          hay un segundo roundtrip a la base de datos (research D4).
-        - ``category_id``/``laps_behind`` viajan en esta misma query
-          (feature 043, R-11) porque ``derive_figures`` los necesita junto a
-          ``status``/``race_time_ms`` (ya seleccionados) para
-          ``avg_speed_kmh`` — evita un segundo roundtrip por fila. Las
-          queries adicionales de esta función (setups de recorrido, y desde
-          2026-09-23 los RaceResult/RaceEvent de campo para
-          ``gap_to_median_pct`` vía ``compute_field_metrics``) corren UNA
-          sola vez para todos los ``event_id`` presentes en el resultado,
-          nunca por punto.
+        - Una query cruda para las filas propias (``ix_race_results_athlete_event``
+          evita full scan) más, UNA sola vez para todos los ``event_id``
+          (nunca por punto): los setups de recorrido (feature 043) y los
+          ``RaceResult`` de campo que consume el motor.
+        - El filtro ``series_id`` se aplica en Python DESPUÉS de calcular
+          ``groups`` sobre el resultado completo — sin segundo roundtrip
+          (research D4).
     """
-    unit = {
-        EvolutionMetric.PODIUM_GAP_MS: "ms",
-        EvolutionMetric.TIME_MS: "ms",
-        EvolutionMetric.RANKING: "position",
-        EvolutionMetric.PERCENTILE: "pct",
-        # "pct_signed" (2026-09-23): a diferencia de "pct" (percentil, solo
-        # positivo, sin signo), esta brecha puede ser negativa (más rápido
-        # que la mediana) — el formateador del cliente antepone "+"/"-".
-        EvolutionMetric.GAP_TO_MEDIAN_PCT: "pct_signed",
-    }[metric]
+    rows = await _fetch_athlete_race_rows(db, athlete_id=athlete_id, season=season)
+    pairs = _own_event_category_pairs(rows)
+    setups = await _load_course_setups(db, pairs)
+    metrics_by_result = await _load_engine_metrics(db, pairs)
 
-    # CTE strategy:
-    # - ``athlete_results``: una fila por evento donde compitió el atleta.
-    # - ``cat_stats``: agregados FINISHED por (event, category) — MIN/MAX/COUNT
-    #   sustituye al CTE ``winners`` antiguo (MIN cubre el caso gap al P1).
-    # Las dos se hacen LEFT JOIN para que un P1 propio aparezca con gap=0.
-    sql = text(
-        """
-        WITH athlete_results AS (
-            SELECT
-                rr.id            AS result_id,
-                rr.event_id,
-                rr.category_id,
-                rr.competitor_id,
-                rr.position,
-                rr.status,
-                rr.race_time_ms,
-                rr.laps_behind,
-                e.sequence_number AS valida_num,
-                e.event_date,
-                s.id             AS series_id,
-                s.name           AS series_name,
-                s.kind           AS series_kind,
-                s.level          AS series_level,
-                e.location       AS location
-            FROM race_results rr
-            JOIN race_events e   ON e.id = rr.event_id
-            JOIN race_series s   ON s.id = e.series_id
-            WHERE rr.athlete_id = :athlete_id
-              AND rr.deleted_at IS NULL
-              AND s.season_year = :season
-        ),
-        cat_stats AS (
-            SELECT
-                rr.event_id,
-                rr.category_id,
-                MIN(rr.race_time_ms)   AS time_min_ms,
-                MAX(rr.race_time_ms)   AS time_max_ms,
-                COUNT(*)               AS cat_size,
-                COUNT(rr.race_time_ms) AS cat_size_with_time
-            FROM race_results rr
-            WHERE rr.deleted_at IS NULL
-              AND rr.status = 'finished'
-              AND rr.event_id IN (SELECT event_id FROM athlete_results)
-            GROUP BY rr.event_id, rr.category_id
-        )
-        SELECT
-            ar.event_id,
-            ar.valida_num,
-            ar.event_date,
-            ar.status,
-            ar.position,
-            ar.race_time_ms,
-            ar.category_id,
-            ar.laps_behind,
-            cs.time_min_ms AS winner_time_ms,
-            cs.time_max_ms,
-            cs.cat_size,
-            cs.cat_size_with_time,
-            ar.series_id,
-            ar.series_name,
-            ar.series_kind,
-            ar.series_level,
-            ar.location,
-            ar.competitor_id
-        FROM athlete_results ar
-        LEFT JOIN cat_stats cs
-          ON cs.event_id    = ar.event_id
-         AND cs.category_id = ar.category_id
-        ORDER BY ar.event_date ASC
-        """
-    )
-
-    result = await db.execute(sql, {"athlete_id": athlete_id, "season": season})
-    rows = result.fetchall() if hasattr(result, "fetchall") else list(result)
-
-    # Course setups (feature 043, R-11): ONE extra query for the whole call
-    # (never per point) — keyed by (event_id, category_id) because a
-    # category's course setup is válida-specific, not season-wide. Skipped
-    # entirely when there are no rows. ``avg_speed_kmh`` stays None for any
-    # (event, category) pair without a matching setup — expected for most
-    # events for a long while; no aggregate of speed is computed anywhere.
-    #
-    # El mismo barrido recolecta, para "brecha vs. mediana" (2026-09-23):
-    # los pares (event_id, category_id) propios del atleta y su
-    # competitor_id por evento — insumo de compute_field_metrics más abajo.
-    event_ids: set[int] = set()
-    own_pairs: set[tuple[int, int]] = set()
-    competitor_id_by_event: dict[int, int] = {}
-    for row in rows:
-        rm = row._mapping if hasattr(row, "_mapping") else None
-        raw_event_id = rm.get("event_id") if rm else (row[0] if len(row) > 0 else None)
-        raw_category_id = rm.get("category_id") if rm else (row[6] if len(row) > 6 else None)
-        raw_competitor_id = rm.get("competitor_id") if rm else None
-        if raw_event_id is not None:
-            event_ids.add(int(raw_event_id))
-            if raw_category_id is not None:
-                own_pairs.add((int(raw_event_id), int(raw_category_id)))
-            if raw_competitor_id is not None:
-                competitor_id_by_event[int(raw_event_id)] = int(raw_competitor_id)
-
-    setup_by_event_category: dict[tuple[int, int], Any] = {}
-    if event_ids:
-        setup_result = await db.execute(
-            select(RaceCourseCategorySetup)
-            .options(selectinload(RaceCourseCategorySetup.variant))
-            .where(RaceCourseCategorySetup.race_event_id.in_(event_ids))
-        )
-        # Defensive hasattr: unit tests exercise build_evolution against a
-        # bare-bones fake AsyncSession (see _FakeDbNullSeriesName below) that
-        # only implements the raw-SQL ``execute`` contract used by the main
-        # query above, not the ORM ``select(...)`` one — degrade to "no
-        # course data" rather than raise for that fake.
-        setup_rows = (
-            setup_result.scalars().all() if hasattr(setup_result, "scalars") else []
-        )
-        setup_by_event_category = {
-            (s.race_event_id, s.category_id): s for s in setup_rows
-        }
-
-    # "Brecha vs. mediana" (gap_to_median_pct, 2026-09-23): reutiliza
-    # compute_field_metrics (app/services/race/field_metrics.py) — MISMA
-    # función que services/race/history.py, nunca una cuarta fórmula. Dos
-    # queries ORM adicionales, UNA sola vez para toda la llamada (nunca por
-    # punto, mismo patrón que el setup de recorrido arriba):
-    #   1. RaceResult de cualquier competidor, restringidos a los pares
-    #      exactos (event_id, category_id) propios del atleta (candado de
-    #      terceros: nunca se cargan otras categorías/eventos del club).
-    #   2. RaceEvent + su RaceSeries (season_year/kind/level) de esos mismos
-    #      event_ids — compute_field_metrics necesita objetos ORM reales
-    #      (``event_date`` como ``date``, no el string crudo de una fila SQL).
-    # Mismo umbral que history.py: MIN_FIELD (5) finalistas CON tiempo
-    # registrado, no field_size (que cuenta también minus_laps).
-    metrics_by_event: dict[int, dict[str, Any]] = {}
-    timed_finishers_by_pair: dict[tuple[int, int], int] = {}
-    if event_ids:
-        field_result = await db.execute(
-            select(RaceResult).where(
-                RaceResult.event_id.in_(event_ids),
-                RaceResult.deleted_at.is_(None),
-            )
-        )
-        # Defensive hasattr: mismo motivo que el setup de recorrido arriba —
-        # degrada a "sin campo" para el fake bare-bones de build_evolution.
-        field_rows_all = (
-            field_result.scalars().all() if hasattr(field_result, "scalars") else []
-        )
-        field_rows = [
-            r for r in field_rows_all if (r.event_id, r.category_id) in own_pairs
-        ]
-
-        events_result = await db.execute(
-            select(RaceEvent)
-            .options(selectinload(RaceEvent.series))
-            .where(RaceEvent.id.in_(event_ids))
-        )
-        events_orm = (
-            events_result.scalars().all() if hasattr(events_result, "scalars") else []
-        )
-        series_orm = [e.series for e in events_orm if e.series is not None]
-
-        for r in field_rows:
-            if r.status == ResultStatus.FINISHED and r.race_time_ms is not None:
-                key = (r.event_id, r.category_id)
-                timed_finishers_by_pair[key] = timed_finishers_by_pair.get(key, 0) + 1
-
-        for competitor_id in set(competitor_id_by_event.values()):
-            per_event = compute_field_metrics(
-                results=field_rows,
-                events=list(events_orm),
-                series=series_orm,
-                categories=[],
-                competitor_id=competitor_id,
-                season=season,
-            )
-            metrics_by_event.update(per_event)
-
-    series: list[EvolutionPoint] = []
+    points: list[EvolutionPoint] = []
     group_rows: list[dict[str, Any]] = []
     for row in rows:
-        m = row._mapping if hasattr(row, "_mapping") else {}
-
-        def _get(name: str, idx: int):
-            if m:
-                return m.get(name)
-            try:
-                return row[idx]
-            except Exception:  # noqa: BLE001
-                return None
-
-        event_id = _get("event_id", 0)
-        valida_num = _get("valida_num", 1)
-        event_date = _get("event_date", 2)
-        status = _get("status", 3)
-        position = _get("position", 4)
-        race_time_ms = _get("race_time_ms", 5)
-        category_id_raw = _get("category_id", 6)
-        laps_behind_raw = _get("laps_behind", 7)
-        winner_time_ms = _get("winner_time_ms", 8)
-        time_max_ms = _get("time_max_ms", 9)
-        cat_size = _get("cat_size", 10)
-        cat_size_with_time = _get("cat_size_with_time", 11)
-        series_id_raw = _get("series_id", 12)
-        series_name_raw = _get("series_name", 13)
-        series_kind_raw = _get("series_kind", 14)
-        series_level_raw = _get("series_level", 15)
-        location_raw = _get("location", 16)
-
-        if event_id is None or event_date is None or series_id_raw is None:
-            continue
-
-        # "Brecha vs. mediana" (2026-09-23) — poblada para CUALQUIER
-        # métrica solicitada, igual que gap_pct/position/field_size más
-        # abajo. Umbral: MIN_FIELD (5) finalistas CON tiempo registrado en
-        # la (evento, categoría), mismo criterio que history.py — nunca
-        # field_size (que también cuenta minus_laps).
-        gap_to_median_val: Optional[float] = None
-        if category_id_raw is not None:
-            timed = timed_finishers_by_pair.get((int(event_id), int(category_id_raw)))
-            if timed is not None and timed >= MIN_FIELD:
-                candidate = metrics_by_event.get(int(event_id), {}).get(
-                    "gap_to_median_pct"
-                )
-                if candidate is not None:
-                    gap_to_median_val = float(candidate)
-
-        value: Optional[float] = None
-        finished = (str(status) == "finished") if status is not None else False
-
-        if metric == EvolutionMetric.RANKING:
-            if finished and position is not None:
-                value = float(int(position))
-        elif metric == EvolutionMetric.TIME_MS:
-            if finished and race_time_ms is not None:
-                value = float(int(race_time_ms))
-        elif metric == EvolutionMetric.PODIUM_GAP_MS:
-            if (
-                finished
-                and race_time_ms is not None
-                and winner_time_ms is not None
-            ):
-                gap = int(race_time_ms) - int(winner_time_ms)
-                # Atleta es P1 → gap=0. No es None.
-                value = float(max(gap, 0))
-        elif metric == EvolutionMetric.PERCENTILE:
-            # Percentil por TIEMPO (override coach real 2026-05-25).
-            # n<5 → ocultar (consistente con comparador, fila se omite).
-            # F-8: el umbral de 5 se mide sobre filas CON tiempo registrado
-            # (``cat_size_with_time``), no sobre el total de finishers
-            # (``cat_size``) — un finisher sin tiempo no aporta al percentil.
-            if (
-                finished
-                and race_time_ms is not None
-                and winner_time_ms is not None
-                and time_max_ms is not None
-                and cat_size_with_time is not None
-                and int(cat_size_with_time) >= 5
-            ):
-                t = int(race_time_ms)
-                t_min = int(winner_time_ms)
-                t_max = int(time_max_ms)
-                if t_min <= t <= t_max:
-                    if t_max == t_min:
-                        value = 100.0
-                    else:
-                        pct = 100.0 * (1.0 - (t - t_min) / (t_max - t_min))
-                        value = round(pct)
-        elif metric == EvolutionMetric.GAP_TO_MEDIAN_PCT:
-            # Ya calculado arriba (mismo umbral MIN_FIELD que el campo
-            # gap_to_median_pct expuesto para cualquier métrica).
-            value = gap_to_median_val
-
-        # Normalizar series_kind: puede llegar como str ("cup"/"championship")
-        # o como RaceSeriesKind enum según el driver DB (MySQL vs aiosqlite).
-        kind_str = (
-            series_kind_raw.value
-            if isinstance(series_kind_raw, RaceSeriesKind)
-            else str(series_kind_raw)
-        )
-        kind_enum = RaceSeriesKind(kind_str)
-        # Normalizar series_level: mismo patrón dual-driver que series_kind.
-        level_str = (
-            series_level_raw.value
-            if isinstance(series_level_raw, RaceSeriesLevel)
-            else str(series_level_raw)
-        )
-        level_enum = (
-            RaceSeriesLevel(level_str)
-            if level_str
-            else RaceSeriesLevel.departmental
-        )
-        location_str: str | None = str(location_raw) if location_raw else None
-        event_label = build_race_label(
-            kind_enum,
-            int(valida_num) if valida_num is not None else 0,
-            location_str,
-            level=level_enum,
-        )
-
-        series_id_val = int(series_id_raw)
-        # F-10: EvolutionPoint.series_name declara min_length=1 — un NULL de
-        # BD (race_series.name es NOT NULL hoy, pero el fallback degrada en
-        # vez de romper con un 500 si eso cambia) no puede convertirse en "".
-        series_name_val = str(series_name_raw) if series_name_raw is not None else "Serie"
-        comparison_group_val = build_comparison_group(kind_enum, series_id_val)
-
-        # field_size / percentile posicional (research D3, F-8): mismo
-        # criterio que field_metrics.compute_field_metrics — field_size
-        # cuenta TODOS los FINISHED del (evento, categoría), tengan o no
-        # tiempo registrado (cs.cat_size ya excluye DNF/DNS/DSQ vía el
-        # filtro status='finished' del CTE, sin exigir race_time_ms IS NOT
-        # NULL); percentile solo se calcula si el atleta terminó y hay
-        # pelotón. El guard de ≥5 del percentil por TIEMPO usa
-        # cat_size_with_time en su lugar (arriba) — no confundir ambos.
-        field_size: Optional[int] = int(cat_size) if cat_size is not None else None
-        percentile: Optional[float] = None
-        if finished and position is not None and cat_size is not None:
-            n_field = int(cat_size)
-            pct = (
-                100.0
-                if n_field <= 1
-                else 100.0 * (1.0 - (int(position) - 1) / (n_field - 1))
-            )
-            percentile = round(pct, 1)
-
-        # position/gap_pct (feature 039, F-1 / B-2): expuestos siempre,
-        # independiente de la métrica solicitada — la tarjeta de campeonato
-        # del frontend los necesita aunque ``metric`` sea otra cosa.
-        position_val: Optional[int] = (
-            int(position) if (finished and position is not None) else None
-        )
-        gap_pct_val: Optional[float] = None
-        if (
-            finished
-            and race_time_ms is not None
-            and winner_time_ms is not None
-            and int(winner_time_ms) > 0
-        ):
-            gap_pct_val = round(
-                100.0 * (int(race_time_ms) - int(winner_time_ms)) / int(winner_time_ms),
-                1,
-            )
-
-        # avg_speed_kmh (feature 043, R-11): per-válida only, no aggregate.
-        course_setup = (
-            setup_by_event_category.get((int(event_id), int(category_id_raw)))
-            if category_id_raw is not None
-            else None
-        )
-        avg_speed_kmh_val = derive_figures(
-            course_setup,
-            str(status) if status is not None else "",
-            int(race_time_ms) if race_time_ms is not None else None,
-            int(laps_behind_raw) if laps_behind_raw is not None else None,
-        ).avg_speed_kmh
-
-        series.append(
-            EvolutionPoint(
-                valida_num=int(valida_num) if valida_num is not None else 0,
-                event_id=int(event_id),
-                event_date=event_date,
-                value=value,
-                unit=unit,
-                series_kind=kind_enum.value,
-                label=event_label,
-                series_id=series_id_val,
-                series_name=series_name_val,
-                series_level=level_enum.value,
-                comparison_group=comparison_group_val,
-                field_size=field_size,
-                percentile=percentile,
-                position=position_val,
-                gap_pct=gap_pct_val,
-                gap_to_median_pct=gap_to_median_val,
-                avg_speed_kmh=avg_speed_kmh_val,
-            )
-        )
-        group_rows.append(
-            {
-                "series_id": series_id_val,
-                "series_name": series_name_val,
-                "kind": kind_enum.value,
-                "level": level_enum.value,
-                "location": location_str,
-                "event_date": event_date,
-                "value": value,
-            }
-        )
+        setup = setups.get((row.event_id, row.category_id)) if row.category_id is not None else None
+        point = _build_point(row, metrics_by_result.get(row.result_id, {}), metric=metric, setup=setup)
+        points.append(point)
+        group_rows.append(_group_row(row, point))
 
     groups = _build_comparison_groups(group_rows, season=season)
-
-    filtered_series = series
-    selected_group: Optional[str] = None
-    if series_id is not None:
-        filtered_series = [p for p in series if p.series_id == series_id]
-        matched_group = next((g for g in groups if g.series_id == series_id), None)
-        if matched_group is not None:
-            selected_group = matched_group.comparison_group
+    filtered_points, selected_group = _filter_by_series(points, groups, series_id)
 
     # Confianza: cuenta puntos con valor no-nulo (los que sirven al usuario),
     # calculada sobre la serie YA filtrada por series_id (research D4).
-    n_valid = sum(1 for p in filtered_series if p.value is not None)
+    n_valid = sum(1 for p in filtered_points if p.value is not None)
     return EvolutionResponse(
         season=season,
         metric=metric,
-        series=filtered_series,
+        series=filtered_points,
         confidence=_confidence_from_n(n_valid),
         groups=groups,
         selected_group=selected_group,
@@ -660,6 +529,30 @@ async def build_evolution(
 # ---------------------------------------------------------------------------
 # 2. build_distribution
 # ---------------------------------------------------------------------------
+
+
+async def _engine_percentile(
+    db: AsyncSession,
+    *,
+    event_id: int,
+    category_id: int,
+    result_id: int,
+) -> Optional[float]:
+    """Percentil del resultado ``result_id`` según el motor único.
+
+    Carga los ``RaceResult`` de la (evento, categoría) en una sola query y
+    delega en ``compute_category_metrics`` — no aplica fórmula ni puerta
+    propias (MIN_FIELD, empates y estados viven en el motor)."""
+    result = await db.execute(
+        select(RaceResult).where(
+            RaceResult.event_id == event_id,
+            RaceResult.category_id == category_id,
+            RaceResult.deleted_at.is_(None),
+        )
+    )
+    metrics = compute_category_metrics(list(result.scalars().all()), event_id, category_id)
+    metric_set = metrics.get(result_id)
+    return metric_set["percentile"] if metric_set is not None else None
 
 
 async def build_distribution(
@@ -688,6 +581,11 @@ async def build_distribution(
         Si ``sample_size < 5`` no se ajusta curva normal (``curve=[]``,
         ``confidence="low"``) — el cliente cae a tabla de tiempos
         pseudonimizados. Los ``points`` siempre vienen poblados para n≥1.
+        ``athlete_percentile`` es el percentil por TIEMPO del motor único
+        (``field_metrics``, feature 045): ``None`` con menos de
+        ``MIN_FIELD`` finalistas cronometrados o si el atleta no finalizó.
+        Media, desviación y z-score son estadística propia de la distribución
+        y se calculan aquí sobre la muestra.
 
     Raises:
         :class:`AthleteDidNotParticipate`: cuando no existe ningún
@@ -695,13 +593,16 @@ async def build_distribution(
             El router debe mapear esta excepción a ``HTTPException(404)``.
 
     Notas SQL:
-        - ``target`` (1 fila) localiza ``(category_id, event_id)`` del atleta
-          filtrando directamente por ``rr.event_id = :event_id`` — no usa
-          ``sequence_number`` (que puede repetirse entre series distintas).
+        - ``target`` (1 fila) localiza ``(category_id, event_id)`` y el
+          ``result_id`` del atleta filtrando directamente por
+          ``rr.event_id = :event_id`` — no usa ``sequence_number`` (que puede
+          repetirse entre series distintas).
         - SELECT principal trae todos los race_results de esa categoría en
           ese evento (FINISHED only para que la curva tenga sentido).
         - JOIN con ``race_competitors`` para tener id estable (pseudonimizar)
           y ``display_name`` (solo expuesto si ``include_display_name=True``).
+        - Una query ORM adicional (``_engine_percentile``) carga los
+          ``RaceResult`` de la categoría para el percentil del motor único.
     """
     # Step 1: localizar el target del atleta (category + event).
     target_sql = text(
@@ -711,7 +612,8 @@ async def build_distribution(
             rr.event_id,
             rr.race_time_ms     AS athlete_time_ms,
             rr.status           AS athlete_status,
-            rc.code             AS category_code
+            rc.code             AS category_code,
+            rr.id               AS result_id
         FROM race_results rr
         JOIN race_events e   ON e.id = rr.event_id
         JOIN race_series s   ON s.id = e.series_id
@@ -747,6 +649,7 @@ async def build_distribution(
     athlete_time_raw = (tm["athlete_time_ms"] if tm else target_row[2])
     athlete_status = (tm["athlete_status"] if tm else target_row[3])
     category_code = str(tm["category_code"] if tm else target_row[4])
+    athlete_result_id = int(tm["result_id"] if tm else target_row[5])
     athlete_time_ms: Optional[int] = (
         int(athlete_time_raw)
         if athlete_time_raw is not None and str(athlete_status) == "finished"
@@ -821,14 +724,15 @@ async def build_distribution(
     ):
         athlete_z = (athlete_time_ms - mean_ms) / stddev_ms
 
-    # Percentil: posición del atleta entre n (más bajo = mejor en tiempo,
-    # pero el percentil reportado es "qué % es peor o igual" → mejor tiempo
-    # da percentil más alto). Convención reporte deportivo.
-    if athlete_time_ms is not None and sample_size >= 2:
-        rank_better_or_equal = sum(
-            1 for _, t, _, _ in times if t >= athlete_time_ms
-        )
-        athlete_pct = round(100.0 * rank_better_or_equal / sample_size, 2)
+    # Percentil (feature 045, R-01): lo entrega el motor único
+    # (``field_metrics``), por TIEMPO y con la puerta MIN_FIELD — mismo valor
+    # que Evolución, Historial y Detalle de competencia (SC-002).
+    athlete_pct = await _engine_percentile(
+        db,
+        event_id=event_id,
+        category_id=category_id,
+        result_id=athlete_result_id,
+    )
 
     # Puntos observados — pseudónimo siempre presente; display_name solo
     # cuando include_display_name=True (coach/admin). Nunca se loguea.
@@ -991,24 +895,9 @@ async def list_athlete_races(
         ):
             continue
 
-        # Normalizar series_kind: MySQL puede devolver el valor enum como string
-        # ("cup"/"championship"); aiosqlite siempre devuelve string.
-        kind_str = (
-            series_kind_raw.value
-            if isinstance(series_kind_raw, RaceSeriesKind)
-            else str(series_kind_raw)
-        )
-        kind_enum = RaceSeriesKind(kind_str)
-        level_str = (
-            series_level_raw.value
-            if isinstance(series_level_raw, RaceSeriesLevel)
-            else str(series_level_raw)
-        )
-        level_enum = (
-            RaceSeriesLevel(level_str)
-            if level_str
-            else RaceSeriesLevel.departmental
-        )
+        # MySQL puede devolver el enum o su string; aiosqlite siempre string.
+        kind_enum = _as_series_kind(series_kind_raw)
+        level_enum = _as_series_level(series_level_raw)
 
         seq_num   = int(seq_num_raw) if seq_num_raw is not None else 1
         location_str: str | None = str(location_raw) if location_raw else None

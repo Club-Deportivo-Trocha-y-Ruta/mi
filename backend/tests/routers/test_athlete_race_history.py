@@ -283,7 +283,7 @@ async def test_response_has_no_third_party_field(client_factory):
             "category_changed", "previous_category_label",
             "category_change_kind", "status",
             "position", "field_size", "timed_finishers", "percentile",
-            "gap_to_median_pct", "gap_to_winner_pct",
+            "gap_to_median_pct", "gap_to_winner_pct", "gap_to_podium_pct",
             "points_awarded",
         }
 
@@ -463,12 +463,15 @@ async def test_parent_gate_closed_leaks_no_hint_of_withheld_rows(client_factory,
     coach_v2 = next(p for p in coach_body["points"] if p["event_id"] == _EVENT_V2)
     assert coach_v2["category_changed"] is True
 
-    # Vista "natural": sin resultados previos al registro en absoluto.
+    # Vista "natural": sin resultados previos al registro en absoluto. Se
+    # compara padre contra padre (feature 045: la variante de familia omite
+    # ``gap_to_winner_pct``/``gap_to_podium_pct``, así que un cuerpo de coach
+    # ya no es comparable byte a byte).
     async with gated() as s:
         row = await s.get(RaceResult, v1_own.id)
         row.deleted_at = datetime(2026, 1, 1)
         await s.commit()
-    async with await client_factory(_user(10, UserRole.coach, club_id=1)) as ac:
+    async with await client_factory(_user(20, UserRole.parent)) as ac:
         natural_body = (await ac.get(_URL)).json()
 
     assert set(gated_body) == set(natural_body) == {"points", "seasons", "caveats"}
@@ -478,8 +481,9 @@ async def test_parent_gate_closed_leaks_no_hint_of_withheld_rows(client_factory,
     assert gated_v2["category_changed"] is False
     assert gated_v2["previous_category_label"] is None
     assert gated_v2["category_change_kind"] is None
-    # Métricas de campo del punto restante intactas frente a la vista del coach.
-    for key in ("position", "field_size", "timed_finishers", "percentile", "gap_to_median_pct", "gap_to_winner_pct"):
+    # Métricas de campo del punto restante intactas frente a la vista del coach
+    # (solo las que la familia puede ver — ver ``TestFamilyPayloadOmitsCoachOnlyGaps``).
+    for key in ("position", "field_size", "timed_finishers", "percentile", "gap_to_median_pct"):
         assert gated_v2[key] == coach_v2[key]
     raw = gated_resp.text.lower()
     for hint in ("withheld", "hidden", "omit", "retenid", "pre_registration", "total"):
@@ -531,3 +535,87 @@ async def test_parent_statement_budget(client_factory, gated, engine, monkeypatc
     assert coach[0] <= 4
     # verify_athlete_access para un padre: carga del atleta + vínculo.
     assert closed_empty[0] <= 5
+
+
+# ---------------------------------------------------------------------------
+# T013 (feature 045, data-model §2) — variante de familia del historial.
+# La brecha vs. 1.ª posición y vs. podio son SOLO de coach: en la respuesta
+# de un padre las claves están AUSENTES (excluidas, no en null).
+# Seed: V1 (P1=3.000.000, P3=3.200.000, atleta 3.100.000, 2.º);
+#       V2 (P1=atleta 2.900.000, P3=3.100.000); campeonato sin P3.
+# ---------------------------------------------------------------------------
+
+_COACH_ONLY_KEYS = ("gap_to_winner_pct", "gap_to_podium_pct")
+_FAMILY_KEYS = (
+    "position", "field_size", "timed_finishers", "percentile", "gap_to_median_pct",
+)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role,user_id,club_id", [(UserRole.coach, 10, 1), (UserRole.admin, 99, None)])
+async def test_staff_points_carry_winner_and_podium_gaps(client_factory, role, user_id, club_id):
+    async with await client_factory(_user(user_id, role, club_id=club_id)) as ac:
+        resp = await ac.get(_URL, params={"series_kind": "all"})
+    assert resp.status_code == 200
+    points = {p["event_id"]: p for p in resp.json()["points"]}
+    assert set(points) == {_EVENT_V1, _EVENT_V2, _EVENT_CHAMP}
+    for point in points.values():
+        for key in _COACH_ONLY_KEYS:
+            assert key in point
+    assert points[_EVENT_V1]["gap_to_winner_pct"] == 3.3  # (3.1 − 3.0) ÷ 3.0
+    assert points[_EVENT_V1]["gap_to_podium_pct"] == -3.1  # (3.1 − 3.2) ÷ 3.2
+    assert points[_EVENT_V2]["gap_to_winner_pct"] == 0.0
+    assert points[_EVENT_V2]["gap_to_podium_pct"] == -6.5  # (2.9 − 3.1) ÷ 3.1
+    # Sin tiempo oficial de P3 el coach ve el campo (con null), no ausente.
+    assert points[_EVENT_CHAMP]["gap_to_podium_pct"] is None
+
+
+@pytest.mark.asyncio
+async def test_parent_points_omit_winner_and_podium_gaps(client_factory, history_seeded):
+    await _set_registration(history_seeded, datetime(2023, 12, 1))
+    async with await client_factory(_user(20, UserRole.parent)) as ac:
+        resp = await ac.get(_URL, params={"series_kind": "all"})
+    assert resp.status_code == 200
+    points = resp.json()["points"]
+    assert {p["event_id"] for p in points} == {_EVENT_V1, _EVENT_V2, _EVENT_CHAMP}
+    for point in points:
+        for key in _COACH_ONLY_KEYS:
+            assert key not in point  # excluida, no nulled
+        for key in _FAMILY_KEYS:
+            assert key in point
+
+
+@pytest.mark.asyncio
+async def test_parent_payload_never_mentions_winner_or_podium_fields(client_factory, history_seeded):
+    """Ni siquiera como texto: la respuesta cruda no lleva rastro alguno."""
+    await _set_registration(history_seeded, datetime(2023, 12, 1))
+    async with await client_factory(_user(20, UserRole.parent)) as ac:
+        resp = await ac.get(_URL, params={"series_kind": "all"})
+    raw = resp.text
+    for fragment in ("gap_to_winner", "gap_to_podium", "gap_pct", "gap_to_p1", "gap_to_p3"):
+        assert fragment not in raw
+
+
+@pytest.mark.asyncio
+async def test_parent_keeps_the_family_metrics_with_the_same_values_as_the_coach(
+    client_factory, history_seeded
+):
+    await _set_registration(history_seeded, datetime(2023, 12, 1))
+    async with await client_factory(_user(10, UserRole.coach, club_id=1)) as ac:
+        coach_points = {p["event_id"]: p for p in (await ac.get(_URL)).json()["points"]}
+    async with await client_factory(_user(20, UserRole.parent)) as ac:
+        parent_points = {p["event_id"]: p for p in (await ac.get(_URL)).json()["points"]}
+    assert set(parent_points) == set(coach_points)
+    for event_id, parent_point in parent_points.items():
+        # Mismo punto menos las claves de coach: un solo motor, dos audiencias.
+        expected = {k: v for k, v in coach_points[event_id].items() if k not in _COACH_ONLY_KEYS}
+        assert parent_point == expected
+
+
+@pytest.mark.asyncio
+async def test_other_parent_is_denied_and_receives_no_points(client_factory):
+    async with await client_factory(_user(21, UserRole.parent)) as ac:
+        resp = await ac.get(_URL, params={"series_kind": "all"})
+    assert resp.status_code == 403
+    assert "points" not in resp.json()
+    assert "gap_to_" not in resp.text

@@ -7,6 +7,15 @@ síncrona sobre colecciones ORM ya cargadas — mismo patrón que
 llama una vez por temporada en la que el atleta compitió, sin modificarlo
 (feature 037/AI contract intactos).
 
+Motor único (feature 045, research R-01)
+=========================================
+Este módulo **no calcula ni puertea nada**: ``field_size``, ``timed_finishers``,
+``percentile``, ``gap_to_median_pct`` y las brechas vs. 1.ª posición / podio
+salen de ``field_metrics.compute_field_metrics`` con la puerta ``MIN_FIELD``
+ya aplicada. Sirve todas las columnas — incluidas las de coach —; quitar
+``gap_to_winner_pct``/``gap_to_podium_pct`` para la familia es asunto de la
+capa de respuesta (``services/race/audience.py``), no de esta función pura.
+
 Candado de terceros (T034, ``third_party_guard.py``)
 ======================================================
 A propósito, **ninguna función pública de este módulo recibe
@@ -44,7 +53,7 @@ from app.models.race_event import RaceEvent
 from app.models.race_result import RaceResult, ResultStatus
 from app.models.race_series import RaceSeries
 from app.schemas.athlete_race_analysis import HistoryPoint, SeasonCompletion
-from app.services.race.field_metrics import compute_field_metrics
+from app.services.race.field_metrics import MIN_FIELD, compute_field_metrics
 from app.services.race.race_labels import build_race_label
 
 __all__ = [
@@ -55,9 +64,8 @@ __all__ = [
     "withhold_before",
 ]
 
-#: Umbral mínimo de campo para publicar percentil (FR-032) y de finalistas
-#: cronometrados para publicar el gap a la mediana (FR-031).
-MIN_FIELD = 5
+# ``MIN_FIELD`` (FR-031/032) vive en el motor ``field_metrics`` — que es quien
+# aplica la puerta —; se reexporta aquí solo para los importadores existentes.
 
 #: Advertencias permanentes (FR-038) — siempre las mismas cinco, en ese orden,
 #: nunca condicionales. Única fuente de verdad; el router las expone tal cual.
@@ -175,17 +183,11 @@ def build_history_points(
     if not own_rows:
         return []
 
-    # --- timed_finishers por (event_id, category_id) — mismo criterio que
-    # ``compute_field_metrics`` (FINISHED estricto, con tiempo), pero expuesto
-    # aquí porque ``compute_field_metrics`` no lo devuelve (contrato 037 fijo).
-    timed_finishers_by_pair: dict[tuple[int, int], int] = {}
-    for r in live_results:
-        if r.status == ResultStatus.FINISHED and r.race_time_ms is not None:
-            key = (r.event_id, r.category_id)
-            timed_finishers_by_pair[key] = timed_finishers_by_pair.get(key, 0) + 1
-
     # --- métricas de campo por temporada — UNA llamada por (season, competitor_id)
     # presente entre las filas propias filtradas; se fusionan por event_id.
+    # Feature 045: el motor entrega ``field_size``, ``timed_finishers``,
+    # ``percentile``, ``gap_to_median_pct`` y las brechas ya con su puerta
+    # (``MIN_FIELD``) aplicada — aquí no se cuenta ni se vuelve a puertear.
     seasons_with_competitor: dict[int, set[int]] = {}
     for r in own_rows:
         event = events_by_id[r.event_id]
@@ -227,16 +229,6 @@ def build_history_points(
         )
 
         m = metrics_by_event.get(r.event_id, {})
-        field_size = m.get("field_size")
-        timed_finishers = timed_finishers_by_pair.get((r.event_id, r.category_id))
-
-        percentile = m.get("percentile")
-        if field_size is None or field_size < MIN_FIELD:
-            percentile = None
-
-        gap_to_median_pct = m.get("gap_to_median_pct")
-        if timed_finishers is None or timed_finishers < MIN_FIELD:
-            gap_to_median_pct = None
 
         kind_str = s.kind.value if hasattr(s.kind, "value") else str(s.kind)
 
@@ -265,11 +257,12 @@ def build_history_points(
                 category_change_kind=change_kind,  # type: ignore[arg-type]
                 status=status_str,  # type: ignore[arg-type]
                 position=m.get("position"),
-                field_size=field_size,
-                timed_finishers=timed_finishers,
-                percentile=percentile,
-                gap_to_median_pct=gap_to_median_pct,
+                field_size=m.get("field_size"),
+                timed_finishers=m.get("timed_finishers"),
+                percentile=m.get("percentile"),
+                gap_to_median_pct=m.get("gap_to_median_pct"),
                 gap_to_winner_pct=m.get("gap_pct"),
+                gap_to_podium_pct=m.get("gap_to_podium_pct"),
                 points_awarded=r.points_awarded or 0,
             )
         )

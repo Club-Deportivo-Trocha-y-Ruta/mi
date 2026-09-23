@@ -207,7 +207,9 @@ const METRIC_FORMATTERS = {
   percentile: (p: RaceHistoryPoint) => formatPercentile(p.percentile),
   field_size: (p: RaceHistoryPoint) => formatFieldSize(p.field_size),
   gap_to_median_pct: (p: RaceHistoryPoint) => formatGapPct(p.gap_to_median_pct),
-  gap_to_winner_pct: (p: RaceHistoryPoint) => formatGapPct(p.gap_to_winner_pct),
+  // Los puntos de familia no traen `gap_to_winner_pct` (fila coach-only).
+  gap_to_winner_pct: (p: RaceHistoryPoint) =>
+    formatGapPct("gap_to_winner_pct" in p ? p.gap_to_winner_pct : null),
 } as const;
 
 type MetricKey = keyof typeof METRIC_FORMATTERS;

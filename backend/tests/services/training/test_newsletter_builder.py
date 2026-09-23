@@ -616,7 +616,14 @@ class TestBuildRaceBlockComparisonGroups:
         assert cd["finished"] is True
         assert cd["position"] is not None
         assert cd["gap_pct"] is not None
-        assert cd["percentile"] is not None
+        # Feature 045 (FR-020 / SC-002): the percentile now comes from the
+        # single metrics engine, which gates it below MIN_FIELD = 5 timed
+        # finishers. The shared championship fixture races only 4 riders
+        # (winner + 2 fillers + the athlete), so the value is intentionally
+        # ``None`` — this test checks the SHAPE (the key is present), not a
+        # value the engine now refuses to publish for a field that small.
+        assert "percentile" in cd
+        assert cd["percentile"] is None
 
         cn = by_event[scenario.national_event_id]
         assert cn["level"] == "national"

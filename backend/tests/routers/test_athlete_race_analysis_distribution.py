@@ -103,6 +103,10 @@ _TABLES = (
     "race_categories",
     "race_competitors",
     "race_results",
+    # 045: la comparación con /evolution necesita las tablas de recorrido
+    # (build_evolution consulta los setups por válida).
+    "race_course_variants",
+    "race_course_category_setups",
     "athlete_ai_insights",
     "anthropometric_records",
     *AUDIT_TABLES,
@@ -272,6 +276,42 @@ async def test_distribution_championship_event_returns_200_with_valid_category(
 
 
 # ---------------------------------------------------------------------------
+# 045 (T011) — athlete_percentile viene del motor único (por TIEMPO)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_distribution_athlete_percentile_is_time_based_from_engine(coach_client):
+    """T011: el campeonato del escenario tiene 5 cronometrados
+    (1_800_000, 1_802_000, 1_803_000 propio, 1_803_000, 1_804_000).
+
+    Expectativa cambiada por la 045: antes el router devolvía 60.0 (conteo
+    ``t >= propio`` ÷ n del servicio); ahora devuelve el percentil por TIEMPO
+    del motor: ``round(100 × (1 − 3_000 ÷ 4_000)) = 25``.
+    """
+    resp = await coach_client.get(
+        "/api/athletes/201/race-analysis/distribution",
+        params={"event_id": 503, "season": 2026},
+        headers={"Authorization": "Bearer fake"},
+    )
+    assert resp.status_code == 200, resp.text[:300]
+    body = resp.json()
+    assert body["sample_size"] == 5
+    assert body["athlete_percentile"] == 25.0
+
+    # SC-002: la serie de Evolución (métrica percentil) da el mismo número.
+    evolution = await coach_client.get(
+        "/api/athletes/201/race-analysis/evolution",
+        params={"season": 2026, "metric": "percentile"},
+        headers={"Authorization": "Bearer fake"},
+    )
+    assert evolution.status_code == 200, evolution.text[:300]
+    point = next(p for p in evolution.json()["series"] if p["event_id"] == 503)
+    assert point["value"] == body["athlete_percentile"]
+    assert point["percentile"] == body["athlete_percentile"]
+
+
+# ---------------------------------------------------------------------------
 # T007 — Evento sin datos comparables → 200, nunca 500, nunca category_id=0
 # ---------------------------------------------------------------------------
 
@@ -398,6 +438,10 @@ async def test_distribution_no_comparable_data_returns_200_never_500(
     # DNF → sin tiempo propio
     assert body.get("athlete_time_ms") is None, (
         "athlete_time_ms debe ser None para un DNF"
+    )
+    # 045: sin tiempo propio (y con <5 cronometrados) el motor no da percentil.
+    assert body.get("athlete_percentile") is None, (
+        "athlete_percentile debe ser None para un DNF"
     )
     # n<5 FINISHED → sin curva normal
     assert body.get("curve") == [], (

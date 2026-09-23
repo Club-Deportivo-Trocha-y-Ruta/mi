@@ -459,6 +459,7 @@ async def test_evolution_response_only_exposes_aggregated_fields(coach_client):
         "percentile",
         "position",
         "gap_pct",
+        "gap_to_median_pct",
         "avg_speed_kmh",
     }
     for point in body.get("series", []):

@@ -64,7 +64,10 @@ export function ChampionshipReadingCard({
       ? String(Math.round(point.percentile))
       : "—";
   const gapToMedianValue = formatGapPct(point.gap_to_median_pct ?? null);
-  const gapToWinnerValue = formatGapPct(point.gap_pct ?? null);
+  // Los puntos de familia no traen `gap_pct` (el tile es coach-only).
+  const gapToWinnerValue = formatGapPct(
+    "gap_pct" in point ? (point.gap_pct ?? null) : null,
+  );
 
   const tiles: StatTile[] = [
     { label: "Posición", value: positionValue },

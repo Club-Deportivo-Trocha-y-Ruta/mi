@@ -356,9 +356,10 @@ async def test_build_evolution_winner_point_has_gap_pct_zero(session):
 async def test_build_evolution_field_size_counts_finished_without_time(session):
     """F-8: ``field_size`` cuenta TODOS los FINISHED del (evento, categoría)
     aunque no tengan ``race_time_ms`` (mismo criterio que
-    ``field_metrics.compute_field_metrics``); el percentil por TIEMPO sigue
-    exigiendo ≥5 finishers CON tiempo registrado y se oculta si no los hay,
-    aunque ``field_size`` ya sea 5."""
+    ``field_metrics.compute_field_metrics``); el percentil por TIEMPO exige
+    ≥5 finishers CON tiempo registrado y se oculta si no los hay, aunque
+    ``field_size`` ya sea 5 — en TODAS las métricas, no solo en
+    ``metric=percentile`` (feature 045: percentil único del motor)."""
     await create_race_event(
         session,
         event_id=1,
@@ -452,8 +453,11 @@ async def test_build_evolution_field_size_counts_finished_without_time(session):
     )
     point = ranking_result.series[0]
     assert point.field_size == 5
-    # Percentil posicional (research D3): n=5, position=2 → 100*(1-1/4)=75.0.
-    assert point.percentile == pytest.approx(75.0, abs=0.05)
+    # 045 (expectativa cambiada): antes el punto exponía el percentil
+    # POSICIONAL (n=5, position=2 → 75.0) aunque solo 4 finishers tuvieran
+    # tiempo. El motor único calcula el percentil por TIEMPO y exige
+    # MIN_FIELD=5 finalistas cronometrados (aquí 4) → ``None``.
+    assert point.percentile is None
 
     percentile_result = await build_evolution(
         session, athlete_id=144, season=2026, metric=EvolutionMetric.PERCENTILE
@@ -466,14 +470,256 @@ async def test_build_evolution_field_size_counts_finished_without_time(session):
 
 
 # ---------------------------------------------------------------------------
+# Feature 045 (T009/T010) — percentil de EvolutionPoint viene del motor único
+#
+# ``field_metrics`` es la única fuente del percentil (por TIEMPO, con la
+# puerta MIN_FIELD=5 de *finalistas cronometrados*). ``build_evolution``
+# solo lo reenvía: nunca lo recalcula con la posición ni con su propia query.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_build_evolution_percentile_is_none_in_two_rider_category(session):
+    """T009 (regresión, falla primero): en una categoría de 2 corredores el
+    punto NO expone percentil. Antes, la fórmula posicional propia de
+    ``build_evolution`` daba 0.0/100.0 aunque la tabla de historial mostrara
+    «sin dato» (bug vivo, research R-01)."""
+    await _seed_athlete_in_event(
+        session,
+        event_id=1,
+        sequence_number=1,
+        event_date=date(2026, 1, 31),
+        name="V1",
+        athlete_position=2,
+        athlete_time_ms=1_810_000,
+        winner_time_ms=1_800_000,
+        other_runners=0,  # categoría de 2: ganador + atleta
+    )
+    await session.commit()
+
+    result = await build_evolution(
+        session, athlete_id=144, season=2026, metric=EvolutionMetric.RANKING
+    )
+    point = result.series[0]
+    assert point.field_size == 2
+    assert point.percentile is None
+
+    # La métrica PERCENTIL devuelve el mismo valor del motor: ``None``.
+    percentile_result = await build_evolution(
+        session, athlete_id=144, season=2026, metric=EvolutionMetric.PERCENTILE
+    )
+    assert percentile_result.series[0].value is None
+
+
+@pytest.mark.asyncio
+async def test_build_evolution_percentile_is_time_based_and_matches_engine(session):
+    """Con ≥5 cronometrados el percentil del punto es el de TIEMPO del motor
+    (``round(100 × (1 − (t − t_min) ÷ (t_max − t_min)))``), igual para el campo
+    ``percentile`` del punto y para ``value`` de ``metric=percentile``."""
+    # Tiempos: 1_800_000 (ganador), 1_810_000 (atleta, P3) y 4 más a
+    # 1_811_000..1_814_000 → 6 cronometrados; t_max − t_min = 14_000.
+    await _seed_athlete_in_event(
+        session,
+        event_id=1,
+        sequence_number=1,
+        event_date=date(2026, 1, 31),
+        name="V1",
+        athlete_position=3,
+        athlete_time_ms=1_810_000,
+        winner_time_ms=1_800_000,
+        other_runners=4,
+    )
+    await session.commit()
+
+    ranking = await build_evolution(
+        session, athlete_id=144, season=2026, metric=EvolutionMetric.RANKING
+    )
+    percentile = await build_evolution(
+        session, athlete_id=144, season=2026, metric=EvolutionMetric.PERCENTILE
+    )
+
+    all_results = (await session.execute(select(RaceResult))).scalars().all()
+    all_events = (await session.execute(select(RaceEvent))).scalars().all()
+    all_series = (await session.execute(select(RaceSeries))).scalars().all()
+    athlete_result = next(r for r in all_results if r.athlete_id == 144)
+    engine_metrics = compute_field_metrics(
+        results=all_results,
+        events=all_events,
+        series=all_series,
+        categories=[],
+        competitor_id=athlete_result.competitor_id,
+        season=2026,
+    )[1]
+
+    # round(100 × (1 − 10_000 ÷ 14_000)) = round(28.57) = 29.
+    assert engine_metrics["percentile"] == 29.0
+    assert ranking.series[0].percentile == engine_metrics["percentile"]
+    assert percentile.series[0].value == engine_metrics["percentile"]
+    assert percentile.series[0].unit == "pct"
+    # El resto de cifras del punto también son las del motor (no una copia).
+    assert ranking.series[0].field_size == engine_metrics["field_size"] == 6
+    assert ranking.series[0].position == engine_metrics["position"] == 3
+    assert ranking.series[0].gap_pct == engine_metrics["gap_pct"]
+
+
+@pytest.mark.asyncio
+async def test_build_evolution_minus_laps_athlete_counts_in_field_but_has_no_time_metrics(
+    session,
+):
+    """Un MINUS_LAPS cruzó meta (cuenta en ``field_size`` y tiene posición) pero
+    no es comparable en tiempo: percentil, brechas y ``metric=time_ms`` van en
+    ``None`` (regla del motor, data-model §1)."""
+    await create_race_event(
+        session,
+        event_id=1,
+        series_id=1,
+        sequence_number=1,
+        name="V1",
+        event_date=date(2026, 1, 31),
+    )
+    for i in range(5):  # 5 cronometrados → el campo SÍ alcanza MIN_FIELD
+        cid = 1000 + i
+        await create_race_competitor(
+            session,
+            competitor_id=cid,
+            normalized_name=f"runner{i} ev1",
+            display_name=f"Runner{i} 1",
+        )
+        await create_race_result(
+            session,
+            event_id=1,
+            category_id=100,
+            competitor_id=cid,
+            position=i + 1,
+            race_time_ms=1_800_000 + i * 1_000,
+            bib_number=i + 1,
+            points_awarded=10,
+        )
+    await create_race_competitor(
+        session,
+        competitor_id=2000,
+        normalized_name="athlete ev1",
+        display_name="Athlete 1",
+        athlete_id=144,
+    )
+    session.add(
+        RaceResult(
+            event_id=1,
+            category_id=100,
+            competitor_id=2000,
+            athlete_id=144,
+            position=6,
+            status=ResultStatus.MINUS_LAPS,
+            race_time_ms=None,
+            laps_behind=1,
+            bib_number=6,
+            points_awarded=0,
+            created_by_user_id=10,
+        )
+    )
+    await session.commit()
+
+    ranking = await build_evolution(
+        session, athlete_id=144, season=2026, metric=EvolutionMetric.RANKING
+    )
+    time_ms = await build_evolution(
+        session, athlete_id=144, season=2026, metric=EvolutionMetric.TIME_MS
+    )
+
+    point = ranking.series[0]
+    assert point.field_size == 6  # 5 cronometrados + el MINUS_LAPS
+    assert point.position == 6
+    assert point.percentile is None
+    assert point.gap_pct is None
+    assert point.gap_to_median_pct is None
+    assert time_ms.series[0].value is None
+
+
+@pytest.mark.asyncio
+async def test_build_evolution_two_categories_in_same_event_get_distinct_metrics(session):
+    """Regresión 045: un atleta con DOS resultados en el mismo evento (dos
+    categorías, p. ej. la suya y una superior) recibe métricas PROPIAS en cada
+    punto. Antes el motor devolvía un único dict por ``event_id`` y ambos
+    puntos mostraban la posición/percentil/valor de una sola categoría."""
+    # Categoría 100: atleta P3 de 6 cronometrados → percentil 29, brecha 10 s.
+    await _seed_athlete_in_event(
+        session,
+        event_id=1,
+        sequence_number=1,
+        event_date=date(2026, 1, 31),
+        name="V1",
+        athlete_position=3,
+        athlete_time_ms=1_810_000,
+        winner_time_ms=1_800_000,
+        other_runners=4,
+    )
+    # Categoría 101 (mismo evento, mismo competidor): atleta P1 de 5
+    # cronometrados → percentil 100, brecha 0.
+    await create_race_category(session, category_id=101, code="JUV_A")
+    athlete_cid = 1 * 1000 + 2  # competidor del atleta sembrado arriba
+    await create_race_result(
+        session,
+        event_id=1,
+        category_id=101,
+        competitor_id=athlete_cid,
+        athlete_id=144,
+        position=1,
+        race_time_ms=1_700_000,
+        bib_number=201,
+        points_awarded=40,
+    )
+    for i in range(4):
+        cid = 2000 + i
+        await create_race_competitor(
+            session,
+            competitor_id=cid,
+            normalized_name=f"upper{i} ev1",
+            display_name=f"Upper{i} 1",
+        )
+        await create_race_result(
+            session,
+            event_id=1,
+            category_id=101,
+            competitor_id=cid,
+            position=i + 2,
+            race_time_ms=1_710_000 + i * 10_000,
+            bib_number=202 + i,
+            points_awarded=10,
+        )
+    await session.commit()
+
+    by_metric = {
+        metric: await build_evolution(session, athlete_id=144, season=2026, metric=metric)
+        for metric in (
+            EvolutionMetric.RANKING,
+            EvolutionMetric.PERCENTILE,
+            EvolutionMetric.PODIUM_GAP_MS,
+        )
+    }
+
+    ranking_points = by_metric[EvolutionMetric.RANKING].series
+    assert len(ranking_points) == 2
+    own = {p.position: p for p in ranking_points}
+    assert set(own) == {1, 3}
+    assert (own[3].field_size, own[3].percentile) == (6, 29.0)
+    assert (own[1].field_size, own[1].percentile) == (5, 100.0)
+    assert own[1].gap_pct == 0.0
+
+    # ``value`` de cada métrica también es propio de cada fila.
+    assert sorted(p.value for p in ranking_points) == [1.0, 3.0]
+    assert sorted(p.value for p in by_metric[EvolutionMetric.PERCENTILE].series) == [29.0, 100.0]
+    assert sorted(p.value for p in by_metric[EvolutionMetric.PODIUM_GAP_MS].series) == [0.0, 10_000.0]
+
+
+# ---------------------------------------------------------------------------
 # "Brecha vs. mediana" (gap_to_median_pct, 2026-09-23) — EvolutionPoint
 #
-# ``build_evolution`` reutiliza ``field_metrics.compute_field_metrics`` (la
-# misma función que ``services/race/history.py``), nunca una cuarta fórmula.
-# El campo se expone para CUALQUIER métrica solicitada, igual que
-# ``gap_pct``, con el mismo umbral que ``history.py``: MIN_FIELD (5)
-# finalistas CON tiempo registrado (no ``field_size``, que también cuenta
-# ``minus_laps``) y ``None`` si el propio atleta no finalizó.
+# ``build_evolution`` reenvía el ``MetricSet`` de ``field_metrics`` (el mismo
+# motor que ``services/race/history.py``, vía ``compute_category_metrics``),
+# nunca una cuarta fórmula. El campo se expone para CUALQUIER métrica
+# solicitada, igual que ``gap_pct``, con la puerta que aplica el motor:
+# MIN_FIELD (5) finalistas CON tiempo registrado (no ``field_size``, que
+# también cuenta ``minus_laps``) y ``None`` si el propio atleta no finalizó.
 # ---------------------------------------------------------------------------
 
 
@@ -532,9 +778,8 @@ async def test_build_evolution_gap_to_median_pct_matches_compute_field_metrics(
 
 @pytest.mark.asyncio
 async def test_build_evolution_gap_to_median_pct_none_below_min_field(session):
-    """< MIN_FIELD (5) finalistas CON tiempo → ``None``, aunque
-    ``compute_field_metrics`` por sí solo devuelva un valor — el umbral vive
-    en el caller (``build_evolution``), igual que en ``history.py``."""
+    """< MIN_FIELD (5) finalistas CON tiempo → ``None``. La puerta vive en el
+    motor (``field_metrics``); ``build_evolution`` ya no la re-aplica."""
     # 4 FINISHED con tiempo (winner + atleta + 2 otros) → debajo de MIN_FIELD.
     await _seed_athlete_in_event(
         session,
@@ -859,11 +1104,67 @@ async def test_build_distribution_athlete_z_score_and_percentile(session):
     # Percentile en [0..100]
     assert result.athlete_percentile is not None
     assert 0.0 <= result.athlete_percentile <= 100.0
+    # 045: el percentil es el del motor único (por TIEMPO), no un conteo local.
+    # Tiempos 1_800_000 (ganador), 1_815_000 (atleta), 1_816_000..1_819_000:
+    # round(100 × (1 − 15_000 ÷ 19_000)) = round(21.05) = 21.
+    assert result.athlete_percentile == 21.0
     # Pseudónimo determinístico — el helper privado lo arma así.
     self_point = next(p for p in result.points if p.is_self)
     # El competitor_id del atleta seed-eado es event_id * 1000 + 2 = 1002.
     expected_pseudo = _build_pseudonym(1002)
     assert self_point.pseudonym == expected_pseudo
+
+
+@pytest.mark.asyncio
+async def test_build_distribution_athlete_percentile_none_below_min_field(session):
+    """045 (regresión): con <5 cronometrados el percentil es ``None`` — antes
+    el conteo local devolvía un número desde n=2, contradiciendo la tabla de
+    historial y la evolución (que sí lo ocultaban)."""
+    await _seed_athlete_in_event(
+        session,
+        event_id=1,
+        sequence_number=1,
+        event_date=date(2026, 1, 31),
+        name="V1",
+        athlete_position=2,
+        athlete_time_ms=1_810_000,
+        winner_time_ms=1_800_000,
+        other_runners=1,  # 3 cronometrados < MIN_FIELD
+    )
+    await session.commit()
+
+    result = await build_distribution(
+        session, athlete_id=144, season=2026, event_id=1
+    )
+    assert result.sample_size == 3
+    assert result.athlete_percentile is None
+
+
+@pytest.mark.asyncio
+async def test_build_distribution_percentile_matches_evolution_point(session):
+    """SC-002 en miniatura: Distribución y Evolución dan el MISMO percentil
+    para el mismo (atleta, evento)."""
+    await _seed_athlete_in_event(
+        session,
+        event_id=1,
+        sequence_number=1,
+        event_date=date(2026, 1, 31),
+        name="V1",
+        athlete_position=3,
+        athlete_time_ms=1_810_000,
+        winner_time_ms=1_800_000,
+        other_runners=4,
+    )
+    await session.commit()
+
+    distribution = await build_distribution(
+        session, athlete_id=144, season=2026, event_id=1
+    )
+    evolution = await build_evolution(
+        session, athlete_id=144, season=2026, metric=EvolutionMetric.PERCENTILE
+    )
+    assert distribution.athlete_percentile is not None
+    assert distribution.athlete_percentile == evolution.series[0].value
 
 
 # ---------------------------------------------------------------------------
@@ -1129,7 +1430,7 @@ async def test_build_evolution_points_carry_series_and_field_metrics(
 ):
     """Cada ``EvolutionPoint`` lleva ``series_id``/``series_name``/
     ``series_level``/``comparison_group``/``field_size``/``percentile``
-    (percentil posicional, research D3 — no el percentil por tiempo)."""
+    (este último del motor único: por TIEMPO y con puerta MIN_FIELD)."""
     scenario = race_groups_base_season
     result = await build_evolution(
         scenario.session,
@@ -1145,10 +1446,11 @@ async def test_build_evolution_points_carry_series_and_field_metrics(
     assert cup_point.series_name == scenario.cup_series_name
     assert cup_point.series_level == "departmental"
     assert cup_point.comparison_group == f"cup:{scenario.cup_series_id}"
-    # Pelotón de 4 (winner + atleta P2 + 2 rellenos) →
-    # percentil = 100*(1-(2-1)/(4-1)) = 66.7.
+    # Pelotón de 4 (winner + atleta P2 + 2 rellenos).
+    # 045 (expectativa cambiada): antes 66.7 (percentil posicional). Con el
+    # percentil por TIEMPO del motor, 4 cronometrados < MIN_FIELD (5) → None.
     assert cup_point.field_size == 4
-    assert cup_point.percentile == pytest.approx(66.7, abs=0.05)
+    assert cup_point.percentile is None
 
     dep_point = next(
         p for p in result.series if p.event_id == scenario.departmental_event_id
@@ -1157,9 +1459,10 @@ async def test_build_evolution_points_carry_series_and_field_metrics(
     assert dep_point.series_name == scenario.departmental_series_name
     assert dep_point.series_level == "departmental"
     assert dep_point.comparison_group == f"championship:{scenario.departmental_series_id}"
-    # Atleta P4 de 4 → percentil = 100*(1-(4-1)/(4-1)) = 0.0.
+    # Atleta P4 de 4. 045 (expectativa cambiada): antes 0.0 (posicional);
+    # ahora None por la misma puerta MIN_FIELD del motor.
     assert dep_point.field_size == 4
-    assert dep_point.percentile == pytest.approx(0.0, abs=0.05)
+    assert dep_point.percentile is None
 
 
 @pytest.mark.asyncio

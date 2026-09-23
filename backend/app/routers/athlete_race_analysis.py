@@ -12,7 +12,16 @@ RBAC
 - ``GET /runs``             — admin + coach (parent ⇒ 403).
 - ``POST /runs``            — admin + coach.
 - ``GET /distribution``     — admin + coach + parent.
-- ``GET /evolution``        — admin + coach + parent.
+- ``GET /evolution``        — admin + coach + parent. El padre recibe ``403`` si pide
+  una métrica de 1.ª posición/podio y sus puntos no traen ``gap_pct`` (feature 045).
+- ``GET /history``          — admin + coach + parent. La variante de padre omite
+  ``gap_to_winner_pct``/``gap_to_podium_pct`` (feature 045).
+
+Audiencia (feature 045)
+=======================
+Qué métricas ve cada rol lo decide UNA política, ``services/race/audience.py``
+(``Audience``, ``FAMILY_EXCLUDED_METRIC_FIELDS``, ``serialize_for_audience``):
+las rutas ``/evolution`` y ``/history`` no ramifican por rol, aplican la política.
 
 Privacidad (CLAUDE.md §Privacidad)
 ==================================
@@ -30,6 +39,7 @@ from datetime import date, datetime, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import JSONResponse
 from sqlalchemy import and_, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import contains_eager
@@ -76,6 +86,11 @@ from app.services.race.analytics_charts import (
 )
 from app.services.race.ai.budget_guard import BudgetExceededError, check_budget
 from app.services.race.ai.runner import RunBackpressureError, submit_run
+from app.services.race.audience import (
+    audience_for_role,
+    is_evolution_metric_allowed,
+    serialize_for_audience,
+)
 from app.services.race.group_launch import find_active_run
 from app.services.notification.race_event_tier import RaceTier, get_race_tier
 from app.services.privacy import (
@@ -1066,7 +1081,7 @@ async def get_distribution(
 )
 async def get_evolution(
     season: int = Query(..., ge=2020, le=2100),
-    metric: EvolutionMetric = Query(default=EvolutionMetric.PODIUM_GAP_MS),
+    metric: EvolutionMetric = Query(default=EvolutionMetric.GAP_TO_MEDIAN_PCT),
     series_id: Optional[int] = Query(
         default=None,
         ge=1,
@@ -1081,20 +1096,36 @@ async def get_evolution(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     athlete: Athlete = Depends(verify_athlete_access),
-) -> EvolutionResponse:
+) -> JSONResponse:
     """Serie cronológica de una métrica del atleta en una temporada.
 
     RBAC vía ``verify_athlete_access`` (sin cambios): admin/coach/padre del
     propio atleta → 200; padre de otro atleta → 403/404, con o sin
     ``series_id`` — el filtro no abre una vía de acceso paralela.
+
+    Audiencia (feature 045, ``services/race/audience.py``): un padre que pide
+    una métrica de 1.ª posición/podio (``podium_gap_ms``) recibe ``403``
+    ANTES de calcular nada, y los puntos que sí recibe salen sin ``gap_pct``
+    (brecha al ganador). Coach y admin: sin cambios de contrato. El default
+    de ``metric`` es ``gap_to_median_pct`` para toda audiencia (spec 045), así
+    que omitir el parámetro nunca es un 403 para el padre. El ``response_model`` del decorador queda solo para OpenAPI: la
+    respuesta se serializa con la política para que las claves excluidas
+    queden AUSENTES en vez de rellenarse con ``null``.
     """
-    return await build_evolution(
+    audience = audience_for_role(current_user.role)
+    if not is_evolution_metric_allowed(metric, audience):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This metric is not available for your role.",
+        )
+    evolution = await build_evolution(
         db,
         athlete_id=athlete.id,
         season=season,
         metric=metric,
         series_id=series_id,
     )
+    return JSONResponse(serialize_for_audience(evolution, audience))
 
 
 # ---------------------------------------------------------------------------
@@ -1176,7 +1207,7 @@ async def get_history(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     athlete: Athlete = Depends(verify_athlete_access),
-) -> AthleteRaceHistoryRead:
+) -> JSONResponse:
     """Progresión histórica multi-temporada de un atleta (US6/US7, FR-030..042).
 
     RBAC vía ``verify_athlete_access`` (sin cambios): admin/coach/padre del
@@ -1191,6 +1222,10 @@ async def get_history(
     los resultados con ``event_date < athlete.created_at.date()`` ANTES de
     construir puntos y temporadas. La respuesta no lleva cuenta, flag ni
     caveat de lo retirado. Coach y admin nunca se filtran.
+
+    Audiencia (feature 045, ``services/race/audience.py``): la variante de
+    padre se serializa SIN ``gap_to_winner_pct`` ni ``gap_to_podium_pct`` —
+    claves excluidas, no en ``null`` (data-model §2). Coach/admin reciben todo.
     """
     results, events, series, categories = await _load_history_inputs(
         db, athlete_id=athlete.id
@@ -1208,10 +1243,13 @@ async def get_history(
         results, events, series, athlete.id, series_kind=series_kind
     )
 
-    return AthleteRaceHistoryRead(
+    history = AthleteRaceHistoryRead(
         points=points,
         seasons=seasons,
         caveats=list(HISTORY_CAVEATS),
+    )
+    return JSONResponse(
+        serialize_for_audience(history, audience_for_role(current_user.role))
     )
 
 

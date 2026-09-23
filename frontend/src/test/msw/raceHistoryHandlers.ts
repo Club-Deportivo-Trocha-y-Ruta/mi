@@ -16,14 +16,19 @@ import { http, HttpResponse } from "msw";
 
 import type {
   AthleteRaceHistoryRead,
-  RaceHistoryPoint,
+  CoachRaceHistoryPoint,
+  FamilyRaceHistoryPoint,
 } from "@/types/raceHistory.types";
+import { LEADER_GAP_METRIC_KEYS } from "@/types/raceResults.types";
+
+import { omitKeys } from "./omitKeys";
 
 const URL_PATTERN = "*/api/athletes/:athleteId/race-analysis/history";
 
+/** Punto de coach/admin (con brechas contra 1.ª posición y podio). */
 export function makeRaceHistoryPoint(
-  overrides?: Partial<RaceHistoryPoint>,
-): RaceHistoryPoint {
+  overrides?: Partial<CoachRaceHistoryPoint>,
+): CoachRaceHistoryPoint {
   return {
     event_id: 41,
     event_date: "2025-02-09",
@@ -44,17 +49,24 @@ export function makeRaceHistoryPoint(
     percentile: 63.6,
     gap_to_median_pct: -4.2,
     gap_to_winner_pct: 11.8,
+    gap_to_podium_pct: 6.9,
     points_awarded: 18,
     ...overrides,
   };
 }
 
-/** Fixture con dos temporadas y un cambio de categoría entre ellas — cubre
- * el caso "de manual" que motiva la tarjeta (SC-008). */
-export function makeAthleteRaceHistoryRead(
-  overrides?: Partial<AthleteRaceHistoryRead>,
-): AthleteRaceHistoryRead {
-  const points: RaceHistoryPoint[] = [
+/** Punto de familia: el backend omite `gap_to_winner_pct` y
+ * `gap_to_podium_pct` (las claves no existen, no son `null`). */
+export function makeFamilyRaceHistoryPoint(
+  overrides?: Partial<FamilyRaceHistoryPoint>,
+): FamilyRaceHistoryPoint {
+  return omitKeys(makeRaceHistoryPoint(overrides), LEADER_GAP_METRIC_KEYS);
+}
+
+/** Serie de coach con dos temporadas y un cambio de categoría entre ellas —
+ * cubre el caso "de manual" que motiva la tarjeta (SC-008). */
+function makeCoachHistoryPoints(): CoachRaceHistoryPoint[] {
+  return [
     makeRaceHistoryPoint({
       event_id: 30,
       event_date: "2024-03-10",
@@ -70,6 +82,7 @@ export function makeAthleteRaceHistoryRead(
       percentile: 77.8,
       gap_to_median_pct: -8.1,
       gap_to_winner_pct: 6.4,
+      gap_to_podium_pct: 2.9,
     }),
     makeRaceHistoryPoint({
       event_id: 31,
@@ -86,6 +99,7 @@ export function makeAthleteRaceHistoryRead(
       percentile: 83.3,
       gap_to_median_pct: -6.5,
       gap_to_winner_pct: 5.1,
+      gap_to_podium_pct: 1.6,
     }),
     makeRaceHistoryPoint({
       event_id: 41,
@@ -106,6 +120,7 @@ export function makeAthleteRaceHistoryRead(
       percentile: 63.6,
       gap_to_median_pct: -4.2,
       gap_to_winner_pct: 11.8,
+      gap_to_podium_pct: 6.9,
     }),
     makeRaceHistoryPoint({
       event_id: 43,
@@ -123,12 +138,18 @@ export function makeAthleteRaceHistoryRead(
       percentile: null,
       gap_to_median_pct: null,
       gap_to_winner_pct: null,
+      gap_to_podium_pct: null,
       points_awarded: 0,
     }),
   ];
+}
 
+/** Respuesta para coach/admin. */
+export function makeAthleteRaceHistoryRead(
+  overrides?: Partial<AthleteRaceHistoryRead>,
+): AthleteRaceHistoryRead {
   return {
-    points,
+    points: makeCoachHistoryPoints(),
     seasons: [
       { season: 2024, started: 2, finished: 2 },
       { season: 2025, started: 2, finished: 1 },
@@ -144,11 +165,30 @@ export function makeAthleteRaceHistoryRead(
   };
 }
 
+/** Misma serie que `makeAthleteRaceHistoryRead`, tal como la recibe un
+ * padre: sin brechas contra 1.ª posición ni podio en ningún punto. */
+export function makeFamilyAthleteRaceHistoryRead(
+  overrides?: Partial<AthleteRaceHistoryRead>,
+): AthleteRaceHistoryRead {
+  return {
+    ...makeAthleteRaceHistoryRead(),
+    points: makeCoachHistoryPoints().map((point) =>
+      omitKeys(point, LEADER_GAP_METRIC_KEYS),
+    ),
+    ...overrides,
+  };
+}
+
 export const raceHistoryHandlers = [
   http.get(URL_PATTERN, () =>
     HttpResponse.json(makeAthleteRaceHistoryRead()),
   ),
 ];
+
+/** Sobreescribe con la respuesta que recibe un padre (sin brechas de líder/podio). */
+export const raceHistoryFamilyHandler = http.get(URL_PATTERN, () =>
+  HttpResponse.json(makeFamilyAthleteRaceHistoryRead()),
+);
 
 export const raceHistoryEmptyHandler = http.get(URL_PATTERN, () =>
   HttpResponse.json(
