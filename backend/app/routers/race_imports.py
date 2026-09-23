@@ -1704,6 +1704,11 @@ async def add_correction(
     imp = await _load_correctable_import(db, parse_id, current_user)
     meta = dict(imp.parse_meta_json or {})
 
+    # Liberar conexión MySQL antes de SFTP download + pdfplumber parse:
+    # Hostinger cierra la conexión inactiva antes de que termine el parse y
+    # el flush de abajo reventaría con el socket muerto.
+    await db.commit()
+
     existing_corrections = list(meta.get("corrections") or [])
     new_correction = {
         "op": body.op,
@@ -1791,6 +1796,10 @@ async def acknowledge_category(
     """
     imp = await _load_correctable_import(db, parse_id, current_user)
     meta = dict(imp.parse_meta_json or {})
+
+    # Liberar conexión MySQL antes de SFTP download + pdfplumber parse
+    # (mismo motivo que ``add_correction``).
+    await db.commit()
 
     corrections = meta.get("corrections") or []
     fresh = await _reload_results_document(imp)
