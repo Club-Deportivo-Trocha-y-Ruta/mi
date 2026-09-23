@@ -4,19 +4,17 @@ Responsabilidades
 =================
 1. Log estructurado de finalización del grafo (siempre, no-PII).
 2. Si el coach aprobó el draft (``insight_approved=True``) y hay
-   ``persisted_insight_ids`` en el state, despacha la notificación a
-   padres/in-app vía :func:`dispatch_insight_notification`.
+   ``persisted_insight_ids`` en el state, despacha la notificación
+   in-app a padres vía :func:`dispatch_insight_notification`.
 
-Decisión cerrada (Family Relations track, 2026-05-25): no toda válida
-genera email a padres. La lógica de tier (A/CD ⇒ email, B/C ⇒ solo in-app)
-vive en :mod:`app.services.notification.race_insight_dispatcher` —
-este nodo es solo el cableador.
+Decisión cerrada (2026-09-23, reestructura Competencias): aprobar un
+insight NUNCA envía email a padres, sin importar la válida. La lógica de
+publicación in-app vive en
+:mod:`app.services.notification.race_insight_dispatcher` — este nodo es
+solo el cableador.
 
 Fallbacks
 =========
-- ``NOTIFICATION_SEND_EMAILS=false`` ⇒ in-app igual se emite (logs),
-  solo se omite el email Resend. El dispatcher respeta el flag a nivel
-  ``NotificationService.send``.
 - Si el dispatcher levanta cualquier excepción, log + ``notified=False``
   pero el grafo NO se rompe (último nodo, ya no hay flujo dependiente).
 - Estado sin ``persisted_insight_ids`` (p.ej. tests viejos, fan-out
@@ -26,7 +24,6 @@ Fallbacks
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any
 
 from app.services.race.ai.events import with_events
@@ -37,16 +34,11 @@ logger = logging.getLogger(__name__)
 NODE_NAME = "notify_coach"
 
 
-def _send_emails_enabled() -> bool:
-    raw = os.environ.get("NOTIFICATION_SEND_EMAILS", "true").strip().lower()
-    return raw not in {"false", "0", "no", "off"}
-
-
 async def _dispatch_for_persisted_insights(state: dict) -> int:
     """Carga insights persistidos y llama al dispatcher por cada uno.
 
-    Retorna número de insights procesados (no de emails enviados — eso
-    queda en logs estructurados del dispatcher).
+    Retorna número de insights procesados (todos publicados in-app — el
+    detalle queda en logs estructurados del dispatcher).
     """
     insight_ids: list[int] = list(state.get("persisted_insight_ids") or [])
     if not insight_ids:
@@ -54,32 +46,11 @@ async def _dispatch_for_persisted_insights(state: dict) -> int:
 
     # Import diferido para no penalizar arranque del grafo en tests
     # que no tocan persistencia ni notificaciones.
-    from app.config import settings
-    from app.dependencies import get_email_settings, get_template_registry
     from app.models.athlete_ai_insight import AthleteAiInsight
-    from app.services.notification import (
-        NotificationService,
-        create_email_client,
-    )
-    from app.services.notification.document_generator import DocumentGenerator
     from app.services.notification.race_insight_dispatcher import (
         dispatch_insight_notification,
     )
     from app.services.race.ai.db import get_session
-
-    # Construir NotificationService manualmente (estamos fuera del request
-    # cycle de FastAPI, los Depends no aplican). get_email_settings es
-    # @lru_cache, así que es estable y barato.
-    email_settings = get_email_settings()
-    registry = get_template_registry()
-    generator = DocumentGenerator(registry=registry, settings=email_settings)
-    email_client = create_email_client(email_settings)
-    notification_service = NotificationService(
-        email_client=email_client,
-        registry=registry,
-        document_generator=generator,
-        settings=email_settings,
-    )
 
     processed = 0
     async with get_session() as db:
@@ -92,20 +63,13 @@ async def _dispatch_for_persisted_insights(state: dict) -> int:
                 )
                 continue
             try:
-                result = await dispatch_insight_notification(
-                    insight,
-                    db,
-                    notification_service=notification_service,
-                    dispatcher=None,  # sync inline — estamos en background ya
-                    settings=settings,
-                )
+                result = await dispatch_insight_notification(insight, db)
                 logger.info(
                     "notify_coach.dispatch | insight_id=%s decision=%s tier=%s "
-                    "emails_sent=%d in_app_emitted=%d",
+                    "in_app_emitted=%d",
                     insight_id,
                     result.decision.value,
                     result.tier.value,
-                    result.emails_sent,
                     result.in_app_emitted,
                 )
                 processed += 1
@@ -131,23 +95,15 @@ async def notify_coach(state: dict) -> dict[str, Any]:
     approved = bool(state.get("insight_approved"))
     persisted_count = len(state.get("persisted_insight_ids") or [])
 
-    base_log_extra = (coach_id, athlete_id, run_id, approved, persisted_count)
-
-    if not _send_emails_enabled():
-        logger.info(
-            "notify_coach: NOTIFICATION_SEND_EMAILS=false — emails desactivados "
-            "(coach_id=%s, athlete_id=%s, run_id=%s, approved=%s, persisted=%d)",
-            *base_log_extra,
-        )
-        # Aún así, queremos que el dispatcher procese in-app (es solo log).
-        # Pero como el flag corta el envío en NotificationService.send, los
-        # emails se cortocircuitan y los logs reflejan el bypass.
-
     if not approved or persisted_count == 0:
         logger.info(
             "notify_coach: nada que dispatchear (coach_id=%s, athlete_id=%s, "
             "run_id=%s, approved=%s, persisted=%d)",
-            *base_log_extra,
+            coach_id,
+            athlete_id,
+            run_id,
+            approved,
+            persisted_count,
         )
         return {"notified": False, "insights_dispatched": 0}
 

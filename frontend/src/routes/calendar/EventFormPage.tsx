@@ -111,7 +111,7 @@ export function EventFormPage({ mode }: EventFormPageProps) {
           </div>
           <Link
             to="/calendar"
-            className="rounded-lg bg-white px-3 py-2 text-sm font-medium text-mid-gray transition-opacity hover:opacity-70 shadow-ring"
+            className="rounded-lg bg-surface-raised px-3 py-2 text-sm font-medium text-mid-gray transition-opacity hover:opacity-70 shadow-ring"
           >
             Cancelar
           </Link>

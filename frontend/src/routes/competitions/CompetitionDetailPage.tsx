@@ -164,7 +164,7 @@ function TabTrigger({
   return (
     <TabsPrimitive.Trigger
       value={value}
-      className="flex min-h-12 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium text-mid-gray transition-colors data-[state=active]:bg-white data-[state=active]:text-charcoal data-[state=active]:shadow-sm"
+      className="flex min-h-12 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium text-mid-gray transition-colors data-[state=active]:bg-surface data-[state=active]:text-charcoal data-[state=active]:shadow-sm"
     >
       {label}
     </TabsPrimitive.Trigger>
@@ -353,7 +353,7 @@ export function CompetitionDetailPage() {
             type="button"
             onClick={() => void refetch()}
             disabled={isFetching}
-            className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal shadow-ring transition-opacity hover:opacity-70 disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-lg bg-surface-raised px-3 py-1.5 text-sm font-medium text-charcoal shadow-ring transition-opacity hover:opacity-70 disabled:opacity-50"
           >
             {isFetching ? (
               <Loader2 size={14} className="animate-spin" aria-hidden="true" />
@@ -514,7 +514,7 @@ export function CompetitionDetailPage() {
                     setDeleteError(null);
                     setDeleteOpen(true);
                   }}
-                  className="inline-flex min-h-12 items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
+                  className="inline-flex min-h-12 items-center gap-1.5 rounded-lg border border-red-200 bg-surface-raised px-3 py-1.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
                   data-testid="btn-delete"
                 >
                   Eliminar
@@ -530,7 +530,7 @@ export function CompetitionDetailPage() {
             {showImportCTA && (
               <Link
                 to={`/competitions/${raceEventId}/import`}
-                className="inline-flex min-h-12 items-center gap-2 rounded-lg bg-charcoal px-5 py-2.5 text-sm font-semibold text-white shadow-button-highlight transition-opacity hover:opacity-90"
+                className="inline-flex min-h-12 items-center gap-2 rounded-lg bg-charcoal px-5 py-2.5 text-sm font-semibold text-surface shadow-button-highlight transition-opacity hover:opacity-90"
                 data-testid="cta-import"
               >
                 <Upload size={16} aria-hidden="true" />
@@ -541,7 +541,7 @@ export function CompetitionDetailPage() {
               <button
                 type="button"
                 onClick={() => handleTabChange("insights")}
-                className="inline-flex min-h-12 items-center gap-2 rounded-lg bg-charcoal px-5 py-2.5 text-sm font-semibold text-white shadow-button-highlight transition-opacity hover:opacity-90"
+                className="inline-flex min-h-12 items-center gap-2 rounded-lg bg-charcoal px-5 py-2.5 text-sm font-semibold text-surface shadow-button-highlight transition-opacity hover:opacity-90"
                 data-testid="cta-insights"
               >
                 <BarChart2Icon size={16} aria-hidden="true" />

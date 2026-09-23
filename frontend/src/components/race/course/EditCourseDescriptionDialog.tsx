@@ -199,7 +199,7 @@ export function EditCourseDescriptionDialog({
                         key={t}
                         value={t}
                         aria-label={TERRAIN_TYPE_LABELS[t]}
-                        className="min-h-[48px] min-w-[72px] rounded-lg border border-[rgba(34,42,53,0.12)] px-3 py-2 text-sm font-medium text-charcoal transition-colors data-[state=on]:border-charcoal data-[state=on]:bg-charcoal data-[state=on]:text-white"
+                        className="min-h-[48px] min-w-[72px] rounded-lg border border-[rgba(34,42,53,0.12)] px-3 py-2 text-sm font-medium text-charcoal transition-colors data-[state=on]:border-charcoal data-[state=on]:bg-charcoal data-[state=on]:text-surface"
                       >
                         {TERRAIN_TYPE_LABELS[t]}
                       </ToggleGroupItem>
@@ -207,7 +207,7 @@ export function EditCourseDescriptionDialog({
                     <ToggleGroupItem
                       value={UNSET}
                       aria-label="Sin especificar terreno"
-                      className="min-h-[48px] min-w-[72px] rounded-lg border border-[rgba(34,42,53,0.12)] px-3 py-2 text-sm font-medium text-mid-gray transition-colors data-[state=on]:border-charcoal data-[state=on]:bg-charcoal data-[state=on]:text-white"
+                      className="min-h-[48px] min-w-[72px] rounded-lg border border-[rgba(34,42,53,0.12)] px-3 py-2 text-sm font-medium text-mid-gray transition-colors data-[state=on]:border-charcoal data-[state=on]:bg-charcoal data-[state=on]:text-surface"
                     >
                       Sin especificar
                     </ToggleGroupItem>
@@ -344,7 +344,7 @@ export function EditCourseDescriptionDialog({
                 placeholder="Características fijas del trazado (sombra, saltos, zonas de adelantamiento) — evite incluir nombres de atletas o información médica"
                 {...register("course_notes")}
                 className={cn(
-                  "w-full resize-y rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
+                  "w-full resize-y rounded-lg bg-surface-raised px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
                   "shadow-ring",
                 )}
                 style={{ minHeight: "100px" }}
@@ -392,7 +392,7 @@ export function EditCourseDescriptionDialog({
             type="submit"
             form="edit-course-description-form"
             disabled={updateMutation.isPending}
-            className="inline-flex min-h-[48px] items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="inline-flex min-h-[48px] items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-surface transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             {updateMutation.isPending && (
               <Loader2 size={14} className="animate-spin" aria-hidden="true" />

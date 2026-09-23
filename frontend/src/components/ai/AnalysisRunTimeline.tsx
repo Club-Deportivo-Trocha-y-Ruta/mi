@@ -372,7 +372,7 @@ export function AnalysisRunTimeline({
       data-testid="analysis-run-timeline"
     >
       <div
-        className="rounded-xl bg-white p-4 ring-1 ring-light-gray"
+        className="rounded-xl bg-surface-raised p-4 ring-1 ring-light-gray"
         aria-live="polite"
         aria-atomic="true"
       >
@@ -513,7 +513,7 @@ export function AnalysisRunTimeline({
                   ? "bg-purple-50 ring-1 ring-purple-200"
                   : isActive
                   ? "bg-blue-50 ring-1 ring-blue-200"
-                  : "bg-white ring-1 ring-light-gray",
+                  : "bg-surface-raised ring-1 ring-light-gray",
               )}
               aria-label={
                 node.status === "awaiting_review"

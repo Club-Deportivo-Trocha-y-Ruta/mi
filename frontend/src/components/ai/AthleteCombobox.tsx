@@ -233,7 +233,7 @@ export function AthleteCombobox({
           data-testid={dataTestId}
           onClick={() => setOpen((v) => !v)}
           className={cn(
-            "flex w-full items-center justify-between gap-2 rounded-lg bg-white px-3 py-2 text-left text-sm text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 disabled:opacity-50",
+            "flex w-full items-center justify-between gap-2 rounded-lg bg-surface-raised px-3 py-2 text-left text-sm text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 disabled:opacity-50",
             !selected && "text-mid-gray",
             !error && "shadow-ring",
           )}
@@ -283,7 +283,7 @@ export function AthleteCombobox({
 
         {open && (
           <div
-            className="absolute left-0 right-0 top-full z-50 mt-1.5 min-w-[260px] rounded-lg bg-white p-1 shadow-lg ring-1 ring-light-gray"
+            className="absolute left-0 right-0 top-full z-50 mt-1.5 min-w-[260px] rounded-lg bg-surface-raised p-1 shadow-lg ring-1 ring-light-gray"
             data-testid={`${dataTestId}-popover`}
           >
             <div className="flex items-center gap-2 border-b border-light-gray px-2 py-2">

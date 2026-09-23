@@ -48,7 +48,7 @@ interface SummarySectionProps {
 function SummarySection({ title, children }: SummarySectionProps) {
   return (
     <div
-      className="rounded-xl bg-white p-4"
+      className="rounded-xl bg-surface-raised p-4"
       style={{
         boxShadow:
           "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 1px 3px 0px",

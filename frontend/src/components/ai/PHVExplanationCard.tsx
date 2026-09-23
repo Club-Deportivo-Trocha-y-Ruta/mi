@@ -70,7 +70,7 @@ function PHVExplanationReadOnly({
     return (
       <section
         className={cn(
-          "space-y-3 rounded-xl bg-white p-5 ring-1 ring-light-gray",
+          "space-y-3 rounded-xl bg-surface-raised p-5 ring-1 ring-light-gray",
           className,
         )}
         data-testid="phv-explanation-loading-cache"
@@ -105,7 +105,7 @@ function PHVExplanationReadOnly({
   return (
     <section
       className={cn(
-        "space-y-3 rounded-xl bg-white p-5 ring-1 ring-light-gray",
+        "space-y-3 rounded-xl bg-surface-raised p-5 ring-1 ring-light-gray",
         className,
       )}
       data-testid="phv-explanation-idle"
@@ -253,7 +253,7 @@ function PHVExplanationCoach({
     return (
       <section
         className={cn(
-          "space-y-3 rounded-xl bg-white p-5 ring-1 ring-light-gray",
+          "space-y-3 rounded-xl bg-surface-raised p-5 ring-1 ring-light-gray",
           className,
         )}
         data-testid="phv-explanation-loading-cache"
@@ -279,7 +279,7 @@ function PHVExplanationCoach({
     return (
       <section
         className={cn(
-          "space-y-3 rounded-xl bg-white p-5 ring-1 ring-light-gray",
+          "space-y-3 rounded-xl bg-surface-raised p-5 ring-1 ring-light-gray",
           className,
         )}
         data-testid="phv-explanation-pending"
@@ -389,7 +389,7 @@ function PHVExplanationCoach({
               type="button"
               onClick={handleGenerate}
               disabled={budgetExhausted}
-              className="rounded-lg border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-lg border border-red-300 bg-surface-raised px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Reintentar
             </button>
@@ -403,7 +403,7 @@ function PHVExplanationCoach({
   return (
     <section
       className={cn(
-        "space-y-3 rounded-xl bg-white p-5 ring-1 ring-light-gray",
+        "space-y-3 rounded-xl bg-surface-raised p-5 ring-1 ring-light-gray",
         className,
       )}
       data-testid="phv-explanation-idle"

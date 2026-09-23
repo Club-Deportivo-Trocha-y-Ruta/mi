@@ -38,7 +38,7 @@ const SIBLING_VIEWS = [
 // ---------------------------------------------------------------------------
 
 const inputSelectClass =
-  "min-h-[40px] rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 shadow-ring";
+  "min-h-[40px] rounded-lg bg-surface-raised px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 shadow-ring";
 
 const DEFAULT_PAGE_SIZE = 30;
 const PAGE_SIZE_STEP = 30;
@@ -165,7 +165,7 @@ export function ActivityReviewPage() {
       <SiblingViewTabs items={SIBLING_VIEWS} />
 
       {/* Filtros */}
-      <div className="rounded-xl bg-white p-4 shadow-card">
+      <div className="rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline">
         <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-end sm:gap-3">
           <div className="flex flex-col gap-1">
             <label htmlFor="filter-linked" className="text-xs font-medium text-mid-gray">
@@ -235,7 +235,7 @@ export function ActivityReviewPage() {
             <button
               type="button"
               onClick={resetFilters}
-              className="inline-flex min-h-[40px] items-center gap-1.5 self-end rounded-lg bg-white px-3 py-2 text-sm font-medium text-mid-gray transition-opacity hover:opacity-70 shadow-ring"
+              className="inline-flex min-h-[40px] items-center gap-1.5 self-end rounded-lg bg-surface-raised px-3 py-2 text-sm font-medium text-mid-gray transition-opacity hover:opacity-70 shadow-ring"
             >
               <X size={14} aria-hidden="true" />
               Limpiar filtros
@@ -246,7 +246,7 @@ export function ActivityReviewPage() {
 
       {/* Loading */}
       {reviewQuery.isLoading && (
-        <div className="space-y-2 rounded-xl bg-white p-4 shadow-card" role="status" aria-live="polite">
+        <div className="space-y-2 rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline" role="status" aria-live="polite">
           <span className="sr-only">Cargando actividades…</span>
           {Array.from({ length: 5 }).map((_, idx) => (
             <div key={idx} className="h-16 animate-pulse rounded-lg bg-light-gray" />
@@ -267,7 +267,7 @@ export function ActivityReviewPage() {
           <button
             type="button"
             onClick={() => reviewQuery.refetch()}
-            className="rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-red-700 transition-opacity hover:opacity-70 shadow-ring"
+            className="rounded-lg bg-surface-raised px-3 py-1.5 text-sm font-medium text-red-700 transition-opacity hover:opacity-70 shadow-ring"
           >
             Reintentar
           </button>
@@ -277,7 +277,7 @@ export function ActivityReviewPage() {
       {/* Empty */}
       {!reviewQuery.isLoading && !reviewQuery.isError && items.length === 0 && (
         <div
-          className="rounded-xl bg-white p-10 text-center shadow-card"
+          className="rounded-card bg-surface-raised p-10 text-center shadow-card ring-1 ring-hairline"
           style={{ borderStyle: "dashed" }}
         >
           <Filter className="mx-auto h-8 w-8 text-mid-gray" aria-hidden="true" />
@@ -321,7 +321,7 @@ export function ActivityReviewPage() {
                   setPageSize((prev) => Math.min(prev + PAGE_SIZE_STEP, MAX_PAGE_SIZE))
                 }
                 disabled={reviewQuery.isFetching || pageSize >= MAX_PAGE_SIZE}
-                className="rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 disabled:opacity-50 shadow-ring"
+                className="rounded-lg bg-surface-raised px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 disabled:opacity-50 shadow-ring"
               >
                 {reviewQuery.isFetching ? "Cargando…" : "Cargar más"}
               </button>

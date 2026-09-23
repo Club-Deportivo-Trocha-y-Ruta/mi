@@ -23,6 +23,14 @@ export function formatMs(ms: number, unit: string): string {
   }
   if (unit === "rank") return `P${Math.round(ms)}`;
   if (unit === "pct") return `${Math.round(ms)}`;
+  // "pct_signed" (2026-09-23) — brecha vs. mediana: puede ser negativa (más
+  // rápido que la mediana), a diferencia de "pct" (percentil, sin signo).
+  // Mismo formato que `formatGapPct` (raceHistoryFormat.ts): signo explícito
+  // en positivos, 1 decimal.
+  if (unit === "pct_signed") {
+    const sign = ms > 0 ? "+" : "";
+    return `${sign}${ms.toFixed(1)} %`;
+  }
   return `${ms} ${unit}`;
 }
 

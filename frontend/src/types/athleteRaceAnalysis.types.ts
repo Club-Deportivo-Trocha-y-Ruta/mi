@@ -31,6 +31,9 @@ export const EvolutionMetric = {
   RANKING: "ranking",
   TIME_MS: "time_ms",
   PERCENTILE: "percentile",
+  /** Brecha vs. mediana (2026-09-23) — métrica por defecto para coach y
+   * familia: comparable entre válidas porque no depende de quién ganó. */
+  GAP_TO_MEDIAN_PCT: "gap_to_median_pct",
 } as const;
 export type EvolutionMetric = (typeof EvolutionMetric)[keyof typeof EvolutionMetric];
 
@@ -349,6 +352,16 @@ export interface EvolutionPoint {
    */
   position?: number | null;
   gap_pct?: number | null;
+  /**
+   * Brecha vs. mediana (2026-09-23) — porcentaje respecto a la mediana de
+   * tiempos FINISHED de la categoría del evento (backend:
+   * `field_metrics.compute_field_metrics`, misma fuente que
+   * `RaceHistoryPoint.gap_to_median_pct`). Negativo = más rápido que la
+   * mediana. Expuesto para cualquier `metric`, igual que `gap_pct`. `null`
+   * si el atleta no finalizó o si la categoría del evento tiene menos de 5
+   * finalistas CON tiempo registrado.
+   */
+  gap_to_median_pct?: number | null;
   /**
    * Feature 043 (US2) — velocidad promedio derivada de esa válida (mismo
    * cálculo que `RaceResultRow.avg_speed_kmh`, ver

@@ -122,7 +122,7 @@ function HeaderBar({ year }: { year: number }) {
 function TableSkeleton() {
   return (
     <div
-      className="space-y-2 rounded-xl bg-white p-4 shadow-card"
+      className="space-y-2 rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline"
       data-testid="season-insights-loading"
     >
       {Array.from({ length: 5 }).map((_, i) => (
@@ -195,7 +195,7 @@ export function SeasonInsightsPage() {
 
       {isError && !isLoading && (
         <div
-          className="flex min-h-[20vh] flex-col items-center justify-center gap-3 rounded-xl bg-white p-6 shadow-card"
+          className="flex min-h-[20vh] flex-col items-center justify-center gap-3 rounded-card bg-surface-raised p-6 shadow-card ring-1 ring-hairline"
           data-testid="season-insights-error"
         >
           <p className="text-sm text-mid-gray">
@@ -209,7 +209,7 @@ export function SeasonInsightsPage() {
 
       {!isLoading && !isError && items.length === 0 && (
         <div
-          className="flex min-h-[20vh] items-center justify-center rounded-xl bg-white p-6 text-center shadow-card"
+          className="flex min-h-[20vh] items-center justify-center rounded-card bg-surface-raised p-6 text-center shadow-card ring-1 ring-hairline"
           data-testid="season-insights-empty"
         >
           <p className="text-sm text-mid-gray">
@@ -234,7 +234,7 @@ export function SeasonInsightsPage() {
                 value={seriesId ?? ""}
                 onChange={(e) => setSeriesId(Number(e.target.value))}
                 className={cn(
-                  "min-h-12 rounded-lg bg-white px-3 py-2 text-sm outline-none",
+                  "min-h-12 rounded-lg bg-surface-raised px-3 py-2 text-sm outline-none",
                   "shadow-ring focus:ring-2 focus:ring-primary/40",
                 )}
               >
@@ -246,7 +246,7 @@ export function SeasonInsightsPage() {
               </select>
             </div>
           )}
-          <div className="overflow-hidden rounded-xl bg-white shadow-card">
+          <div className="overflow-hidden rounded-card bg-surface-raised shadow-card ring-1 ring-hairline">
           <table className="w-full text-sm" data-testid="season-insights-table">
             <caption className="sr-only">
               Panorama de la temporada {yearNum} por deportista

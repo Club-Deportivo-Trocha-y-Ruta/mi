@@ -588,7 +588,7 @@ describe("PendingInbox", () => {
 // ---------------------------------------------------------------------------
 
 describe("PendingInbox — contenedor de tarjeta (feature 035)", () => {
-  it('titula "Pendientes" dentro de la tarjeta (rounded-xl + shadow-card)', () => {
+  it('titula "Pendientes" dentro de la tarjeta (rounded-card + shadow-card)', () => {
     setAllResolved();
 
     renderInbox();
@@ -597,7 +597,7 @@ describe("PendingInbox — contenedor de tarjeta (feature 035)", () => {
     expect(heading).toBeInTheDocument();
     // El título ya no vive fuera del contenedor: la sección ES la tarjeta.
     const card = heading.closest("section");
-    expect(card?.className).toMatch(/rounded-xl/);
+    expect(card?.className).toMatch(/rounded-card/);
     expect(card?.className).toMatch(/shadow-card/);
     expect(card).toHaveAttribute("aria-labelledby", heading.id);
   });

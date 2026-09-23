@@ -244,12 +244,12 @@ export function OnboardingWizard({
   return (
     <div
       className={cn(
-        "w-full max-w-xl mx-auto overflow-hidden rounded-2xl bg-white",
+        "w-full max-w-xl mx-auto overflow-hidden rounded-card bg-surface-raised ring-1 ring-hairline",
         "shadow-card",
       )}
     >
       {/* ---- Header: stepper ---- */}
-      <div className="px-6 pt-6 pb-4 border-b border-[rgba(34,42,53,0.08)]">
+      <div className="px-6 pt-6 pb-4 border-b border-border-gray">
         <OnboardingStepper steps={visibleSteps} currentStep={currentStep} />
 
         {/* Descripción del paso actual */}
@@ -296,7 +296,7 @@ export function OnboardingWizard({
               onClick={handleBack}
               disabled={isPending}
               className={cn(
-                "flex items-center gap-1.5 rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-charcoal transition-opacity disabled:opacity-50",
+                "flex items-center gap-1.5 rounded-lg bg-surface-raised px-4 py-2.5 text-sm font-medium text-charcoal transition-opacity disabled:opacity-50",
                 "shadow-ring",
               )}
               aria-label="Volver al paso anterior"
@@ -310,7 +310,7 @@ export function OnboardingWizard({
             type="button"
             onClick={handlePrimaryAction}
             disabled={isPending}
-            className="flex items-center gap-2 rounded-lg bg-charcoal px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="flex items-center gap-2 rounded-lg bg-charcoal px-5 py-2.5 text-sm font-semibold text-surface transition-opacity hover:opacity-90 disabled:opacity-50"
             style={btnPrimaryStyle}
             aria-label={
               isLastStep

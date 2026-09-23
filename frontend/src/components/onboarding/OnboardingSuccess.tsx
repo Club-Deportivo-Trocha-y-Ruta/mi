@@ -15,9 +15,9 @@ interface OnboardingSuccessProps {
 
 export function OnboardingSuccess({ userName, onGoToLogin }: OnboardingSuccessProps) {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-white p-4">
+    <div className="flex min-h-screen items-center justify-center bg-surface p-4">
       <div
-        className="w-full max-w-md rounded-xl bg-white p-8 text-center shadow-card"
+        className="w-full max-w-md rounded-card bg-surface-raised p-8 text-center shadow-card ring-1 ring-hairline"
       >
         {/* Club header */}
         <div className="mb-8 text-center">
@@ -65,7 +65,7 @@ export function OnboardingSuccess({ userName, onGoToLogin }: OnboardingSuccessPr
         <button
           type="button"
           onClick={onGoToLogin}
-          className="mt-8 w-full rounded-lg bg-charcoal px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-70 shadow-button-highlight"
+          className="mt-8 w-full rounded-lg bg-charcoal px-4 py-2.5 text-sm font-medium text-surface transition-opacity hover:opacity-70 shadow-button-highlight"
         >
           Iniciar sesión
         </button>

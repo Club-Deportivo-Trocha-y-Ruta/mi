@@ -202,7 +202,7 @@ function SaveStructureAsTemplateDialog({
                 onChange={(e) => setName(e.target.value)}
                 maxLength={120}
                 disabled={isPending}
-                className="min-h-12 w-full rounded-lg border border-[rgba(34,42,53,0.12)] bg-white px-3 py-2 text-sm text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 disabled:opacity-50"
+                className="min-h-12 w-full rounded-lg border border-[rgba(34,42,53,0.12)] bg-surface-raised px-3 py-2 text-sm text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 disabled:opacity-50"
               />
               {nameError && (
                 <p role="alert" className="mt-1 text-xs text-red-600">
@@ -224,7 +224,7 @@ function SaveStructureAsTemplateDialog({
                   value={mesocyclePhase}
                   onChange={(e) => setMesocyclePhase(e.target.value)}
                   disabled={isPending}
-                  className="min-h-12 w-full rounded-lg border border-[rgba(34,42,53,0.12)] bg-white px-3 py-2 text-sm text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 disabled:opacity-50"
+                  className="min-h-12 w-full rounded-lg border border-[rgba(34,42,53,0.12)] bg-surface-raised px-3 py-2 text-sm text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 disabled:opacity-50"
                 >
                   {MESOCYCLE_PHASE_OPTIONS.map((o) => (
                     <option key={o.value} value={o.value}>
@@ -245,7 +245,7 @@ function SaveStructureAsTemplateDialog({
                   value={competitionProximity}
                   onChange={(e) => setCompetitionProximity(e.target.value)}
                   disabled={isPending}
-                  className="min-h-12 w-full rounded-lg border border-[rgba(34,42,53,0.12)] bg-white px-3 py-2 text-sm text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 disabled:opacity-50"
+                  className="min-h-12 w-full rounded-lg border border-[rgba(34,42,53,0.12)] bg-surface-raised px-3 py-2 text-sm text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 disabled:opacity-50"
                 >
                   {COMPETITION_PROXIMITY_OPTIONS.map((o) => (
                     <option key={o.value} value={o.value}>
@@ -367,7 +367,7 @@ export function PlanSection({
   return (
     <div className="space-y-5">
       {/* Estructura de intervalos (feature 026) — sin cambios de lógica */}
-      <div className="rounded-xl bg-white px-5 py-4 space-y-4 shadow-card">
+      <div className="rounded-card bg-surface-raised px-5 py-4 space-y-4 shadow-card ring-1 ring-hairline">
             {structureQuery.isLoading ? (
               <>
                 <h2 className={sectionHeading}>Estructura de intervalos</h2>

@@ -12,9 +12,20 @@
  * Filtros "Planificada", "Cancelada", temporada y sede van como query params.
  *
  * Gate de admin: solo admin ve "Eliminar" en el kebab.
+ *
+ * Sincronización con la URL (2026-09-23): `?season=` fija la temporada
+ * inicial (default: la temporada actual, mismo `currentSeason()` que usa
+ * `PendingInbox`) y `?filter=needs-results` deja solo las válidas que
+ * necesitan resultados — enlace de entrada desde la fila "Resultados por
+ * importar" del Inicio (`PendingInbox.tsx`), con el MISMO criterio que esa
+ * fila usa para su conteo: sin resultados y con fecha ya pasada
+ * (`diffDaysFromToday(event_date) < 0`). Es un filtro de entrada, no un
+ * control visible en `CompetitionFiltersBar` — tocar cualquier otro filtro
+ * lo limpia. Todo cambio de filtro actualiza la URL con `replace` (no
+ * ensucia el historial de navegación).
  */
 import { useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   AlertCircle,
   CalendarPlus,
@@ -63,7 +74,7 @@ import {
   useRaceEventsList,
 } from "@/hooks/race/useRaceEvents";
 import { getRaceEvent } from "@/api/raceEvents";
-import { currentSeason } from "@/lib/datetime";
+import { currentSeason, diffDaysFromToday } from "@/lib/datetime";
 import { usePrefetchOnIntent } from "@/hooks/usePrefetchOnIntent";
 import { useAuthStore } from "@/store/auth.store";
 import { UserRole } from "@/types/enums";
@@ -102,6 +113,22 @@ function isUpcomingWithin30Days(iso: string): boolean {
   return diffDays >= 0 && diffDays <= 30;
 }
 
+/** Temporada inicial desde `?season=` — si falta o no es numérica, cae a
+ * la temporada actual (`currentSeason()`, mismo helper que `PendingInbox`
+ * usa para contar "Resultados por importar"). */
+function parseSeasonParam(raw: string | null): number {
+  const parsed = raw != null ? Number(raw) : NaN;
+  return Number.isFinite(parsed) ? parsed : currentSeason();
+}
+
+/** Mismo criterio que `resultsToImportState` en `PendingInbox.tsx` (T033):
+ * sin resultados importados y con fecha de evento ya pasada. */
+function needsResults(item: RaceEventListItem): boolean {
+  if (item.has_results) return false;
+  const days = diffDaysFromToday(item.event_date);
+  return days !== null && days < 0;
+}
+
 // Sibling views of the Competencias area (data-model.md §2) — shared across
 // CompetitionsListPage, UnlinkedCompetitorsPage y SeasonInsightsPage.
 const COMPETITIONS_SIBLING_VIEWS: SiblingViewTabsItem[] = [
@@ -119,10 +146,19 @@ export function CompetitionsListPage() {
   const isAdmin = user?.role === UserRole.admin;
   const isCoach = user?.role === UserRole.coach;
 
-  // Filtros que van al backend
-  const [filters, setFilters] = useState<RaceEventListFilters>({ season: 2026 });
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Filtros que van al backend — la temporada se sincroniza con `?season=`.
+  const [filters, setFilters] = useState<RaceEventListFilters>(() => ({
+    season: parseSeasonParam(searchParams.get("season")),
+  }));
   // Filtros client-side (post-fetch)
   const [localFilters, setLocalFilters] = useState<LocalFilters>({});
+  // Filtro de entrada desde `?filter=needs-results` (ver docstring del
+  // archivo). Se limpia en cuanto el coach toca cualquier otro filtro.
+  const [needsResultsOnly, setNeedsResultsOnly] = useState(
+    () => searchParams.get("filter") === "needs-results",
+  );
 
   const { data, isLoading, isError, refetch, isFetching } = useRaceEventsList(filters);
   const deleteMutation = useDeleteRaceEvent();
@@ -135,15 +171,39 @@ export function CompetitionsListPage() {
   const [cleanupTarget, setCleanupTarget] = useState<RaceEventListItem | null>(null);
   const [cleanupError, setCleanupError] = useState<string | null>(null);
 
+  /** Todo cambio de filtro de backend actualiza `?season=` con `replace`
+   * y limpia `?filter=needs-results` — a partir de que el coach toca un
+   * filtro, manda su elección sobre el filtro de entrada. */
+  function handleFiltersChange(next: RaceEventListFilters) {
+    setFilters(next);
+    setNeedsResultsOnly(false);
+    const params = new URLSearchParams(searchParams);
+    if (next.season != null) params.set("season", String(next.season));
+    else params.delete("season");
+    params.delete("filter");
+    setSearchParams(params, { replace: true });
+  }
+
+  function handleLocalFiltersChange(next: LocalFilters) {
+    setLocalFilters(next);
+    setNeedsResultsOnly(false);
+    if (searchParams.has("filter")) {
+      const params = new URLSearchParams(searchParams);
+      params.delete("filter");
+      setSearchParams(params, { replace: true });
+    }
+  }
+
   // Aplicar filtros client-side
   const items = useMemo(() => {
     const raw = data?.items ?? [];
     return raw.filter((item) => {
       if (localFilters.hasResults && !item.has_results) return false;
       if (localFilters.upcoming && !isUpcomingWithin30Days(item.event_date)) return false;
+      if (needsResultsOnly && !needsResults(item)) return false;
       return true;
     });
-  }, [data?.items, localFilters]);
+  }, [data?.items, localFilters, needsResultsOnly]);
 
   function handleDeleteConfirm() {
     if (!deleteTarget) return;
@@ -195,7 +255,7 @@ export function CompetitionsListPage() {
             {/* Acciones secundarias */}
             <Link
               to="/competitions/import"
-              className="inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
+              className="inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-surface-raised px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
               aria-label="Cargar resultados de una válida"
             >
               <Upload size={14} aria-hidden="true" />
@@ -204,7 +264,7 @@ export function CompetitionsListPage() {
             {/* Feature 044 (US4) — entrada a la revisión de identidad del histórico */}
             <Link
               to="/competitions/identity-review"
-              className="inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
+              className="inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-surface-raised px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
               aria-label="Revisar identidad de competidores del histórico"
             >
               <UserCheck size={14} aria-hidden="true" />
@@ -213,7 +273,7 @@ export function CompetitionsListPage() {
             {/* Feature 044 (US5) — entrada al tablero de carga histórica */}
             <Link
               to="/competitions/history"
-              className="inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
+              className="inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-surface-raised px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
               aria-label="Ver el tablero de carga histórica"
             >
               <History size={14} aria-hidden="true" />
@@ -222,7 +282,7 @@ export function CompetitionsListPage() {
             {/* Acción primaria */}
             <Link
               to="/competitions/new"
-              className="inline-flex min-h-[44px] items-center rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 shadow-button-highlight"
+              className="inline-flex min-h-[44px] items-center rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-surface transition-opacity hover:opacity-70 shadow-button-highlight"
             >
               + Nueva competencia
             </Link>
@@ -235,14 +295,14 @@ export function CompetitionsListPage() {
       {/* Filtros */}
       <CompetitionFiltersBar
         value={filters}
-        onChange={setFilters}
+        onChange={handleFiltersChange}
         localFilters={localFilters}
-        onLocalFiltersChange={setLocalFilters}
+        onLocalFiltersChange={handleLocalFiltersChange}
       />
 
       {/* Loading skeleton */}
       {isLoading && (
-        <div className="space-y-2 rounded-xl bg-white p-4 shadow-card">
+        <div className="space-y-2 rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline">
           {Array.from({ length: 5 }).map((_, idx) => (
             <div key={idx} className="h-12 animate-pulse rounded-lg bg-light-gray" />
           ))}
@@ -263,7 +323,7 @@ export function CompetitionsListPage() {
             type="button"
             onClick={() => void refetch()}
             disabled={isFetching}
-            className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 disabled:opacity-50 shadow-ring"
+            className="flex items-center gap-1.5 rounded-lg bg-surface-raised px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 disabled:opacity-50 shadow-ring"
           >
             {isFetching ? (
               <Loader2 size={14} className="animate-spin" aria-hidden="true" />
@@ -284,7 +344,7 @@ export function CompetitionsListPage() {
           action={
             <Link
               to="/competitions/new"
-              className="inline-flex min-h-[44px] items-center rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 shadow-button-highlight"
+              className="inline-flex min-h-[44px] items-center rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-surface transition-opacity hover:opacity-70 shadow-button-highlight"
             >
               + Crear primera válida
             </Link>
@@ -295,11 +355,11 @@ export function CompetitionsListPage() {
       {/* Tabla desktop (≥md) */}
       {!isLoading && !isError && items.length > 0 && (
         <>
-          <div className="hidden md:block rounded-xl bg-white shadow-card">
+          <div className="hidden md:block rounded-card bg-surface-raised shadow-card ring-1 ring-hairline">
             <TableScrollContainer className="rounded-xl">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-[rgba(34,42,53,0.08)]">
+                  <tr className="border-b border-border-gray">
                     <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-mid-gray">
                       #
                     </th>
@@ -322,7 +382,7 @@ export function CompetitionsListPage() {
                         contenedor (F-01); fijar Acciones a la derecha la
                         mantiene siempre alcanzable sin depender de que el
                         coach descubra el scroll horizontal. */}
-                    <th className="sticky right-0 z-10 bg-white px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-mid-gray">
+                    <th className="sticky right-0 z-10 bg-surface-raised px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-mid-gray">
                       Acciones
                     </th>
                   </tr>
@@ -497,11 +557,11 @@ function CompetitionTableRow({
         <CompetitionStatusBadges item={item} />
       </td>
       {/* stopPropagation: interactuar con el kebab no debe navegar la fila.
-          sticky + bg-white/group-hover: la celda flota sobre el resto de la
+          sticky + bg-surface-raised/group-hover: la celda flota sobre el resto de la
           fila al hacer scroll horizontal y sigue el color de hover de la
           fila (F-01). */}
       <td
-        className="sticky right-0 bg-white px-4 py-3 text-right group-hover:bg-[rgba(34,42,53,0.02)]"
+        className="sticky right-0 bg-surface-raised px-4 py-3 text-right group-hover:bg-[rgba(34,42,53,0.02)]"
         onClick={(e) => e.stopPropagation()}
       >
         <ActionsKebab
@@ -541,7 +601,7 @@ function CompetitionCard({
     });
   return (
     <div
-      className="rounded-xl bg-white p-4 space-y-3 cursor-pointer shadow-card"
+      className="rounded-card bg-surface-raised p-4 space-y-3 cursor-pointer shadow-card ring-1 ring-hairline"
       onClick={() => navigate(`/competitions/${item.id}`)}
       onMouseEnter={prefetchDetail}
       onTouchStart={prefetchDetail}

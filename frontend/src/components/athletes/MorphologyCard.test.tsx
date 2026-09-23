@@ -80,7 +80,9 @@ describe("MorphologyCard", () => {
     const tallaValue = screen.getByText("155.0 cm");
     const statCardRoot = tallaValue.closest(".shadow-card");
     expect(statCardRoot).not.toBeNull();
-    expect(statCardRoot).toHaveClass("rounded-xl");
+    // rounded-card (no rounded-xl): ui/Card migró al radio del design system
+    // (specs/028-frontend-design-foundation, alineado con page/Card.astro).
+    expect(statCardRoot).toHaveClass("rounded-card");
   });
 
   it("renderiza badge de bike fit estándar", () => {

@@ -167,7 +167,7 @@ function LineShell({
       data-testid="latest-analysis-line"
       data-state={state}
       className={cn(
-        "flex min-h-12 flex-wrap items-center justify-between gap-2 rounded-xl bg-white px-4 py-3 shadow-card",
+        "flex min-h-12 flex-wrap items-center justify-between gap-2 rounded-card bg-surface-raised px-4 py-3 shadow-card ring-1 ring-hairline",
         className,
       )}
     >
@@ -194,7 +194,7 @@ export function LatestAnalysisLine({
         aria-label="Cargando el estado del análisis de IA…"
         data-testid="latest-analysis-line"
         data-state="loading"
-        className="flex min-h-12 items-center rounded-xl bg-white px-4 py-3 shadow-card"
+        className="flex min-h-12 items-center rounded-card bg-surface-raised px-4 py-3 shadow-card ring-1 ring-hairline"
       >
         <Skeleton className="h-4 w-2/3" />
       </div>
@@ -208,7 +208,7 @@ export function LatestAnalysisLine({
         role="alert"
         data-testid="latest-analysis-line"
         data-state="error"
-        className="min-h-12 rounded-xl bg-white px-4 py-3 text-xs leading-loose text-danger shadow-card"
+        className="min-h-12 rounded-card bg-surface-raised px-4 py-3 text-xs leading-loose text-danger shadow-card ring-1 ring-hairline"
       >
         No se pudo cargar el estado del análisis de IA.
       </p>

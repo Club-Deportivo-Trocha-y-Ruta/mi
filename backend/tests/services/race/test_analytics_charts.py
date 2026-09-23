@@ -33,8 +33,8 @@ from app.models import Base
 from app.models.race_course_category_setup import RaceCourseCategorySetup
 from app.models.race_course_variant import RaceCourseVariant
 from app.models.race_event import RaceEvent, RaceEventPriority
-from app.models.race_result import RaceResult
-from app.models.race_series import RaceSeriesKind, RaceSeriesLevel
+from app.models.race_result import RaceResult, ResultStatus
+from app.models.race_series import RaceSeries, RaceSeriesKind, RaceSeriesLevel
 from app.models.user import UserRole
 from app.schemas.athlete_race_analysis import (
     AnalysisConfidence,
@@ -47,6 +47,7 @@ from app.services.race.analytics_charts import (
     list_athlete_races,
 )
 from app.services.race.course.derived import derive_figures
+from app.services.race.field_metrics import compute_field_metrics
 from app.services.race.race_labels import build_race_label
 
 from tests.fixtures.race_history_fixtures import (
@@ -462,6 +463,169 @@ async def test_build_evolution_field_size_counts_finished_without_time(session):
     # aunque field_size ya sea 5.
     assert pct_point.field_size == 5
     assert pct_point.value is None
+
+
+# ---------------------------------------------------------------------------
+# "Brecha vs. mediana" (gap_to_median_pct, 2026-09-23) — EvolutionPoint
+#
+# ``build_evolution`` reutiliza ``field_metrics.compute_field_metrics`` (la
+# misma función que ``services/race/history.py``), nunca una cuarta fórmula.
+# El campo se expone para CUALQUIER métrica solicitada, igual que
+# ``gap_pct``, con el mismo umbral que ``history.py``: MIN_FIELD (5)
+# finalistas CON tiempo registrado (no ``field_size``, que también cuenta
+# ``minus_laps``) y ``None`` si el propio atleta no finalizó.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_build_evolution_gap_to_median_pct_matches_compute_field_metrics(
+    session,
+):
+    """El valor del punto debe coincidir EXACTO con lo que
+    ``compute_field_metrics`` calcula para el mismo escenario — valida el
+    cableado (reutiliza, no reimplementa) más que la fórmula en sí (ya
+    cubierta en ``test_field_metrics.py``)."""
+    # 6 FINISHED con tiempo (winner + atleta + 4 otros) → >= MIN_FIELD.
+    await _seed_athlete_in_event(
+        session,
+        event_id=1,
+        sequence_number=1,
+        event_date=date(2026, 1, 31),
+        name="V1",
+        athlete_position=2,
+        athlete_time_ms=1_810_000,
+        winner_time_ms=1_800_000,
+        other_runners=4,
+    )
+    await session.commit()
+
+    result = await build_evolution(
+        session,
+        athlete_id=144,
+        season=2026,
+        metric=EvolutionMetric.GAP_TO_MEDIAN_PCT,
+    )
+    assert len(result.series) == 1
+    point = result.series[0]
+    assert point.unit == "pct_signed"
+
+    all_results = (await session.execute(select(RaceResult))).scalars().all()
+    all_events = (await session.execute(select(RaceEvent))).scalars().all()
+    all_series = (await session.execute(select(RaceSeries))).scalars().all()
+    athlete_result = next(r for r in all_results if r.athlete_id == 144)
+
+    expected = compute_field_metrics(
+        results=all_results,
+        events=all_events,
+        series=all_series,
+        categories=[],
+        competitor_id=athlete_result.competitor_id,
+        season=2026,
+    )
+    expected_gap = expected[1]["gap_to_median_pct"]
+
+    assert expected_gap is not None
+    assert point.gap_to_median_pct == expected_gap
+    # metric=gap_to_median_pct → value ES el campo (mismo umbral aplicado).
+    assert point.value == expected_gap
+
+
+@pytest.mark.asyncio
+async def test_build_evolution_gap_to_median_pct_none_below_min_field(session):
+    """< MIN_FIELD (5) finalistas CON tiempo → ``None``, aunque
+    ``compute_field_metrics`` por sí solo devuelva un valor — el umbral vive
+    en el caller (``build_evolution``), igual que en ``history.py``."""
+    # 4 FINISHED con tiempo (winner + atleta + 2 otros) → debajo de MIN_FIELD.
+    await _seed_athlete_in_event(
+        session,
+        event_id=1,
+        sequence_number=1,
+        event_date=date(2026, 1, 31),
+        name="V1",
+        athlete_position=2,
+        athlete_time_ms=1_810_000,
+        winner_time_ms=1_800_000,
+        other_runners=2,
+    )
+    await session.commit()
+
+    result = await build_evolution(
+        session,
+        athlete_id=144,
+        season=2026,
+        metric=EvolutionMetric.GAP_TO_MEDIAN_PCT,
+    )
+    assert len(result.series) == 1
+    point = result.series[0]
+    assert point.gap_to_median_pct is None
+    assert point.value is None
+
+
+@pytest.mark.asyncio
+async def test_build_evolution_gap_to_median_pct_none_when_athlete_did_not_finish(
+    session,
+):
+    """DNF del propio atleta → ``gap_to_median_pct=None`` aunque el campo
+    tenga ≥5 finalistas cronometrados (mismo criterio que ``history.py``: el
+    tiempo de quien no finalizó no es comparable contra la mediana)."""
+    await create_race_event(
+        session,
+        event_id=1,
+        series_id=1,
+        sequence_number=1,
+        name="V1",
+        event_date=date(2026, 1, 31),
+    )
+    for i in range(5):
+        cid = 1000 + i
+        await create_race_competitor(
+            session,
+            competitor_id=cid,
+            normalized_name=f"runner{i} ev1",
+            display_name=f"Runner{i} 1",
+        )
+        await create_race_result(
+            session,
+            event_id=1,
+            category_id=100,
+            competitor_id=cid,
+            position=i + 1,
+            race_time_ms=1_800_000 + i * 1_000,
+            bib_number=i + 1,
+            points_awarded=10,
+        )
+    athlete_cid = 2000
+    await create_race_competitor(
+        session,
+        competitor_id=athlete_cid,
+        normalized_name="athlete ev1",
+        display_name="Athlete 1",
+        athlete_id=144,
+    )
+    await create_race_result(
+        session,
+        event_id=1,
+        category_id=100,
+        competitor_id=athlete_cid,
+        athlete_id=144,
+        position=None,
+        status=ResultStatus.DNF,
+        race_time_ms=None,
+        bib_number=6,
+        points_awarded=0,
+    )
+    await session.commit()
+
+    result = await build_evolution(
+        session,
+        athlete_id=144,
+        season=2026,
+        metric=EvolutionMetric.GAP_TO_MEDIAN_PCT,
+    )
+    assert len(result.series) == 1
+    point = result.series[0]
+    assert point.gap_to_median_pct is None
+    assert point.value is None
 
 
 # ---------------------------------------------------------------------------

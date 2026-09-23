@@ -25,7 +25,7 @@ interface MoreSheetProps {
 }
 
 const rowClass =
-  "flex min-h-12 w-full items-center gap-3 rounded-lg px-3 text-sm font-medium text-charcoal transition-colors hover:bg-light-gray focus-visible:outline-2 focus-visible:outline-charcoal focus-visible:outline-offset-2";
+  "flex min-h-12 w-full items-center gap-3 rounded-lg px-3 text-sm font-medium text-charcoal transition-colors hover:bg-surface-muted/60 hover:text-primary-deep focus-visible:outline-2 focus-visible:outline-charcoal focus-visible:outline-offset-2";
 
 /**
  * "Más" bottom sheet (feature 030, US3) — the 5th bottom-bar slot's target.
@@ -65,7 +65,7 @@ export function MoreSheet({ role, open, onOpenChange }: MoreSheetProps) {
             <div
               role="separator"
               aria-orientation="horizontal"
-              className="my-2 border-t border-[rgba(34,42,53,0.08)]"
+              className="my-2 border-t border-border-gray"
             />
 
             <SheetClose asChild>

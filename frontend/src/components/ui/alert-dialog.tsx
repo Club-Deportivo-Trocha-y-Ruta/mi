@@ -21,7 +21,9 @@ const AlertDialogOverlay = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <AlertDialogPrimitive.Overlay
     ref={ref}
-    className={cn("fixed inset-0 z-50 bg-[rgba(19,19,22,0.65)] backdrop-blur-[2px]", className)}
+    // surface-dark (no charcoal): el scrim se queda oscuro en los dos
+    // temas — charcoal se invierte a casi blanco en dark.
+    className={cn("fixed inset-0 z-50 bg-surface-dark/65 backdrop-blur-[2px]", className)}
     {...props}
   />
 ));
@@ -36,8 +38,8 @@ const AlertDialogContent = React.forwardRef<
     <AlertDialogPrimitive.Content
       ref={ref}
       className={cn(
-        "fixed left-1/2 top-1/2 z-50 grid w-full max-w-md -translate-x-1/2 -translate-y-1/2 gap-4 rounded-2xl bg-white p-6",
-        "shadow-[rgba(19,19,22,0.7)_0px_1px_5px_-4px,rgba(34,42,53,0.08)_0px_0px_0px_1px,rgba(34,42,53,0.05)_0px_4px_8px_0px]",
+        "fixed left-1/2 top-1/2 z-50 grid w-full max-w-md -translate-x-1/2 -translate-y-1/2 gap-4 rounded-card bg-surface-raised p-6 ring-1 ring-hairline",
+        "shadow-overlay",
         "focus:outline-none",
         className,
       )}

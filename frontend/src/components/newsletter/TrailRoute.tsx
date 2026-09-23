@@ -59,6 +59,9 @@ interface MarkerProps {
 function Marker({ waypoint, isSummit }: MarkerProps) {
   const Icon = iconFor(waypoint.icon);
   const shapeClass = isSummit ? "" : "rounded-full";
+  // Marcador "futuro" (hueco): blanco fijo porque se dibuja sobre
+  // `trail-terrain-bg`, que en style.css usa `--color-white` fijo a
+  // propósito (excepción documentada de la Bitácora, nunca `bg-surface`).
   const fillClass = waypoint.is_future
     ? "bg-white border-2 border-dashed border-primary"
     : "bg-charcoal border-2 border-primary";
@@ -81,7 +84,7 @@ function Marker({ waypoint, isSummit }: MarkerProps) {
       >
         <Icon
           size={14}
-          className={waypoint.is_future ? "text-primary" : "text-white"}
+          className={waypoint.is_future ? "text-primary" : "text-surface"}
         />
       </span>
       <span className="max-w-20 truncate text-[11px] font-medium text-charcoal">

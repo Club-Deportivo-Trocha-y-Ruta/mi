@@ -33,7 +33,7 @@ interface AnthropometryFormProps {
 }
 
 const inputClass =
-  "mt-1 w-full rounded-lg bg-white px-3 py-2.5 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 shadow-ring";
+  "mt-1 w-full rounded-lg bg-surface-raised px-3 py-2.5 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 shadow-ring";
 
 export function AnthropometryForm({
   athleteId,
@@ -179,7 +179,7 @@ export function AnthropometryForm({
         <button
           type="submit"
           disabled={createMutation.isPending}
-          className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50 shadow-button-highlight"
+          className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-surface transition-opacity hover:opacity-70 disabled:opacity-50 shadow-button-highlight"
         >
           {createMutation.isPending ? "Guardando..." : "Guardar medición"}
         </button>
@@ -211,7 +211,7 @@ export function AnthropometryForm({
               <span>Estado:</span>
               <PHVBadge status={phvResult.maturationStatus} />
             </div>
-            <p className="md:col-span-2 rounded-lg bg-white p-2.5 text-xs text-mid-gray">
+            <p className="md:col-span-2 rounded-lg bg-surface-raised p-2.5 text-xs text-mid-gray">
               {phvResult.trainingImplications}
             </p>
           </div>

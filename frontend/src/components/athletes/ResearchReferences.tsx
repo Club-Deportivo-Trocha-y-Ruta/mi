@@ -48,7 +48,7 @@ export function ResearchReferences() {
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="rounded-xl bg-white shadow-card">
+    <div className="rounded-card bg-surface-raised shadow-card ring-1 ring-hairline">
       <button
         type="button"
         className="flex w-full items-center justify-between px-5 py-3.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70"

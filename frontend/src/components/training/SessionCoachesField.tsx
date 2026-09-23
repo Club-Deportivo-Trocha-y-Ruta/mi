@@ -166,7 +166,7 @@ export function SessionCoachesField({
         </p>
       )}
 
-      <div className="max-h-56 overflow-y-auto rounded-lg bg-white shadow-ring">
+      <div className="max-h-56 overflow-y-auto rounded-lg bg-surface-raised shadow-ring">
         {sortedOthers.length === 0 ? (
           <p className="px-4 py-3 text-sm text-mid-gray">
             No hay otros entrenadores activos en el club.

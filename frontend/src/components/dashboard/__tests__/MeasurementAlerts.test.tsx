@@ -331,7 +331,7 @@ describe("MeasurementAlerts — tarjeta rediseñada (feature 035)", () => {
 
     const heading = screen.getByRole("heading", { name: "Alertas de medición" });
     const card = heading.closest("section");
-    expect(card?.className).toMatch(/rounded-xl/);
+    expect(card?.className).toMatch(/rounded-card/);
     expect(card?.className).toMatch(/shadow-card/);
 
     const link = screen.getByRole("link", { name: "Ver todos los atletas" });

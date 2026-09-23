@@ -149,7 +149,7 @@ function AthleteNewsletterCard({
   return (
     <>
       <div
-        className="rounded-xl bg-white p-4 transition-shadow hover:shadow-md shadow-card"
+        className="rounded-card bg-surface-raised p-4 transition-shadow hover:shadow-md shadow-card ring-1 ring-hairline"
         data-testid={`athlete-card-${athlete.id}`}
       >
         {/* Clickable area — navigate to detail */}
@@ -200,7 +200,7 @@ function AthleteNewsletterCard({
                 type="button"
                 onClick={handleGenerate}
                 disabled={generateMutation.isPending}
-                className="flex items-center gap-1.5 rounded-lg bg-charcoal px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-80 disabled:opacity-50"
+                className="flex items-center gap-1.5 rounded-lg bg-charcoal px-3 py-1.5 text-xs font-medium text-surface transition-opacity hover:opacity-80 disabled:opacity-50"
                 data-testid={`generate-btn-${athlete.id}`}
                 aria-label={`Generar boletín para ${athlete.first_name} ${athlete.last_name}`}
               >
@@ -370,7 +370,7 @@ function BatchModal({ open, onClose, year, month, clubId }: BatchModalProps) {
               type="button"
               onClick={handleGenerate}
               disabled={batchMutation.isPending}
-              className="flex items-center gap-2 rounded-lg bg-charcoal px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              className="flex items-center gap-2 rounded-lg bg-charcoal px-5 py-2.5 text-sm font-semibold text-surface transition-opacity hover:opacity-90 disabled:opacity-50"
               data-testid="batch-generate-btn"
             >
               {batchMutation.isPending && (
@@ -499,7 +499,7 @@ export function AthleteNewslettersDashboardPage() {
           type="button"
           onClick={() => setShowBatchModal(true)}
           disabled={!clubId}
-          className="flex items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-40 shadow-button-highlight"
+          className="flex items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-surface transition-opacity hover:opacity-70 disabled:opacity-40 shadow-button-highlight"
           data-testid="open-batch-modal"
         >
           <RefreshCw className="h-4 w-4" aria-hidden="true" />
@@ -509,7 +509,7 @@ export function AthleteNewslettersDashboardPage() {
 
       {/* Filtros */}
       <div
-        className="flex flex-wrap gap-3 rounded-xl bg-white p-3 shadow-ring"
+        className="flex flex-wrap gap-3 rounded-xl bg-surface-raised p-3 shadow-ring"
       >
         {/* Selector mes */}
         <div className="flex items-center gap-2">
@@ -591,7 +591,7 @@ export function AthleteNewslettersDashboardPage() {
           {Array.from({ length: 6 }).map((_, i) => (
             <div
               key={i}
-              className="h-20 animate-pulse rounded-xl bg-white shadow-ring"
+              className="h-20 animate-pulse rounded-xl bg-surface-raised shadow-ring"
             />
           ))}
         </div>
@@ -606,7 +606,7 @@ export function AthleteNewslettersDashboardPage() {
       {/* Empty state sin atletas */}
       {!athletesQuery.isLoading && !athletesQuery.isError && athletes.length === 0 && (
         <div
-          className="rounded-xl bg-white p-10 text-center shadow-ring"
+          className="rounded-xl bg-surface-raised p-10 text-center shadow-ring"
           style={{ borderStyle: "dashed" }}
           data-testid="empty-athletes"
         >

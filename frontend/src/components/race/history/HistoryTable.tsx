@@ -11,8 +11,9 @@
  * Responsive (T083 ux-review.md, BLOCKER — mismo patrón que
  * `AnthropometryHistory.tsx`): `<md` renderiza una lista de tarjetas
  * apiladas (una por resultado, agrupadas por temporada/categoría);
- * `md:` renderiza la tabla completa de 6 columnas (velocidad media retirada
- * 2026-09-22 — "no es un dato relevante" en esta vista cruza-temporadas).
+ * `md:` renderiza la tabla completa de 6 columnas (7 en la vista coach;
+ * velocidad media retirada 2026-09-22 — "no es un dato relevante" en esta
+ * vista cruza-temporadas).
  * Ambas vistas se montan siempre (el toggle es puramente CSS, igual que
  * `AnthropometryHistory`) — los tests que necesiten desambiguar contenido
  * duplicado deben escopear por `history-table` (desktop) o
@@ -28,7 +29,23 @@
  *  - Un explicador de una línea para "Percentil"/"Brecha a la mediana"
  *    (T083, MAJOR) — la vista coach no lo necesita (vocabulario de uso
  *    diario), la familia sí.
+ *
+ * Brecha a la ganadora (2026-09-23): solo en la vista coach, junto a la
+ * brecha a la mediana. La mediana sigue siendo la métrica principal
+ * (estable entre válidas, no depende de quién ganó); la de la ganadora
+ * responde "¿a cuánto está del podio?". La vista familiar no la muestra —
+ * repetir "a X % de la ganadora" en cada fecha es el encuadre que el
+ * principio de salvaguardas psicológicas pide evitar.
+ *
+ * Nombre de la válida como enlace (2026-09-23): en ambas vistas
+ * (desktop/mobile), el nombre navega a la competencia — coach a
+ * `/competitions/:event_id`, familia a `/parents/competitions/:event_id`
+ * (mismo par de rutas que `CompetitionsListPage`/`ParentEventDetailPage`).
+ * En mobile el enlace reserva 48px de alto (`min-h-12`) para el área
+ * táctil, aunque el texto sea más chico.
  */
+import { Link } from "react-router-dom";
+
 import { cn } from "@/lib/utils";
 import {
   formatFieldSize,
@@ -115,6 +132,16 @@ function rowCategoryNote(point: RaceHistoryPoint, headingLabel: string): string 
   return point.category_label !== headingLabel ? point.category_label : null;
 }
 
+/** Ruta de la competencia asociada a una fila — coach va al detalle
+ * interno, familia a su vista de solo lectura. Mismo par de rutas que
+ * `CompetitionsListPage` (`/competitions/:id`) y `ParentEventDetailPage`
+ * (`/parents/competitions/:raceEventId`). */
+function raceEventHref(audience: "coach" | "family", eventId: number): string {
+  return audience === "family"
+    ? `/parents/competitions/${eventId}`
+    : `/competitions/${eventId}`;
+}
+
 function positionCell(point: RaceHistoryPoint): string {
   if (point.position !== null) return formatPosition(point.position);
   if (NON_FINISHER_STATUSES.has(point.status)) {
@@ -180,13 +207,17 @@ const METRIC_FORMATTERS = {
   percentile: (p: RaceHistoryPoint) => formatPercentile(p.percentile),
   field_size: (p: RaceHistoryPoint) => formatFieldSize(p.field_size),
   gap_to_median_pct: (p: RaceHistoryPoint) => formatGapPct(p.gap_to_median_pct),
+  gap_to_winner_pct: (p: RaceHistoryPoint) => formatGapPct(p.gap_to_winner_pct),
 } as const;
 
-const METRIC_ROW_LABELS: { key: keyof typeof METRIC_FORMATTERS; label: string }[] = [
+type MetricKey = keyof typeof METRIC_FORMATTERS;
+
+const METRIC_ROW_LABELS: { key: MetricKey; label: string; coachOnly?: boolean }[] = [
   { key: "position", label: "Puesto" },
   { key: "percentile", label: "Percentil" },
   { key: "field_size", label: "Parrilla" },
-  { key: "gap_to_median_pct", label: "Brecha" },
+  { key: "gap_to_median_pct", label: "Brecha vs. mediana" },
+  { key: "gap_to_winner_pct", label: "Brecha vs. 1.ª posición", coachOnly: true },
 ];
 
 export function HistoryTable({
@@ -196,6 +227,11 @@ export function HistoryTable({
 }: HistoryTableProps) {
   if (points.length === 0) return null;
   const groups = groupPoints(points);
+  const metrics = METRIC_ROW_LABELS.filter(
+    (m) => !m.coachOnly || audience === "coach",
+  );
+  // Fecha + Válida + una columna por métrica.
+  const columnCount = 2 + metrics.length;
 
   return (
     <div className={cn("space-y-3", className)} data-testid="history-table-container">
@@ -231,21 +267,28 @@ export function HistoryTable({
                       key={p.event_id}
                       className="rounded-lg border border-[rgba(34,42,53,0.08)] p-3"
                     >
-                      <div className="flex items-baseline justify-between gap-2">
-                        <span className="text-sm font-medium text-charcoal">
-                          {p.label}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          {/* min-h-12 = 48px de área táctil (independiente
+                              del tamaño del texto). */}
+                          <Link
+                            to={raceEventHref(audience, p.event_id)}
+                            className="inline-flex min-h-12 items-center text-sm font-medium text-charcoal underline-offset-2 hover:underline"
+                          >
+                            {p.label}
+                          </Link>
                           {rowNote && (
                             <span className="block text-xs font-normal text-mid-gray">
                               {rowNote}
                             </span>
                           )}
-                        </span>
+                        </div>
                         <span className="shrink-0 text-xs text-mid-gray">
                           {formatRaceDateShort(p.event_date)}
                         </span>
                       </div>
                       <dl className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-                        {METRIC_ROW_LABELS.map(({ key, label }) => (
+                        {metrics.map(({ key, label }) => (
                           <div key={key} className="flex gap-1">
                             <dt className="text-mid-gray">{label}:</dt>
                             <dd className="font-medium text-charcoal">
@@ -273,10 +316,11 @@ export function HistoryTable({
             <tr className="text-left text-xs uppercase tracking-wide text-mid-gray">
               <th className="px-3 py-2 font-medium">Fecha</th>
               <th className="px-3 py-2 font-medium">Válida</th>
-              <th className="px-3 py-2 font-medium">Puesto</th>
-              <th className="px-3 py-2 font-medium">Percentil</th>
-              <th className="px-3 py-2 font-medium">Parrilla</th>
-              <th className="px-3 py-2 font-medium">Brecha</th>
+              {metrics.map(({ key, label }) => (
+                <th key={key} className="px-3 py-2 font-medium">
+                  {label}
+                </th>
+              ))}
             </tr>
           </thead>
           {groups.map((group) => {
@@ -289,7 +333,7 @@ export function HistoryTable({
               >
                 <tr className="bg-light-gray/30">
                   <th
-                    colSpan={6}
+                    colSpan={columnCount}
                     scope="rowgroup"
                     className="px-3 py-1.5 text-left text-xs font-semibold text-charcoal"
                   >
@@ -298,7 +342,7 @@ export function HistoryTable({
                 </tr>
                 {audience === "family" && group.categoryChanged && (
                   <tr>
-                    <td colSpan={6} className="px-3 py-1.5">
+                    <td colSpan={columnCount} className="px-3 py-1.5">
                       <FamilyCategoryNote
                         group={group}
                         headingLabel={headingLabel}
@@ -313,15 +357,21 @@ export function HistoryTable({
                     <tr key={p.event_id} className="text-charcoal">
                       <td className="px-3 py-1.5">{formatRaceDateShort(p.event_date)}</td>
                       <td className="px-3 py-1.5">
-                        {p.label}
+                        <Link
+                          to={raceEventHref(audience, p.event_id)}
+                          className="font-medium text-charcoal underline-offset-2 hover:underline"
+                        >
+                          {p.label}
+                        </Link>
                         {rowNote && (
                           <span className="block text-xs text-mid-gray">{rowNote}</span>
                         )}
                       </td>
-                      <td className="px-3 py-1.5">{positionCell(p)}</td>
-                      <td className="px-3 py-1.5">{formatPercentile(p.percentile)}</td>
-                      <td className="px-3 py-1.5">{formatFieldSize(p.field_size)}</td>
-                      <td className="px-3 py-1.5">{formatGapPct(p.gap_to_median_pct)}</td>
+                      {metrics.map(({ key }) => (
+                        <td key={key} className="px-3 py-1.5">
+                          {METRIC_FORMATTERS[key](p)}
+                        </td>
+                      ))}
                     </tr>
                   );
                 })}

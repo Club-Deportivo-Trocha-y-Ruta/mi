@@ -110,10 +110,10 @@ function useIsDesktop(): boolean {
 function SkeletonStudio() {
   return (
     <div className="space-y-5">
-      <div className="h-16 animate-pulse rounded-xl bg-white shadow-card" />
+      <div className="h-16 animate-pulse rounded-card bg-surface-raised shadow-card ring-1 ring-hairline" />
       <div className="grid grid-cols-1 gap-5 md:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="h-96 animate-pulse rounded-xl bg-white shadow-card" />
-        <div className="h-96 animate-pulse rounded-xl bg-white shadow-card" />
+        <div className="h-96 animate-pulse rounded-card bg-surface-raised shadow-card ring-1 ring-hairline" />
+        <div className="h-96 animate-pulse rounded-card bg-surface-raised shadow-card ring-1 ring-hairline" />
       </div>
     </div>
   );
@@ -351,7 +351,7 @@ export function AthleteNewsletterStudioPage() {
   if (newsletterQuery.isError || !newsletter) {
     return (
       <section>
-        <div className="rounded-xl bg-white p-8 text-center shadow-card">
+        <div className="rounded-card bg-surface-raised p-8 text-center shadow-card ring-1 ring-hairline">
           <p className="text-base font-medium text-charcoal">Boletín no encontrado</p>
           <p className="mt-1 text-sm text-mid-gray">
             El boletín solicitado no existe o no tienes permiso para verlo.
@@ -370,7 +370,7 @@ export function AthleteNewsletterStudioPage() {
   if (!newsletter.stage_log) {
     return (
       <section>
-        <div className="rounded-xl bg-white p-8 text-center shadow-card">
+        <div className="rounded-card bg-surface-raised p-8 text-center shadow-card ring-1 ring-hairline">
           <p className="text-base font-medium text-charcoal">
             Esta bitácora todavía no tiene contenido generado.
           </p>
@@ -483,7 +483,7 @@ export function AthleteNewsletterStudioPage() {
             <button
               type="button"
               onClick={handleReloadConflict}
-              className="inline-flex min-h-12 items-center rounded-lg bg-charcoal px-4 text-xs font-semibold text-white transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-charcoal"
+              className="inline-flex min-h-12 items-center rounded-lg bg-charcoal px-4 text-xs font-semibold text-surface transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-charcoal"
             >
               Recargar
             </button>
@@ -492,7 +492,7 @@ export function AthleteNewsletterStudioPage() {
       )}
 
       {/* Header */}
-      <div className="rounded-xl bg-white px-5 py-4 shadow-card">
+      <div className="rounded-card bg-surface-raised px-5 py-4 shadow-card ring-1 ring-hairline">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -510,7 +510,7 @@ export function AthleteNewsletterStudioPage() {
                     className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full py-2 px-3 text-xs font-medium text-charcoal transition-opacity hover:opacity-70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-charcoal"
                   >
                     <span
-                      className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-charcoal text-[10px] font-bold text-white"
+                      className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-charcoal text-[10px] font-bold text-surface"
                       aria-hidden="true"
                     >
                       {athleteQuery.data.first_name[0]}
@@ -549,7 +549,7 @@ export function AthleteNewsletterStudioPage() {
                   type="button"
                   onClick={() => setShowSendConfirm(true)}
                   disabled={sendMutation.isPending}
-                  className="flex items-center gap-1.5 rounded-lg bg-charcoal px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+                  className="flex items-center gap-1.5 rounded-lg bg-charcoal px-3 py-1.5 text-xs font-semibold text-surface transition-opacity hover:opacity-90 disabled:opacity-40"
                   data-testid="studio-send-btn"
                 >
                   <Send className="h-3.5 w-3.5" aria-hidden="true" />

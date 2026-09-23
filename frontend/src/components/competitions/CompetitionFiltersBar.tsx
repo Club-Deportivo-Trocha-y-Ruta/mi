@@ -22,7 +22,7 @@ import type { RaceEventListFilters } from "@/types/raceEvents.types";
 const SEASON_OPTIONS = [2024, 2025, 2026, 2027];
 
 const inputSelectClass =
-  "rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 min-h-[44px]";
+  "rounded-lg bg-surface-raised px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 min-h-[44px]";
 const inputSelectStyle = { boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" };
 
 interface CompetitionFiltersBarProps {
@@ -97,7 +97,7 @@ export function CompetitionFiltersBar({
 
   return (
     <div
-      className="rounded-xl bg-white p-4 space-y-3"
+      className="rounded-xl bg-surface-raised p-4 space-y-3"
       style={{
         boxShadow:
           "rgba(19, 19, 22, 0.7) 0px 1px 5px -4px, rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 4px 8px 0px",
@@ -249,7 +249,7 @@ function ChipButton({ active, onClick, children }: ChipButtonProps) {
       onClick={onClick}
       className={`inline-flex min-h-[44px] items-center rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
         active
-          ? "bg-charcoal text-white"
+          ? "bg-charcoal text-surface"
           : "bg-light-gray text-charcoal hover:bg-[rgba(34,42,53,0.1)]"
       }`}
       aria-pressed={active}

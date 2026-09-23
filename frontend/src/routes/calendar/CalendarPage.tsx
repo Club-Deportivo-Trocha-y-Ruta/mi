@@ -108,8 +108,8 @@ export function CalendarPage() {
                       onClick={() => setView(v)}
                       className={`px-3 py-2 text-sm font-medium transition-colors ${
                         view === v
-                          ? "bg-charcoal text-white"
-                          : "bg-white text-charcoal hover:bg-light-gray"
+                          ? "bg-charcoal text-surface"
+                          : "bg-surface-raised text-charcoal hover:bg-light-gray"
                       }`}
                       aria-pressed={view === v}
                     >
@@ -121,7 +121,7 @@ export function CalendarPage() {
 
               <Link
                 to="/calendar/events/new"
-                className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white shadow-button-highlight transition-opacity hover:opacity-70"
+                className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-surface shadow-button-highlight transition-opacity hover:opacity-70"
               >
                 + Nuevo evento
               </Link>
@@ -133,7 +133,7 @@ export function CalendarPage() {
 
         <CalendarFiltersBar />
 
-        <div className="rounded-xl bg-white p-4 shadow-card">
+        <div className="rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline">
           <CoachFilter
             coaches={coaches}
             value={coachUserId}
@@ -160,7 +160,7 @@ export function CalendarPage() {
         )}
 
         {!eventsQuery.isLoading && (
-          <div className="rounded-xl bg-white p-4 shadow-card">
+          <div className="rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline">
             <CalendarShell
               events={events}
               onEventClick={handleEventClick}

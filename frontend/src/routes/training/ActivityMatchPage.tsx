@@ -74,7 +74,7 @@ export function ActivityMatchPage() {
     return (
       <section className="space-y-5">
         <BackLink sessionId={sessionId} />
-        <div className="rounded-xl bg-white p-5 space-y-3 shadow-card">
+        <div className="rounded-card bg-surface-raised p-5 space-y-3 shadow-card ring-1 ring-hairline">
           <Skeleton className="h-6 w-1/3 rounded" />
           <Skeleton className="h-40 w-full rounded" />
         </div>
@@ -88,7 +88,7 @@ export function ActivityMatchPage() {
       <section className="space-y-5">
         <BackLink sessionId={sessionId} />
         <div
-          className="rounded-xl bg-white p-8 text-center shadow-card"
+          className="rounded-card bg-surface-raised p-8 text-center shadow-card ring-1 ring-hairline"
           role="alert"
         >
           <p className="text-base font-medium text-charcoal">
@@ -118,7 +118,7 @@ export function ActivityMatchPage() {
     <section className="space-y-5">
       <BackLink sessionId={sessionId} />
 
-      <div className="rounded-xl bg-white px-5 py-4 shadow-card">
+      <div className="rounded-card bg-surface-raised px-5 py-4 shadow-card ring-1 ring-hairline">
         <h1
           className="font-display text-xl text-charcoal"
         >
@@ -139,7 +139,7 @@ export function ActivityMatchPage() {
       {/* Estado: sin actividad enlazada -------------------------------- */}
       {match.status === "no_activity" && (
         <div
-          className="rounded-xl bg-white p-8 text-center shadow-card"
+          className="rounded-card bg-surface-raised p-8 text-center shadow-card ring-1 ring-hairline"
           data-testid="match-no-activity"
         >
           <LinkIcon
@@ -162,7 +162,7 @@ export function ActivityMatchPage() {
       {/* Estado: cálculo en curso -------------------------------------- */}
       {match.status === "computing" && (
         <div
-          className="rounded-xl bg-white p-8 text-center shadow-card"
+          className="rounded-card bg-surface-raised p-8 text-center shadow-card ring-1 ring-hairline"
           role="status"
           aria-live="polite"
           data-testid="match-computing"
@@ -184,7 +184,7 @@ export function ActivityMatchPage() {
       {/* Estado: fallo del último cálculo ------------------------------ */}
       {match.status === "failed" && (
         <div
-          className="rounded-xl bg-white p-8 text-center shadow-card"
+          className="rounded-card bg-surface-raised p-8 text-center shadow-card ring-1 ring-hairline"
           role="alert"
           data-testid="match-failed"
         >
@@ -222,7 +222,7 @@ export function ActivityMatchPage() {
 
       {/* Estado: comparación lista ------------------------------------- */}
       {match.status === "computed" && (
-        <div className="rounded-xl bg-white px-5 py-4 space-y-4 shadow-card">
+        <div className="rounded-card bg-surface-raised px-5 py-4 space-y-4 shadow-card ring-1 ring-hairline">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-mid-gray">
               Bloques vs. vueltas

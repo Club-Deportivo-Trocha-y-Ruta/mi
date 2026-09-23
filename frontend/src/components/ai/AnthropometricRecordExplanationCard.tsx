@@ -132,7 +132,7 @@ function StructuredInsightIfRenderable({
   return (
     <StructuredInsight
       insight={data.structured}
-      className="rounded-xl bg-white p-5 ring-1 ring-light-gray"
+      className="rounded-xl bg-surface-raised p-5 ring-1 ring-light-gray"
     />
   );
 }
@@ -237,7 +237,7 @@ function RecordExplanationReadOnly({
     return (
       <section
         className={cn(
-          "space-y-3 rounded-xl bg-white p-5 ring-1 ring-light-gray",
+          "space-y-3 rounded-xl bg-surface-raised p-5 ring-1 ring-light-gray",
           className,
         )}
         data-testid="record-explanation-loading-cache"
@@ -259,7 +259,7 @@ function RecordExplanationReadOnly({
     return (
       <section
         className={cn(
-          "space-y-3 rounded-xl bg-white p-5 ring-1 ring-light-gray",
+          "space-y-3 rounded-xl bg-surface-raised p-5 ring-1 ring-light-gray",
           className,
         )}
         data-testid="record-explanation-empty"
@@ -353,7 +353,7 @@ function RecordExplanationCoach({
     return (
       <section
         className={cn(
-          "space-y-3 rounded-xl bg-white p-5 ring-1 ring-light-gray",
+          "space-y-3 rounded-xl bg-surface-raised p-5 ring-1 ring-light-gray",
           className,
         )}
         data-testid="record-explanation-loading-cache"
@@ -372,7 +372,7 @@ function RecordExplanationCoach({
     return (
       <section
         className={cn(
-          "space-y-3 rounded-xl bg-white p-5 ring-1 ring-light-gray",
+          "space-y-3 rounded-xl bg-surface-raised p-5 ring-1 ring-light-gray",
           className,
         )}
         data-testid="record-explanation-pending"
@@ -476,7 +476,7 @@ function RecordExplanationCoach({
             type="button"
             onClick={handleGenerate}
             disabled={budgetExhausted}
-            className="rounded-lg border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-lg border border-red-300 bg-surface-raised px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Reintentar
           </button>
@@ -489,7 +489,7 @@ function RecordExplanationCoach({
   return (
     <section
       className={cn(
-        "space-y-3 rounded-xl bg-white p-5 ring-1 ring-light-gray",
+        "space-y-3 rounded-xl bg-surface-raised p-5 ring-1 ring-light-gray",
         className,
       )}
       data-testid="record-explanation-idle"

@@ -70,9 +70,9 @@ export function ConfirmEmailChangePage() {
   }, [token]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-white p-4">
+    <div className="flex min-h-screen items-center justify-center bg-surface p-4">
       <div
-        className="w-full max-w-md rounded-xl bg-white p-8 shadow-card"
+        className="w-full max-w-md rounded-card bg-surface-raised p-8 shadow-card ring-1 ring-hairline"
       >
         {/* Header */}
         <div className="mb-8 text-center">

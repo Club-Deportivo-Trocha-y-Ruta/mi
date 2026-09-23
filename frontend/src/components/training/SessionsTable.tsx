@@ -86,7 +86,7 @@ export function SessionsTable({
         {items.map((session) => (
           <li key={session.id}>
             <div
-              className="rounded-xl bg-white p-4 shadow-card"
+              className="rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline"
               onTouchStart={prefetchSession(session.id)}
             >
               <div className="flex items-start justify-between gap-3">
@@ -114,14 +114,14 @@ export function SessionsTable({
               <div className="mt-3 flex flex-wrap gap-2">
                 <Link
                   to={`/training/sessions/${session.id}`}
-                  className="rounded-lg bg-white px-3 py-2 text-xs font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
+                  className="rounded-lg bg-surface-raised px-3 py-2 text-xs font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
                 >
                   Ver
                 </Link>
                 {session.status !== "cancelled" && (
                   <Link
                     to={`/training/sessions/${session.id}/edit`}
-                    className="rounded-lg bg-white px-3 py-2 text-xs font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
+                    className="rounded-lg bg-surface-raised px-3 py-2 text-xs font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
                   >
                     Editar
                   </Link>
@@ -153,7 +153,7 @@ export function SessionsTable({
       </ul>
 
       {/* Vista desktop: tabla */}
-      <div className="hidden rounded-xl bg-white md:block shadow-card">
+      <div className="hidden rounded-card bg-surface-raised md:block shadow-card ring-1 ring-hairline">
         <TableScrollContainer className="rounded-xl">
         <table className="min-w-full text-sm">
           <caption className="sr-only">Lista de sesiones de entrenamiento</caption>
@@ -234,14 +234,14 @@ export function SessionsTable({
                   <div className="flex flex-wrap gap-2">
                     <Link
                       to={`/training/sessions/${session.id}`}
-                      className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-lg bg-white px-3 text-xs font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
+                      className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-lg bg-surface-raised px-3 text-xs font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
                     >
                       Ver
                     </Link>
                     {session.status !== "cancelled" && (
                       <Link
                         to={`/training/sessions/${session.id}/edit`}
-                        className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-lg bg-white px-3 text-xs font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
+                        className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-lg bg-surface-raised px-3 text-xs font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
                       >
                         Editar
                       </Link>

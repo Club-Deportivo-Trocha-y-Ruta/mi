@@ -444,7 +444,7 @@ export function InsightsTimeline({
       <>
         <HistoryHeading />
         <div
-          className={cn("rounded-xl bg-white p-8 text-center", "shadow-card")}
+          className={cn("rounded-card bg-surface-raised p-8 text-center", "shadow-card ring-1 ring-hairline")}
         >
           <Sparkles
             size={28}
@@ -487,7 +487,7 @@ export function InsightsTimeline({
           return (
             <section key={monthKey} className="space-y-2 pb-4">
               {/* Header sticky del grupo */}
-              <div className="sticky top-0 z-10 flex items-center gap-2 bg-white/95 px-3 py-2 backdrop-blur-sm">
+              <div className="sticky top-0 z-10 flex items-center gap-2 bg-surface/95 px-3 py-2 backdrop-blur-sm">
                 <span className="text-xs font-semibold uppercase tracking-wide text-mid-gray">
                   {monthKey}
                 </span>
@@ -695,7 +695,7 @@ function InsightCard({
         <div
           data-testid={`insight-surface-${insight.id}`}
           className={cn(
-            "flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-white shadow-card",
+            "flex min-w-0 flex-1 flex-col overflow-hidden rounded-card bg-surface-raised shadow-card ring-1 ring-hairline",
             borderCls,
           )}
         >
@@ -1006,7 +1006,7 @@ function InsightDetailDrawer({
         {insight.recommendations.length > 0 && (
           <section
             aria-label="Recomendaciones"
-            className="rounded-xl bg-white p-4 ring-1 ring-light-gray space-y-2"
+            className="rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline space-y-2"
           >
             <h3
               className="font-display text-sm text-charcoal"
@@ -1118,7 +1118,7 @@ function InsightV2Sections({ sections, mode }: InsightV2SectionsProps) {
           <details
             key={key}
             open={isOpen}
-            className="rounded-xl bg-white ring-1 ring-light-gray"
+            className="rounded-card bg-surface-raised shadow-card ring-1 ring-hairline"
             data-testid={`insight-v2-section-${key}`}
           >
             <summary
@@ -1148,7 +1148,7 @@ function InsightV2Sections({ sections, mode }: InsightV2SectionsProps) {
 function SupersedesSection({ chain }: { chain: InsightLink[] }) {
   return (
     <details
-      className="rounded-xl bg-white p-4 ring-1 ring-light-gray"
+      className="rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline"
       data-testid="insight-supersedes"
     >
       <summary className="flex cursor-pointer items-center gap-2 text-sm font-medium text-charcoal">

@@ -12,7 +12,7 @@ export interface CoachNoteProps {
 export function CoachNote({ note }: CoachNoteProps) {
   return (
     <section
-      className="rounded-xl border border-dashed border-[rgba(34,42,53,0.15)] bg-white p-4"
+      className="rounded-xl border border-dashed border-border-gray bg-surface-raised p-4"
       aria-label="Nota del entrenador"
       data-testid="coach-note"
     >

@@ -2,7 +2,8 @@
  * EvolutionChart — serie temporal por temporada del deportista (FE-1).
  *
  * Permite al usuario elegir temporada y métrica:
- *   - podium_gap_ms  → diferencia al P1 (ms)  · menor=mejor
+ *   - gap_to_median_pct → brecha vs. mediana (%) · menor=mejor, default
+ *   - podium_gap_ms  → brecha vs. 1.ª posición (ms) · menor=mejor, solo coach
  *   - ranking        → posición en categoría · menor=mejor (eje invertido)
  *   - time_ms        → tiempo total (ms)      · menor=mejor
  *
@@ -11,6 +12,12 @@
  *
  * Cada punto se keya por event_id para que copa (Válida I) y campeonato
  * (mismo valida_num=1) nunca colisionen en el eje categorical.
+ *
+ * Audiencia (2026-09-23, `audience="coach"|"family"`, default "coach"):
+ * la familia NUNCA ve la brecha a la ganadora (`podium_gap_ms`) — ni en el
+ * selector de métrica ni en `ChampionshipReadingCard`. La brecha vs.
+ * mediana es la métrica por defecto para ambas audiencias porque es
+ * comparable entre válidas sin depender de quién ganó.
  */
 import { useMemo, useState } from "react";
 import {
@@ -41,14 +48,36 @@ import { formatMs, formatValue } from "@/lib/evolutionFormat";
 interface EvolutionChartProps {
   athleteId: number;
   defaultSeason?: number;
+  /** Ver docstring del archivo — default "coach" (todas las métricas). */
+  audience?: "coach" | "family";
 }
 
 const METRIC_LABELS: Record<EvolutionMetric, string> = {
-  [EvolutionMetric.PODIUM_GAP_MS]: "Diferencia al podio",
+  [EvolutionMetric.GAP_TO_MEDIAN_PCT]: "Brecha vs. mediana",
+  [EvolutionMetric.PODIUM_GAP_MS]: "Brecha vs. 1.ª posición",
   [EvolutionMetric.RANKING]: "Posición en categoría",
   [EvolutionMetric.TIME_MS]: "Tiempo total",
   [EvolutionMetric.PERCENTILE]: "Percentil categoría",
 };
+
+/** Métricas de brecha a la ganadora/podio — nunca ofrecidas a familia
+ * (principio de salvaguardas psicológicas: no encuadrar el desempeño del
+ * menor contra quien ganó). Hoy solo `podium_gap_ms`; `gap_to_median_pct`
+ * NO entra aquí — es la métrica comparable por defecto para ambas
+ * audiencias. */
+const COACH_ONLY_METRICS: ReadonlySet<EvolutionMetric> = new Set([
+  EvolutionMetric.PODIUM_GAP_MS,
+]);
+
+function metricOptionsFor(
+  audience: "coach" | "family",
+): Array<[EvolutionMetric, string]> {
+  const entries = Object.entries(METRIC_LABELS) as Array<
+    [EvolutionMetric, string]
+  >;
+  if (audience === "coach") return entries;
+  return entries.filter(([key]) => !COACH_ONLY_METRICS.has(key));
+}
 
 function getDefaultSeason(): number {
   return new Date().getFullYear();
@@ -64,13 +93,17 @@ function buildSeasonOptions(currentSeason: number): number[] {
 export function EvolutionChart({
   athleteId,
   defaultSeason,
+  audience = "coach",
 }: EvolutionChartProps) {
   const [season, setSeason] = useState<number>(
     defaultSeason ?? getDefaultSeason(),
   );
+  // Brecha vs. mediana es la métrica por defecto para coach y familia
+  // (2026-09-23) — comparable entre válidas, no depende de quién ganó.
   const [metric, setMetric] = useState<EvolutionMetric>(
-    EvolutionMetric.PODIUM_GAP_MS,
+    EvolutionMetric.GAP_TO_MEDIAN_PCT,
   );
+  const metricOptions = useMemo(() => metricOptionsFor(audience), [audience]);
   // Feature 039 (D6/D4) — grupo de comparación elegido explícitamente por
   // el usuario en el selector "Competencia". `undefined` = sin elección
   // explícita todavía: se pide la temporada completa (sin `series_id`) y
@@ -145,6 +178,10 @@ export function EvolutionChart({
     : confidenceForPoints(displaySeries);
 
   const isRanking = metric === EvolutionMetric.RANKING;
+  // Brecha vs. mediana (2026-09-23) — mismo criterio de lectura que
+  // HistoryChart.tsx: negativo (más rápido que la mediana) va hacia arriba,
+  // por eso el eje se invierte igual que para ranking.
+  const isGapToMedian = metric === EvolutionMetric.GAP_TO_MEDIAN_PCT;
   const unit = query.data?.series[0]?.unit ?? (isRanking ? "rank" : "ms");
 
   const seasonOptions = buildSeasonOptions(getDefaultSeason());
@@ -157,7 +194,7 @@ export function EvolutionChart({
 
   return (
     <section
-      className={cn("rounded-xl bg-white p-5 space-y-4", "shadow-card")}
+      className={cn("rounded-card bg-surface-raised p-5 space-y-4", "shadow-card ring-1 ring-hairline")}
       aria-label="Gráfica de evolución por temporada"
       data-testid="evolution-chart"
     >
@@ -188,7 +225,7 @@ export function EvolutionChart({
               setSelectedSeriesId(undefined);
             }}
             className={cn(
-              "min-h-12 rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40",
+              "min-h-12 rounded-lg bg-surface-raised px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40",
               "shadow-ring",
             )}
             data-testid="evolution-season-select"
@@ -207,12 +244,12 @@ export function EvolutionChart({
             value={metric}
             onChange={(e) => setMetric(e.target.value as EvolutionMetric)}
             className={cn(
-              "min-h-12 rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40",
+              "min-h-12 rounded-lg bg-surface-raised px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40",
               "shadow-ring",
             )}
             data-testid="evolution-metric-select"
           >
-            {Object.entries(METRIC_LABELS).map(([k, label]) => (
+            {metricOptions.map(([k, label]) => (
               <option key={k} value={k}>
                 {label}
               </option>
@@ -228,7 +265,7 @@ export function EvolutionChart({
                 value={activeGroupId ?? ""}
                 onChange={(e) => setSelectedSeriesId(Number(e.target.value))}
                 className={cn(
-                  "min-h-12 rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40",
+                  "min-h-12 rounded-lg bg-surface-raised px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40",
                   "shadow-ring",
                 )}
                 data-testid="evolution-group-select"
@@ -275,6 +312,7 @@ export function EvolutionChart({
                   <ChampionshipReadingCard
                     point={displaySeries[0]}
                     group={activeGroup}
+                    audience={audience}
                   />
                   <EvolutionTable
                     points={displaySeries.map(toChartPoint)}
@@ -327,7 +365,7 @@ export function EvolutionChart({
                       />
                       <YAxis
                         tick={{ fontSize: 12, fill: "var(--color-mid-gray)" }}
-                        reversed={isRanking}
+                        reversed={isRanking || isGapToMedian}
                         tickFormatter={(v: number) => formatMs(v, unit)}
                         width={70}
                       />
@@ -598,7 +636,7 @@ function EvolutionTooltip(
   };
   return (
     <div
-      className={cn("rounded-lg bg-white px-3 py-2 text-xs", "shadow-ambient")}
+      className={cn("rounded-lg bg-surface-raised px-3 py-2 text-xs", "shadow-ambient")}
     >
       <p className="font-semibold text-charcoal">{point.label}</p>
       <p className="text-mid-gray">{point.event_date}</p>

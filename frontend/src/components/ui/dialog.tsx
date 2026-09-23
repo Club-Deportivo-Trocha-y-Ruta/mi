@@ -16,7 +16,9 @@ const DialogOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      "fixed inset-0 z-50 bg-[rgba(19,19,22,0.65)] backdrop-blur-[2px]",
+      // surface-dark (no charcoal): el scrim debe quedarse oscuro en los
+      // dos temas — charcoal se invierte a casi blanco en dark.
+      "fixed inset-0 z-50 bg-surface-dark/65 backdrop-blur-[2px]",
       className
     )}
     {...props}
@@ -38,8 +40,8 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        "fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white",
-        "shadow-[rgba(19,19,22,0.7)_0px_1px_5px_-4px,rgba(34,42,53,0.08)_0px_0px_0px_1px,rgba(34,42,53,0.05)_0px_4px_8px_0px]",
+        "fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-card bg-surface-raised ring-1 ring-hairline",
+        "shadow-overlay",
         "focus:outline-none",
         className
       )}
@@ -48,7 +50,7 @@ const DialogContent = React.forwardRef<
       {children}
       {!hideClose && (
         <DialogPrimitive.Close
-          className="absolute right-4 top-4 rounded-lg p-1.5 text-mid-gray transition-colors hover:bg-light-gray disabled:opacity-50 focus:outline-none focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2"
+          className="absolute right-4 top-4 rounded-control p-1.5 text-mid-gray transition-colors hover:bg-light-gray disabled:opacity-50 focus:outline-none focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2"
           aria-label="Cerrar"
         >
           <X size={16} aria-hidden="true" />
@@ -64,10 +66,7 @@ const DialogHeader = ({
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
-    className={cn(
-      "flex flex-col gap-1 border-b border-[rgba(34,42,53,0.08)] px-6 py-4 pr-12",
-      className
-    )}
+    className={cn("flex flex-col gap-1 border-b border-hairline px-6 py-4 pr-12", className)}
     {...props}
   />
 );

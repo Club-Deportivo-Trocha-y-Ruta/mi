@@ -102,8 +102,8 @@ function CompactStepper({ steps, active, onStepClick, ariaLabel = "Progreso" }: 
               <span
                 className={cn(
                   "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold",
-                  status === "done" && "bg-charcoal text-white",
-                  status === "current" && "bg-blue-100 text-blue-700 ring-2 ring-blue-500",
+                  status === "done" && "bg-charcoal text-surface",
+                  status === "current" && "bg-primary/10 text-primary-deep ring-2 ring-primary",
                   status === "upcoming" && "bg-light-gray text-mid-gray",
                 )}
                 aria-hidden="true"
@@ -162,7 +162,7 @@ function DetailedStepper({ steps, active, onStepClick, ariaLabel = "Progreso" }:
                 className={cn(
                   "flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2 transition-colors duration-200",
                   status === "done" && "border-success bg-success text-white",
-                  status === "current" && "border-primary bg-white text-primary ring-4 ring-primary/20",
+                  status === "current" && "border-primary bg-surface text-primary-deep ring-4 ring-primary/20",
                   status === "upcoming" && "border-mid-gray/30 bg-light-gray text-mid-gray",
                   clickable ? "cursor-pointer" : "cursor-default",
                 )}

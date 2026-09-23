@@ -200,7 +200,7 @@ export function EditConditionsDialog({
                     step={0.1}
                     {...register("temperature_c")}
                     className={cn(
-                      "w-full rounded-lg bg-white py-3 pl-3 pr-12 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
+                      "w-full rounded-lg bg-surface-raised py-3 pl-3 pr-12 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
                       "min-h-[48px]",
                       "shadow-ring",
                     )}
@@ -238,7 +238,7 @@ export function EditConditionsDialog({
                     step={1}
                     {...register("altitude_msnm")}
                     className={cn(
-                      "w-full rounded-lg bg-white py-3 pl-3 pr-14 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
+                      "w-full rounded-lg bg-surface-raised py-3 pl-3 pr-14 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
                       "min-h-[48px]",
                       "shadow-ring",
                     )}
@@ -284,7 +284,7 @@ export function EditConditionsDialog({
                         key={sc}
                         value={sc}
                         aria-label={SURFACE_CONDITION_LABELS[sc]}
-                        className="min-h-[48px] min-w-[72px] rounded-lg border border-[rgba(34,42,53,0.12)] px-3 py-2 text-sm font-medium text-charcoal transition-colors data-[state=on]:border-charcoal data-[state=on]:bg-charcoal data-[state=on]:text-white"
+                        className="min-h-[48px] min-w-[72px] rounded-lg border border-[rgba(34,42,53,0.12)] px-3 py-2 text-sm font-medium text-charcoal transition-colors data-[state=on]:border-charcoal data-[state=on]:bg-charcoal data-[state=on]:text-surface"
                       >
                         {SURFACE_CONDITION_LABELS[sc]}
                       </ToggleGroupItem>
@@ -310,7 +310,7 @@ export function EditConditionsDialog({
                 maxLength={60}
                 {...register("climate")}
                 className={cn(
-                  "w-full rounded-lg bg-white px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
+                  "w-full rounded-lg bg-surface-raised px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
                   "min-h-[48px]",
                   "shadow-ring",
                 )}
@@ -347,7 +347,7 @@ export function EditConditionsDialog({
                 placeholder="Clima y estado de la pista el día de la carrera — evite incluir nombres de atletas o información médica"
                 {...register("weather_notes")}
                 className={cn(
-                  "w-full resize-y rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
+                  "w-full resize-y rounded-lg bg-surface-raised px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
                   "shadow-ring",
                 )}
                 style={{
@@ -397,7 +397,7 @@ export function EditConditionsDialog({
             type="submit"
             form="edit-conditions-form"
             disabled={updateMutation.isPending}
-            className="inline-flex min-h-[48px] items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="inline-flex min-h-[48px] items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-surface transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             {updateMutation.isPending && (
               <Loader2 size={14} className="animate-spin" aria-hidden="true" />

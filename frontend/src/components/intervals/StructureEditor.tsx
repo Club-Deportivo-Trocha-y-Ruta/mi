@@ -436,7 +436,7 @@ export function StructureEditor({
             <select
               id="structure-age-band"
               {...register("target_age_band")}
-              className="min-h-12 w-full rounded-lg border border-border-gray bg-white px-3 py-2 text-sm text-charcoal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+              className="min-h-12 w-full rounded-lg border border-border-gray bg-surface-raised px-3 py-2 text-sm text-charcoal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
             >
               <option value="10-12">
                 {INTERVAL_AGE_BAND_LABEL["10-12"]}
@@ -461,7 +461,7 @@ export function StructureEditor({
       <div
         role="status"
         aria-live="polite"
-        className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border-gray bg-white p-4"
+        className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border-gray bg-surface-raised p-4"
       >
         <p className="text-sm font-semibold text-charcoal">
           Duración total estimada:{" "}

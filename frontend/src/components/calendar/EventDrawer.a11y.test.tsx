@@ -76,6 +76,25 @@ describe("EventDrawer — accesibilidad", () => {
     expect(results).toHaveNoViolations();
   });
 
+  it("sin violaciones axe con el enlace 'Ver competencia' visible (race_event_id != null)", async () => {
+    const event = makeCalendarEventRead({
+      event_type: "competition",
+      title: "Copa Valle III — Roldanillo",
+      race_event_id: 77,
+      event_data: { city: "Roldanillo", race_category: "A", is_departmental: false },
+    });
+
+    vi.mocked(useCalendarEvent).mockReturnValue({
+      data: event,
+      isLoading: false,
+      isError: false,
+    } as ReturnType<typeof useCalendarEvent>);
+
+    const { container } = renderDrawer();
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+
   it("sin violaciones axe en estado de carga", async () => {
     vi.mocked(useCalendarEvent).mockReturnValue({
       data: undefined,

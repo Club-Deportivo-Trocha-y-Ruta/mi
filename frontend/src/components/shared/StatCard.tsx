@@ -58,7 +58,7 @@ export function StatCard({
       {isLoading ? (
         <Skeleton className="h-8 w-20" />
       ) : (
-        <p className="font-display text-2xl font-semibold text-charcoal">{value}</p>
+        <p className="font-display text-2xl font-bold text-charcoal">{value}</p>
       )}
       {hint && <p className="text-xs text-mid-gray">{hint}</p>}
       {badge && <div className="mt-1">{badge}</div>}

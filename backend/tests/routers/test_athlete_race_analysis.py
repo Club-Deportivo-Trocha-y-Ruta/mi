@@ -500,6 +500,71 @@ async def test_get_insight_detail_as_admin_returns_200(
 
 
 @pytest.mark.asyncio
+async def test_get_insight_detail_parent_never_sees_podium_gap(
+    seeded_factory, client_factory
+):
+    """Decisión del dueño (2026-09-23): la familia nunca ve la brecha a la
+    ganadora ni al podio, en ninguna parte. Regresión del bug donde
+    ``field_reading.gap_to_p3_hhmmss`` viajaba intacto al padre — la
+    omisión server-side (feature 037) solo cubría
+    ``expected_position``/``delta_vs_expected``. El coach sigue viendo el
+    campo completo.
+    """
+    structured = {
+        "schema_version": "v3",
+        "headline": "Resumen de prueba",
+        "field_reading": {
+            "percentile": 58.3,
+            "expected_position": 5,
+            "actual_position": 7,
+            "delta_vs_expected": -2,
+            "gap_to_p3_hhmmss": "0:03:12",
+            "series_label": "Válida 3 · Copa Valle",
+            "summary": "Lectura de prueba.",
+        },
+        "trend": "stable",
+        "observations": [],
+        "actions": [],
+        "watch_signals": [],
+        "coach_question": "¿Cómo vamos con la carga?",
+        "data_gaps": [],
+        "principles_cited": [],
+    }
+    async with seeded_factory() as s:
+        insight = await create_insight(
+            s,
+            athlete_id=144,
+            valida_num=3,
+            coach_approved=True,
+            is_active=1,
+            structured_json=structured,
+        )
+        await s.commit()
+        insight_id = insight.id
+
+    coach = _make_user(10, UserRole.coach, club_id=1)
+    async with client_factory(user=coach) as ac:
+        resp = await ac.get(
+            f"/api/athletes/144/race-analysis/insights/{insight_id}",
+            headers={"Authorization": "Bearer fake"},
+        )
+    assert resp.status_code == 200
+    coach_field_reading = resp.json()["structured"]["field_reading"]
+    assert coach_field_reading["gap_to_p3_hhmmss"] == "0:03:12"
+
+    parent = _make_user(20, UserRole.parent, club_id=None)
+    async with client_factory(user=parent) as ac:
+        resp = await ac.get(
+            f"/api/athletes/144/race-analysis/insights/{insight_id}",
+            headers={"Authorization": "Bearer fake"},
+        )
+    assert resp.status_code == 200
+    parent_field_reading = resp.json()["structured"]["field_reading"]
+    assert "gap_to_p3_hhmmss" not in parent_field_reading
+    assert "0:03:12" not in resp.text
+
+
+@pytest.mark.asyncio
 async def test_get_insight_detail_as_parent_other_child_returns_403(client_factory):
     """Wave 5 (feature 036, US7 acceptance scenario 3): la única de las 8
     rutas de este router que no tenía su propio denied-path test explícito.

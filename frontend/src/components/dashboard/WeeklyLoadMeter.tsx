@@ -169,7 +169,7 @@ export function WeeklyLoadMeter() {
 
   if (query.isLoading) {
     return (
-      <div className="space-y-3 rounded-xl bg-white p-4 shadow-card" role="status" aria-busy="true" aria-label="Cargando carga semanal">
+      <div className="space-y-3 rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline" role="status" aria-busy="true" aria-label="Cargando carga semanal">
         <Skeleton className="h-6 w-32" />
         <Skeleton className="h-2 w-full" />
         <Skeleton className="h-6 w-32" />
@@ -185,7 +185,7 @@ export function WeeklyLoadMeter() {
     // bloquea el resto del Inicio (FR-005 acceptance #3).
     if (isColdStartError(query.error)) {
       return (
-        <div className="space-y-3 rounded-xl bg-white p-4 shadow-card" role="status" aria-busy="true" aria-label="Cargando carga semanal">
+        <div className="space-y-3 rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline" role="status" aria-busy="true" aria-label="Cargando carga semanal">
           <Skeleton className="h-6 w-32" />
           <Skeleton className="h-2 w-full" />
           <Skeleton className="h-6 w-32" />
@@ -206,7 +206,7 @@ export function WeeklyLoadMeter() {
   // línea neutra en vez de medidores (contracts/home-tiles.md Tile 3).
   if (bands.length === 0) {
     return (
-      <div className="space-y-2 rounded-xl bg-white p-4 shadow-card">
+      <div className="space-y-2 rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline">
         <p className="text-sm text-mid-gray">Carga semanal</p>
         <p className="text-sm text-charcoal">Sin atletas en edad de seguimiento (10-15 años)</p>
       </div>
@@ -220,7 +220,7 @@ export function WeeklyLoadMeter() {
   }
 
   return (
-    <div className="space-y-4 rounded-xl bg-white p-4 shadow-card">
+    <div className="space-y-4 rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline">
       <p className="text-sm text-mid-gray">Carga semanal</p>
 
       {bands.map((band, idx) => (

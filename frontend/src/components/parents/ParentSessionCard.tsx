@@ -88,7 +88,7 @@ function ParentSessionCardImpl({
 
   return (
     <article
-      className="overflow-hidden rounded-xl bg-white shadow-card"
+      className="overflow-hidden rounded-card bg-surface-raised shadow-card ring-1 ring-hairline"
       data-testid="parent-session-card"
       aria-labelledby={titleId}
     >

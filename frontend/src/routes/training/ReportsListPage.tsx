@@ -189,7 +189,7 @@ function GenerateModal({ open, onClose, onSubmit, isPending, error }: GenerateMo
             <button
               type="submit"
               disabled={isPending}
-              className="flex items-center gap-2 rounded-lg bg-charcoal px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              className="flex items-center gap-2 rounded-lg bg-charcoal px-5 py-2.5 text-sm font-semibold text-surface transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               {isPending && (
                 <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -221,7 +221,7 @@ function ReportsTable({ reports, onDownload, downloadingId }: ReportsTableProps)
       <ul role="list" className="flex flex-col gap-3 md:hidden">
         {reports.map((r) => (
           <li key={r.id}>
-            <div className="rounded-xl bg-white p-4 shadow-card">
+            <div className="rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline">
               <div className="flex flex-wrap items-center gap-2">
                 <p className="font-medium text-charcoal">
                   {MONTH_NAMES[r.month - 1]} {r.year}
@@ -243,7 +243,7 @@ function ReportsTable({ reports, onDownload, downloadingId }: ReportsTableProps)
                   type="button"
                   onClick={() => onDownload(r)}
                   disabled={downloadingId === r.id}
-                  className="rounded-lg bg-charcoal px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50"
+                  className="rounded-lg bg-charcoal px-3 py-1.5 text-xs font-medium text-surface transition-opacity hover:opacity-70 disabled:opacity-50"
                 >
                   {downloadingId === r.id ? "Descargando…" : "Descargar PDF"}
                 </button>
@@ -255,7 +255,7 @@ function ReportsTable({ reports, onDownload, downloadingId }: ReportsTableProps)
 
       {/* Desktop: tabla */}
       <div
-        className="hidden overflow-x-auto rounded-xl bg-white md:block shadow-card"
+        className="hidden overflow-x-auto rounded-card bg-surface-raised md:block shadow-card ring-1 ring-hairline"
       >
         <table className="min-w-full text-sm">
           <caption className="sr-only">Lista de reportes mensuales del club</caption>
@@ -302,7 +302,7 @@ function ReportsTable({ reports, onDownload, downloadingId }: ReportsTableProps)
                       type="button"
                       onClick={() => onDownload(r)}
                       disabled={downloadingId === r.id}
-                      className="rounded-lg bg-charcoal px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50"
+                      className="rounded-lg bg-charcoal px-3 py-1.5 text-xs font-medium text-surface transition-opacity hover:opacity-70 disabled:opacity-50"
                     >
                       {downloadingId === r.id ? "Descargando…" : "Descargar PDF"}
                     </button>
@@ -397,14 +397,14 @@ export function ReportsListPage() {
         <div className="flex flex-wrap items-center gap-2">
           <Link
             to="/training/reports/project-profile"
-            className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
+            className="rounded-lg bg-surface-raised px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
             data-testid="project-profile-link"
           >
             Datos del proyecto
           </Link>
           <Link
             to="/training/reports/actividad-entrenadores"
-            className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
+            className="rounded-lg bg-surface-raised px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
             data-testid="coach-activity-link"
           >
             Actividad por entrenador
@@ -415,7 +415,7 @@ export function ReportsListPage() {
               setGenerateError(null);
               setShowGenerateModal(true);
             }}
-            className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 shadow-button-highlight"
+            className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-surface transition-opacity hover:opacity-70 shadow-button-highlight"
             data-testid="open-generate-modal"
           >
             + Generar reporte
@@ -425,7 +425,7 @@ export function ReportsListPage() {
 
       {reportsQuery.isLoading && (
         <div
-          className="space-y-2 rounded-xl bg-white p-4 shadow-ring"
+          className="space-y-2 rounded-xl bg-surface-raised p-4 shadow-ring"
         >
           {Array.from({ length: 3 }).map((_, idx) => (
             <div key={idx} className="h-9 animate-pulse rounded-lg bg-light-gray" />
@@ -441,7 +441,7 @@ export function ReportsListPage() {
 
       {!reportsQuery.isLoading && !reportsQuery.isError && reports.length === 0 && (
         <div
-          className="rounded-xl bg-white p-10 text-center shadow-ring"
+          className="rounded-xl bg-surface-raised p-10 text-center shadow-ring"
           style={{
             borderStyle: "dashed",
           }}

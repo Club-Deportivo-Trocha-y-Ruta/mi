@@ -22,9 +22,9 @@ interface DurationPickerProps {
 
 const labelClass = "block text-sm font-medium text-charcoal";
 const inputClass =
-  "mt-1 w-full min-h-[48px] rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray shadow-ring outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40";
+  "mt-1 w-full min-h-[48px] rounded-lg bg-surface-raised px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray shadow-ring outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40";
 const selectClass =
-  "mt-1 w-full min-h-[48px] rounded-lg bg-white px-3 py-2 text-sm text-charcoal shadow-ring outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 cursor-pointer";
+  "mt-1 w-full min-h-[48px] rounded-lg bg-surface-raised px-3 py-2 text-sm text-charcoal shadow-ring outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 cursor-pointer";
 
 const MINUTE_STEPS = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
 
@@ -155,8 +155,8 @@ export function DurationPicker({ value, onChange, error }: DurationPickerProps) 
               className={[
                 "min-h-[48px] rounded-md px-2.5 py-1 text-xs font-medium transition-all",
                 isActive
-                  ? "bg-charcoal text-white"
-                  : "bg-white text-mid-gray shadow-ring hover:text-charcoal",
+                  ? "bg-charcoal text-surface"
+                  : "bg-surface-raised text-mid-gray shadow-ring hover:text-charcoal",
               ].join(" ")}
             >
               {p.label}

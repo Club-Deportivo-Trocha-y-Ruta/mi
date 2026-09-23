@@ -155,7 +155,7 @@ export function CourseDescriptionCard({
   if (state === "empty") {
     return (
       <div
-        className="flex items-center justify-between rounded-xl bg-white px-4 py-3 ring-1 ring-[rgba(34,42,53,0.08)]"
+        className="flex items-center justify-between rounded-card bg-surface-raised px-4 py-3 shadow-card ring-1 ring-hairline"
         data-testid="course-description-card-empty"
       >
         <p className="text-sm text-mid-gray">
@@ -164,7 +164,7 @@ export function CourseDescriptionCard({
         <button
           type="button"
           onClick={() => setEditOpen(true)}
-          className="min-h-[48px] rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+          className="min-h-[48px] rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-surface transition-opacity hover:opacity-90"
           data-testid="course-description-describe-btn"
         >
           Describir la pista
@@ -200,12 +200,12 @@ export function CourseDescriptionCard({
   const buttonLabel = state === "partial" ? "Completar" : "Editar";
   const buttonClass =
     state === "partial"
-      ? "bg-charcoal text-white hover:opacity-90"
-      : "bg-white text-charcoal ring-1 ring-[rgba(34,42,53,0.12)] hover:bg-light-gray";
+      ? "bg-charcoal text-surface hover:opacity-90"
+      : "bg-surface-raised text-charcoal ring-1 ring-[rgba(34,42,53,0.12)] hover:bg-light-gray";
 
   return (
     <div
-      className="rounded-xl bg-white p-4 ring-1 ring-[rgba(34,42,53,0.08)]"
+      className="rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline"
       data-testid={`course-description-card-${state}`}
     >
       <div className="mb-3 flex items-center justify-between">

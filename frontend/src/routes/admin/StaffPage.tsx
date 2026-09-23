@@ -133,7 +133,7 @@ export function StaffPage() {
 
       {staffQuery.isLoading && (
         <div
-          className="space-y-2 rounded-xl bg-white p-4 shadow-card"
+          className="space-y-2 rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline"
           role="status"
           aria-live="polite"
         >
@@ -187,7 +187,7 @@ export function StaffPage() {
               return (
                 <li key={user.id}>
                   <div
-                    className="rounded-xl bg-white p-4 space-y-2 shadow-card"
+                    className="rounded-card bg-surface-raised p-4 space-y-2 shadow-card ring-1 ring-hairline"
                     data-testid={`staff-row-${user.id}`}
                   >
                     <div className="flex items-start justify-between gap-2">
@@ -241,7 +241,7 @@ export function StaffPage() {
           </ul>
 
           {/* Tabla desktop (≥md) */}
-          <div className="hidden rounded-xl bg-white shadow-card md:block">
+          <div className="hidden rounded-card bg-surface-raised shadow-card ring-1 ring-hairline md:block">
             <TableScrollContainer className="rounded-xl">
               <Table data-testid="staff-table">
                 <caption className="sr-only">Personal del club</caption>
@@ -258,7 +258,7 @@ export function StaffPage() {
                     </TableHead>
                     <TableHead
                       scope="col"
-                      className="sticky right-0 z-10 bg-white text-right"
+                      className="sticky right-0 z-10 bg-surface-raised text-right"
                     >
                       Acciones
                     </TableHead>
@@ -295,7 +295,7 @@ export function StaffPage() {
                         >
                           {user.created_by_display_name ?? "—"}
                         </TableCell>
-                        <TableCell className="sticky right-0 bg-white text-right group-hover:bg-light-gray/50">
+                        <TableCell className="sticky right-0 bg-surface-raised text-right group-hover:bg-light-gray/50">
                           {!isSelf && (
                             <Button
                               type="button"

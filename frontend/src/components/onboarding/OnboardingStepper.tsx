@@ -60,7 +60,7 @@ function StepIndicator({ step, index, status }: StepIndicatorProps) {
           "flex h-10 w-10 items-center justify-center rounded-full border-2 transition-all duration-200",
           isCompleted && "border-green-600 bg-green-600 text-white",
           isCurrent &&
-            "border-primary bg-white text-primary ring-4 ring-primary/20",
+            "border-primary bg-surface-raised text-primary ring-4 ring-primary/20",
           !isCompleted && !isCurrent && "border-mid-gray/30 bg-light-gray text-mid-gray",
         )}
         aria-hidden="true"
@@ -150,7 +150,7 @@ export function OnboardingStepper({
           {activeStep && (
             <>
               <div
-                className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-primary bg-white text-primary ring-4 ring-primary/20"
+                className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-primary bg-surface-raised text-primary ring-4 ring-primary/20"
                 aria-hidden="true"
               >
                 <activeStep.icon className="h-4 w-4" />

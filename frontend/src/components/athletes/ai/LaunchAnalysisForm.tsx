@@ -193,7 +193,7 @@ export function LaunchAnalysisForm({
   return (
     <form
       onSubmit={handleSubmit(onSubmit)}
-      className={cn("rounded-xl bg-white p-5 space-y-5", "shadow-card")}
+      className={cn("rounded-card bg-surface-raised p-5 space-y-5", "shadow-card ring-1 ring-hairline")}
       aria-label="Analizar con IA"
       data-testid="launch-analysis-form"
     >
@@ -235,7 +235,7 @@ export function LaunchAnalysisForm({
                 }}
                 id="launch-season"
                 className={cn(
-                  "mt-1 min-h-12 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40",
+                  "mt-1 min-h-12 w-full rounded-lg bg-surface-raised px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40",
                   "shadow-ring",
                 )}
                 data-testid="launch-season-select"
@@ -347,7 +347,7 @@ export function LaunchAnalysisForm({
                     "flex min-h-12 min-w-12 items-center justify-center rounded-full px-3 py-1 text-xs font-medium transition-colors",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
                     isChecked
-                      ? "bg-charcoal text-white"
+                      ? "bg-charcoal text-surface"
                       : "bg-light-gray/40 text-charcoal hover:bg-light-gray/60",
                     isCapReached && "cursor-not-allowed opacity-50",
                   )}
@@ -382,7 +382,7 @@ export function LaunchAnalysisForm({
               : undefined
           }
           className={cn(
-            "inline-flex min-h-12 items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-white transition-opacity",
+            "inline-flex min-h-12 items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-surface transition-opacity",
             isDisabled ? "cursor-not-allowed opacity-60" : "hover:opacity-90",
             "shadow-button-highlight",
           )}

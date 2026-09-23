@@ -23,6 +23,7 @@ const SessionAssistantPage = lazy(() =>
 );
 
 import { ProtectedRoute } from "@/routes/ProtectedRoute";
+import { RaceInsightEmailRedirect } from "@/routes/RaceInsightEmailRedirect";
 import { setQueryClient } from "@/lib/queryClientHandle";
 import {
   buildBuster,
@@ -405,6 +406,24 @@ export default function App() {
               <Suspense fallback={<RouteFallback label="Cargando formulario de deportista..." />}>
                 <AthleteFormPage mode="edit" />
               </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        {/*
+          Alias de deep link para correos de insight de carrera YA enviados
+          (2026-09-23): aprobar un insight ya nunca envía correo, pero los
+          correos previos a ese cambio siguen apuntando a esta ruta, que
+          nunca existió (caían en 404). Sin `allowedRoles` — cualquier rol
+          autenticado puede llegar aquí; el propio componente decide el
+          destino final según el rol (o NotFoundPage si no aplica). Sin
+          sesión, ProtectedRoute manda a /login con `state.from` y
+          LoginPage vuelve acá tras autenticar.
+        */}
+        <Route
+          path="/athletes/:athleteId/race-analysis/insights/:insightId"
+          element={
+            <ProtectedRoute>
+              <RaceInsightEmailRedirect />
             </ProtectedRoute>
           }
         />

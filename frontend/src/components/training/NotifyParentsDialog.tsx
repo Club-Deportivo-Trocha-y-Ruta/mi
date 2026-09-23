@@ -234,7 +234,7 @@ export function NotifyParentsDialog({
                 </div>
               )}
               {removedAthletes.length > 0 && (
-                <div className="rounded-xl border border-[rgba(34,42,53,0.08)] bg-light-gray/40 px-4 py-3">
+                <div className="rounded-xl border border-border-gray bg-light-gray/40 px-4 py-3">
                   <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-mid-gray">
                     Atletas retirados (no se notifican)
                   </p>
@@ -297,7 +297,7 @@ export function NotifyParentsDialog({
                 maxLength={300}
                 placeholder="Ej: Lluvia intensa, cierre de la pista..."
                 disabled={isPending}
-                className="mt-1 w-full resize-none rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40"
+                className="mt-1 w-full resize-none rounded-lg bg-surface-raised px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40"
                 style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px" }}
               />
               <p className="mt-1 text-xs text-mid-gray">
@@ -318,7 +318,7 @@ export function NotifyParentsDialog({
             type="button"
             onClick={onCancel}
             disabled={isPending}
-            className="rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-charcoal transition-opacity disabled:opacity-50"
+            className="rounded-lg bg-surface-raised px-4 py-2.5 text-sm font-medium text-charcoal transition-opacity disabled:opacity-50"
             style={btnSecondaryStyle}
           >
             Cancelar
@@ -327,7 +327,7 @@ export function NotifyParentsDialog({
             type="button"
             onClick={handleSkip}
             disabled={skipDisabled}
-            className="flex items-center gap-2 rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-80 disabled:opacity-50"
+            className="flex items-center gap-2 rounded-lg bg-surface-raised px-4 py-2.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-80 disabled:opacity-50"
             style={btnSecondaryStyle}
           >
             <MailX className="h-4 w-4" aria-hidden="true" />
@@ -337,7 +337,7 @@ export function NotifyParentsDialog({
             type="button"
             onClick={handleSend}
             disabled={sendDisabled}
-            className="flex items-center gap-2 rounded-lg bg-charcoal px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="flex items-center gap-2 rounded-lg bg-charcoal px-5 py-2.5 text-sm font-semibold text-surface transition-opacity hover:opacity-90 disabled:opacity-50"
             style={btnPrimaryStyle}
           >
             {isPending ? (

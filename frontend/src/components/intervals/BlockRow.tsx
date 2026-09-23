@@ -144,7 +144,7 @@ export interface BlockRowProps {
 // ---------------------------------------------------------------------------
 
 const CONTROL_CLASS = cn(
-  "min-h-12 w-full rounded-lg border border-border-gray bg-white px-3 py-2",
+  "min-h-12 w-full rounded-lg border border-border-gray bg-surface-raised px-3 py-2",
   "text-sm text-charcoal placeholder:text-mid-gray transition-colors",
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
 );
@@ -191,7 +191,7 @@ export function BlockRow({
 
   return (
     <li
-      className="rounded-xl border border-border-gray bg-white p-3 shadow-sm sm:p-4"
+      className="rounded-xl border border-border-gray bg-surface-raised p-3 shadow-sm sm:p-4"
       aria-label={`Bloque ${index + 1}`}
     >
       {/* ── Encabezado: posición + acciones de orden/eliminación ── */}

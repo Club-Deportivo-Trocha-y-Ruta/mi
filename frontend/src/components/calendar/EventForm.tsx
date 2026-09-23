@@ -76,10 +76,10 @@ const COMPETITION_CATEGORIES = [
 
 const labelClass = "block text-sm font-medium text-charcoal";
 const inputClass =
-  "mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 shadow-ring";
+  "mt-1 w-full rounded-lg bg-surface-raised px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 shadow-ring";
 const errorClass = "mt-1 text-xs text-red-600";
 const sectionClass =
-  "rounded-xl bg-white p-5 space-y-4 shadow-card";
+  "rounded-card bg-surface-raised p-5 space-y-4 shadow-card ring-1 ring-hairline";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function buildSpecificFields(
@@ -358,8 +358,8 @@ export function EventForm({
               key={type}
               className={`flex cursor-pointer items-center justify-center rounded-lg px-3 py-2 text-sm font-medium transition-colors shadow-ring ${
                 selectedType === type
-                  ? "bg-charcoal text-white"
-                  : "bg-white text-charcoal hover:bg-light-gray"
+                  ? "bg-charcoal text-surface"
+                  : "bg-surface-raised text-charcoal hover:bg-light-gray"
               }`}
             >
               <input
@@ -391,7 +391,7 @@ export function EventForm({
             <TabsPrimitive.Trigger
               key={tab.value}
               value={tab.value}
-              className="relative flex-1 rounded-lg px-3 py-2 text-sm font-medium text-mid-gray transition-colors data-[state=active]:bg-white data-[state=active]:text-charcoal data-[state=active]:shadow-sm"
+              className="relative flex-1 rounded-lg px-3 py-2 text-sm font-medium text-mid-gray transition-colors data-[state=active]:bg-surface data-[state=active]:text-charcoal data-[state=active]:shadow-sm"
             >
               {tab.label}
               {tab.value === "specific" && hasSpecificErrors && (
@@ -907,14 +907,14 @@ export function EventForm({
         <button
           type="button"
           onClick={onCancel}
-          className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
+          className="rounded-lg bg-surface-raised px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
         >
           Cancelar
         </button>
         <button
           type="submit"
           disabled={isSubmitting}
-          className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50 shadow-button-highlight"
+          className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-surface transition-opacity hover:opacity-70 disabled:opacity-50 shadow-button-highlight"
         >
           {isSubmitting
             ? "Guardando..."

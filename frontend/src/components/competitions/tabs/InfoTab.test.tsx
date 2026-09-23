@@ -186,34 +186,30 @@ describe("InfoTab — fila Prioridad", () => {
     expect(screen.getByText("Sin prioridad")).toBeInTheDocument();
   });
 
-  it("válida con priority='A' muestra el badge 'A' y la nota de correo a familias", () => {
+  it("válida con priority='A' muestra el badge 'A' sin ninguna nota de correo", () => {
     const event = makeRaceEventRead({ is_championship: false, priority: "A" });
     render(<InfoTab event={event} />);
 
     expect(screen.getByText("A")).toBeInTheDocument();
-    expect(
-      screen.getByText(/Envía correo a familias tras un análisis aprobado/i),
-    ).toBeInTheDocument();
+    // 2026-09-23: aprobar un insight ya nunca envía correo, sin importar
+    // la prioridad — la nota se eliminó de la fila "Prioridad".
+    expect(screen.queryByText(/correo/i)).not.toBeInTheDocument();
   });
 
-  it("válida con priority='B' muestra el badge 'B' sin la nota de correo", () => {
+  it("válida con priority='B' muestra el badge 'B' sin ninguna nota de correo", () => {
     const event = makeRaceEventRead({ is_championship: false, priority: "B" });
     render(<InfoTab event={event} />);
 
     expect(screen.getByText("B")).toBeInTheDocument();
-    expect(
-      screen.queryByText(/Envía correo a familias tras un análisis aprobado/i),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/correo/i)).not.toBeInTheDocument();
   });
 
-  it("campeonato siempre muestra 'CD' y la nota de correo, sin importar event.priority", () => {
+  it("campeonato siempre muestra 'CD' sin ninguna nota de correo, sin importar event.priority", () => {
     const event = makeRaceEventRead({ is_championship: true, priority: null });
     render(<InfoTab event={event} />);
 
     expect(screen.getByText("CD")).toBeInTheDocument();
-    expect(
-      screen.getByText(/Envía correo a familias tras un análisis aprobado/i),
-    ).toBeInTheDocument();
+    expect(screen.queryByText(/correo/i)).not.toBeInTheDocument();
   });
 });
 

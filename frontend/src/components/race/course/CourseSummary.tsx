@@ -161,7 +161,7 @@ function VariantBlock({
 }) {
   return (
     <div
-      className="space-y-2 rounded-xl bg-white p-4 ring-1 ring-[rgba(34,42,53,0.08)]"
+      className="space-y-2 rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline"
       data-testid={`course-summary-variant-${variant.id}`}
     >
       <p className="text-sm font-semibold text-charcoal">{variant.label}</p>
@@ -211,7 +211,7 @@ function SetupRow({
         "grid grid-cols-1 gap-1 rounded-lg border p-2 text-sm sm:grid-cols-[1fr_auto_1fr]",
         isHighlighted
           ? "border-blue-300 bg-blue-50"
-          : "border-[rgba(34,42,53,0.08)]",
+          : "border-border-gray",
       )}
       data-testid={`course-summary-setup-row-${setup.category_id}`}
       data-highlighted={isHighlighted ? "true" : undefined}
@@ -254,7 +254,7 @@ function DescriptionRecap({ description }: { description: CourseDescription }) {
 
   return (
     <div
-      className="space-y-2 rounded-xl bg-white p-4 ring-1 ring-[rgba(34,42,53,0.08)]"
+      className="space-y-2 rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline"
       data-testid="course-summary-description"
     >
       <h3 className="text-sm font-semibold text-charcoal">
@@ -357,7 +357,7 @@ export function CourseSummary({
 
       {setups.length > 0 && (
         <div
-          className="space-y-2 rounded-xl bg-white p-4 ring-1 ring-[rgba(34,42,53,0.08)]"
+          className="space-y-2 rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline"
           data-testid="course-summary-setups"
         >
           <h3 className="text-sm font-semibold text-charcoal">

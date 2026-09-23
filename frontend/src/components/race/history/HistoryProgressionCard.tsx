@@ -113,7 +113,7 @@ export function HistoryProgressionCard({
 
   return (
     <section
-      className={cn("rounded-xl bg-white p-5 shadow-card space-y-4", className)}
+      className={cn("rounded-card bg-surface-raised p-5 shadow-card ring-1 ring-hairline space-y-4", className)}
       aria-label="Progresión histórica entre temporadas"
       data-testid="history-progression-card"
     >

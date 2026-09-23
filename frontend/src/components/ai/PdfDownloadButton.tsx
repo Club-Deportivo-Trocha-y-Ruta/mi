@@ -52,7 +52,7 @@ export function PdfDownloadButton({
         aria-label="Descargar análisis en PDF"
         data-testid="pdf-download-button"
         className={cn(
-          "inline-flex items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-white transition-opacity",
+          "inline-flex items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-surface transition-opacity",
           disabled
             ? "opacity-50 cursor-not-allowed"
             : "hover:opacity-90",

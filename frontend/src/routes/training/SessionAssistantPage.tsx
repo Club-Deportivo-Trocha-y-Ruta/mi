@@ -103,7 +103,7 @@ export function SessionAssistantPage() {
       </div>
 
       <div
-        className="rounded-xl bg-white p-5 shadow-card"
+        className="rounded-card bg-surface-raised p-5 shadow-card ring-1 ring-hairline"
       >
         <Suspense
           fallback={

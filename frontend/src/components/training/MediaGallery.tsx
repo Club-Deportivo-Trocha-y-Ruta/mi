@@ -67,7 +67,7 @@ export function MediaGallery({
                   className="h-full w-full object-cover"
                 />
               ) : (
-                <div className="flex h-full w-full items-center justify-center bg-charcoal/80 text-xs font-medium text-white">
+                <div className="flex h-full w-full items-center justify-center bg-charcoal/80 text-xs font-medium text-surface">
                   ▶ Video
                 </div>
               )}
@@ -100,6 +100,7 @@ export function MediaGallery({
             <button
               type="button"
               onClick={() => setActiveIdx(null)}
+              // bg-white fijo: botón sobre overlay oscuro (bg-black/80) del lightbox, mismo en ambos temas.
               className="absolute -top-10 right-0 rounded-full bg-white/10 p-1.5 text-white hover:bg-white/20"
               aria-label="Cerrar"
             >

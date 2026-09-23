@@ -242,6 +242,9 @@ def _structured_for_response(raw: Any, *, for_parent: bool) -> Optional[dict[str
 
     En modo parent (data-model.md §API deltas) se omiten:
     - ``field_reading.expected_position`` / ``delta_vs_expected``.
+    - ``field_reading.gap_to_p3_hhmmss`` — brecha al podio (decisión del
+      dueño 2026-09-23: la familia nunca ve brecha a la ganadora ni al
+      podio, en ninguna parte).
     - ``coach_question``.
     - la evidencia (``evidence``) de las observaciones de dominio
       ``training`` (deja el resto de la observación intacta).
@@ -260,6 +263,7 @@ def _structured_for_response(raw: Any, *, for_parent: bool) -> Optional[dict[str
         field_reading = dict(field_reading)
         field_reading.pop("expected_position", None)
         field_reading.pop("delta_vs_expected", None)
+        field_reading.pop("gap_to_p3_hhmmss", None)
         structured["field_reading"] = field_reading
     structured.pop("coach_question", None)
 

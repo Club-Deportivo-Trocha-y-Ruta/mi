@@ -214,7 +214,7 @@ export function StandingsTable({ data, hideClubFilter = false }: StandingsTableP
               const val = e.target.value;
               setSelectedCategoryId(val === "all" ? "all" : Number(val));
             }}
-            className="h-9 rounded-lg border border-[rgba(34,42,53,0.12)] bg-white px-3 text-sm text-charcoal focus:outline-none focus:ring-2 focus:ring-primary/50"
+            className="h-9 rounded-lg border border-[rgba(34,42,53,0.12)] bg-surface-raised px-3 text-sm text-charcoal focus:outline-none focus:ring-2 focus:ring-primary/50"
             data-testid="standings-category-select"
           >
             <option value="all">Todas</option>
@@ -255,7 +255,7 @@ export function StandingsTable({ data, hideClubFilter = false }: StandingsTableP
       {/* ── Sin datos después de filtro ──────────────────────────────────── */}
       {noDataAfterFilter && (
         <div
-          className="rounded-xl bg-white p-6 text-center text-sm text-mid-gray ring-1 ring-[rgba(34,42,53,0.08)]"
+          className="rounded-card bg-surface-raised p-6 text-center text-sm text-mid-gray shadow-card ring-1 ring-hairline"
           data-testid="standings-empty-after-filter"
           role="status"
         >
@@ -272,7 +272,7 @@ export function StandingsTable({ data, hideClubFilter = false }: StandingsTableP
           .map((cat) => (
             <div
               key={cat.category_id}
-              className="overflow-hidden rounded-xl bg-white ring-1 ring-[rgba(34,42,53,0.08)]"
+              className="overflow-hidden rounded-card bg-surface-raised shadow-card ring-1 ring-hairline"
               data-testid={`standings-category-section-${cat.category_id}`}
             >
               {/* Encabezado de categoría */}

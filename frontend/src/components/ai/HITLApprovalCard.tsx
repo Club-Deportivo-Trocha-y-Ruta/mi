@@ -186,7 +186,7 @@ export function HITLApprovalCard({
         </div>
       </div>
 
-      <div className="rounded-lg bg-white p-3" data-testid="hitl-draft-view">
+      <div className="rounded-lg bg-surface-raised p-3" data-testid="hitl-draft-view">
         {structuredDraft ? (
           <InsightV3Card structured={structuredDraft} mode="coach" />
         ) : (
@@ -200,7 +200,7 @@ export function HITLApprovalCard({
 
       {criticFeedback.length > 0 && (
         <details
-          className="rounded-lg bg-white p-3 ring-1 ring-amber-200"
+          className="rounded-lg bg-surface-raised p-3 ring-1 ring-amber-200"
           data-testid="hitl-critic-feedback"
         >
           <summary className="cursor-pointer text-sm font-medium text-charcoal">
@@ -232,21 +232,29 @@ export function HITLApprovalCard({
         </p>
       )}
 
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={handleApprove}
-          disabled={busy}
-          data-testid="hitl-approve-button"
-          className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-        >
-          {submitting ? (
-            <Loader2 size={16} className="animate-spin" aria-hidden="true" />
-          ) : (
-            <Check size={16} aria-hidden="true" />
-          )}
-          Aprobar
-        </button>
+      <div className="flex flex-wrap items-start gap-2">
+        <div className="flex flex-col gap-1">
+          <button
+            type="button"
+            onClick={handleApprove}
+            disabled={busy}
+            data-testid="hitl-approve-button"
+            className="inline-flex min-h-12 items-center gap-1.5 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            {submitting ? (
+              <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+            ) : (
+              <Check size={16} aria-hidden="true" />
+            )}
+            Aprobar
+          </button>
+          <p
+            className="max-w-[220px] text-[11px] leading-tight text-amber-800"
+            data-testid="hitl-approve-no-email-note"
+          >
+            Al aprobar, la familia podrá verlo en la app. No se envía correo.
+          </p>
+        </div>
         <button
           type="button"
           onClick={() => setEditOpen(true)}
@@ -272,7 +280,7 @@ export function HITLApprovalCard({
           onClick={() => setDiscardOpen(true)}
           disabled={busy}
           data-testid="hitl-discard-button"
-          className="inline-flex min-h-12 min-w-12 items-center gap-1.5 rounded-lg border border-charcoal/30 bg-white px-4 py-2 text-sm font-semibold text-charcoal transition-opacity hover:bg-light-gray/40 disabled:opacity-50"
+          className="inline-flex min-h-12 min-w-12 items-center gap-1.5 rounded-lg border border-charcoal/30 bg-surface-raised px-4 py-2 text-sm font-semibold text-charcoal transition-opacity hover:bg-light-gray/40 disabled:opacity-50"
         >
           {cancelling ? (
             <Loader2 size={16} className="animate-spin" aria-hidden="true" />
@@ -289,7 +297,7 @@ export function HITLApprovalCard({
           onChange={(e) => setRejectionNotes(e.target.value)}
           maxLength={500}
           className={cn(
-            "flex-1 min-w-[180px] rounded-lg bg-white px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-500/40",
+            "flex-1 min-w-[180px] rounded-lg bg-surface-raised px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-500/40",
             "shadow-ring",
           )}
           aria-label="Motivo de rechazo (opcional)"
@@ -321,7 +329,7 @@ export function HITLApprovalCard({
                   rows={18}
                   data-testid="hitl-edit-textarea"
                   className={cn(
-                    "w-full rounded-lg bg-white px-3 py-2 font-mono text-xs outline-none focus:ring-2 focus:ring-blue-500/40",
+                    "w-full rounded-lg bg-surface-raised px-3 py-2 font-mono text-xs outline-none focus:ring-2 focus:ring-blue-500/40",
                     "shadow-ring",
                   )}
                   aria-label="Markdown editado"
@@ -334,7 +342,7 @@ export function HITLApprovalCard({
                 <div className="max-h-[420px] overflow-auto rounded-lg bg-light-gray/20 p-3">
                   <MarkdownReportViewer
                     markdown={editedMarkdown || "_(vacío)_"}
-                    className="bg-white"
+                    className="bg-surface-raised"
                   />
                 </div>
               </div>
@@ -368,7 +376,7 @@ export function HITLApprovalCard({
               onClick={handleSaveEdit}
               disabled={submitting || editedMarkdown.trim().length === 0}
               data-testid="hitl-edit-save-button"
-              className="inline-flex items-center gap-1.5 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-surface transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               {submitting && (
                 <Loader2 size={14} className="animate-spin" aria-hidden="true" />

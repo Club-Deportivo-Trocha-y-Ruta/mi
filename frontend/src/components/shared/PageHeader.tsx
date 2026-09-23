@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 
 /**
- * Encabezado de página estándar: título (font-display/Cal Sans), subtítulo
+ * Encabezado de página estándar: título (font-display/Plus Jakarta Sans), subtítulo
  * opcional, back-link de un solo nivel (sin breadcrumbs) y slot de acciones
  * alineado a la derecha. Reemplaza los ~59 <h1> y 16 back-links ad hoc.
  */
@@ -29,7 +29,7 @@ export function PageHeader({ title, subtitle, backTo, actions }: PageHeaderProps
 
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="font-display text-2xl font-semibold text-charcoal">{title}</h1>
+          <h1 className="font-display text-2xl font-bold text-charcoal">{title}</h1>
           {subtitle && <p className="mt-1 text-sm text-mid-gray">{subtitle}</p>}
         </div>
 

@@ -137,8 +137,8 @@ export function ParentRegisterPage() {
 
   if (pageState === "loading") {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white p-4">
-        <div className="w-full max-w-md rounded-xl bg-white p-8 text-center shadow-card">
+      <div className="flex min-h-screen items-center justify-center bg-surface p-4">
+        <div className="w-full max-w-md rounded-card bg-surface-raised p-8 text-center shadow-card ring-1 ring-hairline">
           {renderCardHeader()}
           <p className="text-sm text-mid-gray">Verificando invitación...</p>
         </div>
@@ -152,8 +152,8 @@ export function ParentRegisterPage() {
 
   if (pageState === "invalid") {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white p-4">
-        <div className="w-full max-w-md rounded-xl bg-white p-8 shadow-card">
+      <div className="flex min-h-screen items-center justify-center bg-surface p-4">
+        <div className="w-full max-w-md rounded-card bg-surface-raised p-8 shadow-card ring-1 ring-hairline">
           {renderCardHeader()}
           <div className="rounded-lg bg-red-50 px-4 py-4 text-center">
             <p className="text-sm font-medium text-red-700">
@@ -175,8 +175,8 @@ export function ParentRegisterPage() {
 
   if (pageState === "success") {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white p-4">
-        <div className="w-full max-w-md rounded-xl bg-white p-8 text-center shadow-card">
+      <div className="flex min-h-screen items-center justify-center bg-surface p-4">
+        <div className="w-full max-w-md rounded-card bg-surface-raised p-8 text-center shadow-card ring-1 ring-hairline">
           {renderCardHeader()}
           <div className="rounded-lg bg-green-50 px-4 py-4">
             <p className="text-sm font-medium text-green-700">
@@ -200,8 +200,8 @@ export function ParentRegisterPage() {
   // -------------------------------------------------------------------------
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-white p-4">
-      <div className="w-full max-w-md rounded-xl bg-white p-8 shadow-card">
+    <div className="flex min-h-screen items-center justify-center bg-surface p-4">
+      <div className="w-full max-w-md rounded-card bg-surface-raised p-8 shadow-card ring-1 ring-hairline">
         {/* Header */}
         <div className="mb-8 text-center">
           <p className="text-xs font-medium uppercase tracking-widest text-mid-gray">

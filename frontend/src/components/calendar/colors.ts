@@ -11,7 +11,7 @@ export const EVENT_TYPE_COLORS: Record<EventType, EventTypeColor> = {
   training_session: {
     bg: "#2f2f2f",
     text: "#ffffff",
-    badge: "bg-charcoal text-white",
+    badge: "bg-charcoal text-surface",
     label: "Entrenamiento",
   },
   competition: {

@@ -7,11 +7,16 @@
  * `HistoryChart.test.tsx`). Este archivo cubre exclusivamente los estados
  * de carga/error/vacío y el bloque "texto primero" (chips, últimos
  * resultados, cambios de categoría, tabla y caveats).
+ *
+ * `wrap` envuelve en `MemoryRouter` (2026-09-23): `HistoryTable` renderiza
+ * el nombre de la válida como `Link` de react-router — sin Router en el
+ * árbol, jsdom lanza al montar.
  */
 import { createElement, type ReactNode } from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router-dom";
 import { axe } from "jest-axe";
 import { http, HttpResponse } from "msw";
 
@@ -47,7 +52,13 @@ function wrap(ui: ReactNode) {
       mutations: { retry: false },
     },
   });
-  return render(createElement(QueryClientProvider, { client: qc }, ui));
+  return render(
+    createElement(
+      QueryClientProvider,
+      { client: qc },
+      createElement(MemoryRouter, null, ui),
+    ),
+  );
 }
 
 describe("HistoryProgressionCard", () => {

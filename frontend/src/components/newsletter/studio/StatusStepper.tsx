@@ -75,7 +75,7 @@ export function StatusStepper({ status, readAt, className }: StatusStepperProps)
               data-testid={`stepper-step-${step.key}`}
               className={cn(
                 "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium",
-                isCurrent && "bg-charcoal text-white",
+                isCurrent && "bg-charcoal text-surface",
                 isDone && !isCurrent && "bg-light-gray text-charcoal",
                 !isDone && !isCurrent && "text-mid-gray",
               )}

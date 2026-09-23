@@ -29,7 +29,7 @@ const CATEGORY_OPTIONS = [
 ];
 
 const inputSelectClass =
-  "rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 shadow-ring";
+  "rounded-lg bg-surface-raised px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 shadow-ring";
 
 export function AthletesListPage() {
   const user = useAuthStore((state) => state.user);
@@ -77,7 +77,7 @@ export function AthletesListPage() {
           isCoach && (
             <Link
               to="/athletes/new"
-              className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 shadow-button-highlight"
+              className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-surface transition-opacity hover:opacity-70 shadow-button-highlight"
             >
               + Agregar atleta
             </Link>
@@ -86,7 +86,7 @@ export function AthletesListPage() {
       />
 
       {/* Filtros */}
-      <div className="grid gap-3 rounded-xl bg-white p-4 md:grid-cols-3 shadow-card">
+      <div className="grid gap-3 rounded-card bg-surface-raised p-4 md:grid-cols-3 shadow-card ring-1 ring-hairline">
         <input
           value={search}
           onChange={(event) => setSearch(event.target.value)}
@@ -121,7 +121,7 @@ export function AthletesListPage() {
 
       {/* Skeleton */}
       {athletesQuery.isLoading ? (
-        <div className="space-y-2 rounded-xl bg-white p-4 shadow-ring">
+        <div className="space-y-2 rounded-xl bg-surface-raised p-4 shadow-ring">
           {Array.from({ length: 5 }).map((_, idx) => (
             <div key={idx} className="h-9 animate-pulse rounded-lg bg-light-gray" />
           ))}

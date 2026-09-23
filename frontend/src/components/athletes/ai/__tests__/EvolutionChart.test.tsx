@@ -607,7 +607,7 @@ describe("EvolutionChart", () => {
       ).not.toBeInTheDocument();
     });
 
-    it("elegir el campeonato nacional muestra championship-reading-card (Posición/Pelotón/Gap al P1/Percentil) + tabla, sin línea de recharts, etiquetado 'Cto. Nal.'", async () => {
+    it("elegir el campeonato nacional muestra championship-reading-card (Posición/Parrilla/Brecha vs. mediana/Brecha vs. 1.ª posición/Percentil) + tabla, sin línea de recharts, etiquetado 'Cto. Nal.'", async () => {
       const user = userEvent.setup();
       mswServer.use(multiGroupEvolutionHandler);
       renderWithProviders(
@@ -622,17 +622,20 @@ describe("EvolutionChart", () => {
       const card = await screen.findByTestId("championship-reading-card");
       expect(card).toHaveTextContent(/cto\.?\s*nal\./i);
       expect(card).toHaveTextContent(/posición/i);
-      expect(card).toHaveTextContent(/pelotón/i);
-      expect(card).toHaveTextContent(/gap al p1/i);
+      expect(card).toHaveTextContent(/parrilla/i);
+      expect(card).toHaveTextContent(/brecha vs\. mediana/i);
+      expect(card).toHaveTextContent(/brecha vs\. 1\.ª posición/i);
       expect(card).toHaveTextContent(/percentil/i);
       // field_size=40, percentile=55.0 del punto seleccionado (research.md D3).
       expect(card).toHaveTextContent("40");
       expect(card).toHaveTextContent(/55(\.0)?/);
-      // Fix B-2/F-1 — position=19, gap_pct=5.8 del mismo punto: las cuatro
-      // lecturas se rellenan bajo la métrica DEFAULT (podium_gap_ms), no
-      // solo cuando el selector está en "ranking"/"podium_gap_ms".
+      // Fix B-2/F-1 — position=19, gap_pct=5.8, gap_to_median_pct=-2.3 del
+      // mismo punto: las lecturas se rellenan bajo la métrica DEFAULT
+      // (gap_to_median_pct desde 2026-09-23), no solo cuando el selector
+      // coincide con la métrica.
       expect(card).toHaveTextContent("P19");
       expect(card).toHaveTextContent("+5.8 %");
+      expect(card).toHaveTextContent("-2.3 %");
 
       // Ninguna gráfica de línea — D5: grupo de una sola carrera es tarjeta,
       // no chart (ni el testid del stub de <Line>, ni el LineChart mock).
@@ -643,7 +646,7 @@ describe("EvolutionChart", () => {
       expect(screen.getByTestId("evolution-table")).toBeInTheDocument();
     });
 
-    it("fix B-2/F-1 — las cuatro lecturas del campeonato nacional se mantienen intactas al cambiar el metric select a 'ranking'", async () => {
+    it("fix B-2/F-1 — las lecturas del campeonato nacional se mantienen intactas al cambiar el metric select a 'ranking'", async () => {
       const user = userEvent.setup();
       mswServer.use(multiGroupEvolutionHandler);
       renderWithProviders(
@@ -662,13 +665,16 @@ describe("EvolutionChart", () => {
       await user.selectOptions(metricSelect, "ranking");
 
       const card = await screen.findByTestId("championship-reading-card");
-      // Mismo punto (position/gap_pct no dependen de `metric`, ver
-      // contracts/evolution-api.md) — las cuatro lecturas se mantienen.
+      // Mismo punto (position/gap_pct/gap_to_median_pct no dependen de
+      // `metric`, ver contracts/evolution-api.md) — las lecturas se
+      // mantienen.
       expect(card).toHaveTextContent(/posición/i);
       expect(card).toHaveTextContent("P19");
-      expect(card).toHaveTextContent(/pelotón/i);
+      expect(card).toHaveTextContent(/parrilla/i);
       expect(card).toHaveTextContent("40");
-      expect(card).toHaveTextContent(/gap al p1/i);
+      expect(card).toHaveTextContent(/brecha vs\. mediana/i);
+      expect(card).toHaveTextContent("-2.3 %");
+      expect(card).toHaveTextContent(/brecha vs\. 1\.ª posición/i);
       expect(card).toHaveTextContent("+5.8 %");
       expect(card).toHaveTextContent(/percentil/i);
       expect(card).toHaveTextContent(/55(\.0)?/);
@@ -953,6 +959,119 @@ describe("EvolutionChart", () => {
       // 4 filas de la tabla deben caer todas a "sin dato" (sin circuito).
       const sinDatoCells = within(table).getAllByText("sin dato");
       expect(sinDatoCells.length).toBe(4);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Audiencia (2026-09-23) — "Brecha vs. mediana" es la métrica por defecto
+  // para coach y familia; la familia NUNCA ve la brecha a la ganadora
+  // (podium_gap_ms), ni en el selector de métrica ni en
+  // ChampionshipReadingCard (principio de salvaguardas psicológicas).
+  // ---------------------------------------------------------------------------
+
+  describe("audiencia — brecha vs. mediana por defecto, familia sin brecha a la ganadora", () => {
+    it("la métrica inicial es 'Brecha vs. mediana' para coach (default audience)", async () => {
+      renderWithProviders(
+        <EvolutionChart athleteId={42} defaultSeason={2026} />,
+      );
+      const select = (await screen.findByTestId(
+        "evolution-metric-select",
+      )) as HTMLSelectElement;
+      expect(select.value).toBe("gap_to_median_pct");
+      expect(
+        within(select).getByRole("option", { name: "Brecha vs. mediana" }),
+      ).toBeInTheDocument();
+    });
+
+    it("coach: el selector de métrica ofrece 'Brecha vs. 1.ª posición' (brecha a la ganadora)", async () => {
+      renderWithProviders(
+        <EvolutionChart athleteId={42} defaultSeason={2026} audience="coach" />,
+      );
+      const select = (await screen.findByTestId(
+        "evolution-metric-select",
+      )) as HTMLSelectElement;
+      expect(
+        within(select).getByRole("option", {
+          name: "Brecha vs. 1.ª posición",
+        }),
+      ).toBeInTheDocument();
+    });
+
+    it("familia: la métrica inicial también es 'Brecha vs. mediana' y el selector NO ofrece la brecha a la ganadora", async () => {
+      renderWithProviders(
+        <EvolutionChart
+          athleteId={42}
+          defaultSeason={2026}
+          audience="family"
+        />,
+      );
+      const select = (await screen.findByTestId(
+        "evolution-metric-select",
+      )) as HTMLSelectElement;
+      expect(select.value).toBe("gap_to_median_pct");
+      expect(
+        within(select).queryByRole("option", {
+          name: "Brecha vs. 1.ª posición",
+        }),
+      ).not.toBeInTheDocument();
+      expect(within(select).queryByText(/1\.ª posición/i)).not.toBeInTheDocument();
+      // Las demás métricas siguen disponibles para familia.
+      expect(
+        within(select).getByRole("option", { name: "Posición en categoría" }),
+      ).toBeInTheDocument();
+      expect(
+        within(select).getByRole("option", { name: "Tiempo total" }),
+      ).toBeInTheDocument();
+    });
+
+    it("familia: ChampionshipReadingCard muestra 'Brecha vs. mediana' pero nunca 'Brecha vs. 1.ª posición' ni 'Pelotón'", async () => {
+      const user = userEvent.setup();
+      mswServer.use(multiGroupEvolutionHandler);
+      renderWithProviders(
+        <EvolutionChart
+          athleteId={42}
+          defaultSeason={2026}
+          audience="family"
+        />,
+      );
+
+      const groupSelect = (await screen.findByTestId(
+        "evolution-group-select",
+      )) as HTMLSelectElement;
+      await user.selectOptions(groupSelect, "44"); // Cto. Nal. — Pereira
+
+      const card = await screen.findByTestId("championship-reading-card");
+      expect(card).toHaveTextContent(/brecha vs\. mediana/i);
+      expect(card).toHaveTextContent("-2.3 %");
+      expect(card).not.toHaveTextContent(/brecha vs\. 1\.ª posición/i);
+      expect(card).not.toHaveTextContent(/gap al p1/i);
+      // La casilla dice "Parrilla" — el texto fijo del pie ("...pelotón
+      // distinto al de la copa...") sigue usando la palabra en su sentido
+      // deportivo general, no la etiqueta de la casilla.
+      expect(within(card).getByText("Parrilla")).toBeInTheDocument();
+    });
+
+    it("no tiene violaciones a11y con audience='family' (vista copa y vista campeonato)", async () => {
+      mswServer.use(multiGroupEvolutionHandler);
+      const user = userEvent.setup();
+      const { container } = renderWithProviders(
+        <EvolutionChart
+          athleteId={42}
+          defaultSeason={2026}
+          audience="family"
+        />,
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("evolution-group-select")).toBeInTheDocument(),
+      );
+      expect(await axe(container)).toHaveNoViolations();
+
+      const groupSelect = screen.getByTestId(
+        "evolution-group-select",
+      ) as HTMLSelectElement;
+      await user.selectOptions(groupSelect, "44");
+      await screen.findByTestId("championship-reading-card");
+      expect(await axe(container)).toHaveNoViolations();
     });
   });
 });

@@ -27,7 +27,7 @@ interface RubricSlidersProps {
 // en 440px y 5 opciones, el texto más grande sigue sin partirse (la clase
 // base de `Toggle` ya fuerza `whitespace-nowrap`).
 const rubricWordItemClass =
-  "min-h-12 flex-1 shrink-0 border-r border-[rgba(34,42,53,0.15)] px-1 text-center text-sm font-medium text-charcoal transition-colors last:border-r-0 data-[state=on]:bg-charcoal data-[state=on]:text-white";
+  "min-h-12 flex-1 shrink-0 border-r border-[rgba(34,42,53,0.15)] px-1 text-center text-sm font-medium text-charcoal transition-colors last:border-r-0 data-[state=on]:bg-charcoal data-[state=on]:text-surface";
 
 /**
  * Esfuerzo / Actitud / Técnica (1-5) — OPCIONALES: `null` es un valor

@@ -23,7 +23,7 @@ export function SummitCard({ summit }: SummitCardProps) {
 
   return (
     <div
-      className="rounded-xl bg-white p-4 shadow-card"
+      className="rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline"
       data-testid="summit-card"
     >
       <p className="text-lg font-bold text-trail-earth sm:text-xl">

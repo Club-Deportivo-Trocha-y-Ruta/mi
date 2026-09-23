@@ -87,9 +87,9 @@ function InsightCard({
     // del link, nunca su hijo, y se eleva con z-10 para quedar por encima.
     <article
       className={cn(
-        "relative flex h-full flex-col rounded-xl bg-white p-4 shadow-card transition-shadow",
+        "relative flex h-full flex-col rounded-card bg-surface-raised p-4 shadow-card transition-shadow",
         hasInsight
-          ? "ring-1 ring-[rgba(34,42,53,0.08)]"
+          ? "ring-1 ring-hairline"
           : "border border-dashed border-mid-gray/50",
         isClickable && "hover:shadow-md",
       )}
@@ -101,7 +101,7 @@ function InsightCard({
         <div
           className={cn(
             "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold",
-            hasInsight ? "bg-charcoal text-white" : "bg-light-gray text-mid-gray",
+            hasInsight ? "bg-charcoal text-surface" : "bg-light-gray text-mid-gray",
           )}
           aria-hidden="true"
         >
@@ -152,7 +152,7 @@ function InsightCard({
 
       {/* Footer: fecha a la izquierda, acción a la derecha — misma posición
           en todas las cards para que las filas queden alineadas. */}
-      <div className="mt-3 flex items-center justify-between gap-2 border-t border-[rgba(34,42,53,0.08)] pt-3">
+      <div className="mt-3 flex items-center justify-between gap-2 border-t border-border-gray pt-3">
         <span className="text-xs text-mid-gray">
           {item.generated_at !== null ? formatDateTimeCompact(item.generated_at) : null}
         </span>
@@ -190,7 +190,7 @@ function SkeletonGrid() {
       {Array.from({ length: 5 }).map((_, i) => (
         <div
           key={i}
-          className="rounded-xl bg-white p-4 shadow-card"
+          className="rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline"
         >
           <div className="mb-3 flex items-center gap-3">
             <Skeleton className="h-9 w-9 rounded-full" />
@@ -297,7 +297,7 @@ function ClubInsightsGrid({
   if (data.items.length === 0) {
     return (
       <div
-        className="flex min-h-[20vh] items-center justify-center rounded-xl bg-white p-6 text-center shadow-card"
+        className="flex min-h-[20vh] items-center justify-center rounded-card bg-surface-raised p-6 text-center shadow-card ring-1 ring-hairline"
         data-testid="insights-tab"
       >
         <p className="text-sm text-mid-gray">

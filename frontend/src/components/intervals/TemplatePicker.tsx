@@ -272,7 +272,7 @@ export function TemplatePicker({
       {/* --- Filtros --- */}
       <section
         aria-label="Filtros de la biblioteca de intervalos"
-        className="rounded-xl border border-border-gray bg-white p-4"
+        className="rounded-xl border border-border-gray bg-surface-raised p-4"
       >
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {/* Categoría de edad */}
@@ -287,7 +287,7 @@ export function TemplatePicker({
               id="tpl-filter-age"
               value={filters.age_band}
               onChange={(e) => handleFilterChange("age_band", e.target.value)}
-              className="min-h-12 w-full rounded-lg border border-border-gray bg-white px-3 py-2 text-sm text-charcoal focus:outline-none focus:ring-2 focus:ring-primary"
+              className="min-h-12 w-full rounded-lg border border-border-gray bg-surface-raised px-3 py-2 text-sm text-charcoal focus:outline-none focus:ring-2 focus:ring-primary"
             >
               <option value="">Todas las categorías</option>
               {AGE_BAND_OPTIONS.map((o) => (
@@ -312,7 +312,7 @@ export function TemplatePicker({
               onChange={(e) =>
                 handleFilterChange("mesocycle_phase", e.target.value)
               }
-              className="min-h-12 w-full rounded-lg border border-border-gray bg-white px-3 py-2 text-sm text-charcoal focus:outline-none focus:ring-2 focus:ring-primary"
+              className="min-h-12 w-full rounded-lg border border-border-gray bg-surface-raised px-3 py-2 text-sm text-charcoal focus:outline-none focus:ring-2 focus:ring-primary"
             >
               <option value="">Todas las fases</option>
               {MESOCYCLE_PHASE_OPTIONS.map((o) => (
@@ -337,7 +337,7 @@ export function TemplatePicker({
               onChange={(e) =>
                 handleFilterChange("competition_proximity", e.target.value)
               }
-              className="min-h-12 w-full rounded-lg border border-border-gray bg-white px-3 py-2 text-sm text-charcoal focus:outline-none focus:ring-2 focus:ring-primary"
+              className="min-h-12 w-full rounded-lg border border-border-gray bg-surface-raised px-3 py-2 text-sm text-charcoal focus:outline-none focus:ring-2 focus:ring-primary"
             >
               <option value="">Todas las proximidades</option>
               {COMPETITION_PROXIMITY_OPTIONS.map((o) => (
@@ -457,7 +457,7 @@ function resolveErrorMessage(error: unknown): string {
 
 function CardSkeleton(): React.ReactElement {
   return (
-    <div className="rounded-xl border border-border-gray bg-white p-4 shadow-card">
+    <div className="rounded-xl border border-border-gray bg-surface-raised p-4 shadow-card">
       <Skeleton className="mb-2 h-4 w-3/4" />
       <div className="mb-3 flex gap-1.5">
         <Skeleton className="h-5 w-16 rounded-full" />
@@ -510,7 +510,7 @@ function TemplateResults({
 
   if (!items || items.length === 0) {
     return (
-      <div className="rounded-xl border border-border-gray bg-white p-10 text-center">
+      <div className="rounded-xl border border-border-gray bg-surface-raised p-10 text-center">
         {hasActiveFilters ? (
           <>
             <p className="text-sm font-medium text-charcoal">

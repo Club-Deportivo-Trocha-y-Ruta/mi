@@ -162,7 +162,7 @@ async function openActivitiesTab() {
 /** Contenedor de la sección de actividades (la tarjeta, no toda la página). */
 function getActivitiesSection(): HTMLElement {
   const heading = screen.getByText("Actividades sincronizadas");
-  const section = heading.closest("div.rounded-xl");
+  const section = heading.closest("div.rounded-card");
   if (!section) throw new Error("No se encontró la sección de actividades");
   return section as HTMLElement;
 }

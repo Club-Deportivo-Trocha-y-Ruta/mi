@@ -1,10 +1,15 @@
 /**
  * Card — primitivo shadcn/ui adaptado a los tokens de Trocha y Ruta.
  *
- * Aplica por defecto:
- *  - `rounded-xl` (radius-lg del design system)
- *  - `shadow-card` (var(--shadow-card) — sombra Cal.com ring+soft)
- *  - `bg-white`
+ * Aplica por defecto (alineado con `page/src/components/common/Card.astro`):
+ *  - `rounded-card`
+ *  - `bg-surface-raised` (flota sobre la página; en dark queda más clara
+ *    que la superficie base — ver style.css)
+ *  - `shadow-card` + `ring-1 ring-hairline`
+ *
+ * Sin hover-lift por defecto: en la app las cards no siempre son clicables
+ * (a diferencia de page, donde `href` activa el lift). Si un consumidor
+ * necesita ese efecto, lo añade vía `className`.
  *
  * Estos defaults reemplazan el `CARD_SHADOW` hardcoded que estaba duplicado
  * en ~8 archivos. Wave 1 entrega el primitivo; las migraciones de páginas a
@@ -18,7 +23,10 @@ const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElemen
   ({ className, ...props }, ref) => (
     <div
       ref={ref}
-      className={cn("rounded-xl bg-white text-charcoal shadow-card", className)}
+      className={cn(
+        "rounded-card bg-surface-raised text-charcoal shadow-card ring-1 ring-hairline",
+        className,
+      )}
       {...props}
     />
   ),

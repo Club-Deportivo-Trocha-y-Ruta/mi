@@ -15,7 +15,7 @@ export function ParentsTable({ items }: ParentsTableProps) {
       <ul role="list" className="flex flex-col gap-3 md:hidden">
         {items.map((parent) => (
           <li key={parent.id}>
-            <div className="rounded-xl bg-white p-4 space-y-2 shadow-card">
+            <div className="rounded-card bg-surface-raised p-4 space-y-2 shadow-card ring-1 ring-hairline">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <Link
@@ -39,7 +39,7 @@ export function ParentsTable({ items }: ParentsTableProps) {
               <p className="text-xs text-mid-gray">{parent.phone ?? "—"}</p>
               <Link
                 to={`/parents/${parent.id}`}
-                className="flex min-h-12 items-center justify-center rounded-lg bg-white px-3 py-2 text-xs font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
+                className="flex min-h-12 items-center justify-center rounded-lg bg-surface-raised px-3 py-2 text-xs font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
               >
                 Ver
               </Link>
@@ -49,7 +49,7 @@ export function ParentsTable({ items }: ParentsTableProps) {
       </ul>
 
       {/* Tabla desktop (≥md) */}
-      <div className="hidden rounded-xl bg-white shadow-card md:block">
+      <div className="hidden rounded-card bg-surface-raised shadow-card ring-1 ring-hairline md:block">
         <TableScrollContainer className="rounded-xl">
           <table className="min-w-[480px] w-full text-sm">
             <thead
@@ -71,7 +71,7 @@ export function ParentsTable({ items }: ParentsTableProps) {
                 <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-mid-gray">
                   Estado
                 </th>
-                <th className="sticky right-0 z-10 bg-white px-4 py-3 text-xs font-medium uppercase tracking-wide text-mid-gray">
+                <th className="sticky right-0 z-10 bg-surface-raised px-4 py-3 text-xs font-medium uppercase tracking-wide text-mid-gray">
                   Acciones
                 </th>
               </tr>
@@ -104,10 +104,10 @@ export function ParentsTable({ items }: ParentsTableProps) {
                       {parent.is_active ? "Activo" : "Inactivo"}
                     </span>
                   </td>
-                  <td className="sticky right-0 bg-white px-4 py-3 group-hover:bg-light-gray">
+                  <td className="sticky right-0 bg-surface-raised px-4 py-3 group-hover:bg-light-gray">
                     <Link
                       to={`/parents/${parent.id}`}
-                      className="rounded-lg bg-white px-3 py-2 text-xs font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
+                      className="rounded-lg bg-surface-raised px-3 py-2 text-xs font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
                     >
                       Ver
                     </Link>

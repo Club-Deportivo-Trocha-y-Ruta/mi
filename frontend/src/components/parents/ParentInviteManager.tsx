@@ -8,7 +8,7 @@ import { formatDateMedium } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 
 const inputClass =
-  "rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 flex-1 shadow-ring";
+  "rounded-lg bg-surface-raised px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 flex-1 shadow-ring";
 
 type InviteStatus = "used" | "expired" | "pending";
 
@@ -116,7 +116,7 @@ export function ParentInviteManager({
   }
 
   return (
-    <div className={cn("rounded-xl bg-white p-5", "shadow-card")}>
+    <div className={cn("rounded-card bg-surface-raised p-5", "shadow-card ring-1 ring-hairline")}>
       <h4
         className="font-display mb-1 flex items-center gap-2 text-sm text-charcoal"
         style={{ letterSpacing: "0.2px" }}
@@ -198,7 +198,7 @@ export function ParentInviteManager({
             onClick={() => handleSend()}
             disabled={!email.trim() || createInviteMutation.isPending}
             className={cn(
-              "rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:cursor-not-allowed disabled:opacity-40",
+              "rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-surface transition-opacity hover:opacity-70 disabled:cursor-not-allowed disabled:opacity-40",
               "shadow-button-highlight",
             )}
           >

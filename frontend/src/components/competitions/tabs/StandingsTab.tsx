@@ -62,7 +62,7 @@ function StandingsTableSkeleton() {
 function EmptyState() {
   return (
     <div
-      className="flex min-h-[28vh] flex-col items-center justify-center gap-4 rounded-xl bg-white p-8 text-center ring-1 ring-[rgba(34,42,53,0.08)]"
+      className="flex min-h-[28vh] flex-col items-center justify-center gap-4 rounded-card bg-surface-raised p-8 text-center shadow-card ring-1 ring-hairline"
       data-testid="standings-tab-empty"
     >
       <BarChart2 size={36} className="text-mid-gray" aria-hidden="true" />
@@ -116,7 +116,7 @@ function ErrorState({
         type="button"
         onClick={onRetry}
         disabled={isFetching}
-        className="flex shrink-0 items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 disabled:opacity-50 shadow-ring"
+        className="flex shrink-0 items-center gap-1.5 rounded-lg bg-surface-raised px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 disabled:opacity-50 shadow-ring"
         data-testid="standings-tab-retry"
       >
         {isFetching ? (

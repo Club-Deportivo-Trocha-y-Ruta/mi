@@ -46,7 +46,7 @@ export function AthleteHistoryPanel({ athleteId, role }: AthleteHistoryPanelProp
     <div className="space-y-3" data-testid="athlete-history-panel">
       {auditQuery.isLoading && (
         <div
-          className="space-y-2 rounded-xl bg-white p-4 shadow-card"
+          className="space-y-2 rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline"
           role="status"
           aria-live="polite"
         >

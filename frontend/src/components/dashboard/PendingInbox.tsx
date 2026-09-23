@@ -230,7 +230,7 @@ export function PendingInbox() {
   return (
     <section
       aria-labelledby={headingId}
-      className="flex flex-col gap-1 rounded-xl bg-white px-2 py-3 shadow-card"
+      className="flex flex-col gap-1 rounded-card bg-surface-raised px-2 py-3 shadow-card ring-1 ring-hairline"
     >
       <h2 id={headingId} className="px-3 pb-1 text-[15px] font-semibold text-charcoal">
         Pendientes

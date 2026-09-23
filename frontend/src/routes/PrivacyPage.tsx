@@ -101,9 +101,9 @@ function Right({
 
 export function PrivacyPage() {
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-surface">
       {/* Header */}
-      <div className="border-b border-border/50 bg-white px-4 py-4 sm:px-6">
+      <div className="border-b border-border/50 bg-surface px-4 py-4 sm:px-6">
         <div className="mx-auto flex max-w-2xl items-center justify-end">
           <div className="flex items-center gap-2">
             <Pill>v{POLICY_VERSION}</Pill>
@@ -154,7 +154,7 @@ export function PrivacyPage() {
 
         {/* Secciones con acordeón nativo */}
         <div
-          className="rounded-xl border border-border/60 bg-white px-5"
+          className="rounded-xl border border-border/60 bg-surface-raised px-5"
           style={{
             boxShadow:
               "rgba(19, 19, 22, 0.07) 0px 1px 5px -4px, rgba(34, 42, 53, 0.06) 0px 0px 0px 1px",
@@ -409,7 +409,7 @@ export function PrivacyPage() {
 
         {/* Cómo ejercer tus derechos */}
         <div
-          className="mt-6 rounded-xl border border-border/60 bg-white px-5 py-5"
+          className="mt-6 rounded-xl border border-border/60 bg-surface-raised px-5 py-5"
           style={{
             boxShadow:
               "rgba(19, 19, 22, 0.07) 0px 1px 5px -4px, rgba(34, 42, 53, 0.06) 0px 0px 0px 1px",

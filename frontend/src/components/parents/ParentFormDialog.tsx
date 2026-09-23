@@ -19,7 +19,7 @@ interface ParentFormDialogProps {
 }
 
 const inputClass =
-  "mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 disabled:bg-light-gray disabled:text-mid-gray shadow-ring";
+  "mt-1 w-full rounded-lg bg-surface-raised px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 disabled:bg-light-gray disabled:text-mid-gray shadow-ring";
 
 export function ParentFormDialog({ clubId, open, onClose }: ParentFormDialogProps) {
   const createMutation = useCreateParentUser();
@@ -83,7 +83,7 @@ export function ParentFormDialog({ clubId, open, onClose }: ParentFormDialogProp
         className="fixed inset-0 z-50 flex items-center justify-center p-4"
       >
         <div
-          className="w-full max-w-md overflow-y-auto rounded-xl bg-white p-6 shadow-card"
+          className="w-full max-w-md overflow-y-auto rounded-card bg-surface-raised p-6 shadow-card ring-1 ring-hairline"
           style={{ maxHeight: "90dvh" }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -157,7 +157,7 @@ export function ParentFormDialog({ clubId, open, onClose }: ParentFormDialogProp
               <button
                 type="submit"
                 disabled={createMutation.isPending}
-                className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50 shadow-button-highlight"
+                className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-surface transition-opacity hover:opacity-70 disabled:opacity-50 shadow-button-highlight"
               >
                 {createMutation.isPending ? "Guardando..." : "Crear padre"}
               </button>

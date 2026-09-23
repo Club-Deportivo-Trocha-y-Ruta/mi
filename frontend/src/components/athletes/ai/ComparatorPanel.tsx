@@ -295,7 +295,7 @@ export function ComparatorPanel({
 
   return (
     <section
-      className={cn("rounded-xl bg-white p-5 space-y-4", "shadow-card")}
+      className={cn("rounded-card bg-surface-raised p-5 space-y-4", "shadow-card ring-1 ring-hairline")}
       aria-label="Comparador progreso entre válidas"
       data-testid="comparator-panel"
     >
@@ -383,7 +383,7 @@ function Header({
         value={season}
         onChange={(e) => onSeasonChange(Number(e.target.value))}
         className={cn(
-          "rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40",
+          "rounded-lg bg-surface-raised px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40",
           TAP_TARGET_CLASSES,
           "shadow-ring",
         )}
@@ -498,7 +498,7 @@ function SideSelector({
         aria-label={`${side === "A" ? "Válida A" : "Válida B"} — seleccionar válida`}
         aria-describedby={showCupHint ? hintId : undefined}
         className={cn(
-          "mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40",
+          "mt-1 w-full rounded-lg bg-surface-raised px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40",
           TAP_TARGET_CLASSES,
           "shadow-ring",
         )}

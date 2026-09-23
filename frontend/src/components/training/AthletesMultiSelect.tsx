@@ -99,7 +99,7 @@ export function AthletesMultiSelect({
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Buscar atleta..."
-          className="min-h-[48px] flex-1 rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 shadow-ring"
+          className="min-h-[48px] flex-1 rounded-lg bg-surface-raised px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 shadow-ring"
           aria-label="Buscar atleta"
         />
         <button
@@ -118,7 +118,7 @@ export function AthletesMultiSelect({
         </button>
       </div>
 
-      <div className="max-h-72 overflow-y-auto rounded-lg bg-white shadow-ring">
+      <div className="max-h-72 overflow-y-auto rounded-lg bg-surface-raised shadow-ring">
         {sortedFiltered.length === 0 ? (
           <p className="px-4 py-3 text-sm text-mid-gray">No hay atletas.</p>
         ) : (
@@ -156,7 +156,7 @@ export function AthletesMultiSelect({
 
       {/* Conteo pegajoso: visible al hacer scroll de la lista. */}
       <p
-        className="sticky bottom-0 bg-white/90 py-1 text-xs font-medium text-charcoal backdrop-blur"
+        className="sticky bottom-0 bg-surface-raised/90 py-1 text-xs font-medium text-charcoal backdrop-blur"
         data-testid="selected-count"
         aria-live="polite"
       >

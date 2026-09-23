@@ -130,7 +130,7 @@ interface RuleRowProps {
 function RuleRow({ rule }: RuleRowProps) {
   const badge = STATUS_BADGE[rule.status];
   return (
-    <div className="flex items-start justify-between gap-3 rounded-lg border border-border-gray bg-white p-3">
+    <div className="flex items-start justify-between gap-3 rounded-lg border border-border-gray bg-surface-raised p-3">
       <div className="min-w-0">
         <p className="text-sm font-medium text-charcoal">{rule.topic}</p>
         <p className="mt-0.5 text-xs text-mid-gray">{rule.text}</p>
@@ -147,7 +147,7 @@ export function TrainingReadiness({ athlete, latestRecord, alerts }: TrainingRea
 
   if (ageGroup === null) {
     return (
-      <div className="rounded-xl bg-white p-5 shadow-card" data-testid="growth-rules">
+      <div className="rounded-card bg-surface-raised p-5 shadow-card ring-1 ring-hairline" data-testid="growth-rules">
         <h4
           className="font-display mb-2 text-sm text-charcoal"
           style={{ letterSpacing: "0.2px" }}
@@ -167,7 +167,7 @@ export function TrainingReadiness({ athlete, latestRecord, alerts }: TrainingRea
   const alertItems = alerts !== undefined ? buildAlertsFromSummary(alerts) : buildAlerts(latestRecord, isCircaPHV);
 
   return (
-    <div className="rounded-xl bg-white p-5 space-y-4 shadow-card" data-testid="growth-rules">
+    <div className="rounded-card bg-surface-raised p-5 space-y-4 shadow-card ring-1 ring-hairline" data-testid="growth-rules">
       {/* Header */}
       <div>
         <h4

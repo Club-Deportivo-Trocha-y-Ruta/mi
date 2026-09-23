@@ -163,6 +163,51 @@ describe("EventDrawer", () => {
     expect(screen.getByText("Todo el club")).toBeInTheDocument();
   });
 
+  describe("enlace 'Ver competencia' (2026-09-23)", () => {
+    it("aparece y apunta a /competitions/:race_event_id cuando el evento está enlazado a una válida", async () => {
+      const event = makeCalendarEventRead({
+        id: 5,
+        event_type: "competition",
+        title: "Copa Valle III — Roldanillo",
+        race_event_id: 77,
+        event_data: {
+          city: "Roldanillo",
+          race_category: "A",
+          is_departmental: false,
+        },
+      });
+
+      vi.mocked(useCalendarEvent).mockReturnValue({
+        data: event,
+        isLoading: false,
+        isError: false,
+      } as ReturnType<typeof useCalendarEvent>);
+
+      renderDrawer(5, true);
+
+      const link = await screen.findByTestId("event-drawer-competition-link");
+      expect(link).toHaveAttribute("href", "/competitions/77");
+      expect(link).toHaveTextContent("Ver competencia");
+    });
+
+    it("no aparece cuando el evento no tiene race_event_id (default de la fixture)", async () => {
+      const event = makeCalendarEventRead({ id: 6, title: "Entrenamiento libre" });
+
+      vi.mocked(useCalendarEvent).mockReturnValue({
+        data: event,
+        isLoading: false,
+        isError: false,
+      } as ReturnType<typeof useCalendarEvent>);
+
+      renderDrawer(6, true);
+
+      await waitFor(() => {
+        expect(screen.getByText("Entrenamiento libre")).toBeInTheDocument();
+      });
+      expect(screen.queryByTestId("event-drawer-competition-link")).not.toBeInTheDocument();
+    });
+  });
+
   it("renders category audience correctly", async () => {
     const event = makeCalendarEventRead({
       audiences: [

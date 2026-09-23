@@ -1,8 +1,8 @@
 /**
  * StageHeader — encabezado de la bitácora de etapa (feature 038, T301).
  *
- * "Etapa N · Mes Año" (eyebrow) + título de la etapa (Cal Sans). Cuando
- * `isCurrentMonth` es true muestra "Etapa en curso" — nunca solo color,
+ * "Etapa N · Mes Año" (eyebrow) + título de la etapa (font-display/Plus Jakarta
+ * Sans). Cuando `isCurrentMonth` es true muestra "Etapa en curso" — nunca solo color,
  * siempre ícono + texto (StatusBadge, tono neutral: un mes en curso no es
  * un error ni un éxito, es informativo).
  */

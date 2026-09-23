@@ -71,7 +71,7 @@ export function AIGeneratedContent({
   return (
     <article
       className={cn(
-        "space-y-4 rounded-xl bg-white p-5 ring-1 ring-light-gray",
+        "space-y-4 rounded-xl bg-surface-raised p-5 ring-1 ring-light-gray",
         className,
       )}
       data-testid="ai-generated-content"

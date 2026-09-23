@@ -94,7 +94,7 @@ export function BlockCard({
 
   return (
     <div
-      className="rounded-xl bg-white px-4 py-3 shadow-card"
+      className="rounded-card bg-surface-raised px-4 py-3 shadow-card ring-1 ring-hairline"
       data-testid={`block-card-${dataBlock}`}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -140,7 +140,7 @@ export function BlockCard({
               type="button"
               onClick={handleSave}
               disabled={isSaving}
-              className="rounded-lg bg-charcoal px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              className="rounded-lg bg-charcoal px-3 py-1.5 text-xs font-semibold text-surface transition-opacity hover:opacity-90 disabled:opacity-50"
               data-testid={`block-save-${dataBlock}`}
             >
               Guardar

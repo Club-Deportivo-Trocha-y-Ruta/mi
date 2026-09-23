@@ -23,7 +23,7 @@ const ImportWizard = lazy(() =>
 function WizardSkeleton() {
   return (
     <div
-      className="rounded-xl bg-white p-5 ring-1 ring-light-gray"
+      className="rounded-xl bg-surface-raised p-5 ring-1 ring-light-gray"
       role="status"
       aria-live="polite"
     >

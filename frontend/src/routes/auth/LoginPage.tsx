@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Link, Navigate, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { z } from "zod";
 
@@ -20,11 +20,27 @@ type LoginForm = z.infer<typeof loginSchema>;
 
 export function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const login = useAuthStore((state) => state.login);
   const user = useAuthStore((state) => state.user);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const isLoading = useAuthStore((state) => state.isLoading);
   const [serverError, setServerError] = useState<string | null>(null);
+
+  // `ProtectedRoute` guarda la ruta original en `state.from` antes de
+  // mandar a /login (ej. un deep link de email de insight de carrera sin
+  // sesión activa). Si viene, el login vuelve ahí en vez de caer siempre
+  // al landing genérico del rol. Solo aceptamos rutas internas (empiezan
+  // con "/" pero no con "//", que el navegador leería como otro origen) —
+  // `state` es navegación in-memory del propio router, nunca viaja en la
+  // URL compartida.
+  const fromState = location.state as { from?: string } | null;
+  const redirectTarget =
+    typeof fromState?.from === "string" &&
+    fromState.from.startsWith("/") &&
+    !fromState.from.startsWith("//")
+      ? fromState.from
+      : null;
 
   const form = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
@@ -50,7 +66,7 @@ export function LoginPage() {
   // expected") y el árbol se rompería durante la transición SPA → pantalla en
   // blanco en la primera navegación post-login.
   if (isAuthenticated && user) {
-    return <Navigate to={landingPathForRole(user.role)} replace />;
+    return <Navigate to={redirectTarget ?? landingPathForRole(user.role)} replace />;
   }
 
   const onSubmit = async (values: LoginForm) => {
@@ -58,7 +74,7 @@ export function LoginPage() {
     try {
       await login(values.email, values.password);
       const role = useAuthStore.getState().user?.role ?? user?.role;
-      navigate(landingPathForRole(role), { replace: true });
+      navigate(redirectTarget ?? landingPathForRole(role), { replace: true });
     } catch (error) {
       if (axios.isAxiosError(error) && error.response?.status === 401) {
         setServerError("Credenciales inválidas. Verifica tu correo y contraseña.");
@@ -72,11 +88,11 @@ export function LoginPage() {
     // Columna flex: el banner ancla arriba y la tarjeta se centra en el
     // espacio restante — evita que el CTA caiga bajo el teclado en pantallas
     // pequeñas cuando el banner está visible (revisión ux-researcher).
-    <div className="flex min-h-screen flex-col bg-white">
+    <div className="flex min-h-screen flex-col bg-surface">
       <ServerWakingBanner />
       <div className="flex flex-1 items-center justify-center p-4">
       {/* Login card — shadow Level 2 (ring + soft), 12px radius */}
-      <div className="w-full max-w-md rounded-xl bg-white p-8 shadow-card">
+      <div className="w-full max-w-md rounded-card bg-surface-raised p-8 shadow-card ring-1 ring-hairline">
         {/* Header */}
         <div className="mb-8 text-center">
           <p className="text-xs font-medium uppercase tracking-widest text-mid-gray">

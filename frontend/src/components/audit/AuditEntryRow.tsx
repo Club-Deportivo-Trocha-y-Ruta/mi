@@ -43,7 +43,7 @@ export function AuditEntryRow({ entry }: AuditEntryRowProps) {
 
   return (
     <div
-      className="rounded-lg border border-border-gray bg-white p-3"
+      className="rounded-lg border border-border-gray bg-surface-raised p-3"
       data-testid="audit-entry-row"
     >
       <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3">

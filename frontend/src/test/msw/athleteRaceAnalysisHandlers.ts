@@ -278,6 +278,7 @@ export function mockEvolution(
         percentile: 70.0,
         position: 4,
         gap_pct: 6.7,
+        gap_to_median_pct: 2.1,
       },
       {
         valida_num: 2,
@@ -295,6 +296,7 @@ export function mockEvolution(
         percentile: 75.0,
         position: 4,
         gap_pct: 5.3,
+        gap_to_median_pct: 1.4,
       },
       {
         valida_num: 3,
@@ -312,6 +314,7 @@ export function mockEvolution(
         percentile: 60.0,
         position: 5,
         gap_pct: 3.3,
+        gap_to_median_pct: -0.6,
       },
       {
         valida_num: 4,
@@ -329,6 +332,7 @@ export function mockEvolution(
         percentile: 80.0,
         position: 3,
         gap_pct: 2.5,
+        gap_to_median_pct: -1.8,
       },
     ],
     ...overrides,
@@ -773,6 +777,7 @@ export const multiGroupEvolutionHandler = http.get(
         percentile: 69.7,
         position: 11,
         gap_pct: 5.4,
+        gap_to_median_pct: 1.9,
       },
       {
         valida_num: 1,
@@ -790,6 +795,7 @@ export const multiGroupEvolutionHandler = http.get(
         percentile: 55.0,
         position: 19,
         gap_pct: 5.8,
+        gap_to_median_pct: -2.3,
       },
     ];
 

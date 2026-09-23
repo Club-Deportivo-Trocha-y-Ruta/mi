@@ -198,7 +198,7 @@ export function MediaUploadZone({
               onChange={(e) => setCaption(e.target.value)}
               maxLength={280}
               placeholder="Ej: técnica de descenso en sección rocosa"
-              className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
+              className="mt-1 w-full rounded-lg bg-surface-raised px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
             />
           </div>
 
@@ -224,7 +224,7 @@ export function MediaUploadZone({
                       onClick={() => toggleAthlete(a.id)}
                       className={`rounded-full px-3 py-1 text-xs font-medium transition-opacity ${
                         active
-                          ? "bg-charcoal text-white"
+                          ? "bg-charcoal text-surface"
                           : "bg-light-gray text-charcoal"
                       }`}
                       aria-pressed={active}
@@ -267,7 +267,7 @@ export function MediaUploadZone({
             type="button"
             onClick={handleSubmit}
             disabled={!canSubmit}
-            className="flex items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="flex items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-surface transition-opacity hover:opacity-90 disabled:opacity-50"
             data-testid="media-submit-button"
           >
             {isUploading && (

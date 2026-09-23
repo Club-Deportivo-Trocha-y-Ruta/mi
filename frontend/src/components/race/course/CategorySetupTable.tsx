@@ -247,7 +247,7 @@ export function CategorySetupTable({
 
   return (
     <div
-      className="rounded-xl bg-white p-4 ring-1 ring-[rgba(34,42,53,0.08)]"
+      className="rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline"
       data-testid="course-setup-table"
     >
       <div className="mb-3 flex items-center justify-between">
@@ -276,7 +276,7 @@ export function CategorySetupTable({
             {fields.map((field, index) => (
               <div
                 key={field.id}
-                className="grid grid-cols-1 gap-2 rounded-lg border border-[rgba(34,42,53,0.08)] p-3 sm:grid-cols-[1fr_100px_1fr]"
+                className="grid grid-cols-1 gap-2 rounded-lg border border-border-gray p-3 sm:grid-cols-[1fr_100px_1fr]"
                 data-testid={`course-setup-row-${field.category_id}`}
               >
                 <span className="flex items-center text-sm font-medium text-charcoal">
@@ -306,7 +306,7 @@ export function CategorySetupTable({
                         onChange={f.onChange}
                         onBlur={f.onBlur}
                         className={cn(
-                          "min-h-12 w-full rounded-lg bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
+                          "min-h-12 w-full rounded-lg bg-surface-raised px-3 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
                           "shadow-ring",
                         )}
                         data-testid={`course-setup-laps-${field.category_id}`}
@@ -332,7 +332,7 @@ export function CategorySetupTable({
                         onChange={f.onChange}
                         onBlur={f.onBlur}
                         className={cn(
-                          "min-h-12 w-full rounded-lg bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
+                          "min-h-12 w-full rounded-lg bg-surface-raised px-3 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
                           "shadow-ring",
                         )}
                         data-testid={`course-setup-variant-${field.category_id}`}
@@ -375,7 +375,7 @@ export function CategorySetupTable({
             <button
               type="submit"
               disabled={replaceMutation.isPending}
-              className="inline-flex min-h-12 items-center gap-2 rounded-lg bg-charcoal px-4 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              className="inline-flex min-h-12 items-center gap-2 rounded-lg bg-charcoal px-4 text-sm font-semibold text-surface transition-opacity hover:opacity-90 disabled:opacity-50"
               data-testid="course-setup-save"
             >
               {replaceMutation.isPending && (

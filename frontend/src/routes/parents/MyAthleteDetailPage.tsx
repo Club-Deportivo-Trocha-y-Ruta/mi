@@ -56,6 +56,22 @@ const HistoryProgressionCard = lazy(() =>
 
 type Tab = "info" | "growth" | "activities" | "ai-analysis" | "races";
 
+// Deep-link desde email o navegación interna: ?tab=<tab>[&insight=<id>].
+// Todas las pestañas válidas de esta vista deben respetarse (no solo
+// "ai-analysis") — un valor ausente o desconocido cae en "info", la
+// pestaña por defecto.
+const VALID_TABS: readonly Tab[] = [
+  "info",
+  "growth",
+  "activities",
+  "races",
+  "ai-analysis",
+];
+
+function isValidTab(value: string | null): value is Tab {
+  return VALID_TABS.includes(value as Tab);
+}
+
 const ACTIVITIES_PAGE_SIZE = 10;
 
 const MONTHS_ES_SHORT = [
@@ -173,16 +189,18 @@ export function MyAthleteDetailPage() {
     Number.isFinite(athleteId),
   );
 
-  // Soportar deep-link desde email: ?tab=ai-analysis&insight=<id>
-  const tabParam = searchParams.get("tab") as Tab | null;
+  // Soportar deep-link desde email o navegación interna: ?tab=<tab>&insight=<id>
+  const tabParam = searchParams.get("tab");
   const [activeTab, setActiveTab] = useState<Tab>(
-    tabParam === "ai-analysis" ? "ai-analysis" : "info",
+    isValidTab(tabParam) ? tabParam : "info",
   );
 
-  // Si el parámetro cambia (ej: navegación interna), sincronizar.
+  // Si el parámetro cambia (ej: navegación interna), sincronizar. Un valor
+  // inválido no fuerza nada — se queda en la pestaña activa actual, igual
+  // que si el query string no tuviera `tab`.
   useEffect(() => {
-    if (tabParam === "ai-analysis") {
-      setActiveTab("ai-analysis");
+    if (isValidTab(tabParam)) {
+      setActiveTab(tabParam);
     }
   }, [tabParam]);
 
@@ -217,7 +235,7 @@ export function MyAthleteDetailPage() {
           <span>←</span>
           <span>Mis Atletas</span>
         </Link>
-        <div className="rounded-xl bg-white p-5 shadow-card">
+        <div className="rounded-card bg-surface-raised p-5 shadow-card ring-1 ring-hairline">
           <p className="text-sm text-mid-gray">
             No se pudo cargar la información del atleta.
           </p>
@@ -234,8 +252,8 @@ export function MyAthleteDetailPage() {
     cn(
       "flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
       activeTab === tab
-        ? "bg-charcoal text-white"
-        : "bg-white text-mid-gray hover:text-charcoal shadow-ring",
+        ? "bg-charcoal text-surface"
+        : "bg-surface-raised text-mid-gray hover:text-charcoal shadow-ring",
     );
 
   return (
@@ -358,7 +376,7 @@ export function MyAthleteDetailPage() {
       {activeTab === "info" && (
         <div className="space-y-4">
           {/* Datos basicos */}
-          <div className="rounded-xl bg-white p-5 shadow-card">
+          <div className="rounded-card bg-surface-raised p-5 shadow-card ring-1 ring-hairline">
             <h3
               className="font-display mb-4 flex items-center gap-2 text-sm text-charcoal"
               style={{ letterSpacing: "0.2px" }}
@@ -456,7 +474,7 @@ export function MyAthleteDetailPage() {
           del coach/admin, ver FR-007). RBAC de "solo mi hijo" lo aplica el
           backend — acá solo se consume la respuesta ya filtrada. */}
       {activeTab === "activities" && (
-        <div className="rounded-xl bg-white p-5 shadow-card">
+        <div className="rounded-card bg-surface-raised p-5 shadow-card ring-1 ring-hairline">
           <h3
             className="font-display mb-4 flex items-center gap-2 text-sm text-charcoal"
             style={{ letterSpacing: "0.2px" }}

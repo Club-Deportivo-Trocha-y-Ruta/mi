@@ -325,7 +325,7 @@ function HistoryTooltip(props: TooltipLikeProps) {
 
   return (
     <div
-      className="rounded-lg bg-white px-3 py-2 text-xs shadow-ambient"
+      className="rounded-lg bg-surface-raised px-3 py-2 text-xs shadow-ambient"
       data-testid="history-chart-tooltip"
     >
       <p className="font-semibold text-charcoal">{row.label}</p>

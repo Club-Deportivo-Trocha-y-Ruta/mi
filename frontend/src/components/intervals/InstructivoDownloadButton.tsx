@@ -105,7 +105,7 @@ export function InstructivoDownloadButton({
             }}
             disabled={disabled}
             className={cn(
-              "min-h-11 rounded-lg border border-[rgba(34,42,53,0.12)] bg-white px-3 py-2",
+              "min-h-11 rounded-lg border border-[rgba(34,42,53,0.12)] bg-surface-raised px-3 py-2",
               "text-sm text-charcoal transition-colors",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2",
               "disabled:cursor-not-allowed disabled:opacity-50",

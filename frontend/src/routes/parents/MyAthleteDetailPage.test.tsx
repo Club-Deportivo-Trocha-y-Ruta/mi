@@ -73,6 +73,13 @@ vi.mock("@/components/athletes/ResearchReferences", () => ({
 vi.mock("@/components/ai/PHVExplanationCard", () => ({
   PHVExplanationCard: () => <div data-testid="phv-explanation-card">PHVExplanationCard</div>,
 }));
+// Tab "Carreras" (feature 044) — mockeado igual que AthleteAIAnalysisTab:
+// no es objeto de este archivo y evita depender de sus propios fetches.
+vi.mock("@/components/race/history/HistoryProgressionCard", () => ({
+  HistoryProgressionCard: () => (
+    <div data-testid="mock-history-progression">HistoryProgressionCard</div>
+  ),
+}));
 
 import { useAthlete } from "@/hooks/athletes/useAthlete";
 import { useAnthropometry } from "@/hooks/athletes/useAnthropometry";
@@ -214,5 +221,37 @@ describe("MyAthleteDetailPage — sub-tab Análisis IA (T1 Sprint 4)", () => {
 
     // Sin hacer click, el tab por defecto es "info" → componente IA no montado.
     expect(screen.queryByTestId("mock-ai-analysis-tab")).not.toBeInTheDocument();
+  });
+
+  // -------------------------------------------------------------------
+  // 2026-09-23: el parseo de `?tab=` solo reconocía "ai-analysis" — un
+  // deep-link a cualquier otra pestaña válida (ej. "races", que llega
+  // desde el alias de correos de insight ya enviados) caía siempre en
+  // "info" en vez de abrir la pestaña pedida.
+  // -------------------------------------------------------------------
+  it("deep-link ?tab=races abre la pestaña Carreras directamente", async () => {
+    mockHooks();
+    renderWithProviders(<MyAthleteDetailPage />, {
+      initialEntries: ["/my-athletes/42?tab=races"],
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mock-history-progression")).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("mock-ai-analysis-tab")).not.toBeInTheDocument();
+  });
+
+  it("?tab= con un valor que no es ninguna pestaña cae en la pestaña por defecto", async () => {
+    mockHooks();
+    renderWithProviders(<MyAthleteDetailPage />, {
+      initialEntries: ["/my-athletes/42?tab=algo-que-no-existe"],
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("parent-tab-ai-analysis")).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("mock-ai-analysis-tab")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("mock-history-progression")).not.toBeInTheDocument();
+    expect(screen.getByText("Datos del atleta")).toBeInTheDocument();
   });
 });

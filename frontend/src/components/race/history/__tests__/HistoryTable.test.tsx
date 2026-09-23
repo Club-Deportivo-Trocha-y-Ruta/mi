@@ -12,17 +12,27 @@
  * que antes usaban `screen.getByText`/`getByTestId` sin escopear ahora
  * escopean explícitamente por `history-table` (desktop) o
  * `history-table-mobile`, porque el mismo texto existe en ambas vistas.
+ *
+ * El nombre de la válida es un `Link` de react-router (2026-09-23) — todo
+ * `render` de este archivo pasa por `renderTable`, que envuelve en
+ * `MemoryRouter` (un `Link` sin Router en el árbol lanza en jsdom).
  */
 import { describe, it, expect } from "vitest";
 import { render, screen, within } from "@testing-library/react";
+import type { ReactElement } from "react";
+import { MemoryRouter } from "react-router-dom";
 import { axe } from "jest-axe";
 
 import { HistoryTable } from "@/components/race/history/HistoryTable";
 import { makeRaceHistoryPoint } from "@/test/msw/raceHistoryHandlers";
 
+function renderTable(ui: ReactElement) {
+  return render(<MemoryRouter>{ui}</MemoryRouter>);
+}
+
 describe("HistoryTable", () => {
   it("agrupa por temporada → categoría en tbodies separados — ningún grupo comparte fila", () => {
-    render(
+    renderTable(
       <HistoryTable
         points={[
           makeRaceHistoryPoint({
@@ -56,7 +66,7 @@ describe("HistoryTable", () => {
   });
 
   it("un renombre del catálogo a mitad de temporada (mismo category_code) sigue siendo UN solo grupo — encabezado 'A / B', fila anota su etiqueta propia", () => {
-    render(
+    renderTable(
       <HistoryTable
         points={[
           makeRaceHistoryPoint({
@@ -99,7 +109,7 @@ describe("HistoryTable", () => {
   });
 
   it("un mismo código de categoría en dos temporadas distintas sigue siendo dos grupos", () => {
-    render(
+    renderTable(
       <HistoryTable
         points={[
           makeRaceHistoryPoint({
@@ -124,7 +134,7 @@ describe("HistoryTable", () => {
   });
 
   it('muestra "sin dato" en percentil/parrilla/brecha cuando la API envía null', () => {
-    render(
+    renderTable(
       <HistoryTable
         points={[
           makeRaceHistoryPoint({
@@ -143,7 +153,7 @@ describe("HistoryTable", () => {
   });
 
   it("un no-finalista muestra su estado en la columna de puesto, no 'sin dato' genérico", () => {
-    render(
+    renderTable(
       <HistoryTable
         points={[
           makeRaceHistoryPoint({
@@ -163,7 +173,7 @@ describe("HistoryTable", () => {
 
   describe("audience=family — aviso de cambio de categoría (T083, FR-042)", () => {
     it("category_change_kind='other': aviso neutral, sin afirmar un ascenso ni una expectativa de peor desempeño", () => {
-      render(
+      renderTable(
         <HistoryTable
           audience="family"
           points={[
@@ -196,7 +206,7 @@ describe("HistoryTable", () => {
     });
 
     it("category_change_kind=null (sin distinción del backend): mismo aviso neutral que 'other'", () => {
-      render(
+      renderTable(
         <HistoryTable
           audience="family"
           points={[
@@ -216,7 +226,7 @@ describe("HistoryTable", () => {
     });
 
     it("category_change_kind='promotion': explica el ascenso — dato respaldado por el backend", () => {
-      render(
+      renderTable(
         <HistoryTable
           audience="family"
           points={[
@@ -240,7 +250,7 @@ describe("HistoryTable", () => {
   });
 
   it("audience=coach (default): no muestra el aviso de familia", () => {
-    render(
+    renderTable(
       <HistoryTable
         points={[
           makeRaceHistoryPoint({
@@ -259,7 +269,7 @@ describe("HistoryTable", () => {
 
   describe("audience=family — explicador de Percentil/Brecha (T083 MAJOR)", () => {
     it("presente en audience=family, ausente en audience=coach (default)", () => {
-      const { rerender } = render(
+      const { rerender } = renderTable(
         <HistoryTable audience="family" points={[makeRaceHistoryPoint()]} />,
       );
       expect(
@@ -273,16 +283,120 @@ describe("HistoryTable", () => {
         screen.getByTestId("history-family-metrics-explainer"),
       ).not.toHaveTextContent(/el atleta/i);
 
-      rerender(<HistoryTable points={[makeRaceHistoryPoint()]} />);
+      rerender(
+        <MemoryRouter>
+          <HistoryTable points={[makeRaceHistoryPoint()]} />
+        </MemoryRouter>,
+      );
       expect(
         screen.queryByTestId("history-family-metrics-explainer"),
       ).not.toBeInTheDocument();
     });
   });
 
+  describe("brecha a la mediana y a la 1.ª posición (2026-09-23)", () => {
+    const point = () =>
+      makeRaceHistoryPoint({
+        event_id: 70,
+        label: "Válida VII — Tuluá",
+        gap_to_median_pct: 0,
+        gap_to_winner_pct: 7.6,
+      });
+
+    it("coach: la tabla muestra ambas brechas con encabezados explícitos", () => {
+      renderTable(<HistoryTable points={[point()]} />);
+      const table = screen.getByTestId("history-table");
+      expect(
+        within(table).getByRole("columnheader", { name: "Brecha vs. mediana" }),
+      ).toBeInTheDocument();
+      expect(
+        within(table).getByRole("columnheader", { name: "Brecha vs. 1.ª posición" }),
+      ).toBeInTheDocument();
+      expect(within(table).getByText("0.0 %")).toBeInTheDocument();
+      expect(within(table).getByText("+7.6 %")).toBeInTheDocument();
+      const mobile = screen.getByTestId("history-table-mobile");
+      expect(within(mobile).getByText("+7.6 %")).toBeInTheDocument();
+    });
+
+    it("familia: solo la brecha a la mediana, nunca la de la ganadora", () => {
+      renderTable(<HistoryTable points={[point()]} audience="family" />);
+      expect(screen.queryByText(/Brecha vs\. 1\.ª posición/)).not.toBeInTheDocument();
+      expect(screen.queryByText("+7.6 %")).not.toBeInTheDocument();
+      const table = screen.getByTestId("history-table");
+      expect(
+        within(table).getByRole("columnheader", { name: "Brecha vs. mediana" }),
+      ).toBeInTheDocument();
+    });
+  });
+
+  describe("el nombre de la válida enlaza a la competencia (2026-09-23)", () => {
+    it("coach (default): enlaza a /competitions/:event_id en desktop y mobile, con área táctil ≥48px en mobile", () => {
+      renderTable(
+        <HistoryTable
+          points={[
+            makeRaceHistoryPoint({ event_id: 55, label: "Válida V — Roldanillo" }),
+          ]}
+        />,
+      );
+
+      const table = screen.getByTestId("history-table");
+      const desktopLink = within(table).getByRole("link", {
+        name: "Válida V — Roldanillo",
+      });
+      expect(desktopLink).toHaveAttribute("href", "/competitions/55");
+
+      const mobile = screen.getByTestId("history-table-mobile");
+      const mobileLink = within(mobile).getByRole("link", {
+        name: "Válida V — Roldanillo",
+      });
+      expect(mobileLink).toHaveAttribute("href", "/competitions/55");
+      // min-h-12 = 48px, el piso táctil mínimo de la Constitution en mobile.
+      expect(mobileLink.className).toMatch(/min-h-12/);
+    });
+
+    it("familia: enlaza a /parents/competitions/:event_id en desktop y mobile", () => {
+      renderTable(
+        <HistoryTable
+          audience="family"
+          points={[
+            makeRaceHistoryPoint({ event_id: 55, label: "Válida V — Roldanillo" }),
+          ]}
+        />,
+      );
+
+      const table = screen.getByTestId("history-table");
+      expect(
+        within(table).getByRole("link", { name: "Válida V — Roldanillo" }),
+      ).toHaveAttribute("href", "/parents/competitions/55");
+
+      const mobile = screen.getByTestId("history-table-mobile");
+      expect(
+        within(mobile).getByRole("link", { name: "Válida V — Roldanillo" }),
+      ).toHaveAttribute("href", "/parents/competitions/55");
+    });
+
+    it("cada fila enlaza a su propio event_id, incluso dentro del mismo grupo", () => {
+      renderTable(
+        <HistoryTable
+          points={[
+            makeRaceHistoryPoint({ event_id: 41, label: "Válida 1 — Ginebra" }),
+            makeRaceHistoryPoint({ event_id: 42, label: "Válida 2 — Buga" }),
+          ]}
+        />,
+      );
+      const table = screen.getByTestId("history-table");
+      expect(
+        within(table).getByRole("link", { name: "Válida 1 — Ginebra" }),
+      ).toHaveAttribute("href", "/competitions/41");
+      expect(
+        within(table).getByRole("link", { name: "Válida 2 — Buga" }),
+      ).toHaveAttribute("href", "/competitions/42");
+    });
+  });
+
   describe("vista mobile (T083 BLOCKER) — tarjetas apiladas, mismos datos que la tabla desktop", () => {
     it("una tarjeta por resultado con Puesto/Percentil/Parrilla/Brecha", () => {
-      render(
+      renderTable(
         <HistoryTable
           points={[
             makeRaceHistoryPoint({
@@ -306,7 +420,7 @@ describe("HistoryTable", () => {
     });
 
     it("agrupa por temporada → categoría igual que la tabla, con el mismo encabezado de grupo", () => {
-      render(
+      renderTable(
         <HistoryTable
           points={[
             makeRaceHistoryPoint({
@@ -331,7 +445,7 @@ describe("HistoryTable", () => {
     });
 
     it("audience=family: la nota de cambio de categoría también aparece en la vista mobile", () => {
-      render(
+      renderTable(
         <HistoryTable
           audience="family"
           points={[
@@ -350,7 +464,7 @@ describe("HistoryTable", () => {
     });
 
     it("no tiene overflow horizontal propio — la lista de tarjetas no es una tabla ancha", () => {
-      render(<HistoryTable points={[makeRaceHistoryPoint()]} />);
+      renderTable(<HistoryTable points={[makeRaceHistoryPoint()]} />);
       const mobile = screen.getByTestId("history-table-mobile");
       expect(mobile.tagName).toBe("UL");
       expect(mobile.querySelector("table")).toBeNull();
@@ -358,14 +472,14 @@ describe("HistoryTable", () => {
   });
 
   it("no tiene violaciones de accesibilidad", async () => {
-    const { container } = render(
+    const { container } = renderTable(
       <HistoryTable points={[makeRaceHistoryPoint()]} />,
     );
     expect(await axe(container)).toHaveNoViolations();
   });
 
   it("no tiene violaciones de accesibilidad en audience=family (explicador + aviso de categoría)", async () => {
-    const { container } = render(
+    const { container } = renderTable(
       <HistoryTable
         audience="family"
         points={[

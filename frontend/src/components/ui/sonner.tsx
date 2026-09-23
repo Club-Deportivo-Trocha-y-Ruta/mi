@@ -11,13 +11,14 @@ const Toaster = ({ ...props }: ToasterProps) => {
       position="bottom-right"
       toastOptions={{
         classNames: {
-          toast:
-            "rounded-xl border border-[rgba(34,42,53,0.08)] bg-white text-charcoal shadow-card",
+          toast: "rounded-card border border-hairline bg-surface-raised text-charcoal shadow-card",
           title: "text-sm font-medium text-charcoal",
           description: "text-sm text-mid-gray",
-          success: "!border-green-200",
-          error: "!border-red-200",
-          actionButton: "!bg-primary !text-white",
+          success: "!border-success/30",
+          error: "!border-danger/30",
+          // Texto oscuro sobre bg-primary (no blanco): mismo criterio que
+          // Button/Checkbox — el teal vivo no cumple contraste con blanco.
+          actionButton: "!bg-primary !text-surface-dark",
           cancelButton: "!bg-light-gray !text-charcoal",
         },
       }}

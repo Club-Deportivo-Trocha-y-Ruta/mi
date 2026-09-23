@@ -45,7 +45,7 @@ export function ChildCard({ athlete }: ChildCardProps) {
   return (
     <Link
       to={`/my-athletes/${athlete.athlete_id}`}
-      className="flex flex-col rounded-xl bg-white shadow-card transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link-blue/50"
+      className="flex flex-col rounded-card bg-surface-raised shadow-card ring-1 ring-hairline transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link-blue/50"
       aria-label={`Ver detalle de ${athlete.athlete_first_name} ${athlete.athlete_last_name}`}
     >
       {/* Header */}

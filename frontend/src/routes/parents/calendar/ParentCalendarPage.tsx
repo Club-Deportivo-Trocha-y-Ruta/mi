@@ -63,8 +63,8 @@ function AthleteChip({
       onClick={onClick}
       className={`rounded-full px-3 py-2.5 min-h-11 text-sm font-medium transition-colors ${
         active
-          ? "bg-charcoal text-white"
-          : "bg-white text-mid-gray hover:text-charcoal shadow-ring"
+          ? "bg-charcoal text-surface"
+          : "bg-surface-raised text-mid-gray hover:text-charcoal shadow-ring"
       }`}
       aria-pressed={active}
     >
@@ -150,7 +150,7 @@ export function ParentCalendarPage() {
       {/* Sin atletas vinculados */}
       {!athletesQuery.isLoading && !hasAthletes && (
         <div
-          className="rounded-xl bg-white px-5 py-10 text-center shadow-card"
+          className="rounded-card bg-surface-raised px-5 py-10 text-center shadow-card ring-1 ring-hairline"
           data-testid="no-athletes-state"
         >
           <p className="text-sm font-medium text-charcoal">
@@ -236,7 +236,7 @@ export function ParentCalendarPage() {
           {/* Error state */}
           {eventsQuery.isError && !eventsQuery.isLoading && (
             <div
-              className="rounded-xl bg-white px-5 py-6 shadow-card"
+              className="rounded-card bg-surface-raised px-5 py-6 shadow-card ring-1 ring-hairline"
               role="alert"
             >
               <p className="text-sm text-mid-gray">
@@ -248,7 +248,7 @@ export function ParentCalendarPage() {
           {/* Empty state */}
           {!eventsQuery.isLoading && !eventsQuery.isError && events.length === 0 && (
             <div
-              className="rounded-xl bg-white px-5 py-10 text-center shadow-card"
+              className="rounded-card bg-surface-raised px-5 py-10 text-center shadow-card ring-1 ring-hairline"
               data-testid="empty-state"
             >
               <p className="text-sm text-mid-gray">Sin eventos este mes.</p>

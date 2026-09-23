@@ -80,7 +80,7 @@ type EmailForm = z.infer<typeof emailSchema>;
 
 const labelClass = "mb-1.5 block text-sm font-medium text-charcoal";
 const inputClass =
-  "w-full rounded-lg bg-white px-3 py-2.5 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 min-h-[48px]";
+  "w-full rounded-lg bg-surface-raised px-3 py-2.5 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 min-h-[48px]";
 const errorClass = "mt-1 text-xs text-red-600";
 
 // ---------------------------------------------------------------------------
@@ -173,7 +173,7 @@ function BasicInfoSection({ profile }: BasicInfoSectionProps) {
 
   return (
     <section
-      className="rounded-xl bg-white p-5 space-y-4 shadow-card"
+      className="rounded-card bg-surface-raised p-5 space-y-4 shadow-card ring-1 ring-hairline"
       aria-labelledby="basic-info-title"
     >
       <div>
@@ -285,7 +285,7 @@ function BasicInfoSection({ profile }: BasicInfoSectionProps) {
           <button
             type="submit"
             disabled={form.formState.isSubmitting}
-            className="rounded-lg bg-charcoal px-5 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50 min-h-[48px] shadow-button-highlight"
+            className="rounded-lg bg-charcoal px-5 py-2.5 text-sm font-medium text-surface transition-opacity hover:opacity-70 disabled:opacity-50 min-h-[48px] shadow-button-highlight"
           >
             {form.formState.isSubmitting ? "Guardando..." : "Guardar cambios"}
           </button>
@@ -334,7 +334,7 @@ function ChangePasswordSection() {
 
   return (
     <section
-      className="rounded-xl bg-white p-5 space-y-4 shadow-card"
+      className="rounded-card bg-surface-raised p-5 space-y-4 shadow-card ring-1 ring-hairline"
       aria-labelledby="change-password-title"
     >
       <div>
@@ -420,7 +420,7 @@ function ChangePasswordSection() {
           <button
             type="submit"
             disabled={form.formState.isSubmitting}
-            className="rounded-lg bg-charcoal px-5 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50 min-h-[48px] shadow-button-highlight"
+            className="rounded-lg bg-charcoal px-5 py-2.5 text-sm font-medium text-surface transition-opacity hover:opacity-70 disabled:opacity-50 min-h-[48px] shadow-button-highlight"
           >
             {form.formState.isSubmitting
               ? "Actualizando..."
@@ -467,7 +467,7 @@ function ChangeEmailSection() {
 
   return (
     <section
-      className="rounded-xl bg-white p-5 space-y-4 shadow-card"
+      className="rounded-card bg-surface-raised p-5 space-y-4 shadow-card ring-1 ring-hairline"
       aria-labelledby="change-email-title"
     >
       <div>
@@ -549,7 +549,7 @@ function ChangeEmailSection() {
               <button
                 type="submit"
                 disabled={form.formState.isSubmitting}
-                className="rounded-lg bg-charcoal px-5 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50 min-h-[48px] shadow-button-highlight"
+                className="rounded-lg bg-charcoal px-5 py-2.5 text-sm font-medium text-surface transition-opacity hover:opacity-70 disabled:opacity-50 min-h-[48px] shadow-button-highlight"
               >
                 {form.formState.isSubmitting
                   ? "Enviando..."
@@ -587,7 +587,7 @@ export function ProfilePage() {
       {/* Loading state */}
       {isLoading && (
         <div
-          className="rounded-xl bg-white p-8 text-center text-sm text-mid-gray shadow-card"
+          className="rounded-card bg-surface-raised p-8 text-center text-sm text-mid-gray shadow-card ring-1 ring-hairline"
           role="status"
           aria-live="polite"
         >
@@ -598,7 +598,7 @@ export function ProfilePage() {
       {/* Error state */}
       {isError && (
         <div
-          className="rounded-xl bg-white p-8 text-center shadow-card"
+          className="rounded-card bg-surface-raised p-8 text-center shadow-card ring-1 ring-hairline"
           role="alert"
         >
           <p className="text-sm text-red-700">

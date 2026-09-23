@@ -190,9 +190,9 @@ export function ConsentRenewalModal({
         aria-labelledby="renewal-modal-title"
         aria-describedby="renewal-modal-desc"
       >
-        <div className={cn("w-full max-w-lg rounded-2xl bg-white", "shadow-card")}>
+        <div className={cn("w-full max-w-lg rounded-card bg-surface-raised ring-1 ring-hairline", "shadow-card")}>
           {/* Header */}
-          <div className="px-6 pt-6 pb-4 border-b border-[rgba(34,42,53,0.08)]">
+          <div className="px-6 pt-6 pb-4 border-b border-border-gray">
             <div className="flex items-start gap-3">
               <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-link-blue/10">
                 <ShieldCheck className="h-4 w-4 text-link-blue" aria-hidden="true" />
@@ -347,7 +347,7 @@ export function ConsentRenewalModal({
                   onClick={() => setShowRevokeDialog(true)}
                   disabled={isPending}
                   className={cn(
-                    "rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-red-600 transition-opacity disabled:opacity-50",
+                    "rounded-lg bg-surface-raised px-4 py-2.5 text-sm font-medium text-red-600 transition-opacity disabled:opacity-50",
                     "shadow-ring",
                   )}
                 >
@@ -357,7 +357,7 @@ export function ConsentRenewalModal({
                 <button
                   type="submit"
                   disabled={isPending}
-                  className="flex items-center gap-2 rounded-lg bg-charcoal px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                  className="flex items-center gap-2 rounded-lg bg-charcoal px-5 py-2.5 text-sm font-semibold text-surface transition-opacity hover:opacity-90 disabled:opacity-50"
                   style={btnPrimaryStyle}
                 >
                   {isPending && (

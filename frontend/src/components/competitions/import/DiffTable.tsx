@@ -328,7 +328,7 @@ export function DiffTable({
               onClick={() => setPage((p) => Math.max(0, p - 1))}
               disabled={safePage === 0}
               data-testid="diff-page-prev"
-              className="rounded-md bg-white px-2 py-1 ring-1 ring-light-gray hover:bg-light-gray/30 disabled:opacity-40"
+              className="rounded-md bg-surface-raised px-2 py-1 ring-1 ring-light-gray hover:bg-light-gray/30 disabled:opacity-40"
             >
               ← Anterior
             </button>
@@ -339,7 +339,7 @@ export function DiffTable({
               }
               disabled={safePage >= totalPages - 1}
               data-testid="diff-page-next"
-              className="rounded-md bg-white px-2 py-1 ring-1 ring-light-gray hover:bg-light-gray/30 disabled:opacity-40"
+              className="rounded-md bg-surface-raised px-2 py-1 ring-1 ring-light-gray hover:bg-light-gray/30 disabled:opacity-40"
             >
               Siguiente →
             </button>

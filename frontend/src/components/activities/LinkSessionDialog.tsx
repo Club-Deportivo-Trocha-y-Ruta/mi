@@ -212,7 +212,7 @@ function SessionOptionRow({
   return (
     <label
       className={cn(
-        "flex min-h-[48px] cursor-pointer items-start gap-3 rounded-xl bg-white p-3 transition-colors",
+        "flex min-h-[48px] cursor-pointer items-start gap-3 rounded-xl bg-surface-raised p-3 transition-colors",
         "peer-focus-visible:outline-none",
         checked ? "ring-2 ring-charcoal" : "hover:bg-light-gray",
         disabled && "cursor-not-allowed opacity-60",
@@ -234,6 +234,7 @@ function SessionOptionRow({
         )}
         aria-hidden="true"
       >
+        {/* Perilla del radio: blanco fijo sobre el círculo charcoal, igual que el thumb de ui/switch. */}
         {checked && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
       </span>
 
@@ -473,7 +474,7 @@ export function LinkSessionDialog({
             </div>
 
             {/* Búsqueda de calendario */}
-            <div className="border-t border-[rgba(34,42,53,0.08)] pt-4">
+            <div className="border-t border-border-gray pt-4">
               <button
                 type="button"
                 onClick={() => setShowCalendarSearch((v) => !v)}
@@ -508,7 +509,7 @@ export function LinkSessionDialog({
                       placeholder="Buscar por fecha, lugar o enfoque técnico…"
                       aria-label="Buscar sesión en el calendario"
                       className={cn(
-                        "w-full rounded-lg bg-white py-3 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 disabled:opacity-50",
+                        "w-full rounded-lg bg-surface-raised py-3 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 disabled:opacity-50",
                         "shadow-ring",
                       )}
                     />
@@ -577,7 +578,7 @@ export function LinkSessionDialog({
           </form>
 
           {currentSessionId && (
-            <div className="mt-5 border-t border-[rgba(34,42,53,0.08)] pt-4">
+            <div className="mt-5 border-t border-border-gray pt-4">
               <p className="mb-3 text-xs text-mid-gray">
                 Quitar el vínculo actual de esta actividad. La actividad
                 vuelve al estado "sin enlazar".
@@ -618,7 +619,7 @@ export function LinkSessionDialog({
             form="link-session-form"
             disabled={isPending || !selectedValue}
             className={cn(
-              "inline-flex min-h-[48px] items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-white",
+              "inline-flex min-h-[48px] items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-surface",
               "transition-opacity hover:opacity-90 disabled:opacity-50",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-charcoal/50",
             )}

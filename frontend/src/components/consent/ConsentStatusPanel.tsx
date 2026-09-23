@@ -131,7 +131,7 @@ function AthleteConsentRow({
               type="button"
               onClick={() => onRenew(athlete)}
               className={cn(
-                "rounded-lg bg-charcoal px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90",
+                "rounded-lg bg-charcoal px-3 py-1.5 text-xs font-medium text-surface transition-opacity hover:opacity-90",
                 "shadow-ring",
               )}
             >
@@ -144,7 +144,7 @@ function AthleteConsentRow({
               type="button"
               onClick={() => onRevoke(athlete)}
               className={cn(
-                "rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-red-600 transition-opacity hover:opacity-80",
+                "rounded-lg bg-surface-raised px-3 py-1.5 text-xs font-medium text-red-600 transition-opacity hover:opacity-80",
                 "shadow-ring",
               )}
             >
@@ -210,8 +210,8 @@ function AiConsentRow({ athlete, activePolicy }: AiConsentRowProps) {
         className={cn(
           "flex items-center gap-1.5 rounded-lg px-3 py-1 text-xs font-medium transition-opacity disabled:opacity-50 shadow-ring",
           isAiActive
-            ? "bg-white text-red-600"
-            : "bg-charcoal text-white hover:opacity-90",
+            ? "bg-surface-raised text-red-600"
+            : "bg-charcoal text-surface hover:opacity-90",
         )}
         aria-label={
           isAiActive
@@ -260,7 +260,7 @@ export function ConsentStatusPanel({
 
   return (
     <>
-      <div className={cn("rounded-xl bg-white", "shadow-card")}>
+      <div className={cn("rounded-card bg-surface-raised ring-1 ring-hairline", "shadow-card")}>
         {/* Header con toggle */}
         <button
           type="button"
@@ -300,7 +300,7 @@ export function ConsentStatusPanel({
         {isExpanded && (
           <div
             id="consent-panel-body"
-            className="border-t border-[rgba(34,42,53,0.08)]"
+            className="border-t border-border-gray"
           >
             <div className="divide-y divide-[rgba(34,42,53,0.06)] px-5">
               {consentsPerAthlete.map((athlete) => (

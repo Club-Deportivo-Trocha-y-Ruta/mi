@@ -128,7 +128,7 @@ export function EditSeriesShortNameDialog({
               type="text"
               placeholder="Ej: Let's GO"
               {...register("short_name")}
-              className="w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 min-h-12 shadow-ring"
+              className="w-full rounded-lg bg-surface-raised px-3 py-2 text-sm text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 min-h-12 shadow-ring"
               aria-invalid={!!errors.short_name}
               aria-describedby={
                 errors.short_name ? "series-short-name-error" : undefined
@@ -146,7 +146,7 @@ export function EditSeriesShortNameDialog({
               type="button"
               onClick={() => onOpenChange(false)}
               disabled={updateSeries.isPending}
-              className="min-h-12 rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-80 disabled:opacity-50 shadow-ring"
+              className="min-h-12 rounded-lg bg-surface-raised px-4 py-2.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-80 disabled:opacity-50 shadow-ring"
             >
               Cancelar
             </button>
@@ -154,7 +154,7 @@ export function EditSeriesShortNameDialog({
               type="submit"
               disabled={updateSeries.isPending}
               data-testid="edit-series-short-name-submit"
-              className="flex min-h-12 items-center justify-center gap-2 rounded-lg bg-charcoal px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              className="flex min-h-12 items-center justify-center gap-2 rounded-lg bg-charcoal px-4 py-2.5 text-sm font-medium text-surface transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               {updateSeries.isPending && (
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />

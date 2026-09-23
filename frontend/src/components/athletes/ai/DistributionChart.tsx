@@ -178,7 +178,7 @@ export function DistributionChart({
 
   return (
     <section
-      className="rounded-xl bg-white p-5 space-y-4 shadow-card"
+      className="rounded-card bg-surface-raised p-5 space-y-4 shadow-card ring-1 ring-hairline"
       aria-label="Distribución de tiempos en la categoría"
       data-testid="distribution-chart"
       data-event-id={query.data?.event_id ?? undefined}
@@ -208,7 +208,7 @@ export function DistributionChart({
             id="dist-season"
             value={season}
             onChange={(e) => setSeason(Number(e.target.value))}
-            className="min-h-12 rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40 shadow-ring"
+            className="min-h-12 rounded-lg bg-surface-raised px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40 shadow-ring"
             data-testid="distribution-season-select"
             aria-hidden={hasNoRaces || undefined}
           >
@@ -232,7 +232,7 @@ export function DistributionChart({
             <select
               id="dist-valida"
               disabled
-              className="min-h-12 rounded-lg bg-white px-3 py-2 text-sm outline-none opacity-60 shadow-ring"
+              className="min-h-12 rounded-lg bg-surface-raised px-3 py-2 text-sm outline-none opacity-60 shadow-ring"
               aria-label="Seleccionar carrera"
               aria-busy="true"
               aria-hidden="true"
@@ -244,7 +244,7 @@ export function DistributionChart({
               id="dist-valida"
               value={selectedValue}
               onChange={(e) => setSelectedValue(e.target.value)}
-              className="min-h-12 rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40 shadow-ring"
+              className="min-h-12 rounded-lg bg-surface-raised px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40 shadow-ring"
               data-testid="distribution-valida-select"
               aria-label="Seleccionar carrera"
             >
@@ -713,7 +713,7 @@ function DistributionTooltip(props: TooltipLikeProps) {
   const point = payload[0].payload as { x_ms: number; density: number };
   return (
     <div
-      className="rounded-lg bg-white px-3 py-2 text-xs shadow-ambient"
+      className="rounded-lg bg-surface-raised px-3 py-2 text-xs shadow-ambient"
     >
       <p className="font-semibold text-charcoal">{formatTime(point.x_ms)}</p>
       <p className="text-mid-gray">Densidad: {point.density.toExponential(2)}</p>

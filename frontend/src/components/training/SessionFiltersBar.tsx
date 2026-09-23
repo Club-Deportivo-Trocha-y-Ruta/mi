@@ -2,7 +2,7 @@ import { useTrainingFiltersStore } from "@/store/trainingFiltersStore";
 import type { SessionStatus } from "@/types/trainingSession.types";
 
 const inputSelectClass =
-  "min-h-12 rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 shadow-ring";
+  "min-h-12 rounded-lg bg-surface-raised px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 shadow-ring";
 
 export function SessionFiltersBar() {
   const {
@@ -17,7 +17,7 @@ export function SessionFiltersBar() {
   } = useTrainingFiltersStore();
 
   return (
-    <div className="rounded-xl bg-white p-4 shadow-card">
+    <div className="rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline">
       {/* Mobile: 2-col grid; sm+: single inline row */}
       <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-end sm:gap-3">
         <div className="flex flex-col gap-1">
@@ -57,14 +57,14 @@ export function SessionFiltersBar() {
         <button
           type="button"
           onClick={setToday}
-          className="inline-flex min-h-12 items-center self-end rounded-lg bg-charcoal px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 shadow-button-highlight"
+          className="inline-flex min-h-12 items-center self-end rounded-lg bg-charcoal px-3 py-2 text-sm font-medium text-surface transition-opacity hover:opacity-70 shadow-button-highlight"
         >
           Hoy
         </button>
         <button
           type="button"
           onClick={resetToCurrentMonth}
-          className="inline-flex min-h-12 items-center self-end rounded-lg bg-white px-3 py-2 text-sm font-medium text-mid-gray transition-opacity hover:opacity-70 shadow-ring"
+          className="inline-flex min-h-12 items-center self-end rounded-lg bg-surface-raised px-3 py-2 text-sm font-medium text-mid-gray transition-opacity hover:opacity-70 shadow-ring"
         >
           Mes actual
         </button>

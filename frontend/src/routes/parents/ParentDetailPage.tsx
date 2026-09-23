@@ -32,7 +32,7 @@ function StatCard({
   subtitle?: string;
 }) {
   return (
-    <div className="rounded-xl bg-white p-4 shadow-card">
+    <div className="rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline">
       <div className="flex items-center gap-2 text-mid-gray">
         <Icon size={16} />
         <span className="text-xs font-medium uppercase tracking-wide">{label}</span>
@@ -151,7 +151,7 @@ export function ParentDetailPage() {
             setDeleteError(null);
             setDeleteOpen(true);
           }}
-          className="flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
+          className="flex items-center gap-1.5 rounded-lg border border-red-200 bg-surface-raised px-3 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
         >
           <Trash2 size={14} />
           Eliminar
@@ -204,7 +204,7 @@ export function ParentDetailPage() {
 
       {/* Empty invite section when no athletes linked */}
       {!relationsQuery.isLoading && linkedRelations.length === 0 && (
-        <div className="rounded-xl bg-white px-5 py-8 text-center shadow-card">
+        <div className="rounded-card bg-surface-raised px-5 py-8 text-center shadow-card ring-1 ring-hairline">
           <p className="text-sm text-mid-gray">
             Vincula al menos un atleta para poder generar invitaciones al portal.
           </p>

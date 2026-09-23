@@ -392,14 +392,14 @@ export function SessionWizard({
           <button
             type="button"
             onClick={() => navigate(`/training/sessions/${outcome.sessionId}`)}
-            className="rounded-lg bg-charcoal px-3 py-2 text-xs font-semibold text-white hover:opacity-90"
+            className="rounded-lg bg-charcoal px-3 py-2 text-xs font-semibold text-surface hover:opacity-90"
           >
             Ver la sesión
           </button>
           <button
             type="button"
             onClick={() => navigate("/training/sessions")}
-            className="rounded-lg bg-white px-3 py-2 text-xs font-medium text-charcoal ring-1 ring-light-gray hover:bg-light-gray"
+            className="rounded-lg bg-surface-raised px-3 py-2 text-xs font-medium text-charcoal ring-1 ring-light-gray hover:bg-light-gray"
           >
             Volver a la lista
           </button>
@@ -436,7 +436,7 @@ export function SessionWizard({
                 setRouteFileError("La subida volvió a fallar. Intenta más tarde.");
               }
             }}
-            className="inline-flex items-center gap-1 rounded-lg bg-charcoal px-3 py-2 text-xs font-semibold text-white hover:opacity-90"
+            className="inline-flex items-center gap-1 rounded-lg bg-charcoal px-3 py-2 text-xs font-semibold text-surface hover:opacity-90"
           >
             <RotateCcw size={12} aria-hidden="true" />
             Reintentar subida
@@ -444,7 +444,7 @@ export function SessionWizard({
           <button
             type="button"
             onClick={() => navigate(`/training/sessions/${outcome.sessionId}`)}
-            className="rounded-lg bg-white px-3 py-2 text-xs font-medium text-charcoal ring-1 ring-light-gray hover:bg-light-gray"
+            className="rounded-lg bg-surface-raised px-3 py-2 text-xs font-medium text-charcoal ring-1 ring-light-gray hover:bg-light-gray"
           >
             Continuar sin archivo
           </button>
@@ -497,7 +497,7 @@ export function SessionWizard({
           <button
             type="button"
             onClick={() => setNotesDismissed(true)}
-            className="rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-violet-900 ring-1 ring-violet-200 hover:bg-violet-100"
+            className="rounded-lg bg-surface-raised px-3 py-1.5 text-xs font-medium text-violet-900 ring-1 ring-violet-200 hover:bg-violet-100"
           >
             Entendido
           </button>
@@ -515,14 +515,14 @@ export function SessionWizard({
             <button
               type="button"
               onClick={restoreDraft}
-              className="rounded-lg bg-charcoal px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90"
+              className="rounded-lg bg-charcoal px-3 py-1.5 text-xs font-semibold text-surface hover:opacity-90"
             >
               Restaurar
             </button>
             <button
               type="button"
               onClick={discardDraft}
-              className="rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-charcoal ring-1 ring-blue-200 hover:bg-blue-100"
+              className="rounded-lg bg-surface-raised px-3 py-1.5 text-xs font-medium text-charcoal ring-1 ring-blue-200 hover:bg-blue-100"
             >
               Descartar
             </button>
@@ -538,7 +538,7 @@ export function SessionWizard({
         noValidate
         className="space-y-5"
       >
-        <div className="rounded-xl bg-white p-5 shadow-card">
+        <div className="rounded-card bg-surface-raised p-5 shadow-card ring-1 ring-hairline">
           {step === 1 && (
             <StepGeneral
               register={register}
@@ -600,7 +600,7 @@ export function SessionWizard({
             <button
               type="button"
               onClick={() => void goNext()}
-              className="inline-flex min-h-[48px] items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+              className="inline-flex min-h-[48px] items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-surface hover:opacity-90"
             >
               Siguiente
               <ArrowRight size={16} aria-hidden="true" />
@@ -609,7 +609,7 @@ export function SessionWizard({
             <button
               type="submit"
               disabled={submitting}
-              className="inline-flex min-h-[48px] items-center gap-2 rounded-lg bg-charcoal px-5 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+              className="inline-flex min-h-[48px] items-center gap-2 rounded-lg bg-charcoal px-5 py-2 text-sm font-semibold text-surface hover:opacity-90 disabled:opacity-50"
               data-testid="session-wizard-submit"
             >
               {submitting && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}

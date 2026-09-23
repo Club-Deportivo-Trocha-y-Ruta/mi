@@ -19,8 +19,8 @@ interface BottomNavProps {
 
 const slotClasses =
   "flex min-h-[48px] min-w-[48px] flex-1 flex-col items-center justify-center gap-0.5 px-1 py-1.5 text-[11px] font-medium transition-colors";
-const activeClasses = "text-charcoal";
-const inactiveClasses = "text-mid-gray hover:text-charcoal";
+const activeClasses = "text-primary-deep font-semibold";
+const inactiveClasses = "text-text-secondary hover:text-primary-deep";
 
 /**
  * Mobile (<md) persistent bottom navigation bar (feature 030, research.md R2).
@@ -36,7 +36,7 @@ export function BottomNav({ role, open, onOpenChange }: BottomNavProps) {
   return (
     <nav
       aria-label="Navegación principal"
-      className="fixed inset-x-0 bottom-0 z-40 flex items-stretch border-t border-light-gray bg-white md:hidden"
+      className="fixed inset-x-0 bottom-0 z-40 flex items-stretch border-t border-light-gray bg-surface md:hidden"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       {areas.map((area) => {

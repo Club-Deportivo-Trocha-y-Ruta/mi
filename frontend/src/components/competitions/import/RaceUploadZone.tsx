@@ -174,7 +174,7 @@ export function RaceUploadZone({
         </div>
       ) : (
         <div
-          className="flex items-center gap-2 rounded-xl bg-white px-3 py-2 ring-1 ring-light-gray"
+          className="flex items-center gap-2 rounded-xl bg-surface-raised px-3 py-2 ring-1 ring-light-gray"
           data-testid={`${dataTestId}-preview`}
         >
           <FileText size={16} className="text-mid-gray" aria-hidden="true" />

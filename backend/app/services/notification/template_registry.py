@@ -258,32 +258,9 @@ EMAIL_TEMPLATES: dict[str, EmailTemplateSpec] = {
         ),
         description="Notificación a padres cuando un evento del calendario es cancelado.",
     ),
-    NotificationTemplate.RACE_INSIGHT_PUBLISHED: EmailTemplateSpec(
-        template_id=NotificationTemplate.RACE_INSIGHT_PUBLISHED,
-        # Subject NO incluye nombre del menor (mismo criterio que
-        # ATHLETE_STAGE_LOG): visible en previews/push.
-        subject_template=(
-            "[Trocha y Ruta] Análisis disponible — Válida {{ valida_label }}"
-        ),
-        body_path="email/race_insight_published.html",
-        required_context_keys=frozenset(
-            {
-                "parent_name",
-                "athlete_first_name",
-                "club_name",
-                "valida_label",       # ej. "IV — Cali" o "Campeonato Departamental"
-                "valida_date",        # ej. "17 de mayo de 2026"
-                "tier_label",         # "A" o "Campeonato Departamental"
-                "coach_summary",      # extracto sanitizado (sin nombres, <500 chars)
-                "deep_link_path",     # ruta interna al detalle del insight
-            }
-        ),
-        description=(
-            "Notificación a padres cuando el coach aprueba un insight de carrera "
-            "para una válida tier A o CD. Las válidas tier B/C NO disparan email "
-            "(quedan en notificación in-app + boletín mensual)."
-        ),
-    ),
+    # NotificationTemplate.RACE_INSIGHT_PUBLISHED eliminado (2026-09-23):
+    # aprobar un insight de carrera ya nunca envía email — ver
+    # app/services/notification/race_insight_dispatcher.py.
     NotificationTemplate.ATHLETE_STAGE_LOG: EmailTemplateSpec(
         template_id="athlete_stage_log",
         # El subject NUNCA expone el nombre del atleta (Ley 1098 + Ley 1581):

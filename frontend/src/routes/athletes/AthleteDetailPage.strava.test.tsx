@@ -160,7 +160,7 @@ function renderActivitiesTab(athleteId = "42") {
 /** Devuelve el contenedor de la tarjeta "Conexión con Strava" (no el listado). */
 function getConnectionCard(): HTMLElement {
   const heading = screen.getByText("Conexión con Strava");
-  const card = heading.closest("div.rounded-xl");
+  const card = heading.closest("div.rounded-card");
   if (!card) throw new Error("No se encontró la tarjeta de conexión Strava");
   return card as HTMLElement;
 }

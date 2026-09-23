@@ -93,7 +93,7 @@ export interface MmSsInputProps {
 }
 
 const FIELD_CLASS = cn(
-  "min-h-12 min-w-12 w-full rounded-lg border border-border-gray bg-white px-3 py-2",
+  "min-h-12 min-w-12 w-full rounded-lg border border-border-gray bg-surface-raised px-3 py-2",
   "text-sm text-charcoal placeholder:text-mid-gray transition-colors",
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
 );

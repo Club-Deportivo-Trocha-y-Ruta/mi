@@ -36,7 +36,7 @@ const RSVP_LABELS: Record<RSVPStatus, { label: string; classes: string }> = {
 
 function SkeletonCard() {
   return (
-    <div className="rounded-xl bg-white p-5 space-y-3 shadow-card">
+    <div className="rounded-card bg-surface-raised p-5 space-y-3 shadow-card ring-1 ring-hairline">
       {[...Array(4)].map((_, i) => (
         <div
           key={i}
@@ -218,7 +218,7 @@ export function ParentEventDetailPage() {
           <ArrowLeft size={14} aria-hidden="true" />
           Calendario
         </Link>
-        <div className="rounded-xl bg-white p-8 text-center shadow-card">
+        <div className="rounded-card bg-surface-raised p-8 text-center shadow-card ring-1 ring-hairline">
           <p className="text-base font-medium text-charcoal">Evento no encontrado</p>
           <p className="mt-1 text-sm text-mid-gray">
             El evento no existe o no tienes acceso a él.
@@ -246,7 +246,7 @@ export function ParentEventDetailPage() {
 
       {/* Header del evento */}
       <div
-        className="rounded-xl bg-white px-5 py-4 space-y-2 shadow-card"
+        className="rounded-card bg-surface-raised px-5 py-4 space-y-2 shadow-card ring-1 ring-hairline"
         data-testid="event-header"
       >
         <div className="flex flex-wrap items-center gap-2">
@@ -275,7 +275,7 @@ export function ParentEventDetailPage() {
 
       {/* Fecha y hora */}
       <div
-        className="rounded-xl bg-white px-5 py-4 space-y-3 text-sm shadow-card"
+        className="rounded-card bg-surface-raised px-5 py-4 space-y-3 text-sm shadow-card ring-1 ring-hairline"
       >
         <h2 className="text-xs font-semibold uppercase tracking-wide text-mid-gray mb-2">
           Fecha y hora
@@ -310,7 +310,7 @@ export function ParentEventDetailPage() {
       {/* Descripción */}
       {event.description && (
         <div
-          className="rounded-xl bg-white px-5 py-4 shadow-card"
+          className="rounded-card bg-surface-raised px-5 py-4 shadow-card ring-1 ring-hairline"
         >
           <h2 className="text-xs font-semibold uppercase tracking-wide text-mid-gray mb-2">
             Descripción
@@ -327,7 +327,7 @@ export function ParentEventDetailPage() {
       {/* Estado de mis atletas */}
       {myAthletes.length > 0 && (
         <div
-          className="rounded-xl bg-white px-5 py-4 space-y-4 shadow-card"
+          className="rounded-card bg-surface-raised px-5 py-4 space-y-4 shadow-card ring-1 ring-hairline"
           data-testid="my-athletes-section"
         >
           <h2 className="text-xs font-semibold uppercase tracking-wide text-mid-gray">

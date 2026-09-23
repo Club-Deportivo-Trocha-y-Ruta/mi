@@ -20,7 +20,7 @@ export function NextSegment({ nextSegment }: NextSegmentProps) {
 
   return (
     <section
-      className="rounded-xl bg-white p-4 shadow-card"
+      className="rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline"
       aria-label="Próximo tramo"
       data-testid="next-segment"
     >

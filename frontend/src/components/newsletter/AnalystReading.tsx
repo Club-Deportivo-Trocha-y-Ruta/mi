@@ -30,7 +30,7 @@ export function AnalystReading({
 }: AnalystReadingProps) {
   return (
     <section
-      className="rounded-xl border border-primary/20 bg-white p-4 shadow-card"
+      className="rounded-card border border-primary/20 bg-surface-raised p-4 shadow-card"
       aria-label="Lectura del analista"
       data-testid="analyst-reading"
     >

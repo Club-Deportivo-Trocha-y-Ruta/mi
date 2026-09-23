@@ -209,7 +209,7 @@ function CoachGrowthTab({
         alerts={summaryQuery.data?.alerts}
       />
 
-      <div className="rounded-xl bg-white p-5 shadow-card">
+      <div className="rounded-card bg-surface-raised p-5 shadow-card ring-1 ring-hairline">
         <GrowthCurveSection athlete={athlete} records={records} mode="coach" />
       </div>
 
@@ -235,7 +235,7 @@ function CoachGrowthTab({
         mode="coach"
       />
 
-      <div className="rounded-xl bg-white p-5 shadow-card">
+      <div className="rounded-card bg-surface-raised p-5 shadow-card ring-1 ring-hairline">
         <AnthropometryHistory
           records={records}
           isLoading={anthropometryQuery.isLoading}
@@ -326,7 +326,7 @@ function ParentGrowthTab({ athlete, records, anthropometryQuery }: ModeProps) {
     <div className="space-y-5">
       <FamilyCardsSection summaryQuery={summaryQuery} sex={athlete.sex} />
 
-      <div className="rounded-xl bg-white p-5 shadow-card">
+      <div className="rounded-card bg-surface-raised p-5 shadow-card ring-1 ring-hairline">
         <GrowthCurveSection athlete={athlete} records={records} mode="parent" />
       </div>
 
@@ -344,7 +344,7 @@ function ParentGrowthTab({ athlete, records, anthropometryQuery }: ModeProps) {
         mode="parent"
       />
 
-      <div className="rounded-xl bg-white p-5 shadow-card">
+      <div className="rounded-card bg-surface-raised p-5 shadow-card ring-1 ring-hairline">
         <AnthropometryHistory
           records={records}
           isLoading={anthropometryQuery.isLoading}

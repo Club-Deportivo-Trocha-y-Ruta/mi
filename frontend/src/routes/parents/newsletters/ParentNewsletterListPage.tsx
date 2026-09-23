@@ -44,7 +44,7 @@ export function ParentNewsletterListPage() {
           <span aria-hidden="true">←</span>
           <span>Volver</span>
         </Link>
-        <div className="rounded-xl bg-white p-5 shadow-card">
+        <div className="rounded-card bg-surface-raised p-5 shadow-card ring-1 ring-hairline">
           <p className="text-sm text-mid-gray">No se pudieron cargar las bitácoras.</p>
         </div>
       </section>
@@ -69,7 +69,7 @@ export function ParentNewsletterListPage() {
       </h1>
 
       {newsletters.length === 0 ? (
-        <div className="rounded-xl bg-white p-5 shadow-card">
+        <div className="rounded-card bg-surface-raised p-5 shadow-card ring-1 ring-hairline">
           <p className="text-sm text-mid-gray">
             Todavía no hay bitácoras enviadas para tu atleta.
           </p>
@@ -82,7 +82,7 @@ export function ParentNewsletterListPage() {
               <li key={newsletter.id}>
                 <Link
                   to={`/my-athletes/${validAthleteId}/bitacora/${newsletter.id}`}
-                  className="flex items-center justify-between gap-3 rounded-xl bg-white p-4 shadow-card transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link-blue/50"
+                  className="flex items-center justify-between gap-3 rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link-blue/50"
                   data-testid={`parent-newsletter-card-${newsletter.id}`}
                 >
                   <div className="min-w-0 flex-1">

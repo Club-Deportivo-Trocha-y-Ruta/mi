@@ -302,7 +302,7 @@ export function VariantUploadDialog({
                           maxLength={60}
                           {...register("label")}
                           className={cn(
-                            "min-h-12 w-full rounded-lg bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
+                            "min-h-12 w-full rounded-lg bg-surface-raised px-3 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
                             "shadow-ring",
                           )}
                           aria-invalid={errors.label ? true : undefined}
@@ -341,7 +341,7 @@ export function VariantUploadDialog({
                               setErrorMessage(null);
                             }}
                             className={cn(
-                              "min-h-12 w-full rounded-lg bg-white px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
+                              "min-h-12 w-full rounded-lg bg-surface-raised px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
                               "shadow-ring",
                             )}
                             aria-invalid={errors.file ? true : undefined}
@@ -379,7 +379,7 @@ export function VariantUploadDialog({
                             : Number(v),
                       })}
                       className={cn(
-                        "min-h-12 w-full rounded-lg bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
+                        "min-h-12 w-full rounded-lg bg-surface-raised px-3 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
                         "shadow-ring",
                       )}
                       aria-invalid={errors.recorded_laps ? true : undefined}
@@ -450,7 +450,7 @@ export function VariantUploadDialog({
                 type="submit"
                 form="variant-upload-form"
                 disabled={isPending}
-                className="inline-flex min-h-12 items-center gap-2 rounded-lg bg-charcoal px-4 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                className="inline-flex min-h-12 items-center gap-2 rounded-lg bg-charcoal px-4 text-sm font-semibold text-surface transition-opacity hover:opacity-90 disabled:opacity-50"
                 data-testid="variant-upload-submit"
               >
                 {isPending && (
@@ -474,7 +474,7 @@ export function VariantUploadDialog({
               <button
                 type="button"
                 onClick={() => onOpenChange(false)}
-                className="min-h-12 rounded-lg bg-charcoal px-4 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+                className="min-h-12 rounded-lg bg-charcoal px-4 text-sm font-semibold text-surface transition-opacity hover:opacity-90"
                 data-testid="variant-upload-confirm"
               >
                 Sí, guardar
@@ -487,7 +487,7 @@ export function VariantUploadDialog({
               type="submit"
               form="variant-upload-form"
               disabled={isPending || watchedRecordedLaps == null}
-              className="inline-flex min-h-12 items-center gap-2 rounded-lg bg-charcoal px-4 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              className="inline-flex min-h-12 items-center gap-2 rounded-lg bg-charcoal px-4 text-sm font-semibold text-surface transition-opacity hover:opacity-90 disabled:opacity-50"
               data-testid="variant-upload-laps-submit"
             >
               {isPending && (
@@ -501,7 +501,7 @@ export function VariantUploadDialog({
             <button
               type="button"
               onClick={() => onOpenChange(false)}
-              className="min-h-12 rounded-lg bg-charcoal px-4 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+              className="min-h-12 rounded-lg bg-charcoal px-4 text-sm font-semibold text-surface transition-opacity hover:opacity-90"
               data-testid="variant-upload-close"
             >
               Cerrar

@@ -292,7 +292,7 @@ export function ParentEventDrawer({
               {/* Estado de mis hijos — sección principal de privacidad */}
               {myAthletes.length > 0 && (
                 <div
-                  className="space-y-4 rounded-xl border border-[rgba(34,42,53,0.08)] p-4"
+                  className="space-y-4 rounded-xl border border-border-gray p-4"
                   data-testid="my-athletes-section"
                 >
                   <p className="text-xs font-semibold uppercase tracking-wide text-mid-gray">
@@ -326,10 +326,7 @@ export function ParentEventDrawer({
             <Link
               to={`/parents/calendar/events/${event.id}`}
               onClick={() => onOpenChange(false)}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70"
-              style={{
-                boxShadow: "rgba(255, 255, 255, 0.15) 0px 2px 0px inset",
-              }}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-surface transition-opacity hover:opacity-70 shadow-button-highlight"
               data-testid="view-detail-link"
             >
               Ver detalle completo

@@ -64,7 +64,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
         className={cn(
           "rounded-xl px-3 py-2 text-sm leading-relaxed",
           isUser
-            ? "max-w-[85%] bg-charcoal text-white"
+            ? "max-w-[85%] bg-charcoal text-surface"
             : "max-w-full bg-gray-50 text-charcoal border border-gray-100",
         )}
       >
@@ -124,7 +124,7 @@ export function CompetitionChatPanel({
 
   return (
     <section
-      className="rounded-xl bg-white shadow-card"
+      className="rounded-card bg-surface-raised shadow-card ring-1 ring-hairline"
       aria-label="Chat de IA para esta competencia"
       data-testid="competition-chat-panel"
     >

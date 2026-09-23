@@ -16,7 +16,9 @@ const SheetOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      "fixed inset-0 z-50 bg-[rgba(19,19,22,0.55)] backdrop-blur-[2px]",
+      // surface-dark (no charcoal): el scrim se queda oscuro en los dos
+      // temas — charcoal se invierte a casi blanco en dark.
+      "fixed inset-0 z-50 bg-surface-dark/55 backdrop-blur-[2px]",
       "data-[state=open]:animate-in data-[state=closed]:animate-out",
       "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
       className,
@@ -51,9 +53,9 @@ const SheetContent = React.forwardRef<
       <DialogPrimitive.Content
         ref={ref}
         className={cn(
-          "fixed z-50 bg-white",
-          "border-[rgba(34,42,53,0.08)]",
-          "shadow-[rgba(19,19,22,0.7)_-2px_0px_10px_-4px,rgba(34,42,53,0.08)_0px_0px_0px_1px]",
+          "fixed z-50 bg-surface-raised",
+          "border-hairline",
+          "shadow-overlay",
           "flex flex-col",
           "focus:outline-none",
           sideClasses[side] ?? sideClasses.right,
@@ -67,7 +69,7 @@ const SheetContent = React.forwardRef<
             dejaba el <button> real por debajo del piso de 48×48px que mide
             target-size.spec.ts. */}
         <DialogPrimitive.Close
-          className="absolute right-0 top-0 inline-flex h-12 w-12 items-center justify-center rounded-lg text-mid-gray transition-colors hover:bg-light-gray focus:outline-none focus-visible:outline-2 focus-visible:outline-charcoal focus-visible:outline-offset-2"
+          className="absolute right-0 top-0 inline-flex h-12 w-12 items-center justify-center rounded-control text-mid-gray transition-colors hover:bg-light-gray focus:outline-none focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2"
           aria-label="Cerrar panel"
         >
           <X size={16} aria-hidden="true" />
@@ -84,10 +86,7 @@ const SheetHeader = ({
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
-    className={cn(
-      "flex flex-col gap-1 border-b border-[rgba(34,42,53,0.08)] px-6 py-4 pr-12",
-      className,
-    )}
+    className={cn("flex flex-col gap-1 border-b border-hairline px-6 py-4 pr-12", className)}
     {...props}
   />
 );
@@ -106,10 +105,7 @@ const SheetFooter = ({
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
-    className={cn(
-      "flex justify-end gap-3 border-t border-[rgba(34,42,53,0.08)] px-6 py-4",
-      className,
-    )}
+    className={cn("flex justify-end gap-3 border-t border-hairline px-6 py-4", className)}
     {...props}
   />
 );

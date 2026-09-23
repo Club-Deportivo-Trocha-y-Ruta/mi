@@ -210,7 +210,7 @@ export function EditResultNoteDialog({
                 disabled={isPending}
                 {...register("note")}
                 className={cn(
-                  "w-full resize-y rounded-lg bg-white px-3 py-2 text-sm outline-none",
+                  "w-full resize-y rounded-lg bg-surface-raised px-3 py-2 text-sm outline-none",
                   "focus:ring-2 focus:ring-blue-500/40",
                   "disabled:cursor-not-allowed disabled:opacity-60",
                   "shadow-ring",
@@ -292,7 +292,7 @@ export function EditResultNoteDialog({
 
           {/* Acción de eliminar — solo cuando ya hay nota */}
           {hasExistingNote && (
-            <div className="mt-6 border-t border-[rgba(34,42,53,0.08)] pt-4">
+            <div className="mt-6 border-t border-border-gray pt-4">
               <p className="mb-3 text-xs text-mid-gray">
                 Eliminar la nota actual de este corredor para esta válida.
               </p>
@@ -337,7 +337,7 @@ export function EditResultNoteDialog({
             form="edit-result-note-form"
             disabled={isPending}
             className={cn(
-              "inline-flex min-h-[48px] items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-white",
+              "inline-flex min-h-[48px] items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-surface",
               "transition-opacity hover:opacity-90 disabled:opacity-50",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-charcoal/50",
             )}

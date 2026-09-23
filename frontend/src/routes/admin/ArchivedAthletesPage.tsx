@@ -73,7 +73,7 @@ export function ArchivedAthletesPage() {
 
       {archivedQuery.isLoading && (
         <div
-          className="space-y-2 rounded-xl bg-white p-4 shadow-card"
+          className="space-y-2 rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline"
           role="status"
           aria-live="polite"
         >
@@ -106,7 +106,7 @@ export function ArchivedAthletesPage() {
             {items.map((athlete) => (
               <li key={athlete.id}>
                 <div
-                  className="rounded-xl bg-white p-4 space-y-2 shadow-card"
+                  className="rounded-card bg-surface-raised p-4 space-y-2 shadow-card ring-1 ring-hairline"
                   data-testid="archived-athlete-row"
                 >
                   <p className="text-sm font-medium text-charcoal">
@@ -142,7 +142,7 @@ export function ArchivedAthletesPage() {
           </ul>
 
           {/* Tabla desktop (≥md) — cabe entera desde t768, sin cambios. */}
-          <div className="hidden rounded-xl bg-white shadow-card md:block">
+          <div className="hidden rounded-card bg-surface-raised shadow-card ring-1 ring-hairline md:block">
             <Table data-testid="archived-athletes-table">
               <TableHeader>
                 <TableRow>

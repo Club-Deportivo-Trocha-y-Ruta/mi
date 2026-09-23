@@ -68,7 +68,7 @@ export function NextMeasurementCard({ measurement }: NextMeasurementCardProps) {
   return (
     <div
       data-testid="growth-next-measurement"
-      className="flex min-h-12 flex-wrap items-center justify-between gap-2 rounded-xl bg-white px-4 py-3 shadow-card"
+      className="flex min-h-12 flex-wrap items-center justify-between gap-2 rounded-card bg-surface-raised px-4 py-3 shadow-card ring-1 ring-hairline"
     >
       <p className="text-sm text-charcoal">
         {bodyText}

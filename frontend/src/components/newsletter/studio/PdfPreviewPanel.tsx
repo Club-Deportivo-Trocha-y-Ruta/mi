@@ -31,7 +31,7 @@ export function PdfPreviewPanel({
         type="button"
         onClick={onDownloadPdf}
         disabled={!canDownloadPdf || isDownloadingPdf}
-        className="flex items-center gap-2 rounded-lg bg-charcoal px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+        className="flex items-center gap-2 rounded-lg bg-charcoal px-4 py-2.5 text-sm font-semibold text-surface transition-opacity hover:opacity-90 disabled:opacity-40"
         data-testid="pdf-preview-download-pdf"
       >
         <Download className="h-4 w-4" aria-hidden="true" />

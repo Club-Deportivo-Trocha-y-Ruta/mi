@@ -6,8 +6,10 @@
  * y `aria-describedby` aplicados automáticamente.
  *
  * Diseño:
- *  - Fondo `bg-charcoal` y texto blanco — alto contraste sobre la mayoría de
- *    superficies del proyecto.
+ *  - Fondo `bg-surface-dark` (NO `bg-charcoal`: charcoal se invierte a casi
+ *    blanco en dark mode — con texto blanco encima quedaba invisible;
+ *    surface-dark es fijo en los dos temas) y texto blanco — alto contraste
+ *    sobre la mayoría de superficies del proyecto.
  *  - `max-w-xs` para que microcopy pedagógico no se vuelva un párrafo gigante.
  *  - `delayDuration` 200ms por defecto para no molestar al usuario en mouse.
  *
@@ -33,8 +35,8 @@ const TooltipContent = React.forwardRef<
       ref={ref}
       sideOffset={sideOffset}
       className={cn(
-        "z-50 max-w-xs rounded-lg bg-charcoal px-3 py-2 text-xs leading-snug text-white",
-        "shadow-[rgba(19,19,22,0.7)_0px_1px_5px_-4px,rgba(34,42,53,0.18)_0px_4px_8px_0px]",
+        "z-50 max-w-xs rounded-control bg-surface-dark px-3 py-2 text-xs leading-snug text-white",
+        "shadow-overlay",
         "data-[state=delayed-open]:animate-in data-[state=closed]:animate-out",
         "data-[state=closed]:fade-out-0 data-[state=delayed-open]:fade-in-0",
         className,

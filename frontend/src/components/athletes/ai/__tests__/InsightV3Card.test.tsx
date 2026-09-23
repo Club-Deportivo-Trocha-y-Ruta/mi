@@ -32,6 +32,8 @@ describe("InsightV3Card", () => {
     );
     // Esperado vs real SÍ se muestra en modo coach.
     expect(screen.getByTestId("insight-v3-delta-chip")).toBeInTheDocument();
+    // Brecha al podio (gap_to_p3_hhmmss) SÍ se muestra en modo coach.
+    expect(screen.getByText("00:01:12 a P3")).toBeInTheDocument();
     expect(screen.getByTestId("insight-v3-observation-0")).toHaveTextContent(
       structured.observations[0].claim,
     );
@@ -62,6 +64,10 @@ describe("InsightV3Card", () => {
     expect(screen.getByTestId("insight-v3-percentile-chip")).toBeInTheDocument();
     // Esperado vs real NO se muestra en modo parent.
     expect(screen.queryByTestId("insight-v3-delta-chip")).not.toBeInTheDocument();
+    // Brecha al podio (gap_to_p3_hhmmss) NUNCA se muestra en modo parent
+    // (decisión del dueño 2026-09-23: ni la brecha a la ganadora ni al podio).
+    expect(screen.queryByText("00:01:12 a P3")).not.toBeInTheDocument();
+    expect(screen.queryByText(/a P3/)).not.toBeInTheDocument();
     // La pregunta del coach (+ footer) no se renderiza en modo parent.
     expect(screen.queryByTestId("insight-v3-coach-question")).not.toBeInTheDocument();
     expect(screen.queryByTestId("coach-answer-slot")).not.toBeInTheDocument();

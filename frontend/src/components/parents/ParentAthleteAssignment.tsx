@@ -10,7 +10,7 @@ import { FamilyRelationship } from "@/types/enums";
 import { cn } from "@/lib/utils";
 
 const inputClass =
-  "rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 shadow-ring";
+  "rounded-lg bg-surface-raised px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 shadow-ring";
 
 const RELATIONSHIP_LABELS: Record<FamilyRelationship, string> = {
   [FamilyRelationship.padre]: "Padre",
@@ -69,7 +69,7 @@ export function ParentAthleteAssignment({
   }
 
   return (
-    <div className={cn("rounded-xl bg-white p-5", "shadow-card")}>
+    <div className={cn("rounded-card bg-surface-raised p-5", "shadow-card ring-1 ring-hairline")}>
       <div className="mb-4 flex items-center justify-between">
         <h3
           className="font-display flex items-center gap-2 text-sm text-charcoal"
@@ -83,7 +83,7 @@ export function ParentAthleteAssignment({
             type="button"
             onClick={() => setShowForm(!showForm)}
             className={cn(
-              "rounded-lg bg-charcoal px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-70",
+              "rounded-lg bg-charcoal px-3 py-1.5 text-xs font-medium text-surface transition-opacity hover:opacity-70",
               "shadow-button-highlight",
             )}
           >
@@ -133,7 +133,7 @@ export function ParentAthleteAssignment({
               onClick={handleAdd}
               disabled={!selectedAthleteId || createMutation.isPending}
               className={cn(
-                "rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:cursor-not-allowed disabled:opacity-40",
+                "rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-surface transition-opacity hover:opacity-70 disabled:cursor-not-allowed disabled:opacity-40",
                 "shadow-button-highlight",
               )}
             >

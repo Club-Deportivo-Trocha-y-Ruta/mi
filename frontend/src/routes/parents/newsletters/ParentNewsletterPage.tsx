@@ -86,7 +86,7 @@ export function ParentNewsletterPage() {
           <span aria-hidden="true">←</span>
           <span>Bitácora</span>
         </Link>
-        <div className="rounded-xl bg-white p-5 shadow-card">
+        <div className="rounded-card bg-surface-raised p-5 shadow-card ring-1 ring-hairline">
           <p className="text-sm text-mid-gray">No se pudo cargar esta bitácora.</p>
         </div>
       </section>

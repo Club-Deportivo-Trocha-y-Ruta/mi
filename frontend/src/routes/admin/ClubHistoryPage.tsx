@@ -30,7 +30,7 @@ import { useAuthStore } from "@/store/auth.store";
 import type { AuditEntityType, AuditLogFilters } from "@/types/audit.types";
 
 const inputSelectClass =
-  "min-h-[48px] rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 shadow-ring";
+  "min-h-[48px] rounded-lg bg-surface-raised px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 shadow-ring";
 
 const PAGE_SIZE = 20;
 
@@ -100,7 +100,7 @@ export function ClubHistoryPage() {
 
       {/* Filtros */}
       <div
-        className="rounded-xl bg-white p-4 shadow-card"
+        className="rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline"
         data-testid="club-history-filters"
       >
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:items-end lg:grid-cols-5">
@@ -191,7 +191,7 @@ export function ClubHistoryPage() {
       {/* Loading */}
       {auditQuery.isLoading && (
         <div
-          className="space-y-2 rounded-xl bg-white p-4 shadow-card"
+          className="space-y-2 rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline"
           role="status"
           aria-live="polite"
         >

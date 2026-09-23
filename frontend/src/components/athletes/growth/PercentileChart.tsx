@@ -395,7 +395,7 @@ function makeTooltip(indicator: GrowthIndicator, isFamily: boolean) {
     const hasAthleteData = athleteEntry != null && athleteEntry.value !== null;
 
     return (
-      <div className="rounded-lg bg-white p-2.5 text-xs shadow-card">
+      <div className="rounded-lg bg-surface-raised p-2.5 text-xs shadow-card">
         <p className="text-mid-gray">Edad: {ageYears.toFixed(1)} años</p>
 
         {hasAthleteData && athleteEntry && (

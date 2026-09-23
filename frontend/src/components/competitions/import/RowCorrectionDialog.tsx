@@ -176,7 +176,7 @@ export function RowCorrectionDialog({
                         key={value}
                         value={value}
                         aria-label={OP_LABELS[value]}
-                        className="min-h-[48px] min-w-[88px] rounded-lg border border-[rgba(34,42,53,0.12)] px-3 py-2 text-sm font-medium text-charcoal transition-colors data-[state=on]:border-charcoal data-[state=on]:bg-charcoal data-[state=on]:text-white"
+                        className="min-h-[48px] min-w-[88px] rounded-lg border border-[rgba(34,42,53,0.12)] px-3 py-2 text-sm font-medium text-charcoal transition-colors data-[state=on]:border-charcoal data-[state=on]:bg-charcoal data-[state=on]:text-surface"
                       >
                         {OP_LABELS[value]}
                       </ToggleGroupItem>
@@ -200,7 +200,7 @@ export function RowCorrectionDialog({
                 min={1}
                 {...register("ordinal", { valueAsNumber: true })}
                 className={cn(
-                  "w-full rounded-lg bg-white px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
+                  "w-full rounded-lg bg-surface-raised px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
                   "min-h-[48px] shadow-ring",
                 )}
                 aria-invalid={errors.ordinal ? true : undefined}
@@ -236,7 +236,7 @@ export function RowCorrectionDialog({
                     maxLength={200}
                     {...register("name")}
                     className={cn(
-                      "w-full rounded-lg bg-white px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
+                      "w-full rounded-lg bg-surface-raised px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
                       "min-h-[48px] shadow-ring",
                     )}
                     aria-invalid={errors.name ? true : undefined}
@@ -259,7 +259,7 @@ export function RowCorrectionDialog({
                     maxLength={20}
                     {...register("bib")}
                     className={cn(
-                      "w-full rounded-lg bg-white px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
+                      "w-full rounded-lg bg-surface-raised px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
                       "min-h-[48px] shadow-ring",
                     )}
                     aria-invalid={errors.bib ? true : undefined}
@@ -282,7 +282,7 @@ export function RowCorrectionDialog({
                     placeholder="ej: 00:45:12"
                     {...register("time_raw")}
                     className={cn(
-                      "w-full rounded-lg bg-white px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
+                      "w-full rounded-lg bg-surface-raised px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
                       "min-h-[48px] shadow-ring",
                     )}
                     aria-invalid={errors.time_raw ? true : undefined}
@@ -304,7 +304,7 @@ export function RowCorrectionDialog({
                     maxLength={120}
                     {...register("city")}
                     className={cn(
-                      "w-full rounded-lg bg-white px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
+                      "w-full rounded-lg bg-surface-raised px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
                       "min-h-[48px] shadow-ring",
                     )}
                     aria-invalid={errors.city ? true : undefined}
@@ -326,7 +326,7 @@ export function RowCorrectionDialog({
                     maxLength={200}
                     {...register("club")}
                     className={cn(
-                      "w-full rounded-lg bg-white px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
+                      "w-full rounded-lg bg-surface-raised px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
                       "min-h-[48px] shadow-ring",
                     )}
                     aria-invalid={errors.club ? true : undefined}
@@ -349,7 +349,7 @@ export function RowCorrectionDialog({
                     min={0}
                     {...register("points")}
                     className={cn(
-                      "w-full rounded-lg bg-white px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
+                      "w-full rounded-lg bg-surface-raised px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-500/40",
                       "min-h-[48px] shadow-ring",
                     )}
                     aria-invalid={errors.points ? true : undefined}
@@ -389,7 +389,7 @@ export function RowCorrectionDialog({
             type="submit"
             form="row-correction-form"
             disabled={correctionMutation.isPending}
-            className="inline-flex min-h-[48px] items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="inline-flex min-h-[48px] items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-surface transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             {correctionMutation.isPending ? (
               <Loader2 size={14} className="animate-spin" aria-hidden="true" />

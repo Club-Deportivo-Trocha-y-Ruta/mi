@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { Loader2, Trash2 } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { Loader2, Trash2, Trophy } from "lucide-react";
 
 import {
   Sheet,
@@ -444,6 +444,30 @@ export function EventDrawer({
                   </div>
                 )}
 
+                {/* Enlace a la competencia asociada — cuando el evento del
+                    calendario está enlazado a una válida. Condición
+                    independiente de `event_data` (a diferencia de
+                    `EventSpecificData`) porque `race_event_id` vive en el
+                    evento, no en su payload específico por tipo; ver el
+                    equivalente en `ParentEventDetailPage`. */}
+                {event.race_event_id != null && (
+                  <div>
+                    <dt className="text-xs font-semibold uppercase tracking-wide text-mid-gray">
+                      Competencia
+                    </dt>
+                    <dd className="mt-1">
+                      <Link
+                        to={`/competitions/${event.race_event_id}`}
+                        className="inline-flex items-center gap-1.5 text-sm font-medium text-charcoal underline-offset-2 hover:underline"
+                        data-testid="event-drawer-competition-link"
+                      >
+                        <Trophy size={14} aria-hidden="true" />
+                        Ver competencia
+                      </Link>
+                    </dd>
+                  </div>
+                )}
+
                 {/* Datos específicos por tipo */}
                 <EventSpecificData
                   eventType={event.event_type}
@@ -490,7 +514,7 @@ export function EventDrawer({
               <button
                 type="button"
                 onClick={handleEdit}
-                className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-charcoal/60 focus-visible:ring-offset-2 shadow-button-highlight"
+                className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-surface transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-charcoal/60 focus-visible:ring-offset-2 shadow-button-highlight"
               >
                 Editar
               </button>

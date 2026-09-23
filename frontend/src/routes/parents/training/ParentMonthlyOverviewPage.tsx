@@ -40,7 +40,7 @@ function AthleteSummaryCard({
 }) {
   return (
     <div
-      className="rounded-xl bg-white px-5 py-4 space-y-4 shadow-card"
+      className="rounded-card bg-surface-raised px-5 py-4 space-y-4 shadow-card ring-1 ring-hairline"
       aria-label={`Resumen de ${athlete.athlete_first_name} ${athlete.athlete_last_name}`}
     >
       <div>
@@ -212,7 +212,7 @@ export function ParentMonthlyOverviewPage() {
 
       {/* Sin atletas */}
       {!athletesQuery.isLoading && athletes.length === 0 && (
-        <div className="rounded-xl bg-white px-5 py-8 text-center shadow-card">
+        <div className="rounded-card bg-surface-raised px-5 py-8 text-center shadow-card ring-1 ring-hairline">
           <p className="text-sm text-mid-gray">
             No tienes atletas vinculados. Contacta al entrenador.
           </p>

@@ -47,7 +47,7 @@ export interface CourseTabProps {
 function CourseTabSkeleton({ compact }: { compact?: boolean }) {
   return (
     <div
-      className={cn("space-y-2 rounded-xl bg-white p-4", !compact && "shadow-card")}
+      className={cn("space-y-2 rounded-card bg-surface-raised p-4", !compact && "shadow-card ring-1 ring-hairline")}
       role="status"
       aria-busy="true"
       aria-label="Cargando circuito…"
@@ -88,7 +88,7 @@ interface CourseTabEmptyProps {
 function CourseTabEmpty({ onAddVariant, readOnly }: CourseTabEmptyProps) {
   return (
     <div
-      className="rounded-xl bg-white p-6 text-center shadow-card"
+      className="rounded-card bg-surface-raised p-6 text-center shadow-card ring-1 ring-hairline"
       role="status"
       data-testid="course-tab-empty"
     >

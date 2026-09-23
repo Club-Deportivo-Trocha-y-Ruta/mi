@@ -57,9 +57,9 @@ interface SessionAssistantPanelProps {
 const COLD_START_HINT_DELAY_MS = 10_000;
 
 const btnPrimary =
-  "inline-flex min-h-[48px] items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed";
+  "inline-flex min-h-[48px] items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-surface hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed";
 const btnSecondary =
-  "inline-flex min-h-[48px] items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-medium text-charcoal ring-1 ring-[rgba(34,42,53,0.12)] hover:bg-gray-50";
+  "inline-flex min-h-[48px] items-center gap-2 rounded-lg bg-surface-raised px-4 py-2 text-sm font-medium text-charcoal ring-1 ring-[rgba(34,42,53,0.12)] hover:bg-gray-50";
 
 // ---------------------------------------------------------------------------
 // Component
@@ -204,7 +204,7 @@ export function SessionAssistantPanel({
           onChange={(e) => setIntentText(e.target.value)}
           placeholder="Ej: salida de 90 min, técnica de bajada, grupo 13-15, faltan 12 días para la válida…"
           disabled={isLoading || phase === "done"}
-          className="mt-1 w-full resize-none rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 disabled:opacity-60 shadow-ring"
+          className="mt-1 w-full resize-none rounded-lg bg-surface-raised px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 disabled:opacity-60 shadow-ring"
           aria-describedby="assistant-intent-hint"
         />
         <p id="assistant-intent-hint" className="mt-1 text-xs text-mid-gray">

@@ -14,10 +14,10 @@ import type { ClarifyQuestion } from "@/api/sessionAssistant";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 const chipClass =
-  "min-h-[48px] rounded-lg border border-[rgba(34,42,53,0.12)] px-3 py-2 text-xs font-medium text-charcoal transition-colors data-[state=on]:border-charcoal data-[state=on]:bg-charcoal data-[state=on]:text-white";
+  "min-h-[48px] rounded-lg border border-[rgba(34,42,53,0.12)] px-3 py-2 text-xs font-medium text-charcoal transition-colors data-[state=on]:border-charcoal data-[state=on]:bg-charcoal data-[state=on]:text-surface";
 
 const inputClass =
-  "mt-2 w-full min-h-[48px] rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 shadow-ring";
+  "mt-2 w-full min-h-[48px] rounded-lg bg-surface-raised px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 shadow-ring";
 
 interface ClarifyQuestionCardProps {
   question: ClarifyQuestion;
@@ -76,7 +76,7 @@ export function ClarifyQuestionCard({
 
   return (
     <div
-      className="space-y-2 rounded-xl border border-[rgba(34,42,53,0.08)] bg-white p-4"
+      className="space-y-2 rounded-xl border border-border-gray bg-surface-raised p-4"
       data-testid={`clarify-question-${question.id}`}
     >
       {/* Header badge */}

@@ -21,7 +21,7 @@ import {
   afterAll,
   afterEach,
 } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { axe } from "jest-axe";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -33,6 +33,8 @@ import {
   parentRaceResultsHandlers,
   raceResultsEmptyHandler,
   standingsEmptyHandler,
+  makeParentRaceEventResultsResponse,
+  makeRaceResultRow,
 } from "@/test/msw/raceResultsHandlers";
 import { http, HttpResponse } from "msw";
 import {
@@ -133,6 +135,54 @@ describe("ParentCompetitionResultsPage — resultados propios", () => {
     );
     expect(standingRow).toBeInTheDocument();
     expect(screen.getByText("Mi Hijo")).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — estado de resultado en palabras (decisión del dueño 2026-09-23):
+// la familia nunca debe ver los códigos crudos DNF/DNS/DSQ.
+// ---------------------------------------------------------------------------
+
+describe("ParentCompetitionResultsPage — estado de resultado", () => {
+  it("muestra el estado en palabras, nunca el código crudo DNS", async () => {
+    server.use(
+      http.get(`${BASE}/:id/results`, ({ params }) => {
+        const id = Number(params.id);
+        return HttpResponse.json(
+          makeParentRaceEventResultsResponse({
+            race_event_id: id,
+            categories: [
+              {
+                category_id: 1,
+                code: "INF_M",
+                label: "Infantil Masculino",
+                rows: [
+                  makeRaceResultRow({
+                    competitor_id: 101,
+                    display_name: "Mi Hijo",
+                    athlete_id: 55,
+                    is_our_club: true,
+                    position: null,
+                    status: "dns",
+                    race_time_ms: null,
+                  }),
+                ],
+              },
+            ],
+          }),
+        );
+      }),
+    );
+    renderPage();
+
+    const row = await screen.findByTestId(
+      "results-row-101",
+      {},
+      { timeout: 4000 },
+    );
+    // Comparte etiqueta con el catálogo de Historial (raceHistory.types.ts).
+    expect(within(row).getAllByText("No salió").length).toBeGreaterThan(0);
+    expect(within(row).queryByText("DNS")).not.toBeInTheDocument();
   });
 });
 

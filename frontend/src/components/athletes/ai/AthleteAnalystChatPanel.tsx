@@ -60,7 +60,7 @@ export function AthleteAnalystChatPanel({
 
   return (
     <section
-      className="rounded-xl bg-white p-5 shadow-card space-y-4"
+      className="rounded-card bg-surface-raised p-5 shadow-card ring-1 ring-hairline space-y-4"
       aria-label="Preguntar al analista de IA"
       data-testid="athlete-analyst-chat-panel"
     >

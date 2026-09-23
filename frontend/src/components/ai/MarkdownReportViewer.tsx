@@ -45,7 +45,7 @@ export function MarkdownReportViewer({
   return (
     <article
       className={cn(
-        "rounded-xl bg-white p-5 ring-1 ring-light-gray space-y-4",
+        "rounded-xl bg-surface-raised p-5 ring-1 ring-light-gray space-y-4",
         className,
       )}
       data-testid="markdown-report-viewer"

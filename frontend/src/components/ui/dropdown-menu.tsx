@@ -32,8 +32,8 @@ const DropdownMenuContent = React.forwardRef<
       ref={ref}
       sideOffset={sideOffset}
       className={cn(
-        "z-50 min-w-[12rem] overflow-hidden rounded-lg bg-white p-1",
-        "shadow-[rgba(19,19,22,0.7)_0px_1px_5px_-4px,rgba(34,42,53,0.08)_0px_0px_0px_1px,rgba(34,42,53,0.05)_0px_4px_8px_0px]",
+        "z-50 min-w-[12rem] overflow-hidden rounded-card border border-hairline bg-surface-raised p-1",
+        "shadow-overlay",
         "data-[state=open]:animate-in data-[state=closed]:animate-out",
         "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
         "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
@@ -54,7 +54,7 @@ const DropdownMenuItem = React.forwardRef<
   <DropdownMenuPrimitive.Item
     ref={ref}
     className={cn(
-      "relative flex min-h-11 cursor-pointer select-none items-center gap-2 rounded px-2.5 py-2 text-sm text-charcoal outline-none transition-colors",
+      "relative flex min-h-11 cursor-pointer select-none items-center gap-2 rounded-chip px-2.5 py-2 text-sm text-charcoal outline-none transition-colors",
       "focus:bg-light-gray data-[highlighted]:bg-light-gray",
       "data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
       inset && "pl-8",
@@ -72,7 +72,7 @@ const DropdownMenuRadioItem = React.forwardRef<
   <DropdownMenuPrimitive.RadioItem
     ref={ref}
     className={cn(
-      "relative flex min-h-11 cursor-pointer select-none items-center gap-2 rounded py-2 pl-8 pr-2.5 text-sm text-charcoal outline-none transition-colors",
+      "relative flex min-h-11 cursor-pointer select-none items-center gap-2 rounded-chip py-2 pl-8 pr-2.5 text-sm text-charcoal outline-none transition-colors",
       "focus:bg-light-gray data-[highlighted]:bg-light-gray",
       "data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
       className,
@@ -113,7 +113,7 @@ const DropdownMenuSeparator = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DropdownMenuPrimitive.Separator
     ref={ref}
-    className={cn("-mx-1 my-1 h-px bg-[rgba(34,42,53,0.08)]", className)}
+    className={cn("-mx-1 my-1 h-px bg-hairline", className)}
     {...props}
   />
 ));

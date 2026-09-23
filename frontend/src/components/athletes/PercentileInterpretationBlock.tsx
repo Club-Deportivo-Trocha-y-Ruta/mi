@@ -4,7 +4,7 @@
  * Muestra la interpretación de un indicador de crecimiento OMS para un atleta:
  * banda coloreada, label, valor medido, frase narrativa y toggle de detalles técnicos.
  *
- * Coherente con NutritionalClassification.tsx (tokens de color, tipografía Cal Sans).
+ * Coherente con NutritionalClassification.tsx (tokens de color, tipografía Plus Jakarta Sans).
  * Fuente: OMS 2007 / Res. MinSalud 2465/2016.
  */
 

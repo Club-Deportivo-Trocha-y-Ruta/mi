@@ -27,9 +27,8 @@ class NotificationTemplate(str, Enum):
     CALENDAR_EVENT_INVITE = "calendar_event_invite"
     CALENDAR_EVENT_RESCHEDULED = "calendar_event_rescheduled"
     CALENDAR_EVENT_CANCELLED = "calendar_event_cancelled"
-    # Solo se dispara para válidas tier A o CD (Campeonato Departamental).
-    # Las tier B/C quedan en notificación in-app + boletín mensual.
-    RACE_INSIGHT_PUBLISHED = "race_insight_published"
+    # RACE_INSIGHT_PUBLISHED eliminado (2026-09-23): aprobar un insight de
+    # carrera ya nunca envía email, ver race_insight_dispatcher.py.
     # Restablecimiento de contraseña (specs/003-password-reset-login).
     PASSWORD_RESET = "password_reset"
     PASSWORD_CHANGED = "password_changed"

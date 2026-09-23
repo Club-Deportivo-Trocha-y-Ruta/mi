@@ -35,7 +35,7 @@ export function AnalystPicker({
 
   if (selectedInsightIds.length === 0) {
     return (
-      <div className="rounded-xl bg-white px-4 py-3 shadow-card" data-testid="analyst-picker-empty">
+      <div className="rounded-card bg-surface-raised px-4 py-3 shadow-card ring-1 ring-hairline" data-testid="analyst-picker-empty">
         <h3 className="text-sm font-semibold text-charcoal">Análisis adjuntado</h3>
         <p className="mt-1 text-xs text-mid-gray">
           No hay insights de carrera adjuntados a este boletín. Adjúntalos desde el
@@ -54,7 +54,7 @@ export function AnalystPicker({
   }
 
   return (
-    <div className="rounded-xl bg-white px-4 py-3 shadow-card" data-testid="analyst-picker">
+    <div className="rounded-card bg-surface-raised px-4 py-3 shadow-card ring-1 ring-hairline" data-testid="analyst-picker">
       <h3 className="text-sm font-semibold text-charcoal">Análisis adjuntado</h3>
       <p className="mt-1 text-xs text-mid-gray">
         El primero elegible es el que se traduce en "Lectura del analista". Solo el

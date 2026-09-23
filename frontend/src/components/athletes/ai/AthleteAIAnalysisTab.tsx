@@ -17,6 +17,10 @@
  *   - mode="parent" oculta Distribución, "Analizar con IA", Sheet del Comparador.
  *   - Multi-select y action bar SOLO en mode="coach".
  *   - Checkbox nunca se renderiza para parent.
+ *   - 2026-09-23: Evolución recibe `audience` derivado de `mode`
+ *     ("parent" → "family") — la familia nunca ve la brecha a la
+ *     ganadora/podio, ni en el selector de métrica ni en la tarjeta de
+ *     campeonato (ver EvolutionChart.tsx / ChampionshipReadingCard.tsx).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -338,7 +342,7 @@ export function AthleteAIAnalysisTab({
     <section className="space-y-4" data-testid="athlete-ai-analysis-tab">
       {/* Header — resumen ejecutivo */}
       <div
-        className="rounded-xl bg-white p-5 shadow-card"
+        className="rounded-card bg-surface-raised p-5 shadow-card ring-1 ring-hairline"
       >
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -477,7 +481,7 @@ export function AthleteAIAnalysisTab({
             líneas si hace falta), sin depender de ningún gesto. Mismo
             patrón que la fila de tabs del perfil (AthleteDetailPage.tsx,
             `flex flex-wrap gap-2`) y el ToggleGroup de Progreso. */}
-        <TabsList className="flex w-full flex-wrap justify-start gap-1 bg-white p-1">
+        <TabsList className="flex w-full flex-wrap justify-start gap-1 bg-light-gray p-1">
           <TabsTrigger value="panorama" data-testid="ai-subtab-panorama" className="shrink-0">
             <Sparkles size={14} aria-hidden="true" />
             Panorama
@@ -532,7 +536,13 @@ export function AthleteAIAnalysisTab({
           />
         </TabsContent>
         <TabsContent value="evolution">
-          <EvolutionChart athleteId={athlete.id} />
+          {/* Privacidad (Ley 1581, 2026-09-23): familia nunca ve la brecha
+              a la ganadora — EvolutionChart filtra el selector de métrica y
+              ChampionshipReadingCard oculta la casilla correspondiente. */}
+          <EvolutionChart
+            athleteId={athlete.id}
+            audience={mode === "coach" ? "coach" : "family"}
+          />
         </TabsContent>
         {mode === "coach" && (
           <TabsContent value="distribution">
@@ -588,7 +598,7 @@ export function AthleteAIAnalysisTab({
       {/* BB4: Sticky action bar — solo coach */}
       {mode === "coach" && (newsletterSelection.size > 0 || attachMutation.isSuccess || attachMutation.isError) && (
         <div
-          className="sticky bottom-4 left-0 right-0 z-20 mx-auto flex max-w-2xl items-center justify-between gap-3 rounded-xl bg-charcoal p-3 text-white shadow-lg"
+          className="sticky bottom-4 left-0 right-0 z-20 mx-auto flex max-w-2xl items-center justify-between gap-3 rounded-xl bg-charcoal p-3 text-surface shadow-lg"
           data-testid="newsletter-action-bar"
           // T093 (feature 036, US6): la barra cambia de estado (conteo de
           // selección, éxito, error) sin avisarle a nadie que use lector de
@@ -615,7 +625,7 @@ export function AthleteAIAnalysisTab({
                     });
                   }
                 }}
-                className="min-h-12 bg-white text-charcoal hover:bg-white/90"
+                className="min-h-12 bg-surface text-charcoal hover:bg-surface/90"
               >
                 Reintentar
               </Button>
@@ -641,7 +651,7 @@ export function AthleteAIAnalysisTab({
                   size="sm"
                   onClick={() => setNewsletterSelection(new Set())}
                   disabled={attachMutation.isPending}
-                  className="min-h-12 border-white/30 text-white hover:bg-white/10 hover:text-white"
+                  className="min-h-12 border-surface/30 text-surface hover:bg-surface/10 hover:text-surface"
                 >
                   Limpiar
                 </Button>
@@ -650,7 +660,7 @@ export function AthleteAIAnalysisTab({
                   size="sm"
                   onClick={handleAddBulkToNewsletter}
                   disabled={attachMutation.isPending}
-                  className="min-h-12 bg-white text-charcoal hover:bg-white/90"
+                  className="min-h-12 bg-surface text-charcoal hover:bg-surface/90"
                   data-testid="newsletter-action-bar-submit"
                 >
                   {attachMutation.isPending ? "Enviando…" : "Enviar a boletín"}

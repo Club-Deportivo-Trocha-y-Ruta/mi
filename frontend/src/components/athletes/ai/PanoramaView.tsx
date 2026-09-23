@@ -242,7 +242,7 @@ function KpiCard({ label, value, isLoading, testId, note }: KpiCardProps) {
   return (
     <Card
       data-testid={testId}
-      className="bg-white shadow-card"
+      className="bg-surface-raised shadow-card"
     >
       <CardContent className="p-4">
         {isLoading ? (

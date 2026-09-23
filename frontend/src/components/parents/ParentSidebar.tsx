@@ -167,7 +167,7 @@ function AthleteRow({ athlete, active, onSelect }: AthleteRowProps) {
         className={cn(
           "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[13px] font-semibold",
           active
-            ? "bg-white text-nav-accent"
+            ? "bg-surface text-nav-accent"
             : "bg-light-gray text-text-secondary ring-1 ring-inset ring-border-gray",
         )}
       >

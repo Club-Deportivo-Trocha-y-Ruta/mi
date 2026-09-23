@@ -150,7 +150,7 @@ export function AppShell({ children }: AppShellProps) {
             Permanece visualmente oculto hasta recibir foco. ── */}
       <a
         href="#main-content"
-        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[60] focus:rounded-lg focus:bg-charcoal focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-white focus:shadow-card focus:outline-none focus-visible:outline-none"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[60] focus:rounded-lg focus:bg-charcoal focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-surface focus:shadow-card focus:outline-none focus-visible:outline-none"
       >
         Saltar a contenido
       </a>
@@ -172,7 +172,7 @@ export function AppShell({ children }: AppShellProps) {
             <ParentSidebar> adentro (que trae su propio padding). ── */}
       <aside
         className={cn(
-          "shrink-0 flex-col bg-white",
+          "shrink-0 flex-col bg-surface",
           navRole
             ? [
                 "hidden pt-5 pb-4 transition-[width] duration-200 md:flex",
@@ -190,7 +190,7 @@ export function AppShell({ children }: AppShellProps) {
                 sidebarOpen ? "translate-x-0" : "-translate-x-full",
               ],
         )}
-        style={{ boxShadow: "rgba(34, 42, 53, 0.08) 1px 0px 0px 0px" }}
+        style={{ boxShadow: "var(--color-border-gray) 1px 0px 0px 0px" }}
         aria-label="Menú de navegación"
       >
         {navRole && (
@@ -222,8 +222,8 @@ export function AppShell({ children }: AppShellProps) {
         <ServerWakingBanner />
         {/* Header */}
         <header
-          className="sticky top-0 z-50 flex items-center justify-between bg-white px-4 py-3 md:px-6"
-          style={{ boxShadow: "rgba(34, 42, 53, 0.08) 0px 1px 0px 0px" }}
+          className="sticky top-0 z-50 flex items-center justify-between bg-surface px-4 py-3 md:px-6"
+          style={{ boxShadow: "var(--color-border-gray) 0px 1px 0px 0px" }}
         >
           {/* Left: hamburger (mobile, parent only) + nombre de usuario
               (parent) / fecha de hoy (coach/admin). `flex-1 min-w-0` para que

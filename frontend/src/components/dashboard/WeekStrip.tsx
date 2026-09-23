@@ -156,7 +156,7 @@ function SessionPill({ session, isTodayCell }: { session: TrainingSession; isTod
         isExecuted
           ? "bg-light-gray text-text-secondary"
           : isTodayCell
-            ? "bg-white text-charcoal"
+            ? "bg-surface text-charcoal"
             : "bg-nav-active-bg text-charcoal",
       )}
     >
@@ -216,7 +216,7 @@ export function WeekStrip() {
   return (
     <section
       aria-labelledby={headingId}
-      className="flex flex-col gap-3 rounded-xl bg-white px-5 py-4 shadow-card"
+      className="flex flex-col gap-3 rounded-card bg-surface-raised px-5 py-4 shadow-card ring-1 ring-hairline"
     >
       <div className="flex items-center justify-between gap-2">
         <h2 id={headingId} className="text-[15px] font-semibold text-charcoal">

@@ -18,8 +18,9 @@
  *
  * Hotfix multicopa — identidad de válida (2026-09-16):
  *   - Campo "Prioridad de la válida" (Sin prioridad / A / B / C), solo copa.
- *     Solo A (y los campeonatos, con CD) envían correo a familias tras un
- *     análisis de IA aprobado — ver copy inline.
+ *     Referencia para priorizar la preparación de la válida — desde
+ *     2026-09-23 aprobar un análisis nunca envía correo automático, sin
+ *     importar la prioridad (ver copy inline).
  *   - Campeonato: prioridad fija CD, mostrada de solo lectura (el coach no
  *     puede elegirla).
  *
@@ -70,9 +71,9 @@ import type { RaceSeriesKind, RaceSeriesLevel } from "@/types/raceSeries.types";
 
 const labelClass = "block text-sm font-medium text-charcoal";
 const inputClass =
-  "mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 min-h-[44px] shadow-ring";
+  "mt-1 w-full rounded-lg bg-surface-raised px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 min-h-[44px] shadow-ring";
 const errorClass = "mt-1 text-xs text-red-600";
-const sectionClass = "rounded-xl bg-white p-5 space-y-4 shadow-card";
+const sectionClass = "rounded-card bg-surface-raised p-5 space-y-4 shadow-card ring-1 ring-hairline";
 
 // ---------------------------------------------------------------------------
 // Opciones de sede
@@ -171,7 +172,7 @@ function CreateChampionshipSeriesForm({
           placeholder="Ej: Campeonato Departamental 2026"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal outline-none focus:ring-2 focus:ring-blue-500/40 min-h-[44px] shadow-ring"
+          className="mt-1 w-full rounded-lg bg-surface-raised px-3 py-2 text-sm text-charcoal outline-none focus:ring-2 focus:ring-blue-500/40 min-h-[44px] shadow-ring"
           aria-label="Nombre de la nueva serie de campeonato"
         />
       </div>
@@ -185,7 +186,7 @@ function CreateChampionshipSeriesForm({
           placeholder="Ej: Liga Vallecaucana de Ciclismo"
           value={organizer}
           onChange={(e) => setOrganizer(e.target.value)}
-          className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal outline-none focus:ring-2 focus:ring-blue-500/40 min-h-[44px] shadow-ring"
+          className="mt-1 w-full rounded-lg bg-surface-raised px-3 py-2 text-sm text-charcoal outline-none focus:ring-2 focus:ring-blue-500/40 min-h-[44px] shadow-ring"
           aria-label="Organizador de la serie"
         />
       </div>
@@ -196,7 +197,7 @@ function CreateChampionshipSeriesForm({
         <select
           value={level}
           onChange={(e) => setLevel(e.target.value as RaceSeriesLevel)}
-          className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal outline-none focus:ring-2 focus:ring-blue-500/40 min-h-[48px] shadow-ring"
+          className="mt-1 w-full rounded-lg bg-surface-raised px-3 py-2 text-sm text-charcoal outline-none focus:ring-2 focus:ring-blue-500/40 min-h-[48px] shadow-ring"
           aria-label="Nivel de la serie"
         >
           {SERIES_LEVEL_OPTIONS.map((opt) => (
@@ -560,7 +561,7 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
         <button
           type="button"
           onClick={handleCancel}
-          className="rounded-lg bg-white px-3 py-2 text-sm font-medium text-mid-gray transition-opacity hover:opacity-70 min-h-[44px] shadow-ring"
+          className="rounded-lg bg-surface-raised px-3 py-2 text-sm font-medium text-mid-gray transition-opacity hover:opacity-70 min-h-[44px] shadow-ring"
         >
           Cancelar
         </button>
@@ -769,8 +770,9 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
                 ))}
               </select>
               <p id="event-priority-help" className="mt-1 text-xs text-mid-gray">
-                Solo las válidas de prioridad A (y los campeonatos) envían un
-                correo a las familias después de un análisis de IA aprobado.
+                Referencia para priorizar la preparación de la válida. Aprobar
+                un análisis nunca envía correo automático — la familia lo ve
+                en la app.
               </p>
             </div>
           )}
@@ -785,8 +787,8 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
                 CD (fija para campeonatos)
               </div>
               <p className="mt-1 text-xs text-mid-gray">
-                Los campeonatos siempre envían un correo a las familias
-                después de un análisis de IA aprobado.
+                Máxima prioridad del calendario. Aprobar un análisis nunca
+                envía correo automático — la familia lo ve en la app.
               </p>
             </div>
           )}
@@ -875,7 +877,7 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
                     setLocationMode("custom");
                     setValue("location", null, { shouldDirty: true });
                   }}
-                  className="shrink-0 rounded-lg bg-white px-3 py-2 text-xs font-medium text-mid-gray transition-opacity hover:opacity-70 min-h-[44px] shadow-ring"
+                  className="shrink-0 rounded-lg bg-surface-raised px-3 py-2 text-xs font-medium text-mid-gray transition-opacity hover:opacity-70 min-h-[44px] shadow-ring"
                 >
                   Otra sede
                 </button>
@@ -896,7 +898,7 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
                     setLocationMode("predefined");
                     setValue("location", null, { shouldDirty: true });
                   }}
-                  className="shrink-0 rounded-lg bg-white px-3 py-2 text-xs font-medium text-mid-gray transition-opacity hover:opacity-70 min-h-[44px] shadow-ring"
+                  className="shrink-0 rounded-lg bg-surface-raised px-3 py-2 text-xs font-medium text-mid-gray transition-opacity hover:opacity-70 min-h-[44px] shadow-ring"
                 >
                   Del catálogo
                 </button>
@@ -934,7 +936,7 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
                 onChange={(e) => setComputedAltitude(Number(e.target.value))}
                 className={`mt-1 w-full rounded-lg px-3 py-2 text-sm text-charcoal outline-none min-h-[44px] shadow-ring ${
                   altitudeEditable
-                    ? "bg-white transition-shadow focus:ring-2 focus:ring-blue-500/40"
+                    ? "bg-surface-raised transition-shadow focus:ring-2 focus:ring-blue-500/40"
                     : "bg-light-gray cursor-not-allowed"
                 }`}
                 aria-label="Altitud en metros sobre el nivel del mar"
@@ -1013,14 +1015,14 @@ export function CompetitionFormPage({ mode }: CompetitionFormPageProps) {
           <button
             type="button"
             onClick={handleCancel}
-            className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 min-h-[44px] shadow-ring"
+            className="rounded-lg bg-surface-raised px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 min-h-[44px] shadow-ring"
           >
             Cancelar
           </button>
           <button
             type="submit"
             disabled={isPending || isSubmitting}
-            className="rounded-lg bg-charcoal px-5 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50 min-h-[44px] shadow-button-highlight"
+            className="rounded-lg bg-charcoal px-5 py-2 text-sm font-medium text-surface transition-opacity hover:opacity-70 disabled:opacity-50 min-h-[44px] shadow-button-highlight"
           >
             {isPending || isSubmitting
               ? "Guardando…"

@@ -24,7 +24,7 @@ const TabsList = React.forwardRef<
   <TabsPrimitive.List
     ref={ref}
     className={cn(
-      "inline-flex items-center gap-1 rounded-lg bg-light-gray p-1 text-mid-gray",
+      "inline-flex items-center gap-1 rounded-control bg-light-gray p-1 text-mid-gray",
       className,
     )}
     {...props}
@@ -39,10 +39,12 @@ const TabsTrigger = React.forwardRef<
   <TabsPrimitive.Trigger
     ref={ref}
     className={cn(
-      "inline-flex min-h-12 items-center justify-center gap-2 whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
+      "inline-flex min-h-12 items-center justify-center gap-2 whitespace-nowrap rounded-chip px-3 py-1.5 text-sm font-medium transition-colors",
+      "focus-visible:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
       "disabled:pointer-events-none disabled:opacity-50",
-      "data-[state=active]:bg-white data-[state=active]:text-charcoal data-[state=active]:shadow-sm",
+      // surface-raised (no bg-white): es la "pastilla" que flota sobre el
+      // fondo muted de la lista — mismo rol que Card/Dialog.
+      "data-[state=active]:bg-surface-raised data-[state=active]:text-charcoal data-[state=active]:shadow-card",
       className,
     )}
     {...props}
@@ -57,7 +59,7 @@ const TabsContent = React.forwardRef<
   <TabsPrimitive.Content
     ref={ref}
     className={cn(
-      "mt-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
+      "mt-4 focus-visible:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
       className,
     )}
     {...props}

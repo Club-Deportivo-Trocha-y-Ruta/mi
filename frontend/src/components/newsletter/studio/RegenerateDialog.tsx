@@ -87,7 +87,7 @@ export function RegenerateDialog({
             type="button"
             onClick={handleConfirm}
             disabled={isPending}
-            className="rounded-lg bg-charcoal px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="rounded-lg bg-charcoal px-4 py-2.5 text-sm font-semibold text-surface transition-opacity hover:opacity-90 disabled:opacity-50"
             data-testid="regenerate-dialog-confirm"
           >
             {isPending ? "Regenerando…" : "Regenerar"}

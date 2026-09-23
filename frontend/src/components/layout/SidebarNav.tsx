@@ -61,9 +61,9 @@ const focusRing =
  */
 const areaRowBase =
   "relative flex min-h-12 flex-1 items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm transition-colors";
-const areaRowActive = "bg-nav-active-bg font-semibold text-charcoal";
+const areaRowActive = "bg-nav-active-bg font-semibold text-primary-deep";
 const areaRowInactive =
-  "font-medium text-mid-gray hover:bg-light-gray hover:text-charcoal";
+  "font-medium text-text-secondary hover:bg-surface-muted/60 hover:text-primary-deep";
 
 // `min-h-12` (48px, piso táctil de la constitución — Principio III): los
 // sub-items son 12 destinos de navegación reales, no decoración, así que no
@@ -74,14 +74,18 @@ const areaRowInactive =
 // frente a los 36px del mockup, pero se quedó corta del piso real.
 const subItemBase =
   "flex min-h-12 items-center rounded-lg px-2.5 py-2 text-[13px] transition-colors";
-const subItemActive = "bg-nav-active-bg font-semibold text-charcoal";
+const subItemActive = "bg-nav-active-bg font-semibold text-primary-deep";
 const subItemInactive =
-  "font-medium text-mid-gray hover:bg-light-gray hover:text-charcoal";
+  "font-medium text-text-secondary hover:bg-surface-muted/60 hover:text-primary-deep";
 
 const railTileBase =
   "relative flex h-12 w-12 items-center justify-center rounded-lg transition-colors";
+// `text-nav-accent` se conserva en el tile activo del riel (icono de sólo
+// ícono, sin label) — es el mismo tratamiento que el badge de conteo y lo
+// cubre un test explícito (`SidebarNav.test.tsx` — "modo riel").
 const railTileActive = "bg-nav-active-bg text-nav-accent";
-const railTileInactive = "text-mid-gray hover:bg-light-gray hover:text-charcoal";
+const railTileInactive =
+  "text-text-secondary hover:bg-surface-muted/60 hover:text-primary-deep";
 
 /** Barra indicadora de 3×18px del estado activo. */
 function ActiveBar({ className }: { className?: string }) {
@@ -245,7 +249,7 @@ export function SidebarNav({
           className="h-9 w-9 shrink-0"
         />
         <div className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate font-display text-[15px] leading-tight font-semibold text-charcoal">
+          <span className="truncate font-display text-[15px] leading-tight font-bold text-charcoal">
             Trocha y Ruta
           </span>
           <span className="truncate text-[11px] text-mid-gray">

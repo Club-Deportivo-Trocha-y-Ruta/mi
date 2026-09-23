@@ -138,7 +138,7 @@ export function AnthropometryHistory({
           <li key={record.id}>
             <button
               type="button"
-              className="w-full cursor-pointer rounded-xl bg-white p-4 text-left shadow-card transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link-blue/50"
+              className="w-full cursor-pointer rounded-card bg-surface-raised p-4 text-left shadow-card ring-1 ring-hairline transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link-blue/50"
               onClick={(event) => openRecord(record, event)}
               aria-label={`Ver detalle de medición del ${formatDate(record.evaluation_date)}`}
             >

@@ -140,7 +140,7 @@ function ErrorState({
         type="button"
         onClick={onRetry}
         disabled={isFetching}
-        className="flex shrink-0 items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 disabled:opacity-50 shadow-ring"
+        className="flex shrink-0 items-center gap-1.5 rounded-lg bg-surface-raised px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 disabled:opacity-50 shadow-ring"
         data-testid="parent-results-retry"
       >
         {isFetching ? (
@@ -158,7 +158,7 @@ function ErrorState({
 function ParentEmptyState() {
   return (
     <div
-      className="flex min-h-[20vh] flex-col items-center justify-center gap-3 rounded-xl bg-white p-8 text-center ring-1 ring-[rgba(34,42,53,0.08)]"
+      className="flex min-h-[20vh] flex-col items-center justify-center gap-3 rounded-xl bg-surface-raised p-8 text-center ring-1 ring-border-gray"
       data-testid="parent-results-empty"
     >
       <p className="text-sm font-semibold text-charcoal">
@@ -186,11 +186,11 @@ function TabBar({ active, onChange }: TabBarProps) {
   const base =
     "flex-1 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50";
   const activeClass = "border-b-2 border-primary text-charcoal";
-  const inactiveClass = "border-b border-[rgba(34,42,53,0.08)] text-mid-gray hover:text-charcoal";
+  const inactiveClass = "border-b border-border-gray text-mid-gray hover:text-charcoal";
 
   return (
     <div
-      className="flex rounded-t-xl bg-white"
+      className="flex rounded-t-xl bg-surface-raised"
       role="tablist"
       aria-label="Secciones de la competencia"
     >
@@ -228,7 +228,7 @@ function TabBar({ active, onChange }: TabBarProps) {
 
 function HeaderSkeleton() {
   return (
-    <div className="rounded-xl bg-white px-5 py-4 space-y-3 shadow-card">
+    <div className="rounded-card bg-surface-raised px-5 py-4 space-y-3 shadow-card ring-1 ring-hairline">
       <Skeleton className="h-6 w-2/3" />
       <Skeleton className="h-4 w-1/3" />
       <Skeleton className="h-4 w-1/4" />
@@ -300,7 +300,7 @@ export function ParentCompetitionResultsPage() {
 
       {/* Header del evento */}
       <div
-        className="rounded-xl bg-white px-5 py-4 space-y-2 shadow-card"
+        className="rounded-card bg-surface-raised px-5 py-4 space-y-2 shadow-card ring-1 ring-hairline"
         data-testid="event-header"
       >
         <h1
@@ -333,7 +333,7 @@ export function ParentCompetitionResultsPage() {
           id="panel-results"
           aria-labelledby="tab-results"
           hidden={activeTab !== "results"}
-          className="bg-white px-4 py-4"
+          className="bg-surface-raised px-4 py-4"
         >
           {/* h2 sr-only garantiza la jerarquía h1→h2→h3 (axe heading-order) */}
           <h2 className="sr-only">Resultados de la competencia</h2>
@@ -348,7 +348,7 @@ export function ParentCompetitionResultsPage() {
           id="panel-standings"
           aria-labelledby="tab-standings"
           hidden={activeTab !== "standings"}
-          className="bg-white px-4 py-4"
+          className="bg-surface-raised px-4 py-4"
         >
           {/* h2 sr-only garantiza la jerarquía h1→h2→h3 (axe heading-order) */}
           <h2 className="sr-only">Clasificación general de temporada</h2>

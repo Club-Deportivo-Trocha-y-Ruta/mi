@@ -606,7 +606,7 @@ function AttendanceCard({
   const panelId = `rubric-panel-card-${attendance.athlete_id}`;
 
   return (
-    <div className="rounded-xl bg-white p-4 space-y-3 shadow-ring" data-testid={`attendance-card-${attendance.athlete_id}`}>
+    <div className="rounded-xl bg-surface-raised p-4 space-y-3 shadow-ring" data-testid={`attendance-card-${attendance.athlete_id}`}>
       <div className="flex items-start justify-between gap-2">
         <div>
           <p className="text-sm font-medium text-charcoal">{athleteName}</p>
@@ -764,7 +764,7 @@ function AttendanceSummaryBar({
 
   return (
     <div
-      className="sticky top-0 z-10 flex flex-col gap-2 bg-white pb-2 pt-1"
+      className="sticky top-0 z-10 flex flex-col gap-2 bg-surface-raised pb-2 pt-1"
       style={{ borderBottom: "1px solid rgba(34, 42, 53, 0.08)" }}
       data-testid="attendance-toolbar"
     >
@@ -782,7 +782,7 @@ function AttendanceSummaryBar({
             <ToggleGroupItem
               key={key}
               value={key}
-              className="min-h-12 rounded-full border border-[rgba(34,42,53,0.12)] px-3 text-xs font-medium text-charcoal data-[state=on]:border-charcoal data-[state=on]:bg-charcoal data-[state=on]:text-white"
+              className="min-h-12 rounded-full border border-[rgba(34,42,53,0.12)] px-3 text-xs font-medium text-charcoal data-[state=on]:border-charcoal data-[state=on]:bg-charcoal data-[state=on]:text-surface"
             >
               {FILTER_LABELS[key]} ({filterCounts[key]})
             </ToggleGroupItem>

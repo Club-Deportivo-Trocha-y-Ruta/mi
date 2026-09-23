@@ -123,7 +123,7 @@ export function InfoTab({
     <div className="space-y-4">
       {/* Tarjeta principal */}
       <div
-        className="rounded-xl bg-white p-5 ring-1 ring-[rgba(34,42,53,0.08)]"
+        className="rounded-card bg-surface-raised p-5 shadow-card ring-1 ring-hairline"
         data-testid="info-tab-main"
       >
         <h2 className="mb-4 text-sm font-semibold text-charcoal">
@@ -179,11 +179,6 @@ export function InfoTab({
             ) : (
               <span className="text-mid-gray">Sin prioridad</span>
             )}
-            {(event.is_championship || event.priority === "A") && (
-              <span className="ml-2 text-xs text-mid-gray">
-                Envía correo a familias tras un análisis aprobado.
-              </span>
-            )}
           </InfoRow>
 
           <InfoRow label="Serie">
@@ -229,7 +224,7 @@ export function InfoTab({
 
       {/* Tarjeta de auditoría */}
       <div
-        className="rounded-xl bg-white p-5 ring-1 ring-[rgba(34,42,53,0.08)]"
+        className="rounded-card bg-surface-raised p-5 shadow-card ring-1 ring-hairline"
         data-testid="info-tab-audit"
       >
         <h2 className="mb-4 text-sm font-semibold text-charcoal">Auditoría</h2>

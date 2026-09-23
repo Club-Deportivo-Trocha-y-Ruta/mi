@@ -112,7 +112,7 @@ export function VariantsCard({
 
   return (
     <div
-      className="rounded-xl bg-white p-4 ring-1 ring-[rgba(34,42,53,0.08)]"
+      className="rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline"
       data-testid="course-variants-card"
     >
       <div className="mb-3 flex items-center justify-between">
@@ -123,7 +123,7 @@ export function VariantsCard({
           <button
             type="button"
             onClick={() => setAddOpen(true)}
-            className="inline-flex min-h-12 items-center gap-1.5 rounded-lg bg-charcoal px-4 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+            className="inline-flex min-h-12 items-center gap-1.5 rounded-lg bg-charcoal px-4 text-sm font-semibold text-surface transition-opacity hover:opacity-90"
             data-testid="course-variants-add-btn"
           >
             <Plus size={14} aria-hidden="true" />
@@ -144,7 +144,7 @@ export function VariantsCard({
           {variants.map((variant) => (
             <li
               key={variant.id}
-              className="rounded-lg border border-[rgba(34,42,53,0.08)] p-3"
+              className="rounded-lg border border-border-gray p-3"
               data-testid={`course-variant-row-${variant.id}`}
             >
               <div className="flex items-center justify-between gap-2">

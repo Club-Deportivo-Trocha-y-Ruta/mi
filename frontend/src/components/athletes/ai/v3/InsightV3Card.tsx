@@ -8,10 +8,12 @@
  *
  * Privacidad Ley 1581 (CLAUDE.md §Privacidad de menores):
  *   - `mode="parent"` oculta esperado-vs-real (`field_reading.expected_position`
- *     / `actual_position` / `delta_vs_expected`), `coach_question` (+ footer)
- *     y las observaciones de dominio `training` — el backend ya las omite en
- *     el DTO de padres, pero esta card tolera su ausencia (no asume que
- *     lleguen) y las filtra igual del lado cliente por si acaso.
+ *     / `actual_position` / `delta_vs_expected`), la brecha al podio
+ *     (`field_reading.gap_to_p3_hhmmss` — decisión del dueño 2026-09-23: la
+ *     familia nunca ve brecha a la ganadora ni al podio), `coach_question`
+ *     (+ footer) y las observaciones de dominio `training` — el backend ya
+ *     las omite en el DTO de padres, pero esta card tolera su ausencia (no
+ *     asume que lleguen) y las filtra igual del lado cliente por si acaso.
  *   - Ningún campo de `InsightV3` contiene PII de por sí (ver
  *     `types/insightV3.types.ts`), así que el resto del contenido es igual
  *     en ambos modos.
@@ -184,7 +186,7 @@ export function InsightV3Card({
                       {obs.evidence.map((ev, evIdx) => (
                         <span
                           key={evIdx}
-                          className="rounded-full bg-white px-2 py-0.5 text-[11px] text-mid-gray ring-1 ring-light-gray"
+                          className="rounded-full bg-surface-raised px-2 py-0.5 text-[11px] text-mid-gray ring-1 ring-light-gray"
                         >
                           {ev}
                         </span>
@@ -209,7 +211,7 @@ export function InsightV3Card({
               <li
                 key={idx}
                 data-testid={`insight-v3-action-${idx}`}
-                className="flex items-start gap-2 rounded-lg bg-white p-3 ring-1 ring-light-gray"
+                className="flex items-start gap-2 rounded-lg bg-surface-raised p-3 ring-1 ring-light-gray"
               >
                 <Target
                   size={14}
@@ -343,7 +345,7 @@ function FieldReadingBlock({
     <section
       aria-label="Lectura del pelotón"
       data-testid="insight-v3-field-reading"
-      className="rounded-xl bg-white p-3 ring-1 ring-light-gray"
+      className="rounded-card bg-surface-raised p-3 shadow-card ring-1 ring-hairline"
     >
       <h4 className="text-xs font-medium uppercase tracking-wide text-mid-gray">
         Lectura del pelotón
@@ -376,7 +378,7 @@ function FieldReadingBlock({
             {deltaSemantics(reading.delta_vs_expected ?? 0).label}
           </Badge>
         )}
-        {reading.gap_to_p3_hhmmss && (
+        {mode === "coach" && reading.gap_to_p3_hhmmss && (
           <Badge variant="outline" className="gap-1">
             <Activity size={11} aria-hidden="true" />
             {reading.gap_to_p3_hhmmss} a P3

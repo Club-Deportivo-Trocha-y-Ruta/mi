@@ -78,7 +78,7 @@ export function SiblingViewTabs({
   return (
     <TabsPrimitive.Root value={activeTo} className={cn("w-full", className)}>
       <TabsPrimitive.List
-        className="flex gap-1 overflow-x-auto rounded-xl bg-light-gray p-1 scrollbar-none"
+        className="flex gap-1 overflow-x-auto rounded-xl bg-surface-muted p-1 scrollbar-none"
         aria-label={ariaLabel}
       >
         {items.map((item) => (
@@ -86,7 +86,7 @@ export function SiblingViewTabs({
             <NavLink
               to={item.to}
               end
-              className="flex min-h-12 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium text-mid-gray transition-colors data-[state=active]:bg-white data-[state=active]:text-charcoal data-[state=active]:shadow-sm"
+              className="flex min-h-12 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium text-text-secondary transition-colors hover:text-primary-deep data-[state=active]:bg-surface data-[state=active]:font-semibold data-[state=active]:text-primary-deep data-[state=active]:shadow-sm"
             >
               {item.label}
             </NavLink>

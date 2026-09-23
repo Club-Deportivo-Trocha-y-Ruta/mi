@@ -145,7 +145,7 @@ export function GroupRunRow({ entry, onTerminated }: GroupRunRowProps) {
     >
       <div
         className={cn(
-          "flex items-center justify-between gap-3 rounded-lg bg-white px-4 py-3",
+          "flex items-center justify-between gap-3 rounded-lg bg-surface-raised px-4 py-3",
           "ring-1 ring-black/5",
         )}
       >

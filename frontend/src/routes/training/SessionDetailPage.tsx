@@ -74,7 +74,7 @@ const sectionHeading = "text-sm font-semibold uppercase tracking-wide text-mid-g
 
 function SkeletonCard() {
   return (
-    <div className="rounded-xl bg-white p-5 space-y-3 shadow-card">
+    <div className="rounded-card bg-surface-raised p-5 space-y-3 shadow-card ring-1 ring-hairline">
       {[...Array(3)].map((_, i) => (
         <div key={i} className="h-4 animate-pulse rounded bg-light-gray" style={{ width: `${70 - i * 15}%` }} />
       ))}
@@ -285,7 +285,7 @@ export function SessionDetailPage() {
   if (sessionQuery.isError || !session) {
     return (
       <section className="space-y-4">
-        <div className="rounded-xl bg-white p-8 text-center shadow-card">
+        <div className="rounded-card bg-surface-raised p-8 text-center shadow-card ring-1 ring-hairline">
           <p className="text-base font-medium text-charcoal">Sesión no encontrada</p>
           <p className="mt-1 text-sm text-mid-gray">
             La sesión solicitada no existe o no tienes permiso para verla.
@@ -323,7 +323,7 @@ export function SessionDetailPage() {
     <section className="space-y-5">
       {/* Header */}
       <div
-        className="rounded-xl bg-white px-5 py-4 shadow-card"
+        className="rounded-card bg-surface-raised px-5 py-4 shadow-card ring-1 ring-hairline"
         data-testid="session-detail-header"
       >
         <PageHeader
@@ -389,7 +389,7 @@ export function SessionDetailPage() {
             Resumen
           </h2>
 
-          <div className="rounded-xl bg-white px-5 py-4 space-y-4 shadow-card">
+          <div className="rounded-card bg-surface-raised px-5 py-4 space-y-4 shadow-card ring-1 ring-hairline">
             <h3 className={sectionHeading}>Detalles</h3>
             <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
@@ -424,7 +424,7 @@ export function SessionDetailPage() {
             </dl>
           </div>
 
-          <div className="rounded-xl bg-white px-5 py-4 space-y-4 shadow-card">
+          <div className="rounded-card bg-surface-raised px-5 py-4 space-y-4 shadow-card ring-1 ring-hairline">
             <h3 className={sectionHeading}>Recorrido</h3>
 
             {session.route_text && (
@@ -514,7 +514,7 @@ export function SessionDetailPage() {
 
         {/* Asistencia */}
         <TabsContent value="asistencia" data-testid="session-section-asistencia">
-          <div className="rounded-xl bg-white px-5 py-4 shadow-card">
+          <div className="rounded-card bg-surface-raised px-5 py-4 shadow-card ring-1 ring-hairline">
             <div className="flex items-center justify-between mb-3">
               <h2
                 ref={asistenciaHeadingRef}
@@ -570,7 +570,7 @@ export function SessionDetailPage() {
 
         {/* Fotos y videos */}
         <TabsContent value="media" data-testid="session-section-media">
-          <div className="rounded-xl bg-white px-5 py-4 space-y-4 shadow-card">
+          <div className="rounded-card bg-surface-raised px-5 py-4 space-y-4 shadow-card ring-1 ring-hairline">
             <h2 ref={mediaHeadingRef} tabIndex={-1} className={sectionHeading}>
               Fotos y videos
             </h2>

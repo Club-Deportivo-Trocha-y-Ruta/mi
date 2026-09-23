@@ -40,7 +40,7 @@ export function StepReview({
         ))}
       </dl>
 
-      <label className="flex min-h-[48px] cursor-pointer items-center gap-3 rounded-lg bg-white px-3 py-2 shadow-ring">
+      <label className="flex min-h-[48px] cursor-pointer items-center gap-3 rounded-lg bg-surface-raised px-3 py-2 shadow-ring">
         <input
           type="checkbox"
           checked={notify}

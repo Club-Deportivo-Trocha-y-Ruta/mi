@@ -82,6 +82,10 @@ class EvolutionMetric(str, Enum):
     RANKING = "ranking"
     TIME_MS = "time_ms"
     PERCENTILE = "percentile"
+    #: Brecha vs. mediana (2026-09-23) — métrica por defecto para coach y
+    #: familia: es comparable entre válidas porque no depende de quién ganó.
+    #: Mismo cálculo/umbral que ``HistoryPoint.gap_to_median_pct``.
+    GAP_TO_MEDIAN_PCT = "gap_to_median_pct"
 
 
 class AthleteRunStatus(str, Enum):
@@ -298,7 +302,8 @@ class AthleteInsightDetailOut(AthleteInsightOut):
             "Contenido completo de ``structured_json`` (feature 037, "
             "InsightV3.model_dump()). ``None`` para insights v1/v2. "
             "En modo parent, el router omite server-side "
-            "``field_reading.expected_position``/``delta_vs_expected``, "
+            "``field_reading.expected_position``/``delta_vs_expected``/"
+            "``gap_to_p3_hhmmss`` (brecha al podio), "
             "``coach_question`` y la evidencia de observaciones de dominio "
             "``training`` — ver ``data-model.md §API deltas``."
         ),
@@ -518,6 +523,23 @@ class EvolutionPoint(BaseModel):
             "winner_time_ms``, redondeado a 1 decimal. ``0.0`` para el "
             "propio ganador. Se expone para cualquier métrica solicitada. "
             "``None`` si no finalizó o no hay tiempo del ganador."
+        ),
+    )
+    gap_to_median_pct: Optional[float] = Field(
+        default=None,
+        description=(
+            "Brecha porcentual a la mediana de tiempos FINISHED de la "
+            "categoría del evento (2026-09-23), calculada con "
+            "``field_metrics.compute_field_metrics`` — misma fuente y misma "
+            "fórmula que ``HistoryPoint.gap_to_median_pct`` "
+            "(``services/race/history.py``), nunca reimplementada aquí. "
+            "Negativo = más rápido que la mediana. Se expone para "
+            "cualquier métrica solicitada (no solo "
+            "``metric=gap_to_median_pct``), igual que ``gap_pct``. "
+            "``None`` si el atleta no finalizó o si la categoría del "
+            "evento tiene menos de ``history.MIN_FIELD`` (5) finalistas "
+            "CON tiempo registrado — mismo umbral que "
+            "``AthleteRaceHistoryRead``."
         ),
     )
     avg_speed_kmh: Optional[float] = Field(

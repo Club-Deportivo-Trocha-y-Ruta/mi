@@ -5,7 +5,7 @@ import type { TrainingSessionFormValues } from "@/schemas/trainingSession.schema
 
 const labelClass = "block text-sm font-medium text-charcoal";
 const inputClass =
-  "mt-1 w-full min-h-[48px] rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 shadow-ring";
+  "mt-1 w-full min-h-[48px] rounded-lg bg-surface-raised px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 shadow-ring";
 const errorClass = "mt-1 text-xs text-red-600";
 
 interface StepRouteNotesProps {

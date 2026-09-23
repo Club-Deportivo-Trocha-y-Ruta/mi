@@ -15,7 +15,7 @@ export interface FamilyCompassProps {
 export function FamilyCompass({ compass }: FamilyCompassProps) {
   return (
     <section
-      className="rounded-xl bg-white p-4 shadow-card"
+      className="rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline"
       aria-label="Brújula de la familia"
       data-testid="family-compass"
     >

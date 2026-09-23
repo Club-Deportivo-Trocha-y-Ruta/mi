@@ -104,7 +104,7 @@ export function MorphologyCard({ latestRecord }: MorphologyCardProps) {
     !latestRecord.morphology;
 
   return (
-    <div className="rounded-xl bg-white p-5 shadow-card">
+    <div className="rounded-card bg-surface-raised p-5 shadow-card ring-1 ring-hairline">
       <div className="mb-3 flex items-center gap-2">
         <Ruler size={16} className="text-mid-gray" />
         <h4

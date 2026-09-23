@@ -43,6 +43,7 @@ function EffortTooltip({ active, payload }: TooltipLikeProps) {
   if (!active || !payload || payload.length === 0) return null;
   const week = payload[0].payload as EffortWeek;
   return (
+    // Tooltip de gráfico: blanco fijo (excepción del sweep de dark theme).
     <div className="rounded-lg bg-white px-3 py-2 text-xs shadow-ambient">
       <p className="font-semibold text-charcoal">{week.week_label}</p>
       <p className="text-mid-gray">

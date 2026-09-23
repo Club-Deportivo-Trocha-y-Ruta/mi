@@ -18,9 +18,9 @@ export function GonePage({
   toLabel?: string;
 }) {
   return (
-    <div className="flex min-h-[60vh] items-center justify-center bg-white p-4">
+    <div className="flex min-h-[60vh] items-center justify-center bg-surface p-4">
       <div
-        className="max-w-md rounded-xl bg-white p-8 text-center shadow-card"
+        className="max-w-md rounded-card bg-surface-raised p-8 text-center shadow-card ring-1 ring-hairline"
         data-testid="gone-page"
       >
         <h1
@@ -34,7 +34,7 @@ export function GonePage({
         </p>
         <Link
           to={to}
-          className="mt-6 inline-block rounded-lg bg-charcoal px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-70 shadow-button-highlight"
+          className="mt-6 inline-block rounded-lg bg-charcoal px-4 py-2.5 text-sm font-medium text-surface transition-opacity hover:opacity-70 shadow-button-highlight"
         >
           {toLabel}
         </Link>

@@ -18,9 +18,9 @@ import type { OnboardingFormData } from "@/schemas/onboarding.schema";
 // ---------------------------------------------------------------------------
 
 const inputClass =
-  "mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 shadow-ring";
+  "mt-1 w-full rounded-lg bg-surface-raised px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 shadow-ring";
 const selectClass =
-  "mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 appearance-none shadow-ring";
+  "mt-1 w-full rounded-lg bg-surface-raised px-3 py-2 text-sm text-charcoal outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 appearance-none shadow-ring";
 
 // ---------------------------------------------------------------------------
 // Opciones de parentesco

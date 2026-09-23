@@ -38,7 +38,7 @@ import type {
 } from "@/types/coachActivity.types";
 
 const inputSelectClass =
-  "min-h-12 rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 shadow-ring";
+  "min-h-12 rounded-lg bg-surface-raised px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 shadow-ring";
 
 // ---------------------------------------------------------------------------
 // Presets de periodo (§6.2) — aritmética simple en horario local, coherente
@@ -140,7 +140,7 @@ function CoachActivityCard({
 
   return (
     <section
-      className="rounded-xl bg-white p-4 shadow-card"
+      className="rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline"
       aria-labelledby={headingId}
       data-testid="coach-activity-card"
       data-coach-id={coach.user_id}
@@ -234,7 +234,7 @@ export function CoachActivityPage() {
 
       {/* Filtros */}
       <div
-        className="rounded-xl bg-white p-4 shadow-card"
+        className="rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline"
         data-testid="coach-activity-filters"
       >
         <div className="flex flex-col gap-3">
@@ -304,7 +304,7 @@ export function CoachActivityPage() {
               <button
                 type="button"
                 onClick={resetFilters}
-                className="inline-flex min-h-12 items-center gap-1.5 self-end rounded-lg bg-white px-3 py-2 text-sm font-medium text-mid-gray transition-opacity hover:opacity-70 shadow-ring"
+                className="inline-flex min-h-12 items-center gap-1.5 self-end rounded-lg bg-surface-raised px-3 py-2 text-sm font-medium text-mid-gray transition-opacity hover:opacity-70 shadow-ring"
               >
                 <X size={14} aria-hidden="true" />
                 Limpiar filtros

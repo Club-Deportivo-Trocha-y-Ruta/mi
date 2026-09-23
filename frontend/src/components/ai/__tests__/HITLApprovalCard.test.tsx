@@ -55,6 +55,32 @@ describe("HITLApprovalCard", () => {
     expect(screen.getByTestId("hitl-reject-button")).toBeInTheDocument();
   });
 
+  // -------------------------------------------------------------------
+  // Decisión 2026-09-23: aprobar un insight ya NO envía correo automático
+  // a los padres (solo lo publica en la app). El botón "Aprobar" debe
+  // dejarlo explícito junto a la acción, y seguir cumpliendo el touch
+  // target mínimo de 48px (constitución III).
+  // -------------------------------------------------------------------
+  it("muestra la nota de que aprobar no envía correo, junto al botón Aprobar", () => {
+    wrap(
+      <HITLApprovalCard runId="r1" stepId="hitl_1" draftMarkdown="texto" />,
+    );
+    expect(
+      screen.getByTestId("hitl-approve-no-email-note"),
+    ).toHaveTextContent(
+      "Al aprobar, la familia podrá verlo en la app. No se envía correo.",
+    );
+  });
+
+  it("el botón Aprobar cumple el touch target mínimo de 48px", () => {
+    wrap(
+      <HITLApprovalCard runId="r1" stepId="hitl_1" draftMarkdown="texto" />,
+    );
+    expect(screen.getByTestId("hitl-approve-button").className).toMatch(
+      /min-h-12/,
+    );
+  });
+
   it("Aprobar dispara mutation con decision=approve", async () => {
     vi.mocked(raceApi.submitHITLDecision).mockResolvedValue(ACK);
     const onSubmitted = vi.fn();

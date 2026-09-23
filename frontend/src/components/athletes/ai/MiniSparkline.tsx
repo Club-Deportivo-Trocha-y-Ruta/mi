@@ -106,7 +106,7 @@ export function MiniSparkline({ athleteId }: MiniSparklineProps) {
         aria-busy="true"
         aria-label="Cargando sparkline de evolución"
         data-testid="mini-evolution-sparkline"
-        className="rounded-xl bg-white p-4 shadow-card"
+        className="rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline"
       >
         <Skeleton className="h-[120px] w-full rounded-lg" />
       </div>
@@ -122,7 +122,7 @@ export function MiniSparkline({ athleteId }: MiniSparklineProps) {
     return (
       <div
         data-testid="mini-evolution-sparkline"
-        className="rounded-xl bg-white px-4 py-5 text-center shadow-card"
+        className="rounded-card bg-surface-raised px-4 py-5 text-center shadow-card ring-1 ring-hairline"
       >
         <p className="text-xs text-mid-gray">
           Sin válidas de copa en esta temporada.
@@ -136,7 +136,7 @@ export function MiniSparkline({ athleteId }: MiniSparklineProps) {
     return (
       <div
         data-testid="mini-evolution-sparkline"
-        className="rounded-xl bg-white px-4 py-5 text-center shadow-card"
+        className="rounded-card bg-surface-raised px-4 py-5 text-center shadow-card ring-1 ring-hairline"
       >
         <p className="text-xs text-mid-gray">
           Necesitas al menos 2 análisis para ver evolución.
@@ -148,7 +148,7 @@ export function MiniSparkline({ athleteId }: MiniSparklineProps) {
   return (
     <div
       data-testid="mini-evolution-sparkline"
-      className="rounded-xl bg-white p-4 shadow-card"
+      className="rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline"
       aria-label="Sparkline de evolución de posición en categoría"
     >
       <p
@@ -170,7 +170,7 @@ export function MiniSparkline({ athleteId }: MiniSparklineProps) {
               if (!pt) return null;
               return (
                 <div
-                  className="rounded-lg bg-white px-2 py-1 text-xs shadow-md"
+                  className="rounded-lg bg-surface-raised px-2 py-1 text-xs shadow-md"
                 >
                   <span className="font-semibold text-charcoal">V-{pt.roman}</span>
                   {" "}

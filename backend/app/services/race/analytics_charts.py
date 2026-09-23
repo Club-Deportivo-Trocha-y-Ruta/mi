@@ -33,7 +33,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.race_course_category_setup import RaceCourseCategorySetup
-from app.models.race_event import RaceEventPriority
+from app.models.race_event import RaceEvent, RaceEventPriority
+from app.models.race_result import RaceResult, ResultStatus
 from app.models.race_series import RaceSeriesKind, RaceSeriesLevel
 from app.schemas.athlete_race_analysis import (
     AnalysisConfidence,
@@ -50,6 +51,8 @@ from app.schemas.athlete_race_analysis import (
 from app.services.notification.race_event_tier import RaceTier, get_race_tier
 from app.services.race.comparison_groups import build_comparison_group, group_label
 from app.services.race.course.derived import derive_figures
+from app.services.race.field_metrics import compute_field_metrics
+from app.services.race.history import MIN_FIELD
 from app.services.race.race_labels import build_race_label
 
 logger = logging.getLogger(__name__)
@@ -225,16 +228,22 @@ async def build_evolution(
         - ``category_id``/``laps_behind`` viajan en esta misma query
           (feature 043, R-11) porque ``derive_figures`` los necesita junto a
           ``status``/``race_time_ms`` (ya seleccionados) para
-          ``avg_speed_kmh`` — evita un segundo roundtrip por fila. La única
-          query adicional de esta función es la de setups de recorrido
-          (``RaceCourseCategorySetup``), UNA sola vez para todos los
-          ``event_id`` presentes en el resultado, nunca por punto.
+          ``avg_speed_kmh`` — evita un segundo roundtrip por fila. Las
+          queries adicionales de esta función (setups de recorrido, y desde
+          2026-09-23 los RaceResult/RaceEvent de campo para
+          ``gap_to_median_pct`` vía ``compute_field_metrics``) corren UNA
+          sola vez para todos los ``event_id`` presentes en el resultado,
+          nunca por punto.
     """
     unit = {
         EvolutionMetric.PODIUM_GAP_MS: "ms",
         EvolutionMetric.TIME_MS: "ms",
         EvolutionMetric.RANKING: "position",
         EvolutionMetric.PERCENTILE: "pct",
+        # "pct_signed" (2026-09-23): a diferencia de "pct" (percentil, solo
+        # positivo, sin signo), esta brecha puede ser negativa (más rápido
+        # que la mediana) — el formateador del cliente antepone "+"/"-".
+        EvolutionMetric.GAP_TO_MEDIAN_PCT: "pct_signed",
     }[metric]
 
     # CTE strategy:
@@ -249,6 +258,7 @@ async def build_evolution(
                 rr.id            AS result_id,
                 rr.event_id,
                 rr.category_id,
+                rr.competitor_id,
                 rr.position,
                 rr.status,
                 rr.race_time_ms,
@@ -298,7 +308,8 @@ async def build_evolution(
             ar.series_name,
             ar.series_kind,
             ar.series_level,
-            ar.location
+            ar.location,
+            ar.competitor_id
         FROM athlete_results ar
         LEFT JOIN cat_stats cs
           ON cs.event_id    = ar.event_id
@@ -316,12 +327,24 @@ async def build_evolution(
     # entirely when there are no rows. ``avg_speed_kmh`` stays None for any
     # (event, category) pair without a matching setup — expected for most
     # events for a long while; no aggregate of speed is computed anywhere.
+    #
+    # El mismo barrido recolecta, para "brecha vs. mediana" (2026-09-23):
+    # los pares (event_id, category_id) propios del atleta y su
+    # competitor_id por evento — insumo de compute_field_metrics más abajo.
     event_ids: set[int] = set()
+    own_pairs: set[tuple[int, int]] = set()
+    competitor_id_by_event: dict[int, int] = {}
     for row in rows:
         rm = row._mapping if hasattr(row, "_mapping") else None
         raw_event_id = rm.get("event_id") if rm else (row[0] if len(row) > 0 else None)
+        raw_category_id = rm.get("category_id") if rm else (row[6] if len(row) > 6 else None)
+        raw_competitor_id = rm.get("competitor_id") if rm else None
         if raw_event_id is not None:
             event_ids.add(int(raw_event_id))
+            if raw_category_id is not None:
+                own_pairs.add((int(raw_event_id), int(raw_category_id)))
+            if raw_competitor_id is not None:
+                competitor_id_by_event[int(raw_event_id)] = int(raw_competitor_id)
 
     setup_by_event_category: dict[tuple[int, int], Any] = {}
     if event_ids:
@@ -341,6 +364,63 @@ async def build_evolution(
         setup_by_event_category = {
             (s.race_event_id, s.category_id): s for s in setup_rows
         }
+
+    # "Brecha vs. mediana" (gap_to_median_pct, 2026-09-23): reutiliza
+    # compute_field_metrics (app/services/race/field_metrics.py) — MISMA
+    # función que services/race/history.py, nunca una cuarta fórmula. Dos
+    # queries ORM adicionales, UNA sola vez para toda la llamada (nunca por
+    # punto, mismo patrón que el setup de recorrido arriba):
+    #   1. RaceResult de cualquier competidor, restringidos a los pares
+    #      exactos (event_id, category_id) propios del atleta (candado de
+    #      terceros: nunca se cargan otras categorías/eventos del club).
+    #   2. RaceEvent + su RaceSeries (season_year/kind/level) de esos mismos
+    #      event_ids — compute_field_metrics necesita objetos ORM reales
+    #      (``event_date`` como ``date``, no el string crudo de una fila SQL).
+    # Mismo umbral que history.py: MIN_FIELD (5) finalistas CON tiempo
+    # registrado, no field_size (que cuenta también minus_laps).
+    metrics_by_event: dict[int, dict[str, Any]] = {}
+    timed_finishers_by_pair: dict[tuple[int, int], int] = {}
+    if event_ids:
+        field_result = await db.execute(
+            select(RaceResult).where(
+                RaceResult.event_id.in_(event_ids),
+                RaceResult.deleted_at.is_(None),
+            )
+        )
+        # Defensive hasattr: mismo motivo que el setup de recorrido arriba —
+        # degrada a "sin campo" para el fake bare-bones de build_evolution.
+        field_rows_all = (
+            field_result.scalars().all() if hasattr(field_result, "scalars") else []
+        )
+        field_rows = [
+            r for r in field_rows_all if (r.event_id, r.category_id) in own_pairs
+        ]
+
+        events_result = await db.execute(
+            select(RaceEvent)
+            .options(selectinload(RaceEvent.series))
+            .where(RaceEvent.id.in_(event_ids))
+        )
+        events_orm = (
+            events_result.scalars().all() if hasattr(events_result, "scalars") else []
+        )
+        series_orm = [e.series for e in events_orm if e.series is not None]
+
+        for r in field_rows:
+            if r.status == ResultStatus.FINISHED and r.race_time_ms is not None:
+                key = (r.event_id, r.category_id)
+                timed_finishers_by_pair[key] = timed_finishers_by_pair.get(key, 0) + 1
+
+        for competitor_id in set(competitor_id_by_event.values()):
+            per_event = compute_field_metrics(
+                results=field_rows,
+                events=list(events_orm),
+                series=series_orm,
+                categories=[],
+                competitor_id=competitor_id,
+                season=season,
+            )
+            metrics_by_event.update(per_event)
 
     series: list[EvolutionPoint] = []
     group_rows: list[dict[str, Any]] = []
@@ -375,6 +455,21 @@ async def build_evolution(
 
         if event_id is None or event_date is None or series_id_raw is None:
             continue
+
+        # "Brecha vs. mediana" (2026-09-23) — poblada para CUALQUIER
+        # métrica solicitada, igual que gap_pct/position/field_size más
+        # abajo. Umbral: MIN_FIELD (5) finalistas CON tiempo registrado en
+        # la (evento, categoría), mismo criterio que history.py — nunca
+        # field_size (que también cuenta minus_laps).
+        gap_to_median_val: Optional[float] = None
+        if category_id_raw is not None:
+            timed = timed_finishers_by_pair.get((int(event_id), int(category_id_raw)))
+            if timed is not None and timed >= MIN_FIELD:
+                candidate = metrics_by_event.get(int(event_id), {}).get(
+                    "gap_to_median_pct"
+                )
+                if candidate is not None:
+                    gap_to_median_val = float(candidate)
 
         value: Optional[float] = None
         finished = (str(status) == "finished") if status is not None else False
@@ -417,6 +512,10 @@ async def build_evolution(
                     else:
                         pct = 100.0 * (1.0 - (t - t_min) / (t_max - t_min))
                         value = round(pct)
+        elif metric == EvolutionMetric.GAP_TO_MEDIAN_PCT:
+            # Ya calculado arriba (mismo umbral MIN_FIELD que el campo
+            # gap_to_median_pct expuesto para cualquier métrica).
+            value = gap_to_median_val
 
         # Normalizar series_kind: puede llegar como str ("cup"/"championship")
         # o como RaceSeriesKind enum según el driver DB (MySQL vs aiosqlite).
@@ -519,6 +618,7 @@ async def build_evolution(
                 percentile=percentile,
                 position=position_val,
                 gap_pct=gap_pct_val,
+                gap_to_median_pct=gap_to_median_val,
                 avg_speed_kmh=avg_speed_kmh_val,
             )
         )

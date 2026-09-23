@@ -277,7 +277,7 @@ export function CategoryMappingTable({
                               })
                             }
                             data-testid={`correct-row-${category.header_raw}`}
-                            className="inline-flex min-h-[48px] items-center gap-1 rounded-lg border border-light-gray bg-white px-3 py-1.5 text-xs font-medium text-charcoal transition-opacity hover:opacity-90"
+                            className="inline-flex min-h-[48px] items-center gap-1 rounded-lg border border-light-gray bg-surface-raised px-3 py-1.5 text-xs font-medium text-charcoal transition-opacity hover:opacity-90"
                           >
                             <Pencil size={12} aria-hidden="true" />
                             Corregir fila
@@ -286,7 +286,7 @@ export function CategoryMappingTable({
                             type="button"
                             onClick={() => setAcknowledgeTarget(category)}
                             data-testid={`acknowledge-${category.header_raw}`}
-                            className="inline-flex min-h-[48px] items-center gap-1 rounded-lg border border-light-gray bg-white px-3 py-1.5 text-xs font-medium text-charcoal transition-opacity hover:opacity-90"
+                            className="inline-flex min-h-[48px] items-center gap-1 rounded-lg border border-light-gray bg-surface-raised px-3 py-1.5 text-xs font-medium text-charcoal transition-opacity hover:opacity-90"
                           >
                             <ShieldCheck size={12} aria-hidden="true" />
                             Reconocer

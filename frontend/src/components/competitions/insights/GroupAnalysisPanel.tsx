@@ -124,7 +124,7 @@ export function GroupAnalysisPanel({
 
   return (
     <section
-      className="rounded-xl bg-white p-5 space-y-4 shadow-card"
+      className="rounded-card bg-surface-raised p-5 space-y-4 shadow-card ring-1 ring-hairline"
       aria-label="Análisis grupal con IA"
       data-testid="group-analysis-panel"
     >

@@ -168,7 +168,7 @@ function SuggestionCard({
         onClick={() => onLink(suggestion.athlete_id)}
         disabled={isLinking}
         data-testid={`${testId}-link-btn`}
-        className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-charcoal px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+        className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-charcoal px-3 py-1.5 text-xs font-medium text-surface transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {isLinking ? (
           <Loader2 size={12} className="animate-spin" aria-hidden="true" />
@@ -217,11 +217,7 @@ function CompetitorCard({
   return (
     <article
       data-testid={`competitor-card-${competitor.id}`}
-      className="space-y-3 rounded-xl bg-white p-4"
-      style={{
-        boxShadow:
-          "rgba(34, 42, 53, 0.08) 0px 0px 0px 1px, rgba(34, 42, 53, 0.05) 0px 1px 2px 0px",
-      }}
+      className="space-y-3 rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline"
     >
       {/* Header */}
       <header className="flex items-start justify-between gap-3">
@@ -280,7 +276,7 @@ function CompetitorCard({
             {menuOpen && (
               <div
                 role="menu"
-                className="absolute right-0 top-full z-30 mt-1 min-w-[180px] rounded-lg bg-white py-1 shadow-lg ring-1 ring-light-gray"
+                className="absolute right-0 top-full z-30 mt-1 min-w-[180px] rounded-lg bg-surface-raised py-1 shadow-lg ring-1 ring-light-gray"
                 data-testid={`competitor-${competitor.id}-menu`}
               >
                 <button
@@ -354,7 +350,7 @@ function CompetitorCard({
                     onLink(competitor.id, manualAthleteId, competitor);
                   }
                 }}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-charcoal px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-charcoal px-3 py-1.5 text-xs font-medium text-surface transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isLinkingThis ? (
                   <Loader2 size={12} className="animate-spin" aria-hidden="true" />
@@ -389,7 +385,7 @@ function CompetitorCard({
 function CompetitorSkeleton() {
   return (
     <div
-      className={cn("space-y-3 rounded-xl bg-white p-4", "shadow-ring")}
+      className={cn("space-y-3 rounded-card bg-surface-raised p-4", "shadow-ring")}
       data-testid="competitor-skeleton"
     >
       <div className="h-4 w-1/2 animate-pulse rounded-md bg-light-gray" />
@@ -528,7 +524,7 @@ export function UnlinkedCompetitorsTab({
     >
       {/* Header con contador + filtros */}
       <header
-        className="flex flex-col gap-3 rounded-xl bg-white p-4 ring-1 ring-light-gray sm:flex-row sm:items-center sm:justify-between"
+        className="flex flex-col gap-3 rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline sm:flex-row sm:items-center sm:justify-between"
         data-testid="unlinked-header"
       >
         <div className="flex items-center gap-3">
@@ -580,7 +576,7 @@ export function UnlinkedCompetitorsTab({
             data-testid="filter-season"
             aria-label="Filtrar por temporada"
             className={cn(
-              "rounded-lg bg-white px-2 py-1.5 text-xs text-charcoal outline-none focus:ring-2 focus:ring-blue-500/40",
+              "rounded-lg bg-surface-raised px-2 py-1.5 text-xs text-charcoal outline-none focus:ring-2 focus:ring-blue-500/40",
               "shadow-ring",
             )}
           >
@@ -615,7 +611,7 @@ export function UnlinkedCompetitorsTab({
 
       {query.data && items.length === 0 && (
         <div
-          className="flex flex-col items-center gap-3 rounded-xl bg-white p-8 text-center ring-1 ring-light-gray"
+          className="flex flex-col items-center gap-3 rounded-card bg-surface-raised p-8 text-center shadow-card ring-1 ring-hairline"
           data-testid="unlinked-empty"
         >
           <span

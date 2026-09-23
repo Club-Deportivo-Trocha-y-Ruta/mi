@@ -82,7 +82,7 @@ const sectionHeading = "text-sm font-semibold uppercase tracking-wide text-mid-g
 
 function SkeletonCard() {
   return (
-    <div className="rounded-xl bg-white p-5 space-y-3 shadow-card">
+    <div className="rounded-card bg-surface-raised p-5 space-y-3 shadow-card ring-1 ring-hairline">
       {[...Array(3)].map((_, i) => (
         <div
           key={i}
@@ -243,7 +243,7 @@ function NarrativeBlockEditor({
 
   return (
     <div
-      className="rounded-xl bg-white p-5 space-y-3 shadow-card"
+      className="rounded-card bg-surface-raised p-5 space-y-3 shadow-card ring-1 ring-hairline"
       data-testid={`block-editor-${blockKey}`}
     >
       {/* Header del bloque */}
@@ -273,7 +273,7 @@ function NarrativeBlockEditor({
             onClick={handleSave}
             disabled={disabled || isSaving || isRegenerating}
             aria-label={`Guardar bloque "${BLOCK_LABELS[blockKey]}"`}
-            className="flex min-h-[44px] items-center gap-1.5 rounded-lg bg-charcoal px-3 py-2 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+            className="flex min-h-[44px] items-center gap-1.5 rounded-lg bg-charcoal px-3 py-2 text-xs font-semibold text-surface transition-opacity hover:opacity-90 disabled:opacity-40"
             data-testid={`save-btn-${blockKey}`}
           >
             {isSaving ? "Guardando…" : savedFeedback ? "Guardado" : "Guardar"}
@@ -395,7 +395,7 @@ function CompetitionResultsTable({ results }: { results: CompetitionResult[] }) 
       {groups.map((group, gi) => (
         <div
           key={group.eventId ?? gi}
-          className="overflow-x-auto rounded-xl bg-white shadow-ring"
+          className="overflow-x-auto rounded-xl bg-surface-raised shadow-ring"
         >
           <div
             className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
@@ -506,7 +506,7 @@ function CoachEditorView({
   return (
     <section className="space-y-5">
       {/* Header */}
-      <div className="rounded-xl bg-white px-5 py-4 shadow-card">
+      <div className="rounded-card bg-surface-raised px-5 py-4 shadow-card ring-1 ring-hairline">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <Link
@@ -550,7 +550,7 @@ function CoachEditorView({
                   type="button"
                   disabled={isDownloading}
                   aria-label="Descargar informe"
-                  className="flex min-h-[48px] items-center gap-1.5 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                  className="flex min-h-[48px] items-center gap-1.5 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-surface transition-opacity hover:opacity-90 disabled:opacity-50"
                   data-testid="download-menu-trigger"
                 >
                   <Download className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -598,7 +598,7 @@ function CoachEditorView({
 
       {/* Métricas — solo lectura */}
       {metrics && (
-        <div className="rounded-xl bg-white px-5 py-4 space-y-4 shadow-card">
+        <div className="rounded-card bg-surface-raised px-5 py-4 space-y-4 shadow-card ring-1 ring-hairline">
           <h2 className={sectionHeading}>Métricas del mes</h2>
           <MonthlyMetricsTable metrics={metrics} athleteNames={report.athlete_names} />
         </div>
@@ -621,7 +621,7 @@ function CoachEditorView({
           ))}
         </div>
       ) : (
-        <div className="rounded-xl bg-white px-5 py-4 shadow-card">
+        <div className="rounded-card bg-surface-raised px-5 py-4 shadow-card ring-1 ring-hairline">
           <p className="text-sm text-mid-gray">
             Este informe no tiene secciones narrativas disponibles.
           </p>
@@ -629,13 +629,13 @@ function CoachEditorView({
       )}
 
       {/* Resultados de competencia — solo lectura + bloque narrativo */}
-      <div className="rounded-xl bg-white px-5 py-4 space-y-4 shadow-card">
+      <div className="rounded-card bg-surface-raised px-5 py-4 space-y-4 shadow-card ring-1 ring-hairline">
         <h2 className={sectionHeading}>Participación en competencia</h2>
         <CompetitionResultsTable results={results} />
       </div>
 
       {/* Footer */}
-      <div className="rounded-xl bg-white px-5 py-4 shadow-card">
+      <div className="rounded-card bg-surface-raised px-5 py-4 shadow-card ring-1 ring-hairline">
         <p className="text-xs text-mid-gray">
           Generado el {formatDateTime(report.generated_at)}
         </p>
@@ -714,7 +714,7 @@ export function ReportDetailPage() {
   if (reportQuery.isError || !report) {
     return (
       <section className="space-y-4">
-        <div className="rounded-xl bg-white p-8 text-center shadow-card">
+        <div className="rounded-card bg-surface-raised p-8 text-center shadow-card ring-1 ring-hairline">
           <p className="text-base font-medium text-charcoal">Reporte no encontrado</p>
           <p className="mt-1 text-sm text-mid-gray">
             El reporte solicitado no existe o no tienes permiso para verlo.
@@ -751,7 +751,7 @@ export function ReportDetailPage() {
   // esta página). No caemos en una vista de reporte: estado neutro.
   return (
     <section className="space-y-4">
-      <div className="rounded-xl bg-white p-8 text-center shadow-card">
+      <div className="rounded-card bg-surface-raised p-8 text-center shadow-card ring-1 ring-hairline">
         <p className="text-base font-medium text-charcoal">Informe no disponible</p>
         <p className="mt-1 text-sm text-mid-gray">
           Tu cuenta no tiene un club asignado para ver este informe.

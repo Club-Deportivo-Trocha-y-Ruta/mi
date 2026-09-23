@@ -35,7 +35,7 @@ export function AthleteInfoCard({
   const initials = `${athlete.first_name.charAt(0)}${athlete.last_name.charAt(0)}`.toUpperCase();
 
   return (
-    <article className="overflow-hidden rounded-xl bg-white shadow-card">
+    <article className="overflow-hidden rounded-card bg-surface-raised shadow-card ring-1 ring-hairline">
       {/* Top bar: navigation */}
       {(backUrl !== null || resolvedEditUrl !== null) && (
         <div
@@ -56,7 +56,7 @@ export function AthleteInfoCard({
           {resolvedEditUrl !== null && (
             <Link
               to={resolvedEditUrl}
-              className="inline-flex min-h-12 items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
+              className="inline-flex min-h-12 items-center gap-1.5 rounded-lg bg-surface-raised px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
             >
               <Pencil size={14} />
               Editar

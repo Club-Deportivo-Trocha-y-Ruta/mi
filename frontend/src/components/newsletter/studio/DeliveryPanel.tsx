@@ -64,7 +64,7 @@ function DeliveryStatusLine({ row }: { row: DeliveryRow }) {
 export function DeliveryPanel({ delivery, onResend, isResending = false }: DeliveryPanelProps) {
   if (delivery.length === 0) {
     return (
-      <div className="rounded-xl bg-white px-4 py-3 shadow-card" data-testid="delivery-panel-empty">
+      <div className="rounded-card bg-surface-raised px-4 py-3 shadow-card ring-1 ring-hairline" data-testid="delivery-panel-empty">
         <h3 className="text-sm font-semibold text-charcoal">Entrega</h3>
         <p className="mt-1 text-xs text-mid-gray">
           Este boletín todavía no se ha enviado a ninguna familia.
@@ -74,7 +74,7 @@ export function DeliveryPanel({ delivery, onResend, isResending = false }: Deliv
   }
 
   return (
-    <div className="rounded-xl bg-white px-4 py-3 shadow-card" data-testid="delivery-panel">
+    <div className="rounded-card bg-surface-raised px-4 py-3 shadow-card ring-1 ring-hairline" data-testid="delivery-panel">
       <h3 className="text-sm font-semibold text-charcoal">Entrega</h3>
       <ul className="mt-2 space-y-3">
         {delivery.map((row, index) => (

@@ -97,7 +97,7 @@ export function NutritionalClassification({
     heightMetrics?.source === "stored" || bmiMetrics?.source === "stored";
 
   return (
-    <div className="rounded-xl bg-white p-5 shadow-card">
+    <div className="rounded-card bg-surface-raised p-5 shadow-card ring-1 ring-hairline">
       <h4
         className="font-display mb-4 text-sm text-charcoal"
         style={{ letterSpacing: "0.2px" }}

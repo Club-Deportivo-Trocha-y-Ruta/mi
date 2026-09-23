@@ -36,7 +36,7 @@ interface AthleteFormProps {
 }
 
 const inputClass =
-  "mt-1 w-full rounded-lg bg-white px-3 py-2.5 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 disabled:bg-light-gray disabled:text-mid-gray shadow-ring";
+  "mt-1 w-full rounded-lg bg-surface-raised px-3 py-2.5 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 disabled:bg-light-gray disabled:text-mid-gray shadow-ring";
 
 export function AthleteForm({
   initialValues,
@@ -83,7 +83,7 @@ export function AthleteForm({
   return (
     <form
       onSubmit={form.handleSubmit(onSubmit)}
-      className="space-y-5 rounded-xl bg-white p-5 shadow-card"
+      className="space-y-5 rounded-card bg-surface-raised p-5 shadow-card ring-1 ring-hairline"
     >
       <div className="grid gap-4 md:grid-cols-2">
         <label className="text-sm font-medium text-charcoal">
@@ -157,7 +157,7 @@ export function AthleteForm({
       <button
         type="submit"
         disabled={isSubmitting}
-        className="rounded-lg bg-charcoal px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50 shadow-button-highlight"
+        className="rounded-lg bg-charcoal px-4 py-2.5 text-sm font-medium text-surface transition-opacity hover:opacity-70 disabled:opacity-50 shadow-button-highlight"
       >
         {isSubmitting ? "Guardando..." : mode === "create" ? "Crear atleta" : "Guardar cambios"}
       </button>

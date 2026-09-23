@@ -7,18 +7,25 @@
  * lee como tarjeta de estadísticas en lugar de una línea de un solo punto
  * (dataviz `choosing-a-form.md`: "single current value → stat tile").
  *
- * Las cuatro etiquetas (`Posición` / `Pelotón` / `Gap al P1` / `Percentil`)
- * son la copia fija de `research.md` D13.
+ * Las etiquetas (`Posición` / `Parrilla` / `Brecha vs. mediana` /
+ * `Brecha vs. 1.ª posición` / `Percentil`) son la copia fija de
+ * `research.md` D13, actualizada 2026-09-23 (glosario "Brecha vs. mediana"
+ * / "Brecha vs. 1.ª posición" / "Parrilla" — antes "Pelotón").
  *
  * Fix B-2/F-1 (integration-review.md) — `EvolutionPoint` ahora trae
- * `position`/`gap_pct` crudos (data-model.md §5, `contracts/
- * evolution-api.md`), poblados para *cualquier* `metric`, no solo cuando el
- * selector está en `ranking`/`podium_gap_ms`. Las cuatro tarjetas se leen
- * siempre desde el punto mismo — ya no dependen de la métrica activa del
- * selector (antes `Posición`/`Gap al P1` quedaban en "—" con la métrica
- * default, leyéndose como dato faltante en una superficie P2 del coach).
+ * `position`/`gap_pct`/`gap_to_median_pct` crudos (data-model.md §5,
+ * `contracts/evolution-api.md`), poblados para *cualquier* `metric`, no
+ * solo cuando el selector coincide. Las tarjetas se leen siempre desde el
+ * punto mismo — ya no dependen de la métrica activa del selector.
+ *
+ * Audiencia (2026-09-23, `audience="coach"|"family"`, default "coach"):
+ * «Brecha vs. 1.ª posición» (brecha a la ganadora) es SOLO para coach — la
+ * familia nunca la ve, en ningún lado (principio de salvaguardas
+ * psicológicas). «Brecha vs. mediana» es la métrica comparable y se
+ * muestra para ambas audiencias.
  */
 import { cn } from "@/lib/utils";
+import { formatGapPct } from "@/lib/raceHistoryFormat";
 import type {
   ComparisonGroupOption,
   EvolutionPoint,
@@ -27,6 +34,7 @@ import type {
 interface ChampionshipReadingCardProps {
   point: EvolutionPoint;
   group: ComparisonGroupOption;
+  audience?: "coach" | "family";
 }
 
 interface StatTile {
@@ -37,6 +45,7 @@ interface StatTile {
 export function ChampionshipReadingCard({
   point,
   group,
+  audience = "coach",
 }: ChampionshipReadingCardProps) {
   const notFinished =
     point.value === null &&
@@ -46,12 +55,6 @@ export function ChampionshipReadingCard({
     point.position !== undefined && point.position !== null
       ? `P${point.position}`
       : "—";
-  const gapValue =
-    point.gap_pct !== undefined && point.gap_pct !== null
-      ? point.gap_pct === 0
-        ? "0.0 %"
-        : `+${point.gap_pct.toFixed(1)} %`
-      : "—";
   const pelotonValue =
     point.field_size !== undefined && point.field_size !== null
       ? `${point.field_size} corredores`
@@ -60,17 +63,22 @@ export function ChampionshipReadingCard({
     point.percentile !== undefined && point.percentile !== null
       ? String(Math.round(point.percentile))
       : "—";
+  const gapToMedianValue = formatGapPct(point.gap_to_median_pct ?? null);
+  const gapToWinnerValue = formatGapPct(point.gap_pct ?? null);
 
   const tiles: StatTile[] = [
     { label: "Posición", value: positionValue },
-    { label: "Pelotón", value: pelotonValue },
-    { label: "Gap al P1", value: gapValue },
+    { label: "Parrilla", value: pelotonValue },
+    { label: "Brecha vs. mediana", value: gapToMedianValue },
+    ...(audience === "coach"
+      ? [{ label: "Brecha vs. 1.ª posición", value: gapToWinnerValue }]
+      : []),
     { label: "Percentil", value: percentileValue },
   ];
 
   return (
     <div
-      className={cn("rounded-xl bg-white p-4 space-y-3", "shadow-card")}
+      className={cn("rounded-card bg-surface-raised p-4 space-y-3", "shadow-card ring-1 ring-hairline")}
       data-testid="championship-reading-card"
     >
       <header>

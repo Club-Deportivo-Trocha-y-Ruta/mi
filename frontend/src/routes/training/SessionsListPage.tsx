@@ -113,14 +113,14 @@ export function SessionsListPage() {
           <>
             <Link
               to="/training/sessions/assistant"
-              className="inline-flex min-h-12 items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
+              className="inline-flex min-h-12 items-center gap-2 rounded-lg bg-surface-raised px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
             >
               <Sparkles size={14} aria-hidden="true" />
               Crear con IA
             </Link>
             <Link
               to="/training/sessions/new"
-              className="inline-flex min-h-12 items-center rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 shadow-button-highlight"
+              className="inline-flex min-h-12 items-center rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-surface transition-opacity hover:opacity-70 shadow-button-highlight"
             >
               + Nueva sesión
             </Link>
@@ -138,7 +138,7 @@ export function SessionsListPage() {
 
       <SessionFiltersBar />
 
-      <div className="rounded-xl bg-white p-4 shadow-card">
+      <div className="rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline">
         <CoachFilter
           coaches={coaches}
           value={coachUserId}
@@ -150,7 +150,7 @@ export function SessionsListPage() {
       </div>
 
       {sessionsQuery.isLoading && (
-        <div className="space-y-2 rounded-xl bg-white p-4 shadow-ring">
+        <div className="space-y-2 rounded-xl bg-surface-raised p-4 shadow-ring">
           {Array.from({ length: 5 }).map((_, idx) => (
             <div key={idx} className="h-9 animate-pulse rounded-lg bg-light-gray" />
           ))}
@@ -165,7 +165,7 @@ export function SessionsListPage() {
       )}
 
       {!sessionsQuery.isLoading && !sessionsQuery.isError && (isFallbackLoading || isFallbackError) && (
-        <div className="space-y-2 rounded-xl bg-white p-4 shadow-ring">
+        <div className="space-y-2 rounded-xl bg-surface-raised p-4 shadow-ring">
           {isFallbackLoading &&
             Array.from({ length: 2 }).map((_, idx) => (
               <div key={idx} className="h-9 animate-pulse rounded-lg bg-light-gray" />
@@ -196,7 +196,7 @@ export function SessionsListPage() {
       {!sessionsQuery.isLoading && !sessionsQuery.isError && !isFallbackLoading && !isFallbackError && displayItems.length > 0 && (
         <>
           {fallbackSession && (
-            <p className="rounded-xl bg-white px-4 py-3 text-sm font-medium text-charcoal shadow-card">
+            <p className="rounded-card bg-surface-raised px-4 py-3 text-sm font-medium text-charcoal shadow-card ring-1 ring-hairline">
               No hay sesión hoy — próxima sesión:
             </p>
           )}

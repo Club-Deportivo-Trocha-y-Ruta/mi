@@ -106,9 +106,9 @@ export function RevokeConsentDialog({
       aria-labelledby="revoke-dialog-title"
       aria-describedby="revoke-dialog-desc"
     >
-      <div className={cn("w-full max-w-md rounded-2xl bg-white", "shadow-card")}>
+      <div className={cn("w-full max-w-md rounded-card bg-surface-raised ring-1 ring-hairline", "shadow-card")}>
         {/* Header */}
-        <div className="flex items-start justify-between px-6 pt-6 pb-4 border-b border-[rgba(34,42,53,0.08)]">
+        <div className="flex items-start justify-between px-6 pt-6 pb-4 border-b border-border-gray">
           <div className="flex items-start gap-3">
             <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-50">
               <AlertTriangle className="h-4 w-4 text-red-600" aria-hidden="true" />
@@ -198,7 +198,7 @@ export function RevokeConsentDialog({
               onClick={onClose}
               disabled={isPending}
               className={cn(
-                "rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-charcoal transition-opacity disabled:opacity-50",
+                "rounded-lg bg-surface-raised px-4 py-2.5 text-sm font-medium text-charcoal transition-opacity disabled:opacity-50",
                 "shadow-ring",
               )}
             >

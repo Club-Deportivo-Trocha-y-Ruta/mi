@@ -24,7 +24,7 @@ interface StatCardProps {
 
 function StatCard({ label, value, icon: Icon, accentClass }: StatCardProps) {
   return (
-    <div className={cn("flex items-start gap-3 rounded-xl bg-white p-5", "shadow-card")}>
+    <div className={cn("flex items-start gap-3 rounded-card bg-surface-raised p-5 ring-1 ring-hairline", "shadow-card")}>
       <div
         className={cn(
           "rounded-lg p-2",
@@ -96,7 +96,7 @@ function AISpendByCoachSection() {
 
       {usageQuery.isLoading && (
         <div
-          className="space-y-2 rounded-xl bg-white p-4 shadow-card"
+          className="space-y-2 rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline"
           role="status"
           aria-live="polite"
           data-testid="ai-spend-by-coach-loading"
@@ -127,7 +127,7 @@ function AISpendByCoachSection() {
       )}
 
       {!usageQuery.isLoading && !usageQuery.isError && rows.length > 0 && (
-        <div className="rounded-xl bg-white shadow-card">
+        <div className="rounded-card bg-surface-raised shadow-card ring-1 ring-hairline">
           <Table data-testid="ai-spend-by-coach-table">
             <caption className="sr-only">Gasto de IA por entrenador</caption>
             <TableHeader>
@@ -185,7 +185,7 @@ export function AIHealthPage() {
       {isLoading && (
         <div
           className={cn(
-            "flex items-center gap-3 rounded-xl bg-white p-5 text-sm text-mid-gray",
+            "flex items-center gap-3 rounded-card bg-surface-raised p-5 text-sm text-mid-gray ring-1 ring-hairline",
             "shadow-card",
           )}
         >

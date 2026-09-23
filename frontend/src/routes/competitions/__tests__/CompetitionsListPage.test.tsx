@@ -20,7 +20,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { axe } from "jest-axe";
 import { http, HttpResponse } from "msw";
-import { Route, Routes } from "react-router-dom";
+import { Route, Routes, useSearchParams } from "react-router-dom";
 
 // Mock de auth.store — se reconfigura por test para alternar entre coach y admin.
 vi.mock("@/store/auth.store", () => ({
@@ -80,6 +80,14 @@ function inTable() {
   const table = document.querySelector("table");
   if (!table) throw new Error("No se encontró tabla");
   return within(table as HTMLElement);
+}
+
+/** Sonda de solo lectura para asertar sobre `?season=`/`?filter=` sin
+ * depender de APIs internas de react-router — comparte el mismo Router
+ * que `CompetitionsListPage` porque se monta como hermano suyo. */
+function LocationProbe() {
+  const [params] = useSearchParams();
+  return <div data-testid="url-probe">{params.toString()}</div>;
 }
 
 describe("CompetitionsListPage — render", () => {
@@ -340,6 +348,134 @@ describe("CompetitionsListPage — filtros", () => {
       expect(inTable().queryByText("Lejana 60d")).not.toBeInTheDocument(),
     );
     expect(inTable().getByText("Próx 15d")).toBeInTheDocument();
+  });
+});
+
+describe("CompetitionsListPage — filtros en la URL (2026-09-23)", () => {
+  it("sin ?season= en la URL, usa la temporada actual como default", async () => {
+    let lastSeason: string | null = null;
+    mswServer.use(
+      http.get("*/api/race-analysis/race-events/", ({ request }) => {
+        const url = new URL(request.url);
+        lastSeason = url.searchParams.get("season");
+        return HttpResponse.json(makeRaceEventListResponse());
+      }),
+    );
+    mockAuthAs("coach");
+    renderWithProviders(<CompetitionsListPage />);
+    await waitFor(() => expect(lastSeason).toBe(String(currentSeason())));
+  });
+
+  it("?season=2027 en la URL fija la temporada inicial del select y del fetch", async () => {
+    let lastSeason: string | null = null;
+    mswServer.use(
+      http.get("*/api/race-analysis/race-events/", ({ request }) => {
+        const url = new URL(request.url);
+        lastSeason = url.searchParams.get("season");
+        return HttpResponse.json(makeRaceEventListResponse());
+      }),
+    );
+    mockAuthAs("coach");
+    renderWithProviders(<CompetitionsListPage />, {
+      initialEntries: ["/competitions?season=2027"],
+    });
+    await waitFor(() => expect(lastSeason).toBe("2027"));
+    expect(screen.getByLabelText("Temporada")).toHaveValue("2027");
+  });
+
+  it("cambiar la temporada actualiza ?season= en la URL", async () => {
+    mockAuthAs("coach");
+    const user = userEvent.setup();
+    renderWithProviders(
+      <>
+        <CompetitionsListPage />
+        <LocationProbe />
+      </>,
+    );
+    await waitFor(() =>
+      expect(inTable().getByText("Copa Valle XCO — Válida I")).toBeInTheDocument(),
+    );
+    await user.selectOptions(screen.getByLabelText("Temporada"), "2027");
+    await waitFor(() =>
+      expect(screen.getByTestId("url-probe")).toHaveTextContent("season=2027"),
+    );
+  });
+
+  it("?filter=needs-results deja solo válidas sin resultados y con fecha pasada — mismo criterio que 'Resultados por importar' del Inicio", async () => {
+    const yesterday = (() => {
+      const d = new Date();
+      d.setDate(d.getDate() - 1);
+      return d.toISOString().slice(0, 10);
+    })();
+    const tomorrow = (() => {
+      const d = new Date();
+      d.setDate(d.getDate() + 1);
+      return d.toISOString().slice(0, 10);
+    })();
+    mswServer.use(
+      http.get("*/api/race-analysis/race-events/", () =>
+        HttpResponse.json({
+          items: [
+            makeRaceEventListItem({
+              id: 1,
+              name: "Pasada sin resultados",
+              event_date: yesterday,
+              has_results: false,
+            }),
+            makeRaceEventListItem({
+              id: 2,
+              name: "Pasada con resultados",
+              event_date: yesterday,
+              has_results: true,
+            }),
+            makeRaceEventListItem({
+              id: 3,
+              name: "Futura sin resultados",
+              event_date: tomorrow,
+              has_results: false,
+            }),
+          ],
+          total: 3,
+        }),
+      ),
+    );
+    mockAuthAs("coach");
+    renderWithProviders(<CompetitionsListPage />, {
+      initialEntries: ["/competitions?filter=needs-results"],
+    });
+    await waitFor(() =>
+      expect(inTable().getByText("Pasada sin resultados")).toBeInTheDocument(),
+    );
+    expect(inTable().queryByText("Pasada con resultados")).not.toBeInTheDocument();
+    expect(inTable().queryByText("Futura sin resultados")).not.toBeInTheDocument();
+  });
+
+  it("cambiar cualquier filtro limpia ?filter=needs-results de la URL", async () => {
+    mockAuthAs("coach");
+    const user = userEvent.setup();
+    renderWithProviders(
+      <>
+        <CompetitionsListPage />
+        <LocationProbe />
+      </>,
+      { initialEntries: ["/competitions?filter=needs-results"] },
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("url-probe")).toHaveTextContent("filter=needs-results"),
+    );
+    // Bajo needs-results, de la fixture por defecto solo "Válida III" (sin
+    // resultados, fecha pasada) queda visible — "Válida I" tiene resultados.
+    await waitFor(() =>
+      expect(inTable().getByText("Copa Valle XCO — Válida III")).toBeInTheDocument(),
+    );
+    expect(inTable().queryByText("Copa Valle XCO — Válida I")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Cancelada" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("url-probe")).not.toHaveTextContent("filter"),
+    );
+    // El filtro de entrada se limpió: "Válida I" vuelve a aparecer.
+    expect(inTable().getByText("Copa Valle XCO — Válida I")).toBeInTheDocument();
   });
 });
 

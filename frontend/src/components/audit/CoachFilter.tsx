@@ -12,7 +12,7 @@
 import { X } from "lucide-react";
 
 const inputSelectClass =
-  "min-h-12 rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 shadow-ring";
+  "min-h-12 rounded-lg bg-surface-raised px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 shadow-ring";
 
 export interface CoachFilterOption {
   id: number;
@@ -63,7 +63,7 @@ export function CoachFilter({
           <button
             type="button"
             onClick={onClear}
-            className="inline-flex min-h-12 items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-sm font-medium text-mid-gray transition-opacity hover:opacity-70 shadow-ring"
+            className="inline-flex min-h-12 items-center gap-1.5 rounded-lg bg-surface-raised px-3 py-2 text-sm font-medium text-mid-gray transition-opacity hover:opacity-70 shadow-ring"
           >
             <X size={14} aria-hidden="true" />
             Limpiar filtros

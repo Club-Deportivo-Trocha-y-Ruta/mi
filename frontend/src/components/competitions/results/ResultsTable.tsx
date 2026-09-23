@@ -49,6 +49,7 @@ import {
 import { cn } from "@/lib/utils";
 import { AnalyzeAthleteButton } from "@/components/competitions/insights/AnalyzeAthleteButton";
 import { EditResultNoteDialog } from "@/components/race/EditResultNoteDialog";
+import { RACE_HISTORY_STATUS_LABELS } from "@/types/raceHistory.types";
 import type {
   RaceEventResultsResponse,
   RaceResultCategory,
@@ -74,13 +75,16 @@ export function formatRaceTime(ms: number | null): string {
 }
 
 /**
- * Etiquetas de estado de resultado.
+ * Etiquetas de estado de resultado — palabras, nunca códigos crudos
+ * DNF/DNS/DSQ (decisión del dueño 2026-09-23). Reutiliza el catálogo de
+ * `raceHistory.types.ts` para mantener la misma redacción que el
+ * Historial; "finished" se deja en "—" porque nunca se expone al usuario
+ * desde este mapa (`statusLabel()` ya desvía ese caso al tiempo formateado
+ * antes de consultarlo).
  */
 const STATUS_LABELS: Record<string, string> = {
+  ...RACE_HISTORY_STATUS_LABELS,
   finished: "—",
-  dnf: "DNF",
-  dns: "DNS",
-  dsq: "DSQ",
 };
 
 function statusLabel(
@@ -344,7 +348,7 @@ export function ResultsTable({
               const val = e.target.value;
               setSelectedCategoryId(val === "all" ? "all" : Number(val));
             }}
-            className="h-12 rounded-lg border border-[rgba(34,42,53,0.12)] bg-white px-3 text-sm text-charcoal focus:outline-none focus:ring-2 focus:ring-primary/50"
+            className="h-12 rounded-lg border border-[rgba(34,42,53,0.12)] bg-surface-raised px-3 text-sm text-charcoal focus:outline-none focus:ring-2 focus:ring-primary/50"
             data-testid="results-category-select"
           >
             <option value="all">Todas</option>
@@ -389,7 +393,7 @@ export function ResultsTable({
       {/* ── Sin datos después de filtro ──────────────────────────────────── */}
       {noDataAfterFilter && (
         <div
-          className="rounded-xl bg-white p-6 text-center text-sm text-mid-gray ring-1 ring-[rgba(34,42,53,0.08)]"
+          className="rounded-card bg-surface-raised p-6 text-center text-sm text-mid-gray shadow-card ring-1 ring-hairline"
           data-testid="results-empty-after-filter"
           role="status"
         >
@@ -406,7 +410,7 @@ export function ResultsTable({
           .map((cat) => (
             <div
               key={cat.category_id}
-              className="rounded-xl bg-white ring-1 ring-[rgba(34,42,53,0.08)]"
+              className="rounded-card bg-surface-raised shadow-card ring-1 ring-hairline"
               data-testid={`results-category-section-${cat.category_id}`}
             >
               {/* Encabezado de categoría */}

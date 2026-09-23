@@ -412,7 +412,7 @@ function PrefillLockedSummary({
   const isChampionship = values.series_kind === "championship";
   return (
     <div
-      className="rounded-lg border border-[rgba(34,42,53,0.08)] bg-light-gray/30 p-4"
+      className="rounded-lg border border-border-gray bg-light-gray/30 p-4"
       data-testid="prefill-locked-summary"
       aria-label="Datos de la competencia (bloqueados)"
     >
@@ -502,7 +502,7 @@ function PrefillBlockedState({
       </div>
       <Link
         to={editMetadataHref}
-        className="inline-flex min-h-[44px] items-center gap-1 rounded-lg bg-charcoal px-3 py-2 text-xs font-semibold text-white hover:opacity-90"
+        className="inline-flex min-h-[44px] items-center gap-1 rounded-lg bg-charcoal px-3 py-2 text-xs font-semibold text-surface hover:opacity-90"
         data-testid="prefill-blocked-edit-metadata"
       >
         <Pencil size={12} aria-hidden="true" />
@@ -905,7 +905,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
   // ---------------- Render
   return (
     <section
-      className="rounded-xl bg-white p-5 ring-1 ring-light-gray"
+      className="rounded-xl bg-surface-raised p-5 ring-1 ring-light-gray"
       data-testid="import-wizard"
       aria-label="Wizard de carga de resultados"
     >
@@ -965,7 +965,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
               <select
                 id="series_kind"
                 {...register("series_kind")}
-                className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 min-h-[44px] shadow-ring"
+                className="mt-1 w-full rounded-lg bg-surface-raised px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 min-h-[44px] shadow-ring"
                 data-testid="wizard-series-kind"
               >
                 <option value="cup">Copa (con válidas numeradas)</option>
@@ -985,7 +985,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                 <select
                   id="series_level"
                   {...register("series_level")}
-                  className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 min-h-[44px] shadow-ring"
+                  className="mt-1 w-full rounded-lg bg-surface-raised px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 min-h-[44px] shadow-ring"
                   data-testid="wizard-series-level"
                 >
                   <option value="departmental">Departamental</option>
@@ -1010,7 +1010,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                     : "Ej: Copa Valle de Ciclomontañismo"
                 }
                 {...register("series_name")}
-                className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
+                className="mt-1 w-full rounded-lg bg-surface-raised px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
                 data-testid="wizard-series-name"
               />
               {errors.series_name && (
@@ -1033,7 +1033,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                 min={2020}
                 max={2100}
                 {...register("season", { valueAsNumber: true })}
-                className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
+                className="mt-1 w-full rounded-lg bg-surface-raised px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
                 data-testid="wizard-season"
               />
               {errors.season && (
@@ -1067,7 +1067,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                         ? undefined
                         : Number(v),
                   })}
-                  className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
+                  className="mt-1 w-full rounded-lg bg-surface-raised px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
                   data-testid="wizard-valida-num"
                 />
                 {errors.valida_num && (
@@ -1102,7 +1102,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                 type="text"
                 placeholder="Ej: Válida IV — Cali"
                 {...register("event_name")}
-                className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
+                className="mt-1 w-full rounded-lg bg-surface-raised px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
                 data-testid="wizard-event-name"
               />
               {errors.event_name && (
@@ -1123,7 +1123,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                 id="event_date"
                 type="date"
                 {...register("event_date")}
-                className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
+                className="mt-1 w-full rounded-lg bg-surface-raised px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
                 data-testid="wizard-event-date"
               />
               {errors.event_date && (
@@ -1145,7 +1145,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                 type="text"
                 placeholder="Ej: Cali"
                 {...register("location")}
-                className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
+                className="mt-1 w-full rounded-lg bg-surface-raised px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
                 data-testid="wizard-location"
               />
               {errors.location && (
@@ -1158,7 +1158,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
           )}
 
           {/* ── F-COND: Sección Condiciones de carrera (opcional) ── */}
-          <div className="rounded-lg border border-[rgba(34,42,53,0.08)] p-4">
+          <div className="rounded-lg border border-border-gray p-4">
             <div className="mb-3 flex items-center gap-2">
               <h3 className="text-sm font-semibold text-charcoal">
                 Condiciones de carrera
@@ -1186,7 +1186,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                     max={50}
                     step={0.1}
                     {...register("temperature_c")}
-                    className="w-full rounded-lg bg-white py-2.5 pl-3 pr-10 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
+                    className="w-full rounded-lg bg-surface-raised py-2.5 pl-3 pr-10 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
                     aria-invalid={errors.temperature_c ? true : undefined}
                     data-testid="wizard-temperature"
                   />
@@ -1230,7 +1230,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                           key={sc}
                           value={sc}
                           aria-label={SURFACE_CONDITION_LABELS[sc]}
-                          className="min-h-[48px] rounded-lg border border-[rgba(34,42,53,0.12)] px-3 py-1.5 text-xs font-medium text-charcoal transition-colors data-[state=on]:border-charcoal data-[state=on]:bg-charcoal data-[state=on]:text-white"
+                          className="min-h-[48px] rounded-lg border border-[rgba(34,42,53,0.12)] px-3 py-1.5 text-xs font-medium text-charcoal transition-colors data-[state=on]:border-charcoal data-[state=on]:bg-charcoal data-[state=on]:text-surface"
                           data-testid={`wizard-surface-chip-${sc}`}
                         >
                           {SURFACE_CONDITION_LABELS[sc]}
@@ -1258,7 +1258,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                     max={5000}
                     step={1}
                     {...register("altitude_msnm")}
-                    className="w-full rounded-lg bg-white py-2.5 pl-3 pr-14 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
+                    className="w-full rounded-lg bg-surface-raised py-2.5 pl-3 pr-14 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
                     aria-invalid={errors.altitude_msnm ? true : undefined}
                     data-testid="wizard-altitude"
                   />
@@ -1291,7 +1291,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                   placeholder="ej: soleado, parcialmente nublado"
                   maxLength={60}
                   {...register("climate")}
-                  className="w-full rounded-lg bg-white px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
+                  className="w-full rounded-lg bg-surface-raised px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
                   aria-invalid={errors.climate ? true : undefined}
                   data-testid="wizard-climate"
                 />
@@ -1324,7 +1324,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                   maxLength={2000}
                   placeholder="Clima y estado de la pista el día de la carrera — evite incluir nombres de atletas o información médica"
                   {...register("weather_notes")}
-                  className="w-full resize-y rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
+                  className="w-full resize-y rounded-lg bg-surface-raised px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
                   style={{
                     minHeight: "80px",
                   }}
@@ -1380,7 +1380,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
               type="submit"
               disabled={parseMutation.isPending}
               data-testid="wizard-step1-submit"
-              className="inline-flex items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-surface transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               {parseMutation.isPending ? (
                 <Loader2 size={14} className="animate-spin" aria-hidden="true" />
@@ -1527,7 +1527,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                   aria-invalid={
                     !reasonValid && revisionReasonTouched ? true : undefined
                   }
-                  className="w-full rounded-lg bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
+                  className="w-full rounded-lg bg-surface-raised px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
                 >
                   <option value="">Selecciona un motivo…</option>
                   {(revisionReasonsQuery.data?.options ?? []).map((opt) => (
@@ -1575,7 +1575,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                   onClick={submitCommit}
                   disabled={!canCommit || commitMutation.isPending}
                   data-testid="wizard-step2-confirm"
-                  className="inline-flex items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                  className="inline-flex items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-surface transition-opacity hover:opacity-90 disabled:opacity-50"
                 >
                   {commitMutation.isPending ? (
                     <Loader2
@@ -1660,7 +1660,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                   }}
                   disabled={pendingAmbiguous.length === 0}
                   data-testid="wizard-mark-rest-no-match"
-                  className="inline-flex items-center gap-1 rounded-lg border border-light-gray bg-white px-3 py-1.5 text-xs font-medium text-charcoal transition-opacity hover:opacity-90 disabled:opacity-50"
+                  className="inline-flex items-center gap-1 rounded-lg border border-light-gray bg-surface-raised px-3 py-1.5 text-xs font-medium text-charcoal transition-opacity hover:opacity-90 disabled:opacity-50"
                 >
                   Marcar restantes como sin match
                 </button>
@@ -1781,7 +1781,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                   onClick={submitCommit}
                   disabled={!canCommit || commitMutation.isPending}
                   data-testid="wizard-step2-confirm"
-                  className="inline-flex items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                  className="inline-flex items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-surface transition-opacity hover:opacity-90 disabled:opacity-50"
                 >
                   {commitMutation.isPending ? (
                     <Loader2 size={14} className="animate-spin" aria-hidden="true" />
@@ -1891,7 +1891,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
               <div className="mt-3 flex flex-wrap gap-2">
                 <Link
                   to={`/competitions/${commitMutation.data.race_event_id}?tab=results`}
-                  className="inline-flex items-center gap-1 rounded-lg bg-charcoal px-3 py-2 text-xs font-semibold text-white hover:opacity-90"
+                  className="inline-flex items-center gap-1 rounded-lg bg-charcoal px-3 py-2 text-xs font-semibold text-surface hover:opacity-90"
                   data-testid="wizard-step3-link-analysis"
                 >
                   Ver resultados de la válida
@@ -1922,7 +1922,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                 <button
                   type="button"
                   onClick={reset}
-                  className="inline-flex items-center gap-1 rounded-lg bg-white px-3 py-2 text-xs font-medium text-charcoal ring-1 ring-light-gray hover:bg-light-gray"
+                  className="inline-flex items-center gap-1 rounded-lg bg-surface-raised px-3 py-2 text-xs font-medium text-charcoal ring-1 ring-light-gray hover:bg-light-gray"
                   data-testid="wizard-step3-new"
                 >
                   Cargar otro

@@ -104,7 +104,7 @@ export function MaturationTimeline({
   const markerPercent = hasMarker ? offsetToPercent(maturityOffset as number) : null;
 
   return (
-    <div className="rounded-xl bg-white p-5 shadow-card" data-testid="growth-timeline">
+    <div className="rounded-card bg-surface-raised p-5 shadow-card ring-1 ring-hairline" data-testid="growth-timeline">
       <h4 className="font-display mb-3 text-sm text-charcoal" style={{ letterSpacing: "0.2px" }}>
         Línea de tiempo de maduración
       </h4>

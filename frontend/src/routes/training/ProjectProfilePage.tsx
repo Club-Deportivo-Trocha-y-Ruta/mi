@@ -43,7 +43,7 @@ type ProjectProfileFormValues = z.infer<typeof projectProfileSchema>;
 
 const labelClass = "block text-sm font-medium text-charcoal";
 const inputClass =
-  "mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40";
+  "mt-1 w-full rounded-lg bg-surface-raised px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40";
 const errorClass = "mt-1 text-xs text-red-600";
 
 // ---------------------------------------------------------------------------
@@ -189,7 +189,7 @@ export function ProjectProfilePage() {
     return (
       <section className="max-w-3xl mx-auto space-y-4">
         <div className="h-6 w-48 animate-pulse rounded bg-light-gray" />
-        <div className="h-96 animate-pulse rounded-xl bg-white shadow-card" />
+        <div className="h-96 animate-pulse rounded-card bg-surface-raised shadow-card ring-1 ring-hairline" />
       </section>
     );
   }
@@ -223,7 +223,7 @@ export function ProjectProfilePage() {
         className="space-y-5"
       >
         {/* Identificación del proyecto */}
-        <div className="rounded-xl bg-white p-5 space-y-4 shadow-card">
+        <div className="rounded-card bg-surface-raised p-5 space-y-4 shadow-card ring-1 ring-hairline">
           <h2 className="text-base font-semibold text-charcoal">
             Identificación del proyecto
           </h2>
@@ -287,7 +287,7 @@ export function ProjectProfilePage() {
         </div>
 
         {/* Propósito y objetivos */}
-        <div className="rounded-xl bg-white p-5 space-y-4 shadow-card">
+        <div className="rounded-card bg-surface-raised p-5 space-y-4 shadow-card ring-1 ring-hairline">
           <h2 className="text-base font-semibold text-charcoal">Propósito y objetivos</h2>
 
           <div>
@@ -341,7 +341,7 @@ export function ProjectProfilePage() {
         </div>
 
         {/* Territorio */}
-        <div className="rounded-xl bg-white p-5 space-y-4 shadow-card">
+        <div className="rounded-card bg-surface-raised p-5 space-y-4 shadow-card ring-1 ring-hairline">
           <h2 className="text-base font-semibold text-charcoal">Territorio</h2>
 
           <div>
@@ -407,14 +407,14 @@ export function ProjectProfilePage() {
         <div className="flex justify-end gap-3">
           <Link
             to="/training/reports"
-            className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
+            className="rounded-lg bg-surface-raised px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
           >
             Cancelar
           </Link>
           <button
             type="submit"
             disabled={isSubmitting || upsertMutation.isPending || (!isDirty && !upsertMutation.isIdle)}
-            className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70 disabled:opacity-50 shadow-button-highlight"
+            className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-surface transition-opacity hover:opacity-70 disabled:opacity-50 shadow-button-highlight"
             data-testid="save-profile-btn"
           >
             {isSubmitting || upsertMutation.isPending ? "Guardando…" : "Guardar perfil"}

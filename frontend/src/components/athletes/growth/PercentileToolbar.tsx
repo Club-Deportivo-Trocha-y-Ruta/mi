@@ -64,7 +64,7 @@ export interface PercentileToolbarProps {
 }
 
 const TOGGLE_ITEM_CLASSES =
-  "min-h-12 rounded-lg border border-border-gray px-3 text-sm font-medium text-charcoal transition-colors data-[state=on]:border-charcoal data-[state=on]:bg-charcoal data-[state=on]:text-white";
+  "min-h-12 rounded-lg border border-border-gray px-3 text-sm font-medium text-charcoal transition-colors data-[state=on]:border-charcoal data-[state=on]:bg-charcoal data-[state=on]:text-surface";
 
 export function PercentileToolbar({
   indicators,

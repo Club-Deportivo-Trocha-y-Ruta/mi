@@ -100,8 +100,8 @@ function EmptyState({ athleteId }: EmptyStateProps) {
   return (
     <div
       className={cn(
-        "flex flex-col items-center gap-4 rounded-xl bg-white px-6 py-12 text-center",
-        "shadow-card",
+        "flex flex-col items-center gap-4 rounded-card bg-surface-raised px-6 py-12 text-center",
+        "shadow-card ring-1 ring-hairline",
       )}
       data-testid="newsletters-empty-state"
     >
@@ -123,7 +123,7 @@ function EmptyState({ athleteId }: EmptyStateProps) {
             navigate(`/training/athlete-newsletters?generate=${athleteId}`)
           }
           className={cn(
-            "min-h-[44px] rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-70",
+            "min-h-[44px] rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-surface transition-opacity hover:opacity-70",
             "shadow-button-highlight",
           )}
           data-testid="generate-newsletter-cta"
@@ -182,7 +182,7 @@ function TableRow({ newsletter, athleteId }: { newsletter: AthleteNewsletter; at
 function MobileCard({ newsletter, athleteId }: { newsletter: AthleteNewsletter; athleteId: number }) {
   return (
     <div
-      className={cn("rounded-xl bg-white p-4", "shadow-card")}
+      className={cn("rounded-card bg-surface-raised p-4", "shadow-card ring-1 ring-hairline")}
       data-testid={`newsletter-card-${newsletter.id}`}
     >
       <div className="flex items-start justify-between gap-3">
@@ -233,7 +233,7 @@ export function AthleteNewslettersTabPanel({ athleteId }: AthleteNewslettersTabP
   if (query.isError) {
     return (
       <div
-        className={cn("rounded-xl bg-white p-6 text-center", "shadow-card")}
+        className={cn("rounded-card bg-surface-raised p-6 text-center", "shadow-card ring-1 ring-hairline")}
         data-testid="newsletters-error"
       >
         <p className="text-sm text-red-600">Error al cargar los boletines. Intenta de nuevo.</p>
@@ -253,7 +253,7 @@ export function AthleteNewslettersTabPanel({ athleteId }: AthleteNewslettersTabP
     <div className="space-y-3" data-testid="newsletters-tab-panel">
       {/* Desktop table */}
       <div
-        className={cn("hidden sm:block overflow-hidden rounded-xl bg-white", "shadow-card")}
+        className={cn("hidden sm:block overflow-hidden rounded-card bg-surface-raised", "shadow-card ring-1 ring-hairline")}
       >
         <table className="w-full" aria-label="Boletines mensuales del atleta">
           <thead>

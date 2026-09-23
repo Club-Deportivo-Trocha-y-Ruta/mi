@@ -36,6 +36,7 @@ import { ResultsTab } from "@/components/competitions/tabs/ResultsTab";
 import {
   makeRaceEventResultsResponse,
   makeFullFieldResultsResponse,
+  makeRaceResultRow,
   raceResultsHandlers,
   raceResultsEmptyHandler,
   raceResultsErrorHandler,
@@ -130,6 +131,61 @@ describe("ResultsTable — render básico", () => {
     expect(within(select as HTMLSelectElement).getByText("Todas")).toBeInTheDocument();
     expect(within(select as HTMLSelectElement).getByText("Infantil Masculino")).toBeInTheDocument();
     expect(within(select as HTMLSelectElement).getByText("Infantil Femenino")).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Estado de resultado — palabras, nunca códigos crudos (decisión del dueño
+// 2026-09-23): DNF/DNS/DSQ nunca deben llegar crudos a la pantalla.
+// ---------------------------------------------------------------------------
+
+describe("ResultsTable — estado de resultado (DNF/DNS/DSQ)", () => {
+  it("muestra el estado en palabras, nunca el código crudo", () => {
+    renderResultsTable({
+      categories: [
+        {
+          category_id: 1,
+          code: "INF_M",
+          label: "Infantil Masculino",
+          rows: [
+            makeRaceResultRow({
+              competitor_id: 901,
+              display_name: "Corredor DNF",
+              position: null,
+              status: "dnf",
+              race_time_ms: null,
+            }),
+            makeRaceResultRow({
+              competitor_id: 902,
+              display_name: "Corredor DNS",
+              position: null,
+              status: "dns",
+              race_time_ms: null,
+            }),
+            makeRaceResultRow({
+              competitor_id: 903,
+              display_name: "Corredor DSQ",
+              position: null,
+              status: "dsq",
+              race_time_ms: null,
+            }),
+          ],
+        },
+      ],
+    });
+
+    const dnfRow = screen.getByTestId("results-row-901");
+    expect(within(dnfRow).getAllByText("No terminó").length).toBeGreaterThan(0);
+    expect(within(dnfRow).queryByText("DNF")).not.toBeInTheDocument();
+
+    const dnsRow = screen.getByTestId("results-row-902");
+    // Comparte etiqueta con el catálogo de Historial (raceHistory.types.ts).
+    expect(within(dnsRow).getAllByText("No salió").length).toBeGreaterThan(0);
+    expect(within(dnsRow).queryByText("DNS")).not.toBeInTheDocument();
+
+    const dsqRow = screen.getByTestId("results-row-903");
+    expect(within(dsqRow).getAllByText("Descalificado").length).toBeGreaterThan(0);
+    expect(within(dsqRow).queryByText("DSQ")).not.toBeInTheDocument();
   });
 });
 

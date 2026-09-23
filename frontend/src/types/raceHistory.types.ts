@@ -33,7 +33,7 @@ export const RACE_HISTORY_STATUS_LABELS: Record<
   string
 > = {
   finished: "Terminó",
-  minus_laps: "Terminó (-vueltas)",
+  minus_laps: "Perdió vueltas",
   dnf: "No terminó",
   dns: "No salió",
   dsq: "Descalificado",

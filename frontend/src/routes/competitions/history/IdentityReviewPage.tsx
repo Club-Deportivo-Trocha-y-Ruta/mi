@@ -231,7 +231,7 @@ function DecisionCard({ candidate, onDecide, isBusy }: DecisionCardProps) {
                   piso de 4.5:1 AA) — un fondo blanco opaco con texto
                   charcoal garantiza contraste real sin depender del color
                   de fondo del botón (WCAG AA 1.4.3, ux-review.md MAJOR #3) */}
-              <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded bg-white px-1 text-[10px] font-semibold text-charcoal">
+              <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded bg-surface px-1 text-[10px] font-semibold text-charcoal">
                 1
               </span>
             </>

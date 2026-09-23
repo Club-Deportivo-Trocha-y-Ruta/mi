@@ -28,7 +28,7 @@ export function CalendarFiltersBar() {
 
   return (
     <div
-      className="rounded-xl bg-white p-4 shadow-card"
+      className="rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline"
     >
       <div className="flex flex-wrap items-end gap-2">
         {/* Event type filter */}
@@ -44,8 +44,8 @@ export function CalendarFiltersBar() {
                   onClick={() => toggleEventType(type)}
                   className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors shadow-ring ${
                     active
-                      ? "bg-charcoal text-white"
-                      : "bg-white text-charcoal hover:bg-light-gray"
+                      ? "bg-charcoal text-surface"
+                      : "bg-surface-raised text-charcoal hover:bg-light-gray"
                   }`}
                   aria-pressed={active}
                 >
@@ -60,7 +60,7 @@ export function CalendarFiltersBar() {
         <button
           type="button"
           onClick={reset}
-          className="self-end rounded-lg bg-white px-3 py-2 text-sm font-medium text-mid-gray transition-opacity hover:opacity-70 shadow-ring"
+          className="self-end rounded-lg bg-surface-raised px-3 py-2 text-sm font-medium text-mid-gray transition-opacity hover:opacity-70 shadow-ring"
         >
           Limpiar filtros
         </button>

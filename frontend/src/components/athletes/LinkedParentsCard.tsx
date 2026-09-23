@@ -170,7 +170,7 @@ export function LinkedParentsCard({
   const pendingInviteEmail = pendingInvite?.email ?? null;
 
   return (
-    <div className={cn("overflow-hidden rounded-xl bg-white", "shadow-card")}>
+    <div className={cn("overflow-hidden rounded-card bg-surface-raised", "shadow-card ring-1 ring-hairline")}>
       {/* Header — always visible, acts as toggle */}
       <button
         type="button"

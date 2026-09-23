@@ -193,7 +193,7 @@ function StravaTabPanel({ athleteId }: { athleteId: number }) {
   return (
     <div className="space-y-4">
       {/* Connection card */}
-      <div className="rounded-xl bg-white p-5 shadow-card">
+      <div className="rounded-card bg-surface-raised p-5 shadow-card ring-1 ring-hairline">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h3
             className="font-display flex items-center gap-2 text-sm text-charcoal"
@@ -328,7 +328,7 @@ function StravaTabPanel({ athleteId }: { athleteId: number }) {
       </div>
 
       {/* Activities list */}
-      <div className="rounded-xl bg-white p-5 shadow-card">
+      <div className="rounded-card bg-surface-raised p-5 shadow-card ring-1 ring-hairline">
         <h3
           className="font-display mb-4 flex items-center gap-2 text-sm text-charcoal"
           style={{ letterSpacing: "0.2px" }}
@@ -593,8 +593,8 @@ export function AthleteDetailPage() {
     cn(
       "flex min-h-12 items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
       activeTab === tab
-        ? "bg-charcoal text-white"
-        : "bg-white text-mid-gray shadow-ring hover:text-charcoal",
+        ? "bg-charcoal text-surface"
+        : "bg-surface-raised text-mid-gray shadow-ring hover:text-charcoal",
     );
 
   return (
@@ -751,7 +751,7 @@ export function AthleteDetailPage() {
               "scroll-mb-24 flex min-h-12 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium shadow-button-highlight transition-opacity",
               reportSent
                 ? "bg-green-600 text-white"
-                : "bg-charcoal text-white hover:opacity-70",
+                : "bg-charcoal text-surface hover:opacity-70",
               (sendReportMutation.isPending || reportSent) && "cursor-not-allowed opacity-70",
             )}
           >
@@ -783,7 +783,7 @@ export function AthleteDetailPage() {
       {/* Tab content — Info general */}
       {activeTab === "info" && (
         <div className="space-y-4">
-          <div className="rounded-xl bg-white p-5 shadow-card">
+          <div className="rounded-card bg-surface-raised p-5 shadow-card ring-1 ring-hairline">
             <h3
               className="font-display mb-4 flex items-center gap-2 text-sm text-charcoal"
               style={{ letterSpacing: "0.2px" }}
@@ -824,10 +824,10 @@ export function AthleteDetailPage() {
           {latest && (
             <div
               className={cn(
-                "rounded-xl p-5",
+                "rounded-card p-5",
                 latest.maturation_status === "Circa-PHV"
                   ? "border border-amber-200 bg-amber-50"
-                  : "bg-white shadow-card",
+                  : "bg-surface-raised shadow-card ring-1 ring-hairline",
               )}
             >
               <div className="mb-3 flex items-center gap-2">
@@ -862,14 +862,14 @@ export function AthleteDetailPage() {
             <button
               type="button"
               onClick={() => setShowForm(!showForm)}
-              className="rounded-lg bg-charcoal px-3 py-2 text-sm font-medium text-white shadow-button-highlight transition-opacity hover:opacity-70"
+              className="rounded-lg bg-charcoal px-3 py-2 text-sm font-medium text-surface shadow-button-highlight transition-opacity hover:opacity-70"
             >
               {showForm ? "Cancelar" : "+ Nueva medición"}
             </button>
           </div>
 
           {showForm && (
-            <div className="rounded-xl bg-white p-5 shadow-card">
+            <div className="rounded-card bg-surface-raised p-5 shadow-card ring-1 ring-hairline">
               <AnthropometryForm
                 athleteId={athlete.id}
                 athleteSex={athlete.sex}
@@ -879,7 +879,7 @@ export function AthleteDetailPage() {
             </div>
           )}
 
-          <div className="rounded-xl bg-white p-5 shadow-card">
+          <div className="rounded-card bg-surface-raised p-5 shadow-card ring-1 ring-hairline">
             <AnthropometryHistory
               records={records}
               isLoading={anthropometryQuery.isLoading}

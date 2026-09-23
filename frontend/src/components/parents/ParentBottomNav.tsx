@@ -139,7 +139,7 @@ export function ParentBottomNav() {
   return (
     <nav
       aria-label="Navegación principal"
-      className="fixed inset-x-0 bottom-0 z-40 flex items-stretch border-t border-light-gray bg-white md:hidden"
+      className="fixed inset-x-0 bottom-0 z-40 flex items-stretch border-t border-light-gray bg-surface md:hidden"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       {slots.map((slot) => {

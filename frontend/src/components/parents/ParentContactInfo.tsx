@@ -9,7 +9,7 @@ interface ParentContactInfoProps {
 
 export function ParentContactInfo({ parent }: ParentContactInfoProps) {
   return (
-    <div className={cn("rounded-xl bg-white p-5", "shadow-card")}>
+    <div className={cn("rounded-card bg-surface-raised p-5", "shadow-card ring-1 ring-hairline")}>
       <h3
         className="font-display mb-4 flex items-center gap-2 text-sm text-charcoal"
         style={{ letterSpacing: "0.2px" }}

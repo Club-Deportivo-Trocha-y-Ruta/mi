@@ -142,7 +142,7 @@ export function ActivityCard({
 
   return (
     <article
-      className={cn("rounded-xl bg-white p-4 shadow-card", className)}
+      className={cn("rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline", className)}
       aria-label={`Actividad ${sportTypeLabel(activity.sport_type)} del ${formatActivityDateTime(activity.start_date_local)}`}
     >
       <div className="flex flex-wrap items-start justify-between gap-2">

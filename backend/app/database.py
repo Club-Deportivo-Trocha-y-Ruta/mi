@@ -36,14 +36,41 @@ engine = create_async_engine(
     },
 )
 
+def _is_closed_transport_error(err: BaseException) -> bool:
+    return isinstance(err, RuntimeError) and (
+        "handler is closed" in str(err) or "Event loop is closed" in str(err)
+    )
+
+
 @event.listens_for(engine.sync_engine, "handle_error")
 def _uvloop_closed_is_disconnect(ctx: "Any") -> None:
-    err = ctx.original_exception
-    if isinstance(err, RuntimeError) and (
-        "handler is closed" in str(err) or "Event loop is closed" in str(err)
-    ):
+    if _is_closed_transport_error(ctx.original_exception):
         ctx.is_disconnect = True
         logger.debug("uvloop RuntimeError clasificado como disconnect; pool descartará la conexión.")
+
+
+def _wrap_ping_closed_transport(dialect: "Any") -> None:
+    """El pre-ping de SQLAlchemy (``_do_ping_w_event``) solo atrapa errores
+    DBAPI: el ``RuntimeError`` de uvloop sobre un socket que Hostinger ya
+    cerró se escapaba sin pasar por ``handle_error`` y la request entera
+    reventaba con 500 en vez de reconectar. Devolver ``False`` hace que el
+    pool invalide la conexión y abra una nueva, que es lo que pre-ping
+    promete."""
+    original_ping = dialect.do_ping
+
+    def _do_ping(dbapi_connection: "Any") -> bool:
+        try:
+            return original_ping(dbapi_connection)
+        except RuntimeError as err:
+            if _is_closed_transport_error(err):
+                logger.debug("pre-ping sobre transporte cerrado; el pool reconectará.")
+                return False
+            raise
+
+    dialect.do_ping = _do_ping
+
+
+_wrap_ping_closed_transport(engine.sync_engine.dialect)
 
 
 AsyncSessionLocal = async_sessionmaker(

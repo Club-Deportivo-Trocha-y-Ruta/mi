@@ -15,7 +15,7 @@ interface EmptyStateProps {
 
 export function EmptyState({ icon: Icon, title, description, action }: EmptyStateProps) {
   return (
-    <div className="rounded-xl bg-white px-6 py-12 text-center shadow-card">
+    <div className="rounded-card ring-1 ring-hairline bg-surface-raised px-6 py-12 text-center shadow-card">
       {Icon && <Icon size={44} className="mx-auto mb-3 text-mid-gray" aria-hidden="true" />}
       <p className="text-sm font-medium text-charcoal">{title}</p>
       {description && <p className="mt-1 text-xs text-mid-gray">{description}</p>}

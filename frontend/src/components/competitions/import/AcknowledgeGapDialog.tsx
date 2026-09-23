@@ -181,7 +181,7 @@ export function AcknowledgeGapDialog({
             type="submit"
             form="acknowledge-gap-form"
             disabled={isPending}
-            className="inline-flex min-h-[48px] items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="inline-flex min-h-[48px] items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-surface transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             {isPending ? (
               <Loader2 size={14} className="animate-spin" aria-hidden="true" />
