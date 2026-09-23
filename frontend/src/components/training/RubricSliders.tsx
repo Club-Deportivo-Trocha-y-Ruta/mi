@@ -26,8 +26,13 @@ interface RubricSlidersProps {
 // `text-sm` (ronda de pulido 2026-09-11): con la columna derecha del panel
 // en 440px y 5 opciones, el texto más grande sigue sin partirse (la clase
 // base de `Toggle` ya fuerza `whitespace-nowrap`).
+// Móvil (<sm, hotfix 2026-09-23): en un iPhone cada opción mide ~55px y
+// "Excelente"/"Muy bajo" en `text-sm` se cortaban por ambos lados. Ahí se
+// apila número (legible y escaneable) + palabra en 10px, que sí cabe;
+// desde `sm` vuelve a la palabra sola en `text-sm`. `min-w-0 basis-0`
+// reparte el ancho en partes iguales en lugar de por longitud de palabra.
 const rubricWordItemClass =
-  "min-h-12 flex-1 shrink-0 border-r border-[rgba(34,42,53,0.15)] px-1 text-center text-sm font-medium text-charcoal transition-colors last:border-r-0 data-[state=on]:bg-charcoal data-[state=on]:text-surface";
+  "h-auto min-h-12 min-w-0 flex-1 basis-0 border-r border-[rgba(34,42,53,0.15)] px-0.5 py-1 text-center text-sm font-medium text-charcoal transition-colors last:border-r-0 data-[state=on]:bg-charcoal data-[state=on]:text-surface sm:px-1";
 
 /**
  * Esfuerzo / Actitud / Técnica (1-5) — OPCIONALES: `null` es un valor
@@ -75,7 +80,14 @@ function RubricRow({
                   aria-label={`${label}: ${n} — ${RUBRIC_LABELS[n]}`}
                   className={rubricWordItemClass}
                 >
-                  {RUBRIC_LABELS[n]}
+                  <span className="flex flex-col items-center gap-0.5 leading-none">
+                    <span aria-hidden="true" className="text-sm font-semibold sm:hidden">
+                      {n}
+                    </span>
+                    <span className="text-[10px] tracking-tight sm:text-sm sm:tracking-normal">
+                      {RUBRIC_LABELS[n]}
+                    </span>
+                  </span>
                 </ToggleGroupItem>
               ))}
             </ToggleGroup>

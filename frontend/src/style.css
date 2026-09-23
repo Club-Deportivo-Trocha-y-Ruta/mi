@@ -501,6 +501,30 @@ body {
     outline: 2px solid var(--color-primary);
     outline-offset: 2px;
   }
+
+  /* iOS Safari pinta los <input type="date|time"> con apariencia nativa:
+     ignora padding/sombras y, sin valor, el control colapsa a alto/ancho 0
+     (los campos "Fecha" y "Hora de inicio" desaparecían en el iPhone).
+     Quitar la apariencia nativa los hace respetar las clases de Tailwind;
+     el selector nativo del sistema se sigue abriendo al tocar. */
+  input[type="date"],
+  input[type="time"],
+  input[type="datetime-local"],
+  input[type="month"] {
+    -webkit-appearance: none;
+    appearance: none;
+    display: block;
+    min-width: 0;
+    text-align: left;
+  }
+
+  input[type="date"]::-webkit-date-and-time-value,
+  input[type="time"]::-webkit-date-and-time-value,
+  input[type="datetime-local"]::-webkit-date-and-time-value,
+  input[type="month"]::-webkit-date-and-time-value {
+    min-height: 1.5em;
+    text-align: left;
+  }
 }
 
 /* ─────────────────────────────────────────────

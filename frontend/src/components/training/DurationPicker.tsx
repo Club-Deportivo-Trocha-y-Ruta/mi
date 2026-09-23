@@ -21,10 +21,13 @@ interface DurationPickerProps {
 }
 
 const labelClass = "block text-sm font-medium text-charcoal";
+// `text-base` en móvil: iOS Safari hace zoom automático al enfocar un campo
+// con fuente < 16px. `appearance-none` en el select quita la flecha nativa,
+// que en iOS se superponía al sufijo "min"; `pr-11` reserva su espacio.
 const inputClass =
-  "mt-1 w-full min-h-[48px] rounded-lg bg-surface-raised px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray shadow-ring outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40";
+  "w-full min-h-[48px] rounded-lg bg-surface-raised pl-3 pr-8 py-2 text-base sm:text-sm text-charcoal placeholder:text-mid-gray shadow-ring outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40";
 const selectClass =
-  "mt-1 w-full min-h-[48px] rounded-lg bg-surface-raised px-3 py-2 text-sm text-charcoal shadow-ring outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 cursor-pointer";
+  "w-full min-h-[48px] appearance-none rounded-lg bg-surface-raised pl-3 pr-11 py-2 text-base sm:text-sm text-charcoal shadow-ring outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 cursor-pointer";
 
 const MINUTE_STEPS = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
 
@@ -90,7 +93,7 @@ export function DurationPicker({ value, onChange, error }: DurationPickerProps) 
 
       {/* Inputs horas + minutos */}
       <div
-        className="mt-1 grid grid-cols-2 gap-2 max-w-[200px]"
+        className="mt-1 grid grid-cols-2 gap-2 max-w-[240px]"
         role="group"
         aria-labelledby="duration-group-label"
         aria-describedby={isError ? errorId : "duration-helper"}
@@ -100,7 +103,7 @@ export function DurationPicker({ value, onChange, error }: DurationPickerProps) 
           <label htmlFor={hoursId} className="sr-only">
             Horas
           </label>
-          <div className="relative">
+          <div className="relative mt-1">
             <input
               id={hoursId}
               type="number"
@@ -121,7 +124,7 @@ export function DurationPicker({ value, onChange, error }: DurationPickerProps) 
           <label htmlFor={minutesId} className="sr-only">
             Minutos
           </label>
-          <div className="relative">
+          <div className="relative mt-1">
             <select
               id={minutesId}
               value={displayMinutes}

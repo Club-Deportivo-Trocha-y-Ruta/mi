@@ -26,8 +26,10 @@ export interface RpeScaleProps {
  *   otros controles. 11 × 48px = 528px, cabe sin scroll en la columna
  *   izquierda del panel (560px). Sin `overflow-x-auto`: ese scroll era la
  *   causa de la franja gris que parecía una barra de scroll residual.
- * - En móvil (`<md`) envuelve en dos filas (0-5 / 6-10) en vez de hacer
- *   scroll horizontal (`flex-wrap md:flex-nowrap`).
+ * - En móvil (`<md`) es una cuadrícula de 6 columnas (0-5 / 6-10) a todo el
+ *   ancho, con cada celda redondeada y separada: la barra continua partida
+ *   en dos filas dejaba extremos redondeados sueltos ("0" y "10") que se
+ *   leían como piezas rotas. En `md+` vuelve a la barra continua.
  * - Sin valor, la barra entera baja a `opacity-60` (no se puede distinguir
  *   "vacío" de "con valor" de otro modo, ya que el degradé de color es el
  *   mismo). Con valor, opacidad completa y el segmento activo se marca con
@@ -65,7 +67,7 @@ export function RpeScale({ value, onChange, disabled }: RpeScaleProps) {
         disabled={disabled}
         aria-label="RPE OMNI 0-10"
         className={cn(
-          "flex flex-wrap items-end gap-y-1 md:flex-nowrap",
+          "grid w-full grid-cols-6 gap-1 md:flex md:w-fit md:flex-nowrap md:items-end md:gap-0",
           value == null ? "opacity-60" : "opacity-100",
         )}
       >
@@ -76,9 +78,11 @@ export function RpeScale({ value, onChange, disabled }: RpeScaleProps) {
             aria-label={`RPE OMNI 0-10: ${n} — ${RPE_LABELS[n]}`}
             style={{ backgroundColor: rpeSegmentColor(n) }}
             className={cn(
-              "h-12 w-12 shrink-0 rounded-none text-sm text-charcoal transition-[height,box-shadow]",
+              "h-12 w-full shrink-0 rounded-none px-0 text-sm text-charcoal transition-[height,box-shadow] md:w-12",
               "data-[spacing=0]:first:rounded-l-full data-[spacing=0]:last:rounded-r-full",
-              "data-[state=on]:z-10 data-[state=on]:h-14 data-[state=on]:font-bold data-[state=on]:text-midnight data-[state=on]:shadow-lg data-[state=on]:ring-2 data-[state=on]:ring-inset data-[state=on]:ring-charcoal",
+              // Móvil: celdas independientes, todas con el mismo radio.
+              "max-md:data-[spacing=0]:rounded-lg max-md:data-[spacing=0]:first:rounded-lg max-md:data-[spacing=0]:last:rounded-lg",
+              "data-[state=on]:z-10 md:data-[state=on]:h-14 data-[state=on]:font-bold data-[state=on]:text-midnight data-[state=on]:shadow-lg data-[state=on]:ring-2 data-[state=on]:ring-inset data-[state=on]:ring-charcoal",
             )}
           >
             {n}

@@ -606,7 +606,7 @@ function AttendanceCard({
   const panelId = `rubric-panel-card-${attendance.athlete_id}`;
 
   return (
-    <div className="rounded-xl bg-surface-raised p-4 space-y-3 shadow-ring" data-testid={`attendance-card-${attendance.athlete_id}`}>
+    <div className="rounded-xl bg-surface-raised p-3 space-y-3 shadow-ring sm:p-4" data-testid={`attendance-card-${attendance.athlete_id}`}>
       <div className="flex items-start justify-between gap-2">
         <div>
           <p className="text-sm font-medium text-charcoal">{athleteName}</p>

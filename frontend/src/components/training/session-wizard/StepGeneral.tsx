@@ -10,8 +10,9 @@ import { SessionCoachesField } from "@/components/training/SessionCoachesField";
 import type { TrainingSessionFormValues } from "@/schemas/trainingSession.schema";
 
 const labelClass = "block text-sm font-medium text-charcoal";
+// `text-base` en móvil evita el zoom automático de iOS Safari al enfocar.
 const inputClass =
-  "mt-1 w-full min-h-[48px] rounded-lg bg-surface-raised px-3 py-2 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 shadow-ring";
+  "mt-1 w-full min-h-[48px] rounded-lg bg-surface-raised px-3 py-2 text-base sm:text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-blue-500/40 shadow-ring";
 const errorClass = "mt-1 text-xs text-red-600";
 
 /** Small "IA" badge rendered next to a field label when AI pre-filled it. */
@@ -49,7 +50,12 @@ export function StepGeneral({
 
   return (
     <div className="space-y-4" data-testid="session-step-general">
-      <div className="grid gap-4 sm:grid-cols-[180px_180px] justify-start">
+      {/* Móvil: fecha y hora lado a lado a partes iguales (`minmax(0,1fr)`
+          evita que el ancho intrínseco del control nativo desborde la
+          columna). Antes era `justify-start` sin columnas explícitas: en iOS
+          Safari la columna colapsaba al ancho del control vacío y los campos
+          quedaban invisibles. */}
+      <div className="grid grid-cols-2 gap-3 sm:max-w-[400px] sm:gap-4">
         <div>
           <label htmlFor="scheduled_date-input" className={labelClass}>
             Fecha
