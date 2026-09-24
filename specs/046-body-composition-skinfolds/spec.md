@@ -22,6 +22,20 @@ The research in `docs/21-body-composition/` (read `proposal.md` first) establish
 
 Owner decisions taken on 2026-09-23 (`proposal.md` §7–8): the caliper is a Slim Guide-class plastic caliper reading in 1 mm graduations; six default sites; families see a band and one sentence only; the second-adult check is a reminder, not a gate; cadence is 90 days for everyone; the referral note is generic (no partner named); the AI explanation is part of this release; families are informed with an in-app notice and no new consent.
 
+## Clarifications
+
+### Session 2026-09-23
+
+- Q: When does the family see "En observación" or "Requiere acompañamiento profesional" — as soon as the system computes it, or only after the coach reviews it? → A: Family band is capped at ámbar: verde shows as "En su curva esperada"; ámbar and rojo both show as "En observación"; "Requiere acompañamiento profesional" never appears automatically on any family surface — the coach communicates it in person.
+- Q: Should body composition appear in the monthly family newsletter (Bitácora de etapa: PDF and AI text)? → A: Yes — families rarely open the app and read the newsletter the coach sends manually, so the newsletter carries the family band label and its sentence (capped at ámbar), never a number; the coach's manual send is the human gate. Refined after `/speckit-analyze` (same day): the block is deterministic fixed copy rendered into the newsletter, and the newsletter AI receives no body-composition data at all, so its prompt does not change (the newsletter pipeline has no golden eval, and the constitution requires re-running one on any prompt change).
+- Q: Where are families told what the skinfold measurement is (voluntary site by site, private setting, use of results), given they rarely open the app? → A: In the app the notice is always shown (athletes aged 9+); in the newsletter, the body-composition block — band, sentence and a short version of the notice — appears only in the month a skinfold set was taken (by evaluation date) and is absent in every other month.
+- Q: When ámbar comes only from a Colombian-reference extreme (no real change over time, e.g. a single set ≥ P95), should the family see "En observación"? → A: No — reference-only ámbar is coach-only; the family sees "En su curva esperada" until a real change over time exists. Only trend-based ámbar/rojo reaches the family, as "En observación".
+- Q: If the athlete does not want to be measured at all that day, how does the coach record it and what does the family see? → A: The pre-check screen offers "Hoy prefiere no medirse", which saves the set with all six sites declined in one action; the coach sees "Sin datos: prefirió no medirse"; the family sees nothing (no newsletter block that month, card unchanged); the 90-day counter does not restart.
+
+### Session 2026-09-24
+
+- Q: How is a day where only skinfolds are measured handled, given every set hangs off a full weight/height evaluation? → A: It stays coupled: skinfolds are taken only on the day of a full weight/height evaluation (weighing and measuring take 2–3 minutes and the fat-free-mass estimate needs same-day weight). No standalone skinfold set, no weight-only evaluation.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Guided, illustrated skinfold capture (Priority: P1)
@@ -35,7 +49,7 @@ The coach has just saved the usual weight/height evaluation for an athlete on th
 **Acceptance Scenarios**:
 
 1. **Given** the coach has just saved a weight/height evaluation for an athlete aged 9 or older, **When** the save succeeds, **Then** the coach sees two exits, "Guardar y terminar" (today's behaviour) and "Guardar y agregar pliegues", and the fast path is unchanged.
-2. **Given** the coach opens the skinfold flow, **When** the pre-check screen appears, **Then** every condition is shown as a reminder the coach can acknowledge, none of them blocks "Siguiente", and the screen states that the athlete may decline any site without consequence.
+2. **Given** the coach opens the skinfold flow, **When** the pre-check screen appears, **Then** every condition is shown as a reminder the coach can acknowledge, none of them blocks "Siguiente", the screen states that the athlete may decline any site without consequence, and a "Hoy prefiere no medirse" action saves a fully declined set in one step.
 3. **Given** the coach is on a site screen, **When** the screen renders, **Then** it shows the illustration for that site with a plain-language text alternative, the "Dónde"/"Cómo" instructions, two millimetre inputs accepting half-millimetre steps, and an "Omitir este sitio" control at least as prominent as "Siguiente".
 4. **Given** two readings for a site differ by more than the tolerance (the greater of 5 % of their mean or 1 mm), **When** the second reading is entered, **Then** the screen asks for a third reading with a non-alarming message, and the site value becomes the middle of the three; when the readings agree, the site value is their mean and no third reading is requested.
 5. **Given** the coach taps "Omitir este sitio", **When** the site is skipped, **Then** the flow continues, the site is recorded as declined (not empty), and no reason is demanded.
@@ -79,7 +93,7 @@ The coach sees a traffic-light reading (verde / ámbar / rojo) for the athlete's
 2. **Given** an athlete whose backbone sum fell beyond the margin while weight stayed flat or fell and height kept growing, **When** the reading is computed, **Then** it is rojo with the pattern stated and the escalation prompt shown to the coach only.
 3. **Given** an athlete whose change is within the margin, **When** the reading is computed, **Then** it is verde with "sin cambio real desde la última toma".
 4. **Given** an athlete with a real change that no growth pattern explains (for example, sum up sharply while height velocity is flat), **When** the reading is computed, **Then** it is ámbar with a prompt to have a private conversation, never a number.
-5. **Given** an athlete with a single set, **When** the reading is computed, **Then** it can be verde or ámbar (from the reference context) but never rojo, and the text says a second set is needed for a trend.
+5. **Given** an athlete with a single set, **When** the reading is computed, **Then** it can be verde or ámbar (from the reference context) but never rojo, and the text says a second set is needed for a trend; a reference-only ámbar is shown to the coach only and projects to "En su curva esperada" for the family.
 6. **Given** a rojo reading, **When** the coach chooses "Generar nota de remisión", **Then** a Spanish note is produced that describes the observed pattern in neutral terms, contains no diagnosis, label, percentage or target, names no professional or institution, and states that measurement history is attached only with the family's explicit authorization.
 7. **Given** any reading, **When** it is stored or displayed, **Then** it is never sent automatically to the family or the athlete.
 
@@ -87,7 +101,7 @@ The coach sees a traffic-light reading (verde / ámbar / rojo) for the athlete's
 
 ### User Story 4 - Family card and in-app notice (Priority: P2)
 
-A parent opens their child's growth view on an Android phone and sees a "Composición corporal" card with a band label and one sentence in neutral Colombian Spanish, with no percentage and no millimetres. The first time skinfolds exist for the child (or before, when the coach enables the feature), the parent sees a notice explaining what the measurement is, that it is voluntary site by site, that it is taken in a private space, and how results are used. No new consent is requested. Any document the family can download about the athlete follows the same no-numbers rule.
+A parent opens their child's growth view on an Android phone and sees a "Composición corporal" card with a band label and one sentence (a coach-side rojo is shown to the family as "En observación") in neutral Colombian Spanish, with no percentage and no millimetres. For every athlete aged 9 or older, the growth view always shows a notice explaining what the measurement is, that it is voluntary site by site, that it is taken in a private space, and how results are used. No new consent is requested. Because families rarely open the app, the monthly newsletter (Bitácora de etapa) the coach sends manually carries the same band, sentence and a short notice, but only in the month a skinfold set was taken; any document the family can download or receive about the athlete follows the same no-numbers rule.
 
 **Why this priority**: Families must not be surprised by a new measurement of their child, and the number-free presentation is the core safeguard. It depends on Story 1's data but not on Story 3's escalation.
 
@@ -95,11 +109,14 @@ A parent opens their child's growth view on an Android phone and sees a "Composi
 
 **Acceptance Scenarios**:
 
-1. **Given** a parent linked to an athlete with at least one skinfold set, **When** they open the growth view, **Then** they see one card with the band label ("En su curva esperada" / "En observación" / "Requiere acompañamiento profesional") and its sentence, and nothing numeric.
-2. **Given** a parent linked to an athlete with no skinfold set, **When** they open the growth view, **Then** the card is absent or shows the neutral "Aún no hay datos suficientes" message used elsewhere.
-3. **Given** the in-app notice, **When** the parent reads it, **Then** it explains the measurement, its voluntary and private nature, and how results are used, in the wording approved in `docs/21-body-composition/research-safeguards-referral.md` §5, and it does not ask for a new consent.
-4. **Given** a parent downloads the anthropometry document for their child, **When** the document renders, **Then** it contains no skinfold values, no sums and no body-fat percentage.
-5. **Given** a parent not linked to an athlete, **When** they request that athlete's growth data, **Then** access is denied exactly as for the rest of the growth data.
+1. **Given** a parent linked to an athlete with at least one skinfold set, **When** they open the growth view, **Then** they see one card with the family band label ("En su curva esperada" for verde, "En observación" for ámbar or rojo) and its sentence, and nothing numeric.
+2. **Given** the coach-side reading is rojo, **When** the parent opens the growth view, **Then** the card shows "En observación" with the ámbar sentence, and "Requiere acompañamiento profesional" appears nowhere on the family surface.
+3. **Given** the coach-side reading is ámbar only because of a reference extreme (for example, a single set at or above P95) with no real change over time, **When** the parent opens the growth view or receives the newsletter, **Then** they see "En su curva esperada", while the coach still sees ámbar and its reason.
+4. **Given** a parent linked to an athlete with no skinfold set, **When** they open the growth view, **Then** the card is absent or shows the neutral "Aún no hay datos suficientes" message used elsewhere.
+5. **Given** an athlete with a skinfold set in the newsletter month, **When** the coach generates the monthly newsletter, **Then** its PDF shows a fixed-copy block with the family band label, its sentence (rojo as "En observación") and the short notice, the AI-written narrative does not mention body composition, with no percentage, millimetre value or sum, and nothing is sent until the coach sends it manually; **Given** no skinfold set was taken that month, **Then** the newsletter has no body-composition block at all.
+6. **Given** the in-app notice, **When** the parent reads it, **Then** it explains the measurement, its voluntary and private nature, and how results are used, in the wording approved in `docs/21-body-composition/research-safeguards-referral.md` §5, and it does not ask for a new consent.
+7. **Given** a parent downloads the anthropometry document for their child, **When** the document renders, **Then** it contains no skinfold values, no sums and no body-fat percentage.
+8. **Given** a parent not linked to an athlete, **When** they request that athlete's growth data, **Then** access is denied exactly as for the rest of the growth data.
 
 ---
 
@@ -138,7 +155,8 @@ When the coach requests the existing AI explanation of a measurement, and the me
 
 ### Edge Cases
 
-- **All six sites skipped**: the set is stored as declined for every site; no sums, no estimates, no traffic light; the coach sees "Sin datos: el/la deportista prefirió no medirse" and the 90-day counter does not restart.
+- **Skinfold-only day**: not supported; the coach records the full weight/height evaluation first (same day) and then the set, so the fat-free-mass estimate always uses same-day weight and no height value is ever invented.
+- **All six sites skipped** (site by site or via "Hoy prefiere no medirse"): the set is stored as declined for every site; no sums, no estimates, no traffic light; the coach sees "Sin datos: el/la deportista prefirió no medirse"; the family sees nothing about it (no newsletter block that month, the card keeps its previous state) and the 90-day counter does not restart.
 - **Backbone site skipped**: the backbone sum for that date is "incompleta"; the six-site sum is unavailable; per-site trends continue; the traffic light uses whatever legs remain and says which legs are missing.
 - **Triceps or calf skipped**: no body-fat or fat-free-mass estimate for that date; the sums and the traffic light still work.
 - **Third reading requested but not taken**: the site value is the mean of the two readings and the site is marked "sin confirmar"; the flow does not block.
@@ -173,13 +191,13 @@ When the coach requests the existing AI explanation of a measurement, and the me
 **Capture**
 
 - **FR-001**: The system MUST let a coach or admin attach one skinfold set to an existing weight/height evaluation of an athlete aged 9 or older, as an optional step offered right after saving the evaluation and also from the evaluation's history entry.
-- **FR-002**: The capture flow MUST start with a pre-check screen listing the measurement conditions (not right after training, dry skin without lotion or sunscreen, private space, a second adult present, athlete standing relaxed) as reminders that never block progress, plus a statement that the athlete may decline any site without consequence.
+- **FR-002**: The capture flow MUST start with a pre-check screen listing the measurement conditions (not right after training, dry skin without lotion or sunscreen, private space, a second adult present, athlete standing relaxed) as reminders that never block progress, plus a statement that the athlete may decline any site without consequence, and a "Hoy prefiere no medirse" action that saves the set with all six sites declined in one step, without a reason and without passing through the site screens.
 - **FR-003**: The flow MUST present one screen per site, in this default order: triceps, biceps, subscapular, medial calf, iliac crest, supraspinale.
 - **FR-004**: Each site screen MUST show a generic line-art illustration of the right side of the body marking the landmark, the fold direction and the caliper position, plus a plain-language text alternative, and "Dónde"/"Cómo" instructions of at most three short lines each.
 - **FR-005**: Each site MUST accept two readings in millimetres in half-millimetre steps and MUST request a third reading when the two differ by more than the greater of 5 % of their mean or 1 mm; the site value MUST be the median of three readings when three exist and the mean of two otherwise.
 - **FR-006**: Every site MUST offer an "Omitir este sitio" action that records the site as declined, requires no reason, is visually as prominent as the primary action, and is never styled as an error.
 - **FR-007**: The system MUST warn, without blocking, when a reading is outside the plausible range for the site and the athlete's age.
-- **FR-008**: The flow MUST keep a local draft of a half-finished set so that an interruption, a page reload or a lost connection does not lose entered readings, and MUST offer to restore or discard it on return.
+- **FR-008**: The flow MUST keep a local draft of a half-finished set so that an interruption, a page reload or a lost connection does not lose entered readings, and MUST offer to restore or discard it on return within the same day (24 h); a draft older than that, or any draft left on the device at logout, MUST be discarded rather than offered.
 - **FR-009**: A review screen MUST list each site with its value or "Omitido", the number of readings taken, the sums that could be computed, and MUST save the whole set in one action attached to the evaluation date.
 - **FR-010**: The system MUST store, for each set, the raw readings per site, the site value, the declined state per site, the caliper model and the protocol version, so that values can be recomputed if the protocol changes.
 - **FR-011**: The system MUST NOT offer a new skinfold set for an athlete until 90 days have passed since the evaluation date of the previous set, MUST explain the waiting period, and MUST still allow correcting or replacing the most recent set.
@@ -205,14 +223,15 @@ When the coach requests the existing AI explanation of a measurement, and the me
 
 **Family surface**
 
-- **FR-025**: A parent linked to the athlete MUST see one "Composición corporal" card with a band label and one sentence in neutral Colombian Spanish, using the approved copy (verde: "En su curva esperada"; ámbar: "En observación"; rojo: "Requiere acompañamiento profesional"), and MUST NOT see any percentage, millimetre value, sum or per-site value.
+- **FR-025**: A parent linked to the athlete MUST see one "Composición corporal" card with a band label and one sentence in neutral Colombian Spanish, using the approved copy (verde, and any ámbar driven only by the reference context without a real change over time: "En su curva esperada"; trend-based ámbar and rojo: "En observación" with the ámbar sentence), MUST NEVER show "Requiere acompañamiento profesional" or any rojo-specific wording on a family surface (the coach communicates it in person, following the escalation ladder), and MUST NOT see any percentage, millimetre value, sum or per-site value.
 - **FR-026**: Every downloadable document about the athlete available to a parent MUST follow the same no-numbers rule for body composition.
-- **FR-027**: The system MUST show families an in-app notice explaining the skinfold measurement, its voluntary site-by-site nature, the private setting and the use of results, using the approved addendum copy, and MUST NOT require a new consent or a policy re-acceptance; capture MUST remain gated by the existing anthropometry consent.
+- **FR-036**: The monthly family newsletter (Bitácora de etapa) MUST include a deterministic body-composition block — fixed copy, not AI-generated: the family band label and sentence (capped at ámbar as in FR-025) plus a short version of the family notice — only in the newsletter of the month in which a skinfold set with at least one measured site was taken (by evaluation date), and MUST omit the block in every other month; the newsletter AI context MUST NOT receive any body-composition data (no band, no code, no value), so the newsletter prompt is unchanged; the newsletter is sent only by the coach's existing manual action.
+- **FR-027**: The system MUST always show families of athletes aged 9 or older an in-app notice, before and after the first set, explaining the skinfold measurement, its voluntary site-by-site nature, the private setting and the use of results, using the approved addendum copy, and MUST NOT require a new consent or a policy re-acceptance; capture MUST remain gated by the existing anthropometry consent.
 - **FR-028**: Parent access MUST follow the existing rule: only their own linked athletes, denied otherwise.
 
 **AI explanation**
 
-- **FR-029**: When a measurement has a skinfold set, the existing AI explanation MUST cover body composition for both audiences using qualitative descriptions only; the information given to the provider MUST be limited to qualitative codes (band, direction of change, number of declined sites) and MUST never include names, millimetre values or percentages.
+- **FR-029**: When a measurement has a skinfold set, the existing AI explanation MUST cover body composition for both audiences using qualitative descriptions only; the information given to the provider MUST be limited to qualitative codes (band, direction of change, number of declined sites) and MUST never include names, millimetre values or percentages. The family-audience text MUST follow the capped family band (rojo described as "en observación", never as needing professional support).
 - **FR-030**: The guardrails MUST block any generated text that contains a body-fat percentage, a millimetre value, or weight-loss or diet language, with the same consequence as today's blocked cases; the rule-based fallback MUST cover body composition with the same qualitative wording.
 - **FR-031**: The reference evaluation set for the growth explanation MUST gain cases with body-composition input and MUST keep passing at the existing threshold.
 
@@ -242,8 +261,8 @@ When the coach requests the existing AI explanation of a measurement, and the me
 
 - **SC-001**: For any athlete with two skinfold sets at least 90 days apart, the coach can answer "did lean mass, fat mass or both change?" from a single screen that shows the backbone-sum change, the estimated fat-free-mass change and the noise-vs-real reading.
 - **SC-002**: A measurer who has never taken skinfolds completes the six default sites for one athlete in under 10 minutes on a tablet without leaving the flow to look up instructions (validated in a supervised trial with an adult volunteer).
-- **SC-003**: 100 % of family-facing screens, documents and AI texts about body composition contain no percentage, sum or millimetre value, verified by automated tests over every family surface.
-- **SC-004**: Across the fixed scenario set (rising sum in a circa-PHV girl; flat sum in a post-PHV boy; falling sum with flat weight and rising height; single set at a high percentile), the traffic light returns verde, verde, rojo and ámbar respectively, and no scenario with a rising sum alone returns rojo.
+- **SC-003**: 100 % of family-facing screens, documents (including the monthly newsletter PDF and its body-composition block) and AI texts about body composition contain no percentage, sum or millimetre value, verified by automated tests over every family surface.
+- **SC-004**: Across the fixed scenario set (rising sum in a circa-PHV girl; flat sum in a post-PHV boy; falling sum with flat weight and rising height; single set at a high percentile), the traffic light returns verde, verde, rojo and ámbar respectively, and no scenario with a rising sum alone returns rojo; the family projections of the same four scenarios are "En su curva esperada", "En su curva esperada", "En observación" and "En su curva esperada".
 - **SC-005**: A capture interrupted at any step is restored with all entered readings intact in 100 % of attempts (page reload, tab close, connection loss).
 - **SC-006**: Every page- and dialog-level screen of the capture flow, the coach section and the family card passes the accessibility audit with zero violations, and every control meets the 48 px floor.
 - **SC-007**: No new skinfold set can be attached less than 90 days after the previous set's evaluation date, while correcting the most recent set remains possible.

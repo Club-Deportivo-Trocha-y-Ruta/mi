@@ -1,6 +1,6 @@
 # Body composition (skinfolds) — Proposal and open decisions
 
-**Status**: research synthesis, 2026-09-23. Nothing implemented. Input for a future Spec Kit feature (next free number at the time of writing: `specs/046-…`).
+**Status**: implemented 2026-09-24 as `specs/046-body-composition-skinfolds` (on `main`, no branch, uncommitted; not deployed) — see `docs/implementation-status.md`'s own entry and `docs/technical-notes.md`'s 2026-09-24 entry for the as-built detail.
 **Inputs**: `research-protocol.md` (science, equations, references), `research-safeguards-referral.md` (ethics, bands, referral, Spanish copy), `research-measurer-ux.md` (capture flow, illustrations, family view), `technical-fit.md` (data model, API, AI pipeline, waves). Read those for evidence; this file only decides and lists what is still open.
 
 ## 1. The problem

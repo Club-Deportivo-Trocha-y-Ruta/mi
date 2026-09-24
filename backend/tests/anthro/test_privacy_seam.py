@@ -29,6 +29,7 @@ Four properties (per `specs/042-traceable-growth-ai/tasks.md` T054):
 
 from __future__ import annotations
 
+import asyncio
 import re
 from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -39,7 +40,10 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from app.models.ai_explanation import AthleteAIExplanation
+from app.schemas.body_composition import BodyCompositionReading, ReferenceContext
 from app.services.ai.anthro import analyst as anthro_analyst
+from app.services.ai.models import LLMMessage, LLMRequest
+from app.services.ai.providers.fake import FakeLLMProvider
 from app.services.ai.anthro import context as anthro_context
 from app.services.ai.anthro import pipeline as anthro_pipeline
 from app.services.ai.anthro.context import AnalysisContext
@@ -503,6 +507,110 @@ def test_sanitize_insight_context_output_always_subset_of_allowlist(ctx):
     # while claiming compliance with this test.
     for key, value in sanitized.items():
         assert value is ctx[key] or value == ctx[key]
+
+
+# ---------------------------------------------------------------------------
+# Property 5 (feature 046, T062) — for random synthetic skinfold sets/
+# readings, the rendered family prompt block and the fake-provider request
+# never contain a digit immediately followed by `%`/`mm`, nor a
+# club-forbidden name.
+# ---------------------------------------------------------------------------
+
+_NUMERIC_UNIT_LEAK_PATTERN = re.compile(r"\d+(?:[.,]\d+)?\s*(?:%|mm)")
+
+_reading_field_strategy = st.fixed_dictionaries(
+    {
+        "sets_count": st.integers(min_value=1, max_value=9),
+        "sum_change_code": st.sampled_from(["none", "within_noise", "up_real", "down_real"]),
+        "band": st.sampled_from(["verde", "ambar", "rojo"]),
+        "family_band": st.sampled_from(["verde", "ambar"]),
+        "band_reason_code": st.sampled_from(
+            [
+                "energy_availability_pattern",
+                "sum_down_unexplained",
+                "sum_up_unexplained",
+                "sum_up_velocity_low",
+                "reference_extreme",
+                "bmi_z_drop",
+                "velocity_low_persistent",
+                "expected_pubertal_gain",
+                "pre_spurt_accumulation",
+                "post_phv_lean_gain",
+                "first_set",
+                "no_real_change",
+                "stable",
+            ]
+        ),
+        "ffm_trend_code": st.sampled_from(["up", "flat", "down", "unavailable"]),
+        "reference_code_tri": st.sampled_from(
+            ["low_extreme", "low", "normal", "high", "high_extreme", "unavailable"]
+        ),
+        "reference_code_sub": st.sampled_from(
+            ["low_extreme", "low", "normal", "high", "high_extreme", "unavailable"]
+        ),
+        "sites_declined_count": st.integers(min_value=0, max_value=6),
+        "weeks_since_prev_set": st.one_of(st.none(), st.integers(min_value=0, max_value=520)),
+    }
+)
+
+
+def _reading_from_fields(fields: dict) -> BodyCompositionReading:
+    return BodyCompositionReading(
+        sets_count=fields["sets_count"],
+        sum_change_code=fields["sum_change_code"],
+        weight_change_code="up",
+        height_growth_code="growing",
+        velocity_code="within_or_above",
+        bmi_z_change_code="ok",
+        reference_triceps=ReferenceContext(percentile=None, code=fields["reference_code_tri"]),
+        reference_subscapular=ReferenceContext(percentile=None, code=fields["reference_code_sub"]),
+        ffm_trend_code=fields["ffm_trend_code"],
+        sites_declined_count=fields["sites_declined_count"],
+        band=fields["band"],
+        family_band=fields["family_band"],
+        band_reason_code=fields["band_reason_code"],
+        legs_missing=[],
+        next_due_date=None,
+        days_until_due=None,
+    )
+
+
+@settings(max_examples=40, deadline=None, suppress_health_check=[HealthCheck.too_slow])
+@given(fields=_reading_field_strategy, name=_forbidden_name)
+def test_family_body_composition_block_and_fake_request_never_leak_numbers_or_names(
+    fields, name
+):
+    reading = _reading_from_fields(fields)
+    record = SimpleNamespace(evaluation_date=date(2026, 6, 1))
+    previous_record = (
+        SimpleNamespace(evaluation_date=date(2026, 4, 1))
+        if fields["weeks_since_prev_set"] is not None
+        else None
+    )
+
+    leaf = anthro_context._build_body_composition_dict(record, previous_record, reading)
+    assert leaf is not None
+    sanitized_leaf = sanitize_insight_context(leaf)
+
+    family_block = anthro_context._render_body_composition_block(sanitized_leaf, "family")
+    assert family_block is not None
+
+    assert not _NUMERIC_UNIT_LEAK_PATTERN.search(family_block), (
+        f"Family body-composition block leaked a numeric %/mm value: {family_block!r}"
+    )
+    assert name not in family_block
+
+    # The fake-provider request is the literal string that would leave this
+    # process for a real provider (same seam as properties 1-3 above).
+    fake = FakeLLMProvider()
+    request = LLMRequest(
+        system="Eres un asistente de análisis antropométrico.",
+        messages=(LLMMessage(role="user", content=family_block),),
+    )
+    asyncio.run(fake.complete(request))
+    sent_text = fake.last_request.messages[-1].content
+    assert not _NUMERIC_UNIT_LEAK_PATTERN.search(sent_text)
+    assert name not in sent_text
 
 
 # ---------------------------------------------------------------------------

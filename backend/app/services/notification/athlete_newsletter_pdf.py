@@ -23,6 +23,7 @@ import pdfplumber
 
 from app.schemas.notification import DocumentFormat, DocumentRequest, DocumentTemplate, GeneratedDocument
 from app.services.notification.document_generator import DocumentGenerator
+from app.services.race.audience import Audience, redact_for_audience
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +90,7 @@ def _build_stage_log_pdf_context(
     club_name: str,
     season_year: str | None,
     annex_page_break: bool = True,
+    body_composition: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Arma el ``context`` Jinja del PDF de bitácora — función pura (F-9).
 
@@ -138,6 +140,14 @@ def _build_stage_log_pdf_context(
     # template en absoluto.
     race_results_annex = race_results if has_race_this_month else None
 
+    # Feature 045 (FR-022, decisión del dueño 2026-09-23): este PDF es un
+    # documento de familia, que nunca ve la brecha a la ganadora ni al podio.
+    # ``race_results`` y ``charts_context`` vienen del snapshot persistido
+    # (``metrics_snapshot``), que las conserva para el coach
+    # (``gap_to_winner_*``, ``gap_pct``, ``gap_to_p3_*``; ``gap_pcts`` en los
+    # boletines anteriores a la 045). Ninguna plantilla las lee, pero el
+    # contexto que llega a Jinja tampoco las lleva. ``redact_for_audience``
+    # devuelve una copia (nunca muta el snapshot) y elimina las claves.
     return {
         "athlete_first_name": athlete_first_name,
         "athlete_last_name": athlete_last_name,
@@ -146,10 +156,14 @@ def _build_stage_log_pdf_context(
         "season_year": season_year_str,
         "stage_log": stage_log,
         "anthro_annex": anthro_annex,
-        "charts_annex": charts_annex,
+        "charts_annex": redact_for_audience(charts_annex, Audience.FAMILY),
         "percentile_annex": percentile_annex,
-        "race_results": race_results_annex,
+        "race_results": redact_for_audience(race_results_annex, Audience.FAMILY),
         "annex_page_break": annex_page_break,
+        # Feature 046: fixed-copy annex (family_label/family_sentence/
+        # notice_text only, no numbers) — already scoped to this month by
+        # the caller (``body_composition_annex`` / newsletter_builder).
+        "body_composition_annex": body_composition,
     }
 
 
@@ -168,6 +182,7 @@ async def generate_stage_log_pdf(
     race_results: dict[str, Any] | None = None,
     club_name: str = "Trocha y Ruta",
     season_year: str | None = None,
+    body_composition: dict[str, Any] | None = None,
 ) -> tuple[GeneratedDocument, str]:
     """Genera el PDF de la bitácora de etapa (feature 038).
 
@@ -203,7 +218,16 @@ async def generate_stage_log_pdf(
             ``race_results`` se descarta antes de llegar al template
             (sección "Campeonatos" ausente). Ausente/``None`` → sin sección
             "Campeonatos", sin error (mismo criterio del resto del
-            template: claves ausentes se tratan como vacías).
+            template: claves ausentes se tratan como vacías). Feature 045:
+            se pasa por la política de audiencia de familia antes de
+            llegar al contexto (sin ``gap_to_winner_*``/``gap_pct``/
+            ``gap_to_p3_*``); el snapshot original no se toca. Lo mismo vale
+            para ``charts_context`` (``gap_pcts`` heredada).
+        body_composition: bloque ``pdf_only_blocks["body_composition"]``
+            (feature 046) — ``{family_label, family_sentence, notice_text}``
+            o ``None``. Ya viene acotado al mes de la toma contada de
+            pliegues por el llamador; nunca cifras, nunca el
+            ``band_reason_code`` del entrenador.
 
     No recibe ``db``: las fotos de ``StageLog.photos`` no traen ``media_id``
     (por diseño del modelo, ver
@@ -224,6 +248,7 @@ async def generate_stage_log_pdf(
         charts_context=charts_context,
         percentile_curves=percentile_curves,
         race_results=race_results,
+        body_composition=body_composition,
         club_name=club_name,
         season_year=season_year,
     )

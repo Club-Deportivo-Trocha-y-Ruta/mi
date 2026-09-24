@@ -1,3 +1,4 @@
+import type { SkinfoldSetOut } from "@/types/bodyComposition.types";
 import type { MaturationStatus } from "@/types/enums";
 
 export interface AnthropometryCreate {
@@ -58,4 +59,9 @@ export interface AnthropometricRecord {
   morphology?: MorphologyMetrics | null;
   /** Referencia usada para los campos anteriores (feature 040). */
   growth_source?: GrowthSource;
+  /**
+   * Set de pliegues cutáneos de esta evaluación (feature 046,
+   * `contracts/skinfolds-api.md` §3). Siempre `null` para padres.
+   */
+  skinfolds?: SkinfoldSetOut | null;
 }

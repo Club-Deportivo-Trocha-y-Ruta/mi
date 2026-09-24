@@ -1,0 +1,99 @@
+{
+  "case_id": "013",
+  "description": "Feature 046. Circa-PHV girl, 12.6 y, family audience. Real rise of the skinfold sum explained by expected pubertal gain (band verde, reason expected_pubertal_gain). Must reassure first, speak of process and growth, and never state a percentage, a millimetre value, a weight goal or diet advice.",
+  "audience": "family",
+  "input": {
+    "identity": {
+      "age_decimal": 12.6,
+      "age_group": "10-12",
+      "sex": "F",
+      "category": "Infantil B femenino"
+    },
+    "measurement_deltas": {
+      "weeks_since_prev_measurement": 14,
+      "delta_height_cm": 2.4,
+      "delta_weight_kg": 1.9,
+      "delta_height_significant": true,
+      "delta_weight_significant": true,
+      "growth_velocity_cm_per_year": 8.9,
+      "velocity_confidence": "early_signal",
+      "crossed_phv_phase": false,
+      "prev_maturation_status": "Circa-PHV",
+      "phase_crossing_corroborated": false
+    },
+    "longitudinal_series": [
+      {
+        "weeks_offset_from_latest": 0,
+        "height_cm": 151.2,
+        "weight_kg": 41.3,
+        "maturation_status_at_point": "Circa-PHV",
+        "delta_height_cm_from_prior_point": 2.4
+      },
+      {
+        "weeks_offset_from_latest": 14,
+        "height_cm": 148.8,
+        "weight_kg": 39.4,
+        "maturation_status_at_point": "Circa-PHV",
+        "delta_height_cm_from_prior_point": null
+      }
+    ],
+    "growth_summary": {
+      "stage": "Circa-PHV",
+      "maturity_offset": -0.1,
+      "age_at_phv": 12.7,
+      "months_from_phv": -1,
+      "expected_velocity_range_cm_year": [
+        8.0,
+        10.0
+      ],
+      "height_band": "p50_p75",
+      "weight_band": "p50_p75",
+      "nutritional_status": "eutrofico",
+      "alerts": [
+        "circa_phv"
+      ],
+      "measurement_due_status": "on_time"
+    },
+    "training_load_window": {
+      "sessions_count_28d": 10,
+      "avg_rpe_28d": 3.8,
+      "hours_28d": 11.0
+    },
+    "previous_analysis": null,
+    "body_composition": {
+      "sets_count": 2,
+      "weeks_since_prev_set": 14,
+      "sum_change_code": "up_real",
+      "growth_explanation_code": "expected_pubertal_gain",
+      "ffm_trend_code": "up",
+      "band": "verde",
+      "band_reason_code": "expected_pubertal_gain",
+      "family_band": "verde",
+      "reference_context_code": "normal",
+      "sites_declined_count": 0
+    }
+  },
+  "expected_themes": [
+    "crecimiento",
+    "etapa"
+  ],
+  "forbidden_terms": [
+    "percentil",
+    "z-score",
+    "observación",
+    "sobrepeso",
+    "dieta",
+    "bajar de peso",
+    "perder peso",
+    "adelgazar",
+    "calorías",
+    "%",
+    "mm",
+    "milímetro",
+    "porcentaje"
+  ],
+  "max_words": 180,
+  "min_confidence_level": null,
+  "max_confidence_level": "medium",
+  "ideal_output_excerpt": "Los cambios en su composición corporal van de la mano del crecimiento propio de esta etapa: es un proceso esperado y saludable, y seguimos acompañándolo con normalidad."
+}

@@ -48,6 +48,16 @@ vi.mock("@/api/growth", () => ({
   getGrowthSummary: vi.fn(),
 }));
 
+// Feature 046 (T054): el endpoint coach-only de composición corporal nunca
+// debe llamarse desde la vista familiar (el backend respondería 403).
+vi.mock("@/api/bodyComposition", () => ({
+  getBodyComposition: vi.fn(),
+  saveSkinfolds: vi.fn(),
+  deleteSkinfolds: vi.fn(),
+  downloadReferralNote: vi.fn(),
+  downloadFieldGuide: vi.fn(),
+}));
+
 // jsdom no implementa ResizeObserver — defensivo, igual que
 // `PercentileChart.test.tsx`/`CalendarShell.test.tsx`.
 if (!globalThis.ResizeObserver) {
@@ -192,6 +202,7 @@ import { GrowthTab } from "@/components/athletes/growth/GrowthTab";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import * as athletesApi from "@/api/athletes";
 import * as growthApi from "@/api/growth";
+import * as bodyCompositionApi from "@/api/bodyComposition";
 import { makeGrowthSummary } from "@/test/msw/growthSummaryHandlers";
 import { MaturationStatus, Sex } from "@/types/enums";
 import type { AnthropometricRecord } from "@/types/anthropometry.types";
@@ -458,6 +469,14 @@ describe("GrowthTab modo padre — sin piezas exclusivas del coach", () => {
     renderParentTab();
     await screen.findByTestId("growth-curve");
     expect(screen.queryByTestId("nutritional-classification")).not.toBeInTheDocument();
+  });
+});
+
+describe("GrowthTab modo padre — composición corporal (feature 046)", () => {
+  it("nunca consulta el endpoint coach-only de composición corporal", async () => {
+    renderParentTab();
+    await screen.findByTestId("growth-curve");
+    expect(bodyCompositionApi.getBodyComposition).not.toHaveBeenCalled();
   });
 });
 

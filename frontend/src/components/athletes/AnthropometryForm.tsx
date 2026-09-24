@@ -1,9 +1,16 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { useCreateAnthropometry } from "@/hooks/athletes/useAnthropometry";
+import { useBodyComposition } from "@/hooks/athletes/useBodyComposition";
+import {
+  ageFromBirthDate,
+  isIntervalBlocked,
+  SKINFOLD_MIN_AGE_YEARS,
+} from "@/lib/bodyComposition/eligibility";
+import { formatDate } from "@/lib/datetime";
 import { computeAgeDecimal } from "@/lib/category";
 import { calculatePHV, type PHVResult } from "@/lib/phv";
 import { PHVBadge } from "@/components/athletes/PHVBadge";
@@ -29,8 +36,17 @@ interface AnthropometryFormProps {
   athleteId: number;
   athleteSex: Sex;
   athleteBirthDate: string;
+  /** "Guardar y terminar" — comportamiento de siempre. */
   onSuccess: () => void;
+  /**
+   * Feature 046 (T031): segunda salida "Guardar y agregar pliegues". Recibe
+   * el id de la evaluación recién creada (el llamador navega al asistente
+   * de captura). Si se omite, el formulario conserva su único botón.
+   */
+  onAddSkinfolds?: (recordId: number) => void;
 }
+
+type SubmitIntent = "finish" | "skinfolds";
 
 const inputClass =
   "mt-1 w-full rounded-lg bg-surface-raised px-3 py-2.5 text-sm text-charcoal placeholder:text-mid-gray outline-none transition-shadow focus:ring-2 focus:ring-link-blue/50 shadow-ring";
@@ -40,9 +56,16 @@ export function AnthropometryForm({
   athleteSex,
   athleteBirthDate,
   onSuccess,
+  onAddSkinfolds,
 }: AnthropometryFormProps) {
   const createMutation = useCreateAnthropometry(athleteId);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Qué botón disparó el envío (ambos son `type="submit"` del mismo form).
+  const intentRef = useRef<SubmitIntent>("finish");
+  const [pendingIntent, setPendingIntent] = useState<SubmitIntent | null>(null);
+  // `next_due_date` del intervalo mínimo entre sets de pliegues; sólo se
+  // consulta cuando la salida de pliegues está habilitada por el llamador.
+  const bodyCompositionQuery = useBodyComposition(athleteId, !!onAddSkinfolds);
 
   const form = useForm<z.input<typeof anthropometrySchema>, unknown, AnthropometryFormValues>({
     resolver: zodResolver(anthropometrySchema),
@@ -79,10 +102,27 @@ export function AnthropometryForm({
     });
   }, [evaluationDate, weightKg, standingHeightCm, sittingHeightCm, athleteSex, athleteBirthDate]);
 
+  // Salida "Guardar y agregar pliegues": oculta si el deportista tendría
+  // menos de 9 años en la fecha de evaluación o si el intervalo mínimo entre
+  // sets la bloquea (el backend vuelve a validar ambas reglas, 409).
+  const ageAtDate = evaluationDate ? ageFromBirthDate(athleteBirthDate, evaluationDate) : null;
+  const skinfoldsAgeOk = ageAtDate !== null && ageAtDate >= SKINFOLD_MIN_AGE_YEARS;
+  const nextDueDate = bodyCompositionQuery.data?.next_due_date ?? null;
+  const skinfoldsIntervalBlocked =
+    !!evaluationDate && isIntervalBlocked(evaluationDate, nextDueDate);
+  const showSkinfoldsExit =
+    !!onAddSkinfolds &&
+    skinfoldsAgeOk &&
+    !bodyCompositionQuery.isLoading &&
+    !skinfoldsIntervalBlocked;
+  const showIntervalNote = !!onAddSkinfolds && skinfoldsAgeOk && skinfoldsIntervalBlocked;
+
   const handleSubmit = async (values: AnthropometryFormValues) => {
     setSubmitError(null);
+    const intent = intentRef.current;
+    setPendingIntent(intent);
     try {
-      await createMutation.mutateAsync({
+      const created = await createMutation.mutateAsync({
         evaluation_date: values.evaluation_date,
         weight_kg: values.weight_kg,
         standing_height_cm: values.standing_height_cm,
@@ -90,9 +130,16 @@ export function AnthropometryForm({
         sitting_height_cm: values.sitting_height_cm,
       });
       form.reset();
-      onSuccess();
+      if (intent === "skinfolds" && onAddSkinfolds && created?.id) {
+        onAddSkinfolds(created.id);
+      } else {
+        onSuccess();
+      }
     } catch {
       setSubmitError("No se pudo guardar la medición. Intenta de nuevo.");
+    } finally {
+      intentRef.current = "finish";
+      setPendingIntent(null);
     }
   };
 
@@ -176,13 +223,42 @@ export function AnthropometryForm({
           <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>
         )}
 
-        <button
-          type="submit"
-          disabled={createMutation.isPending}
-          className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-surface transition-opacity hover:opacity-70 disabled:opacity-50 shadow-button-highlight"
-        >
-          {createMutation.isPending ? "Guardando..." : "Guardar medición"}
-        </button>
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+          <button
+            type="submit"
+            disabled={createMutation.isPending}
+            onClick={() => {
+              intentRef.current = "finish";
+            }}
+            className="min-h-[48px] rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-surface transition-opacity hover:opacity-70 disabled:opacity-50 shadow-button-highlight"
+          >
+            {createMutation.isPending && pendingIntent !== "skinfolds"
+              ? "Guardando..."
+              : showSkinfoldsExit
+                ? "Guardar y terminar"
+                : "Guardar medición"}
+          </button>
+          {showSkinfoldsExit && (
+            <button
+              type="submit"
+              disabled={createMutation.isPending}
+              onClick={() => {
+                intentRef.current = "skinfolds";
+              }}
+              className="min-h-[48px] rounded-lg bg-surface-raised px-4 py-2 text-sm font-medium text-charcoal ring-1 ring-hairline transition-colors hover:bg-light-gray disabled:opacity-50"
+            >
+              {createMutation.isPending && pendingIntent === "skinfolds"
+                ? "Guardando..."
+                : "Guardar y agregar pliegues"}
+            </button>
+          )}
+        </div>
+        {showIntervalNote && nextDueDate && (
+          <p className="text-xs text-mid-gray" data-testid="skinfolds-interval-note">
+            Pliegues cutáneos: la próxima toma puede hacerse desde el{" "}
+            {formatDate(`${nextDueDate.slice(0, 10)}T12:00:00`)}.
+          </p>
+        )}
       </form>
 
       {/* Panel PHV en tiempo real */}

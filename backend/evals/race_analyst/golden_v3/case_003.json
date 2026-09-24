@@ -27,12 +27,14 @@
       "series_level": "departmental",
       "is_championship": true,
       "field_size": 18,
+      "timed_finishers": 18,
       "position": 6,
-      "percentile": 70.6,
+      "percentile": 72,
       "race_time_ms": 2760000,
       "gap_to_p1_ms": 132000,
       "gap_pct": 5.02,
       "gap_to_p3_ms": 74000,
+      "gap_to_podium_pct": 2.8,
       "category_median_time_ms": 2884000,
       "gap_to_median_pct": -4.3,
       "laps_behind": 0,
@@ -50,7 +52,7 @@
         "is_championship": false,
         "position": 4,
         "field_size": 10,
-        "percentile": 66.7,
+        "percentile": 59,
         "gap_pct": 6.41,
         "gap_to_p3_ms": 41000,
         "expected_position": 4,
@@ -76,7 +78,7 @@
         "is_championship": false,
         "position": 4,
         "field_size": 12,
-        "percentile": 72.7,
+        "percentile": 64,
         "gap_pct": 6.15,
         "gap_to_p3_ms": 36000,
         "expected_position": 4,
@@ -90,7 +92,7 @@
         "is_championship": true,
         "position": 6,
         "field_size": 18,
-        "percentile": 70.6,
+        "percentile": 72,
         "gap_pct": 5.02,
         "gap_to_p3_ms": 74000,
         "expected_position": 9,
@@ -149,7 +151,7 @@
       {
         "generated_at": "2026-05-20",
         "valida_label": "Válida 4 · Copa Valle",
-        "headline": "Sostuvo el percentil 72.7 con la carga más alta del ciclo",
+        "headline": "Sostuvo el percentil 64 con la carga más alta del ciclo",
         "coach_question": "¿Cómo respondió al bloque de fuerza de las últimas semanas?",
         "coach_answer": "Bien, sin molestias; le costó más el arranque que el final",
         "coach_rating": 1
@@ -166,7 +168,7 @@
       ]
     },
     "memory_recent_insights": [
-      "Válida 4 · Copa: percentil 72.7 con carga alta y buena respuesta al bloque de fuerza",
+      "Válida 4 · Copa: percentil 64 con carga alta y buena respuesta al bloque de fuerza",
       "Válida 3 · Copa: mejor percentil de copa de la temporada con 80"
     ]
   },
@@ -198,7 +200,7 @@
     "schema_version": "v3",
     "headline": "En el campeonato, con el pelotón más grande del año (18), terminó 3 puestos por encima de lo esperado: el retroceso de posición es del contexto, no del rendimiento.",
     "field_reading": {
-      "percentile": 70.6,
+      "percentile": 72,
       "expected_position": 9,
       "actual_position": 6,
       "delta_vs_expected": 3,

@@ -75,7 +75,7 @@ def _full_month_stage_log() -> StageLog:
                 kind=WaypointKind.RACE,
                 date=date(2026, 6, 15),
                 label="Válida 3 · P2",
-                sublabel="+4,1 % al P1",
+                sublabel="Brecha vs. mediana: +4,1 %",
                 icon="map-pin",
             ),
             Waypoint(
@@ -96,7 +96,7 @@ def _full_month_stage_log() -> StageLog:
         summit=Summit(
             kind=SummitKind.RACE,
             title="P2 en la Válida 3",
-            detail="Prejuvenil A Femenino · +4,1 % al P1",
+            detail="Prejuvenil A Femenino · Brecha vs. mediana: +4,1 %",
             caption="Subió dos puestos respecto al mes pasado.",
             date=date(2026, 6, 15),
         ),
@@ -289,7 +289,7 @@ _CHARTS_CTX = {
     "has_data": True,
     "low_confidence": False,
     "positions": [{"x": 1, "y": 5}, {"x": 2, "y": 3}, {"x": 3, "y": 2}],
-    "gap_pcts": [{"x": 1, "y": 15.2}, {"x": 2, "y": 9.8}, {"x": 3, "y": 4.1}],
+    "median_gap_pcts": [{"x": 1, "y": 3.2}, {"x": 2, "y": 1.8}, {"x": 3, "y": -0.4}],
     "points_accumulated": [{"x": 1, "y": 20}, {"x": 2, "y": 70}, {"x": 3, "y": 110}],
 }
 
@@ -311,6 +311,7 @@ _RACE_RESULTS_CTX = {
             "position": 4,
             "field_size": 20,
             "gap_pct": 4.2,
+            "gap_to_median_pct": 1.6,
             "percentile": 84.2,
         }
     ],
@@ -492,8 +493,140 @@ def test_context_keeps_race_results_with_race_this_month():
         club_name="Trocha y Ruta",
         season_year=None,
     )
-    assert context["race_results"] == _RACE_RESULTS_CTX
+    # Feature 045: llega a la plantilla con la política de audiencia de
+    # familia aplicada — igual a la fixture salvo ``gap_pct`` (gap al
+    # ganador, solo del coach).
+    expected_championship = {
+        k: v for k, v in _RACE_RESULTS_CTX["championships"][0].items() if k != "gap_pct"
+    }
+    assert context["race_results"] == {
+        **_RACE_RESULTS_CTX,
+        "championships": [expected_championship],
+    }
     assert context["race_results"]["championships"][0]["position"] == 4
+    assert context["race_results"]["championships"][0]["gap_to_median_pct"] == 1.6
+
+
+# ---------------------------------------------------------------------------
+# Feature 045 (decisión del dueño 2026-09-23, FR-022) — el contexto del PDF
+# de familia no lleva brecha a la ganadora ni al podio.
+#
+# ``email_blocks["race_results"]`` (cups[]/championships[]/results[]) y
+# ``pdf_only_blocks["charts_context"]`` (``gap_pcts`` heredada) se persisten
+# con esas cifras para el coach; hoy ninguna plantilla las lee, pero el
+# contexto que llega a Jinja no debe llevarlas. Se prueba el contexto
+# (función pura) y no el PDF, igual que F-9 arriba.
+# ---------------------------------------------------------------------------
+
+_LEADER_RACE_RESULTS = {
+    "has_races": True,
+    "cups": [
+        {
+            "label": "Copa Valle",
+            "gap_to_winner_pct": 3.9,
+            "gap_to_p3_ms": 15_000,
+            "median_gap_pcts": [{"x": 1, "y": 2.0}],
+        }
+    ],
+    "championships": [
+        {
+            "label": "Campeonato Departamental",
+            "position": 4,
+            "gap_pct": 4.2,
+            "gap_to_winner_ms": 91_234,
+            "gap_to_podium_pct": 2.5,
+            "gap_to_median_pct": 1.6,
+            "percentile": 84.2,
+        }
+    ],
+    "results": [
+        {
+            "position": 2,
+            "gap_to_winner_pct": 4.1,
+            "gap_to_winner_ms": 90_000,
+            "gap_to_podium_ms": 0,
+            "gap_to_median_pct": 3.2,
+        }
+    ],
+}
+
+_LEGACY_CHARTS_CTX = {
+    **_CHARTS_CTX,
+    "gap_pcts": [{"x": 1, "y": 5.5}, {"x": 2, "y": 4.1}],
+    "cups": [{"label": "Copa Valle", "gap_pcts": [{"x": 1, "y": 5.5}], "median_gap_pcts": []}],
+}
+
+
+def _all_keys(node) -> set[str]:
+    if isinstance(node, dict):
+        keys = set(node)
+        for value in node.values():
+            keys |= _all_keys(value)
+        return keys
+    if isinstance(node, list):
+        keys: set[str] = set()
+        for item in node:
+            keys |= _all_keys(item)
+        return keys
+    return set()
+
+
+def _context_with_leader_gaps(*, race_results, charts_context, month=6):
+    dto = to_parent_dto(_full_month_stage_log(), hidden_blocks=None)
+    return _build_stage_log_pdf_context(
+        athlete_first_name="Atleta",
+        athlete_last_name="Prueba",
+        year=2026,
+        month=month,
+        stage_log=dto,
+        anthropometry=None,
+        charts_context=charts_context,
+        percentile_curves=None,
+        race_results=race_results,
+        club_name="Trocha y Ruta",
+        season_year=None,
+    )
+
+
+def test_context_has_no_winner_or_podium_keys_at_any_depth():
+    from app.services.race.audience import FAMILY_EXCLUDED_METRIC_FIELDS
+
+    context = _context_with_leader_gaps(
+        race_results=_LEADER_RACE_RESULTS, charts_context=_LEGACY_CHARTS_CTX
+    )
+    leaked = _all_keys(context) & FAMILY_EXCLUDED_METRIC_FIELDS
+    assert not leaked, sorted(leaked)
+
+
+def test_context_keeps_the_median_gap_and_the_rest_of_the_block():
+    context = _context_with_leader_gaps(
+        race_results=_LEADER_RACE_RESULTS, charts_context=_LEGACY_CHARTS_CTX
+    )
+    championship = context["race_results"]["championships"][0]
+    assert championship["gap_to_median_pct"] == 1.6
+    assert championship["percentile"] == 84.2
+    assert championship["position"] == 4
+    assert context["race_results"]["results"][0]["gap_to_median_pct"] == 3.2
+    assert context["charts_annex"]["median_gap_pcts"] == _CHARTS_CTX["median_gap_pcts"]
+    assert context["charts_annex"]["positions"] == _CHARTS_CTX["positions"]
+
+
+def test_context_redaction_does_not_mutate_the_persisted_blocks():
+    """Los bloques vienen de ``nl.metrics_snapshot`` (columna JSON): la
+    limpieza es solo de la copia que va a la plantilla, sin escribir nada."""
+    import copy
+
+    race_results = copy.deepcopy(_LEADER_RACE_RESULTS)
+    charts_context = copy.deepcopy(_LEGACY_CHARTS_CTX)
+    _context_with_leader_gaps(race_results=race_results, charts_context=charts_context)
+    assert race_results == _LEADER_RACE_RESULTS
+    assert charts_context == _LEGACY_CHARTS_CTX
+
+
+def test_context_without_race_or_charts_still_builds():
+    context = _context_with_leader_gaps(race_results=None, charts_context=None)
+    assert context["race_results"] is None
+    assert context["charts_annex"] is None
 
 
 # ---------------------------------------------------------------------------

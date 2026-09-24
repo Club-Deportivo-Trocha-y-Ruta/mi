@@ -17,7 +17,7 @@
       "position": 3,
       "race_time_ms": 1920000,
       "gap_to_winner_ms": 92000,
-      "gap_to_winner_pct": 4.8
+      "gap_to_winner_pct": 5.0
     },
     "field_metrics": {
       "event_id": 9143,
@@ -30,12 +30,14 @@
       "series_level": "departmental",
       "is_championship": false,
       "field_size": 16,
+      "timed_finishers": 16,
       "position": 3,
-      "percentile": 81.3,
+      "percentile": 81,
       "race_time_ms": 1920000,
       "gap_to_p1_ms": 92000,
-      "gap_pct": 4.8,
+      "gap_pct": 5.0,
       "gap_to_p3_ms": 0,
+      "gap_to_podium_pct": 0.0,
       "category_median_time_ms": 1980000,
       "gap_to_median_pct": -3.0,
       "laps_behind": 0,
@@ -55,7 +57,7 @@
         "is_championship": false,
         "position": 6,
         "field_size": 14,
-        "percentile": 57.1,
+        "percentile": 44,
         "gap_pct": 8.5,
         "gap_to_p3_ms": 45000,
         "expected_position": 6,
@@ -70,7 +72,7 @@
         "is_championship": false,
         "position": 5,
         "field_size": 15,
-        "percentile": 66.7,
+        "percentile": 59,
         "gap_pct": 7.2,
         "gap_to_p3_ms": 38000,
         "expected_position": 6,
@@ -85,7 +87,7 @@
         "is_championship": false,
         "position": 4,
         "field_size": 15,
-        "percentile": 73.3,
+        "percentile": 69,
         "gap_pct": 6.0,
         "gap_to_p3_ms": 22000,
         "expected_position": 5,
@@ -100,8 +102,8 @@
         "is_championship": false,
         "position": 3,
         "field_size": 16,
-        "percentile": 81.3,
-        "gap_pct": 4.8,
+        "percentile": 81,
+        "gap_pct": 5.0,
         "gap_to_p3_ms": 0,
         "expected_position": 4,
         "delta_vs_expected": 1
@@ -159,7 +161,7 @@
       {
         "generated_at": "2026-08-23",
         "valida_label": "Copa Let's Go Interdepartamental · Válida III",
-        "headline": "Percentil 73.3 con gap de 6.0% al líder en la Copa Let's Go Interdepartamental",
+        "headline": "Percentil 69 con gap de 6.0% al líder en la Copa Let's Go Interdepartamental",
         "coach_question": "¿Cómo sintió el ritmo en la subida larga de esa válida?",
         "coach_answer": "Sintió que podía sostener más el ritmo en la parte final",
         "coach_rating": 1
@@ -176,8 +178,8 @@
       ]
     },
     "memory_recent_insights": [
-      "Percentil 73.3 con gap de 6.0% al líder en la Copa Let's Go Interdepartamental (válida III)",
-      "Percentil 66.7 sosteniendo la asistencia en la Copa Let's Go Interdepartamental (válida II)"
+      "Percentil 69 con gap de 6.0% al líder en la Copa Let's Go Interdepartamental (válida III)",
+      "Percentil 59 sosteniendo la asistencia en la Copa Let's Go Interdepartamental (válida II)"
     ]
   },
   "expected_themes": [
@@ -215,7 +217,7 @@
     "schema_version": "v3",
     "headline": "Subió al tercer puesto en la Copa Let's Go Interdepartamental, cuarta mejora consecutiva desde la primera válida de esa copa.",
     "field_reading": {
-      "percentile": 81.3,
+      "percentile": 81,
       "expected_position": 4,
       "actual_position": 3,
       "delta_vs_expected": 1,
@@ -226,11 +228,11 @@
     "trend": "improving",
     "observations": [
       {
-        "claim": "El percentil subió de 57.1 en la primera válida a 81.3 en esta cuarta válida de la Copa Let's Go Interdepartamental.",
+        "claim": "El percentil subió de 44 en la primera válida a 81 en esta cuarta válida de la Copa Let's Go Interdepartamental.",
         "evidence": [
-          "percentil 57.1 en la válida I",
-          "percentil 81.3 en esta válida",
-          "gap 4.8% al líder"
+          "percentil 44 en la válida I",
+          "percentil 81 en esta válida",
+          "gap 5.0% al líder"
         ],
         "domain": "field",
         "confidence": "high"

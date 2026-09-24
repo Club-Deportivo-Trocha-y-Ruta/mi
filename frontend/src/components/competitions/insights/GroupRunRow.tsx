@@ -16,7 +16,7 @@ import { AnalysisRunTimeline } from "@/components/ai/AnalysisRunTimeline";
 import { HITLApprovalCard } from "@/components/ai/HITLApprovalCard";
 import { StatusBadge, type Status } from "@/components/shared/StatusBadge";
 import { useRunStatus, isTerminalState } from "@/hooks/ai/useRaceRun";
-import { findPendingHitlEvent } from "@/lib/hitlEvents";
+import { familyGapMentionsFromEvent, findPendingHitlEvent } from "@/lib/hitlEvents";
 import { cn } from "@/lib/utils";
 import type { InsightV3 } from "@/types/insightV3.types";
 import type { GroupRunOutcome, RunState } from "@/types/raceAnalysis.types";
@@ -187,6 +187,7 @@ export function GroupRunRow({ entry, onTerminated }: GroupRunRowProps) {
           stepId={hitlStepId}
           draftMarkdown={draftMarkdown}
           structuredDraft={structuredDraft}
+          familyGapMentions={familyGapMentionsFromEvent(pendingHitlEvent)}
         />
       )}
     </li>

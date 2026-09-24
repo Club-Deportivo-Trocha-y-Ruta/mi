@@ -46,7 +46,10 @@ crítico):
   ``pipeline.py`` — ver arriba). Se usa únicamente para render de texto
   (``precheck_summary``); este módulo no reinterpreta sus reglas.
 - ``critic_prompt_version`` (opcional): override del prompt a renderizar.
-  Por defecto :data:`DEFAULT_CRITIC_PROMPT_VERSION`.
+  Sin override, se deriva de ``analyst_prompt_version`` (analista v1 →
+  crítico v1, analista v2 → crítico v2, para que un rollback de
+  ``AI_ANTHRO_PROMPT_VERSION`` arrastre también al crítico); si tampoco
+  hay versión del analista, :data:`DEFAULT_CRITIC_PROMPT_VERSION`.
 
 ``config`` es el fragmento de ``RunnableConfig`` (callbacks de Langfuse) que
 ``pipeline.py`` arma dentro de su span raíz — este paso solo lo threadea
@@ -86,12 +89,25 @@ logger = logging.getLogger(__name__)
 
 __all__ = ["DEFAULT_CRITIC_PROMPT_VERSION", "CriticDecision", "run_critic"]
 
-# Único prompt del crítico hoy — a diferencia de ``AI_ANTHRO_PROMPT_VERSION``
-# (analista), no existe todavía una variable de entorno propia para este
-# rol: no hay más de una versión que seleccionar (si se agrega una segunda,
-# el mismo patrón de validación de ``app/config.py::validate_ai_anthro_
-# prompt_version`` aplicaría aquí, fuera de este ownership).
-DEFAULT_CRITIC_PROMPT_VERSION = "anthropometry_critic_v1"
+# No existe una variable de entorno propia para el crítico: su versión sigue
+# a la del analista (``AI_ANTHRO_PROMPT_VERSION``) vía
+# ``_CRITIC_VERSION_BY_ANALYST_VERSION``. Feature 046 agrega el crítico v2
+# (reglas R13/R14 de composición corporal) y lo vuelve el default.
+DEFAULT_CRITIC_PROMPT_VERSION = "anthropometry_critic_v2"
+
+_CRITIC_VERSION_BY_ANALYST_VERSION: dict[str, str] = {
+    "anthropometry_analyst_v1": "anthropometry_critic_v1",
+    "anthropometry_analyst_v2": "anthropometry_critic_v2",
+}
+
+
+def _resolve_critic_prompt_version(state: dict) -> str:
+    """Override explícito > versión pareada con el analista > default."""
+    explicit = state.get("critic_prompt_version")
+    if explicit:
+        return explicit
+    analyst_version = state.get("analyst_prompt_version") or ""
+    return _CRITIC_VERSION_BY_ANALYST_VERSION.get(analyst_version, DEFAULT_CRITIC_PROMPT_VERSION)
 
 # Política de revisión (FR-013, data-model.md §3, verbatim de tasks.md T034):
 # un ``rule_id`` "mecánico" es corregible sin reinterpretar el dato — el
@@ -105,7 +121,22 @@ _MECHANICAL_RULE_IDS: frozenset[str] = frozenset(
     {"R04", "R06", "R07", "R09", "R10", "R12"}
 )
 _INTERPRETIVE_RULE_IDS: frozenset[str] = frozenset(
-    {"R01", "R02", "R03", "R05", "R08", "R11", "CTX01", "CTX02"}
+    {
+        "R01",
+        "R02",
+        "R03",
+        "R05",
+        "R08",
+        "R11",
+        # Feature 046 (contracts/ai-body-composition-leaf.md §3): quitar una
+        # cifra de composición corporal o lenguaje de dieta/pérdida de peso
+        # exige reformular la frase, no un parche mecánico — igual que las
+        # demás reglas interpretativas de esta lista.
+        "R13",
+        "R14",
+        "CTX01",
+        "CTX02",
+    }
 )
 
 # FR-014: mensaje de calibración de confianza cuando el crítico no pudo
@@ -226,6 +257,12 @@ def _render_ground_truth(context_blocks: dict[str, Any]) -> str:
     if context_blocks.get("previous_analysis_block"):
         sections.append(
             f"## Análisis anterior\n{context_blocks['previous_analysis_block']}"
+        )
+    if context_blocks.get("body_composition_block"):
+        # Feature 046: mismos códigos cualitativos (sin cifras) que vio el
+        # analista, para que el crítico v2 revise contradicciones y tono.
+        sections.append(
+            f"## Composición corporal\n{context_blocks['body_composition_block']}"
         )
     return "\n\n".join(sections)
 
@@ -359,7 +396,7 @@ async def run_critic(state: dict, config: Optional[dict] = None) -> dict[str, An
             una segunda llamada al analista. ``pipeline.py`` lo mapea a
             ``REVISED``.
           - ``"needs_reanalysis"``: ``verdict="revise"`` con AL MENOS una
-            violación interpretativa (R01/R02/R03/R05/R08/R11/CTX01/CTX02),
+            violación interpretativa (R01/R02/R03/R05/R08/R11/R13/R14/CTX01/CTX02),
             o mecánicas sin ``revised_output`` utilizable (lado
             conservador). ``critic_output`` es el borrador de entrada
             (referencia, no un resultado final) — es ``pipeline.py`` quien
@@ -399,7 +436,7 @@ async def run_critic(state: dict, config: Optional[dict] = None) -> dict[str, An
     draft: AnthropometryInsightV1 = state["analyst_draft"]
     context_blocks: dict[str, Any] = state["context_blocks"]
     precheck_result: Any = state.get("precheck_result")
-    prompt_version: str = state.get("critic_prompt_version") or DEFAULT_CRITIC_PROMPT_VERSION
+    prompt_version: str = _resolve_critic_prompt_version(state)
 
     prompt_vars = {
         "draft_json": json.dumps(

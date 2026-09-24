@@ -12,6 +12,14 @@
  * modal title) — those have per-component render assertions in
  * `aiIdentityRenameTable.test.tsx` and their own component test suites.
  *
+ * Feature 045 (T042) retired AthleteAIAnalysisTab: its AI surface now lives
+ * in the athlete «Carreras» tab (`components/athletes/races/` —
+ * `AnalysisView` hosts the launch form, the analyst chat and the season
+ * summary). That directory is therefore an AI entry point in its own right
+ * and is swept below alongside `components/athletes/ai` (which still holds
+ * the shared cards, timeline and forms). Deliberate change: without it the
+ * moved launch/chat UI would silently leave the sweep's scope.
+ *
  * This file is the repo-wide *sweep*, catching any straggler beyond that
  * known list, the same way `slate-remediation-sweep.test.ts` does for
  * `slate-*` classes: shell out to `grep` over every AI-related directory
@@ -39,6 +47,7 @@ const AI_RELATED_TARGETS = [
   "components/competitions/insights",
   "components/competitions/chat",
   "components/athletes/ai",
+  "components/athletes/races",
   "routes/training/SessionAssistantPage.tsx",
   "routes/admin/AIHealthPage.tsx",
 ];

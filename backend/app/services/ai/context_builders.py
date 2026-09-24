@@ -438,6 +438,19 @@ ANTHROPOMETRY_INSIGHT_CONTEXT_ALLOWED_KEYS: frozenset[str] = frozenset(
         "summary_line",
         "confidence_level",
         "weeks_since",
+        # body_composition (feature 046, contracts/ai-body-composition-leaf.md
+        # §1) — las diez claves son SIEMPRE códigos cualitativos, nunca un
+        # `*_mm`/`*_pct`/`*_kg`.
+        "sets_count",
+        "weeks_since_prev_set",
+        "sum_change_code",
+        "growth_explanation_code",
+        "ffm_trend_code",
+        "band",
+        "band_reason_code",
+        "family_band",
+        "reference_context_code",
+        "sites_declined_count",
     }
 )
 

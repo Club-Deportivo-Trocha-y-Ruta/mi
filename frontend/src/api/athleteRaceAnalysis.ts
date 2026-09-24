@@ -173,12 +173,18 @@ export interface SeasonSummaryResponse {
  * integrarse sin re-tocar el cliente HTTP; hasta que T203 aterrice, esta
  * llamada fallará el parseo de tipos en runtime real (ver open_issues del
  * reporte de la tarea).
+ *
+ * `season` es opcional: sin él el backend usa el año actual (UTC). Se envía
+ * cuando hay que re-ejecutar el resumen de una temporada concreta (feature 045,
+ * «Temporada › pendientes»); sin valor el POST no lleva cuerpo, como siempre.
  */
 export async function generateSeasonSummary(
   athleteId: number,
+  season?: number,
 ): Promise<AthleteSeasonSummaryRunResponse> {
   const response = await apiClient.post<AthleteSeasonSummaryRunResponse>(
     `${buildBase(athleteId)}/season-summary`,
+    season != null ? { season } : undefined,
   );
   return response.data;
 }

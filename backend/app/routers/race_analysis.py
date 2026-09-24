@@ -50,8 +50,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.dependencies import get_db, require_role
+from app.models.agent_run import AgentRun
 from app.models.athlete import Athlete
 from app.models.user import User, UserRole
+from app.schemas.race_pending_analyses import (
+    PendingAnalysisOut,
+    PendingAnalysisState,
+    RunDismissStaleResponse,
+)
 from app.schemas.race_ai import (
     AIUsageByCoach,
     AIUsageByPromptVersion,
@@ -99,8 +105,10 @@ from app.services.permissions import (
     ensure_run_club_access,
     user_club_role,
 )
+from app.services.race.family_gap_mentions import with_family_gap_mentions
 from app.services.race.season_panorama import fetch_season_panorama
-from app.services.race.run_staleness import mark_run_stale
+from app.services.race.run_staleness import mark_run_fresh, mark_run_stale
+from app.services.race.pending_analyses import list_pending_analyses
 from app.services.privacy import athlete_has_ai_processing_consent
 from app.models.club import ClubMember, ClubRole
 from app.services.audit import AuditAction, AuditDocumentKind, AuditEntityType, record_audit
@@ -1085,6 +1093,20 @@ async def get_run_status(
 
     Si ``last_seq == since`` (sin cambios) → 304. Esto reduce ancho de
     banda en runs largos esperando HITL.
+
+    Feature 045 (FR-022): el evento ``hitl_request`` — el que lleva el
+    borrador a aprobar — agrega ``payload.family_gap_mentions`` (``list[str]``,
+    ≤3 fragmentos de ≤80 caracteres). Son las menciones a líder, ganador, P1,
+    P3, primer/tercer lugar o podio en el texto que verá la familia:
+    ``headline``, ``field_reading.summary``/``series_label``,
+    ``observations[].claim`` (y su ``evidence`` si el dominio no es
+    ``training``), ``actions[].text``, ``watch_signals``, ``data_gaps`` y
+    ``principles_cited`` — o el markdown entero si el borrador no es
+    estructurado. ``coach_question`` y las cifras coach-only quedan fuera (ver
+    ``services/race/family_gap_mentions.py``). Se calcula al leer y no se
+    persiste; la clave está siempre en ese evento (``[]`` si no hay menciones)
+    y en ningún otro. Este endpoint es sólo coach/admin (un padre recibe 403),
+    así que un padre nunca recibe la clave.
     """
     run = await _load_run(db, run_id)
     if run is None:
@@ -1111,6 +1133,9 @@ async def get_run_status(
     new_events_raw = await _load_events_since(
         db, int(run["id"]), since=since, limit=_EVENTS_PER_POLL_MAX
     )
+    for raw_event in new_events_raw:
+        if raw_event["type"] == "hitl_request":
+            raw_event["payload"] = with_family_gap_mentions(raw_event["payload"])
     new_events = [RunEvent(**e) for e in new_events_raw]
 
     # Heurística de progreso: cuento distinct nodos completados.
@@ -2042,6 +2067,119 @@ async def invalidate_run(
         meta={"stale": True},
     )
     return RunInvalidateResponse(run_id=run_id, stale=True)
+
+
+# ---------------------------------------------------------------------------
+# Feature 045 (US5): análisis pendientes del coach + descartar aviso stale
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/pending-analyses",
+    response_model=list[PendingAnalysisOut],
+    summary="Análisis IA pendientes del coach (por aprobar o desactualizados)",
+    description=(
+        "Lista los análisis que esperan acción del coach en «Temporada». Para "
+        "cada ``state`` los ítems son EXACTAMENTE los que cuenta "
+        "``GET /api/dashboard/coach-summary`` (``analyses_awaiting_approval`` / "
+        "``insights_stale``): ambos salen de la misma especificación "
+        "(``services/race/pending_analyses.py``). ``season`` es opcional; sin "
+        "él la lista coincide con el conteo. Acotado por club (admin ve todo). "
+        "``athlete_ref`` es el nombre que la UI del coach ya muestra; no se "
+        "escribe en logs."
+    ),
+    responses={
+        200: {"model": list[PendingAnalysisOut]},
+        403: {"description": "Rol no permitido (padre/atleta)."},
+        422: {"description": "``state`` desconocido o ausente."},
+    },
+)
+async def pending_analyses(
+    state: PendingAnalysisState = Query(
+        ..., description="``awaiting_approval`` o ``stale``."
+    ),
+    season: int | None = Query(
+        default=None, ge=2000, le=2100, description="Acota la lista a una temporada (YYYY)."
+    ),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(_coach_or_admin),
+) -> list[PendingAnalysisOut]:
+    """``GET /api/race-analysis/pending-analyses`` (coach/admin)."""
+    items = await list_pending_analyses(
+        db, state, _launcher_club_ids(current_user), season=season
+    )
+    return [
+        PendingAnalysisOut(
+            run_id=item.run_id,
+            insight_id=item.insight_id,
+            athlete_id=item.athlete_id,
+            athlete_ref=item.athlete_ref,
+            event_id=item.event_id,
+            event_label=item.event_label,
+            season=item.season,
+            kind=item.kind,
+            state=item.state,
+            updated_at=item.updated_at,
+        )
+        for item in items
+    ]
+
+
+@router.post(
+    "/runs/{run_id}/dismiss-stale",
+    response_model=RunDismissStaleResponse,
+    summary="Descarta el aviso de análisis desactualizado de un run",
+    description=(
+        "El coach decide que el análisis sigue siendo válido pese a la "
+        "re-ingesta: limpia la marca stale (``run_staleness.mark_run_fresh``) "
+        "y registra un evento de auditoría. NO re-ejecuta nada (D5). "
+        "RBAC coach/admin del club."
+    ),
+    responses={
+        200: {"model": RunDismissStaleResponse},
+        403: {"description": "Rol no permitido o coach de otro club."},
+        404: {"description": "Run no existe."},
+        409: {"description": "El run no está desactualizado."},
+    },
+)
+async def dismiss_stale_run(
+    run_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(_coach_or_admin),
+) -> RunDismissStaleResponse:
+    """``POST /api/race-analysis/runs/{run_id}/dismiss-stale`` (coach/admin).
+
+    Auditoría: ``AuditAction`` es un catálogo cerrado (enum de base de datos
+    ``audit_action``) y la 045 no admite cambios de esquema (data-model §9),
+    así que el descarte se registra como ``update`` de ``stale_since`` con
+    ``meta={"stale": False}`` — el espejo de ``invalidate`` (``stale: True``).
+    """
+    run = await _load_run(db, run_id)
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run no encontrado")
+    await ensure_run_club_access(db, run, current_user)
+
+    run_pk = int(run["id"])
+    run_row = await db.get(AgentRun, run_pk)
+    if run_row is None or run_row.stale_since is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="El análisis no está desactualizado",
+        )
+
+    await mark_run_fresh(db, run_pk)
+    await record_audit(
+        db,
+        action=AuditAction.update,
+        entity_type=AuditEntityType.agent_run,
+        entity_id=run_pk,
+        actor=current_user,
+        club_id=await _resolve_athlete_club(db, run.get("athlete_id")),
+        athlete_id=run.get("athlete_id"),
+        changed_fields=["stale_since"],
+        meta={"stale": False},
+    )
+    return RunDismissStaleResponse(run_id=run_id, stale=False)
 
 
 @router.post(

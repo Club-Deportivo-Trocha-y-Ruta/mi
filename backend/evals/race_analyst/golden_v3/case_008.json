@@ -20,7 +20,7 @@
         "is_championship": false,
         "position": 6,
         "field_size": 13,
-        "percentile": 58.3,
+        "percentile": 53,
         "gap_pct": 9.42,
         "gap_to_p3_ms": 96000,
         "expected_position": 6,
@@ -33,7 +33,7 @@
         "is_championship": false,
         "position": 5,
         "field_size": 13,
-        "percentile": 66.7,
+        "percentile": 63,
         "gap_pct": 7.85,
         "gap_to_p3_ms": 71000,
         "expected_position": 5,
@@ -46,7 +46,7 @@
         "is_championship": false,
         "position": 9,
         "field_size": 14,
-        "percentile": 38.5,
+        "percentile": 33,
         "gap_pct": 12.6,
         "gap_to_p3_ms": 154000,
         "expected_position": 5,
@@ -59,7 +59,7 @@
         "is_championship": false,
         "position": 7,
         "field_size": 13,
-        "percentile": 50,
+        "percentile": 45,
         "gap_pct": 10.3,
         "gap_to_p3_ms": 118000,
         "expected_position": 6,
@@ -73,7 +73,7 @@
         "is_championship": true,
         "position": 8,
         "field_size": 19,
-        "percentile": 61.1,
+        "percentile": 55,
         "gap_pct": 8.74,
         "gap_to_p3_ms": 103000,
         "expected_position": 10,
@@ -86,7 +86,7 @@
         "is_championship": false,
         "position": 4,
         "field_size": 13,
-        "percentile": 75,
+        "percentile": 74,
         "gap_pct": 6.91,
         "gap_to_p3_ms": 47000,
         "expected_position": 5,
@@ -163,7 +163,7 @@
       ]
     },
     "memory_recent_insights": [
-      "Válida 6 · Copa: mejor percentil del año con 75",
+      "Válida 6 · Copa: mejor percentil del año con 74",
       "Cto. Departamental: 2 puestos por encima de lo esperado en el pelotón más grande"
     ]
   },
@@ -211,7 +211,7 @@
       {
         "claim": "El campeonato fue la mejor lectura relativa del año pese al puesto: terminó por encima de su expectativa en el pelotón más grande.",
         "evidence": [
-          "percentil 61.1 en el campeonato",
+          "percentil 55 en el campeonato",
           "esperada 10 frente a real 8",
           "pelotón de 19"
         ],

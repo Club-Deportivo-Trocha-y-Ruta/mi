@@ -28,11 +28,14 @@ Privacidad (Ley 1581, CLAUDE.md):
 from __future__ import annotations
 
 import datetime as dt
+import re
 from datetime import date
 from enum import Enum
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.services.race.audience import Audience, redact_for_audience
 
 # NOTA (bug de Pydantic v2 + `from __future__ import annotations`): varios
 # modelos abajo tienen un campo LLAMADO ``date`` tipado como ``date``. Con
@@ -410,6 +413,89 @@ _PARENT_ANALYST_READING_KEYS: tuple[str, ...] = (
 _HIDEABLE_BLOCKS: tuple[str, ...] = ("analyst_reading", "photos", "badges", "coach_note")
 
 
+# ---------------------------------------------------------------------------
+# Brecha a la ganadora/podio en snapshots heredados (feature 045, FR-022).
+# ---------------------------------------------------------------------------
+#
+# Decisión del dueño (2026-09-23): la familia nunca ve la brecha contra la
+# ganadora ni contra el podio, en ninguna parte. Los ``stage_log_json``
+# persistidos ANTES de la 045 traen esa brecha en texto que el builder de
+# entonces redactó: «+4,1 % al P1» (sublabel del waypoint de carrera y detalle
+# de la cima) y «llegó a 4,1 % del primer lugar» (leyenda estática de la
+# cima). Esas filas siguen en la base de datos y se sirven a la familia por
+# ``to_parent_dto``, así que la limpieza es **al leer** — sin escribir nada:
+# lo persistido no se toca, solo la copia que sale hacia la familia.
+#
+# El patrón es deliberadamente estrecho: un porcentaje pegado a una
+# referencia al líder/podio. «Brecha vs. mediana: +4,1 %» y «86 % de
+# asistencia» no coinciden. El texto libre de la IA que mencione al líder sin
+# cifra lo cubre el aviso al coach al aprobar (``family_gap_mentions``).
+
+_LEADER_REF = (
+    r"(?:P-?[13]|podio|ganador(?:a|es|as)?|l[ií]der(?:es)?"
+    r"|primer[oa]?\s+(?:lugar|puesto|posici[oó]n))"
+)
+_LEADER_GAP_RE = re.compile(
+    rf"[+\-−–]?\s*\d+(?:[.,]\d+)?[\s  ]*%[\s  ]*"
+    rf"(?:al|del|a\s+la|de\s+la|a)\s+{_LEADER_REF}\b",
+    flags=re.IGNORECASE,
+)
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?…])\s+")
+_PART_SEPARATOR = " · "
+
+#: Misma frase que ``newsletter_static_copy.static_summit_caption`` usa cuando
+#: no hay una lectura cuantitativa que citar (no se importa de allí: ese
+#: módulo importa este).
+_NEUTRAL_RACE_CAPTION = "{reference} vivió una experiencia de competencia que suma a su proceso."
+
+
+def _drop_leader_gap_parts(text: str | None) -> str | None:
+    """Quita de un texto «parte · parte» las partes que citan la brecha al
+    líder/podio (sublabels y detalle de la cima). ``None`` si no queda nada."""
+    if not text:
+        return text
+    kept = [p for p in text.split(_PART_SEPARATOR) if not _LEADER_GAP_RE.search(p)]
+    return _PART_SEPARATOR.join(kept) or None
+
+
+def _drop_leader_gap_sentences(text: str | None) -> str | None:
+    """Quita las oraciones que citan la brecha al líder/podio. ``None`` si no
+    queda ninguna (el llamador decide qué hacer con el bloque vacío)."""
+    if not text or not _LEADER_GAP_RE.search(text):
+        return text
+    kept = [s for s in _SENTENCE_SPLIT_RE.split(text) if not _LEADER_GAP_RE.search(s)]
+    return " ".join(kept) or None
+
+
+def _scrub_leader_gap_text(dto: dict[str, Any], athlete_reference: str) -> None:
+    """Limpia in situ, sobre la copia que se sirve a la familia, la brecha a
+    la ganadora/podio de los textos que el builder de la bitácora escribía."""
+    for waypoint in dto.get("trail") or []:
+        waypoint["sublabel"] = _drop_leader_gap_parts(waypoint.get("sublabel"))
+
+    summit = dto.get("summit")
+    if summit is not None:
+        summit["detail"] = _drop_leader_gap_parts(summit.get("detail"))
+        caption = summit.get("caption")
+        if caption and _LEADER_GAP_RE.search(caption):
+            summit["caption"] = _NEUTRAL_RACE_CAPTION.format(
+                reference=athlete_reference.capitalize()
+            )
+
+    kept_observations: list[dict[str, Any]] = []
+    for observation in dto.get("observations") or []:
+        claim = _drop_leader_gap_sentences(observation.get("claim"))
+        evidence = _drop_leader_gap_sentences(observation.get("evidence"))
+        if claim and evidence:
+            kept_observations.append({**observation, "claim": claim, "evidence": evidence})
+    if "observations" in dto:
+        dto["observations"] = kept_observations
+
+    next_segment = dto.get("next_segment")
+    if next_segment is not None:
+        next_segment["text"] = _drop_leader_gap_sentences(next_segment.get("text"))
+
+
 def to_parent_dto(stage_log: StageLog, hidden_blocks: list[str] | None = None) -> dict[str, Any]:
     """Proyecta ``StageLog`` al DTO que consume el portal de padres.
 
@@ -419,6 +505,13 @@ def to_parent_dto(stage_log: StageLog, hidden_blocks: list[str] | None = None) -
     ``source_insight_id``). Los bloques listados en ``hidden_blocks``
     (subconjunto de ``analyst_reading`` / ``photos`` / ``badges`` /
     ``coach_note``) se devuelven vacíos (``None`` o ``[]``).
+
+    Feature 045 (FR-022): a la copia resultante se le quita, al leer, la
+    brecha a la ganadora/podio que traen los snapshots heredados (ver
+    «Brecha a la ganadora/podio en snapshots heredados») y se pasa por la
+    política de audiencia de familia (claves ``gap_to_winner_*``,
+    ``gap_to_p3_*``, ``gap_pct``… fuera). No escribe nada ni muta
+    ``stage_log``.
     """
     hidden = set(hidden_blocks or [])
     full = stage_log.model_dump(mode="json")
@@ -434,4 +527,5 @@ def to_parent_dto(stage_log: StageLog, hidden_blocks: list[str] | None = None) -
     for block in hidden & set(_HIDEABLE_BLOCKS):
         dto[block] = [] if block in ("photos", "badges") else None
 
-    return dto
+    _scrub_leader_gap_text(dto, stage_log.athlete_reference)
+    return redact_for_audience(dto, Audience.FAMILY)

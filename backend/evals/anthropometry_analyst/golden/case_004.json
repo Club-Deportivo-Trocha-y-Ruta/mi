@@ -36,7 +36,7 @@
     }
   },
   "expected_themes": ["primera señal", "fase Circa-PHV", "aún no se puede concluir", "el entrenador lo revisará"],
-  "forbidden_terms": ["velocidad confiable", "percentil", "z-score", "diagnóstico", "trastorno alimentario", "desnutrición"],
+  "forbidden_terms": ["velocidad confiable", "percentil", "z-score", "diagnóstico", "trastorno alimentario", "desnutrición", "%", "mm"],
   "max_words": 180,
   "min_confidence_level": null,
   "max_confidence_level": "medium",

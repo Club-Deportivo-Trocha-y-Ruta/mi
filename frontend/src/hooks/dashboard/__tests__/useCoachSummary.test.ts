@@ -132,6 +132,32 @@ describe("useCoachSummary", () => {
     expect(result.current.data?.insights_stale).toBe(1);
   });
 
+  it("feature 045: expone identity_decisions_pending, imports_in_progress, analyses_awaiting_approval y unlinked_competitors_pending; un null parcial no tumba el resto", async () => {
+    mswServer.use(
+      http.get("*/api/dashboard/coach-summary", () =>
+        HttpResponse.json(
+          makeCoachSummary({
+            identity_decisions_pending: 4,
+            imports_in_progress: null,
+            analyses_awaiting_approval: 0,
+            unlinked_competitors_pending: 5,
+          }),
+        ),
+      ),
+    );
+
+    const { Wrapper } = makeWrapper();
+    const { result } = renderHook(() => useCoachSummary(), { wrapper: Wrapper });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.data?.identity_decisions_pending).toBe(4);
+    expect(result.current.data?.imports_in_progress).toBeNull();
+    expect(result.current.data?.analyses_awaiting_approval).toBe(0);
+    expect(result.current.data?.unlinked_competitors_pending).toBe(5);
+    expect(result.current.data?.consents_pending).toBe(3);
+  });
+
   it("NO dispara la petición cuando no hay accessToken", async () => {
     mockAuthState.accessToken = null;
     let callCount = 0;

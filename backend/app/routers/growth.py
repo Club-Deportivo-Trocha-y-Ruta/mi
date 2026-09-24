@@ -15,11 +15,14 @@ from app.models.anthropometry import AnthropometricRecord
 from app.models.athlete import Athlete
 from app.models.growth import GrowthIndicator, GrowthSource
 from app.models.user import User, UserRole
+from app.schemas.body_composition import BodyCompositionFamilySummary
 from app.schemas.growth import GrowthSummaryOut, LatestAiAnalysis
 from app.services.ai.anthro.guardrails_step import FAMILY_DELIVERABLE_VERDICTS
 from app.services.ai.use_cases.anthropometric_record_explainer import (
     USE_CASE_KEY as RECORD_USE_CASE,
 )
+from app.services.body_composition import load_athlete_records
+from app.services.body_composition import load_reading as load_body_composition_reading
 from app.services.growth import get_reference_curve
 from app.services.growth_summary import build_growth_summary
 from app.services.privacy import athlete_has_ai_processing_consent
@@ -203,22 +206,39 @@ async def get_growth_summary(
     tolerante a fallos (nunca puede provocar un 500 de este endpoint; ver
     ``contracts/growth-summary-latest-analysis.md`` §5).
     """
-    result = await db.execute(
-        select(AnthropometricRecord)
-        .where(AnthropometricRecord.athlete_id == athlete.id)
-        .order_by(AnthropometricRecord.evaluation_date.desc())
-        .limit(2)
+    # Feature 046 (T080, privacy-audit F6): ONE SELECT loads every record with
+    # its skinfold set (`load_athlete_records`, LEFT JOIN + contains_eager);
+    # it replaces the pre-046 `ORDER BY … DESC LIMIT 2` query, so the only
+    # extra query on this path is the FUPRECOL reference lookup (≤ 1, and
+    # none without a counted set) — the T041 query budget. The body
+    # composition then comes from the same `load_reading` as the coach
+    # detail, the newsletter annex and the AI leaf.
+    records = await load_athlete_records(db, athlete.id)
+    latest = records[-1] if records else None
+    previous = records[-2] if len(records) > 1 else None
+    loaded_body_composition = await load_body_composition_reading(
+        db, athlete, records=records
     )
-    records = result.scalars().all()
-    latest = records[0] if records else None
-    previous = records[1] if len(records) > 1 else None
 
     summary = build_growth_summary(
         athlete=athlete,
         latest=latest,
         previous=previous,
         today=date.today(),
+        body_composition=loaded_body_composition,
     )
+
+    # Feature 046: parents get exactly the 5-key family projection, built
+    # explicitly from `family_band` — never the coach model or `band`.
+    if current_user.role == UserRole.parent and summary.body_composition is not None:
+        coach_body_composition = summary.body_composition
+        summary.body_composition = BodyCompositionFamilySummary(
+            has_data=coach_body_composition.has_data,
+            latest_set_date=coach_body_composition.latest_set_date,
+            family_band=coach_body_composition.family_band,
+            family_label=coach_body_composition.family_label,
+            family_sentence=coach_body_composition.family_sentence,
+        )
 
     try:
         summary.latest_ai_analysis = await _compute_latest_ai_analysis(

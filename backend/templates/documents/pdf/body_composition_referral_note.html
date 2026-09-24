@@ -1,0 +1,84 @@
+{% extends "documents/pdf/base/layout.html" %}
+
+{#
+  Nota de remisión — composición corporal por pliegues cutáneos (feature 046,
+  T044). Generada solo desde una lectura rojo, pero el endpoint no exige el
+  band (contracts/skinfolds-api.md §6): coach/admin, 409 sin datos.
+
+  Fuente de la redacción: docs/21-body-composition/research-safeguards-referral.md
+  §4 (plantilla de nota de remisión) — el texto fijo de esta plantilla es una
+  paráfrasis mínima de ese documento, adaptada al motor de plantillas.
+
+  Variables requeridas (validadas por TemplateRegistry):
+    athlete_initials   str   — iniciales únicamente (ej. "J.G."), NUNCA el
+                               nombre completo del deportista
+    age_band           str   — rango de edad, ej. "12-13 años"
+    sex_label          str   — "Masculino" | "Femenino"
+    observed_pattern   str   — oración neutra del patrón observado
+                               (routers/body_composition.py::
+                               _REFERRAL_PATTERN_ES[band_reason_code] — NUNCA
+                               COACH_REASON_COPY, que trae instrucciones al
+                               entrenador y una etiqueta clínica); nunca un
+                               número con "%" o "mm"
+    legs_missing_note  str|None — oración adicional cuando falta algún dato de
+                               contexto (talla, peso, velocidad, referencia);
+                               puede ser None
+    weekly_hours_label str   — horas semanales de entrenamiento aproximadas de
+                               los últimos 28 días, en texto (ej. "≈ 4 horas
+                               por semana"), o "sin datos suficientes"
+    generated_at       str   — fecha/hora de generación
+
+  Privacidad (Ley 1581 / research-safeguards-referral.md anti-patrón #1):
+    - Nunca el nombre completo del deportista, nunca un porcentaje de grasa
+      corporal, nunca un valor en milímetros, nunca el nombre de un
+      profesional o institución (nota genérica, decisión C6 del owner).
+#}
+
+{% block title %}Nota de remisión — seguimiento de crecimiento{% endblock %}
+{% block header_right %}Nota de remisión{% endblock %}
+{% block doc_title %}Nota de remisión — seguimiento de crecimiento y composición corporal{% endblock %}
+{% block generated_at %}{{ generated_at }}{% endblock %}
+
+{% block body %}
+
+<table class="meta-table">
+  <tr>
+    <td>Deportista</td>
+    <td>{{ athlete_initials }} (iniciales — el nombre completo solo se entrega en papel, en mano, con autorización de la familia)</td>
+  </tr>
+  <tr>
+    <td>Edad</td>
+    <td>{{ age_band }}</td>
+  </tr>
+  <tr>
+    <td>Sexo</td>
+    <td>{{ sex_label }}</td>
+  </tr>
+</table>
+
+<h2>Motivo de la nota</h2>
+<p>
+  El club ha observado {{ observed_pattern }}
+  {%- if legs_missing_note %} {{ legs_missing_note }}{% endif -%},
+  en el contexto de entrenamiento de ciclismo de montaña
+  ({{ weekly_hours_label }}).
+</p>
+
+<div class="obs-box">
+  <p>
+    Esta nota NO incluye un diagnóstico, una clasificación de peso o de
+    composición corporal, ni una recomendación clínica — esas decisiones
+    quedan en manos del profesional tratante.
+  </p>
+</div>
+
+<p>
+  Se adjunta (con autorización expresa de la familia): historial de
+  mediciones de talla, peso y pliegues cutáneos de los últimos meses de
+  seguimiento.
+</p>
+
+<h2>Contacto</h2>
+<p>Contacto para coordinar: [acudiente / entrenador a cargo], [teléfono o correo]</p>
+
+{% endblock %}

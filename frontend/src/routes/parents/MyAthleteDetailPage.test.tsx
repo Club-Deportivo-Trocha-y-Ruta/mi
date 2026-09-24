@@ -1,19 +1,33 @@
 /**
- * Tests T1 Sprint 4 — sub-tab "Análisis IA" en MyAthleteDetailPage (parent).
+ * MyAthleteDetailPage — pestaña única «Carreras» de la familia (feature 045,
+ * US4 / T044 / T045; FR-010, FR-014, FR-015, FR-016, FR-018).
  *
- * Verifica:
- *  - Tab "Análisis IA" renderiza en la página del hijo (parent).
- *  - Click en la tab monta AthleteAIAnalysisTab con mode="parent".
- *  - No se renderizan controles exclusivos de coach (checkboxes, botón Lanzar,
- *    badge de confianza, sticky action bar).
- *  - Deep-link ?tab=ai-analysis abre la tab directamente.
+ * Reemplaza a la cobertura anterior de las pestañas «Análisis IA» y «Carreras»
+ * por separado. A diferencia de `AthleteDetailPage.test.tsx` (que sonda
+ * `CarrerasTab`), aquí `CarrerasTab` corre REAL contra handlers MSW — las
+ * aserciones de contenido (sin brechas contra líder/podio, etiqueta de IA
+ * revisada por el entrenador, cero violaciones a11y) solo tienen sentido con
+ * la pestaña real. Solo se mockea la gráfica (`HistoryChart`, recharts) — ya
+ * cubierta en su propio spec.
  *
- * Privacidad Ley 1581:
- *  - mode="parent" nunca expone confidence, tokens, prompt_version, model al DOM.
+ * Cubre:
+ *  - UNA sola pestaña «Carreras»; ya no existe «Análisis IA» como pestaña de
+ *    página (los alias se resuelven por URL);
+ *  - alias `?tab=ai-analysis[&insight=<id>]` → `?tab=races&view=analisis[&insight=<id>]`;
+ *  - `view=comparar` (solo-coach) cae en «Progresión», nunca es un error;
+ *  - ninguna cadena «Brecha vs. 1.ª posición» / «Brecha vs. podio» en ninguna vista;
+ *  - la etiqueta «Análisis generado con IA y revisado por el entrenador.» en cada
+ *    análisis mostrado a la familia;
+ *  - jest-axe: cero violaciones en «Progresión» y en «Análisis IA».
+ *
+ * Privacidad Ley 1581: fixtures 100% sintéticas, ningún menor real.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
+import { axe } from "jest-axe";
 
 // ---------------------------------------------------------------------------
 // Mocks — declarados antes de imports de producción
@@ -37,53 +51,23 @@ vi.mock("@/store/auth.store", () => ({
   ),
 }));
 
-// Mock AthleteAIAnalysisTab — testamos que se monta con mode="parent" correcto.
-vi.mock("@/components/athletes/ai/AthleteAIAnalysisTab", () => ({
-  AthleteAIAnalysisTab: ({
-    mode,
-    athlete,
-  }: {
-    mode: string;
-    athlete: { id: number };
-  }) => (
-    <div data-testid="mock-ai-analysis-tab" data-mode={mode} data-athlete-id={athlete.id}>
-      ai-analysis-{mode}
-    </div>
+// Stand-in liviano de la gráfica (recharts) — cubierta en HistoryChart.test.tsx.
+vi.mock("@/components/race/history/HistoryChart", () => ({
+  HistoryChart: ({ points }: { points: unknown[] }) => (
+    <div data-testid="mock-history-chart" data-count={points.length} />
   ),
 }));
 
-// Componentes secundarios que no son objeto de este test.
+// Componentes secundarios ajenos al objeto de este archivo.
 vi.mock("@/components/athletes/AthleteInfoCard", () => ({
   AthleteInfoCard: () => <div data-testid="athlete-info-card">InfoCard</div>,
-}));
-vi.mock("@/components/athletes/AnthropometryHistory", () => ({
-  AnthropometryHistory: () => <div data-testid="anthropometry-history">AnthropometryHistory</div>,
-}));
-vi.mock("@/components/athletes/growth/GrowthCurveSection", () => ({
-  GrowthCurveSection: () => <div data-testid="growth-curve">GrowthCurveSection</div>,
-}));
-vi.mock("@/components/athletes/NutritionalClassification", () => ({
-  NutritionalClassification: () => (
-    <div data-testid="nutritional-classification">NutritionalClassification</div>
-  ),
-}));
-vi.mock("@/components/athletes/ResearchReferences", () => ({
-  ResearchReferences: () => <div data-testid="research-references">ResearchReferences</div>,
-}));
-vi.mock("@/components/ai/PHVExplanationCard", () => ({
-  PHVExplanationCard: () => <div data-testid="phv-explanation-card">PHVExplanationCard</div>,
-}));
-// Tab "Carreras" (feature 044) — mockeado igual que AthleteAIAnalysisTab:
-// no es objeto de este archivo y evita depender de sus propios fetches.
-vi.mock("@/components/race/history/HistoryProgressionCard", () => ({
-  HistoryProgressionCard: () => (
-    <div data-testid="mock-history-progression">HistoryProgressionCard</div>
-  ),
 }));
 
 import { useAthlete } from "@/hooks/athletes/useAthlete";
 import { useAnthropometry } from "@/hooks/athletes/useAnthropometry";
-import { renderWithProviders } from "@/test/helpers/renderWithProviders";
+import { mswServer } from "@/test/setup";
+import { raceHistoryFamilyHandler } from "@/test/msw/raceHistoryHandlers";
+import { seasonPanoramaHandler } from "@/test/msw/athleteRaceAnalysisHandlers";
 import { MyAthleteDetailPage } from "./MyAthleteDetailPage";
 import { Sex } from "@/types/enums";
 import type { AthleteDetailOut } from "@/types/athlete.types";
@@ -92,11 +76,13 @@ import type { AthleteDetailOut } from "@/types/athlete.types";
 // Fixtures
 // ---------------------------------------------------------------------------
 
+const AI_REVIEWED_LABEL = "Análisis generado con IA y revisado por el entrenador.";
+
 const mockAthlete: AthleteDetailOut = {
   id: 42,
   user_id: 100,
-  first_name: "Sebastián",
-  last_name: "García",
+  first_name: "Atleta",
+  last_name: "Ficticio",
   birth_date: "2012-01-15",
   sex: Sex.M,
   club_join_date: "2024-01-01",
@@ -108,16 +94,16 @@ const mockAthlete: AthleteDetailOut = {
   latest_anthropometry: null,
 };
 
-function mockHooks(athlete = mockAthlete, records: unknown[] = []) {
+function mockHooks() {
   vi.mocked(useAthlete).mockReturnValue({
-    data: athlete,
+    data: mockAthlete,
     isLoading: false,
     isError: false,
     error: null,
   } as unknown as ReturnType<typeof useAthlete>);
 
   vi.mocked(useAnthropometry).mockReturnValue({
-    data: records,
+    data: [],
     isLoading: false,
     isError: false,
     error: null,
@@ -125,133 +111,209 @@ function mockHooks(athlete = mockAthlete, records: unknown[] = []) {
 }
 
 // ---------------------------------------------------------------------------
+// Helpers de render
+// ---------------------------------------------------------------------------
+
+/** Expone `location.search` para verificar la sincronización con la URL. */
+function LocationProbe() {
+  const location = useLocation();
+  return <div data-testid="location-search">{location.search}</div>;
+}
+
+function currentSearchParams(): URLSearchParams {
+  return new URLSearchParams(screen.getByTestId("location-search").textContent ?? "");
+}
+
+function renderPage(search = "") {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, gcTime: 0 },
+      mutations: { retry: false },
+    },
+  });
+  return render(
+    <MemoryRouter initialEntries={[`/my-athletes/42${search}`]}>
+      <QueryClientProvider client={queryClient}>
+        <LocationProbe />
+        <Routes>
+          <Route path="/my-athletes/:id" element={<MyAthleteDetailPage />} />
+        </Routes>
+      </QueryClientProvider>
+    </MemoryRouter>,
+  );
+}
+
+/** Espera a que no quede ningún esqueleto de carga (chunks lazy + consultas). */
+async function waitUntilSettled() {
+  await screen.findByTestId("carreras-tab");
+  await waitFor(() => {
+    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
-describe("MyAthleteDetailPage — sub-tab Análisis IA (T1 Sprint 4)", () => {
+describe("MyAthleteDetailPage — pestaña única «Carreras» (feature 045, US4)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockHooks();
+    // Lo que recibe un padre: historial sin brechas contra líder/podio.
+    mswServer.use(raceHistoryFamilyHandler, seasonPanoramaHandler);
   });
 
-  it("renderiza el botón de tab 'Análisis IA' para el padre", async () => {
-    mockHooks();
-    renderWithProviders(<MyAthleteDetailPage />, {
-      initialEntries: ["/my-athletes/42"],
+  describe("estructura de pestañas", () => {
+    it("hay UNA sola pestaña «Carreras» y ninguna «Análisis IA» ni «Insights IA» a nivel de página (FR-010)", async () => {
+      renderPage();
+      expect(await screen.findByTestId("parent-tab-races")).toHaveTextContent(/^Carreras$/);
+
+      expect(screen.getAllByRole("button", { name: /^Carreras$/i })).toHaveLength(1);
+      expect(screen.queryByRole("button", { name: /Análisis IA/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Insights IA/i })).not.toBeInTheDocument();
+      expect(screen.queryByTestId("parent-tab-ai-analysis")).not.toBeInTheDocument();
     });
 
-    await waitFor(() => {
-      expect(screen.getByTestId("parent-tab-ai-analysis")).toBeInTheDocument();
-    });
-    expect(screen.getByTestId("parent-tab-ai-analysis")).toHaveTextContent(
-      /análisis ia/i,
-    );
-  });
-
-  it("click en 'Análisis IA' monta AthleteAIAnalysisTab con mode='parent'", async () => {
-    const user = userEvent.setup();
-    mockHooks();
-    renderWithProviders(<MyAthleteDetailPage />, {
-      initialEntries: ["/my-athletes/42"],
+    it("en la pestaña por defecto (Datos) NO monta CarrerasTab", async () => {
+      renderPage();
+      await screen.findByTestId("parent-tab-races");
+      expect(screen.queryByTestId("carreras-tab")).not.toBeInTheDocument();
+      expect(screen.getByText("Datos del atleta")).toBeInTheDocument();
     });
 
-    await waitFor(() => {
-      expect(screen.getByTestId("parent-tab-ai-analysis")).toBeInTheDocument();
+    it("la familia llega a Carreras con UN toque desde la ficha del hijo (FR-018: ≤ 2 desde el inicio)", async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      await user.click(await screen.findByTestId("parent-tab-races"));
+
+      expect(await screen.findByTestId("carreras-tab")).toBeInTheDocument();
+      expect(currentSearchParams().get("tab")).toBe("races");
     });
 
-    await user.click(screen.getByTestId("parent-tab-ai-analysis"));
-
-    await waitFor(() => {
-      expect(screen.getByTestId("mock-ai-analysis-tab")).toBeInTheDocument();
+    it("?tab=races abre Carreras directamente en Progresión", async () => {
+      renderPage("?tab=races");
+      await screen.findByTestId("carreras-tab");
+      expect(screen.getByTestId("carreras-view-progresion")).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
     });
 
-    const tab = screen.getByTestId("mock-ai-analysis-tab");
-    // Verificar que se montó con mode="parent" — NUNCA mode="coach".
-    expect(tab).toHaveAttribute("data-mode", "parent");
-    expect(tab).toHaveAttribute("data-athlete-id", "42");
-  });
-
-  it("deep-link ?tab=ai-analysis abre la sub-tab directamente", async () => {
-    mockHooks();
-    renderWithProviders(<MyAthleteDetailPage />, {
-      initialEntries: ["/my-athletes/42?tab=ai-analysis"],
+    it("?tab= con un valor que no es ninguna pestaña cae en la pestaña por defecto", async () => {
+      renderPage("?tab=algo-que-no-existe");
+      await screen.findByTestId("parent-tab-races");
+      expect(screen.queryByTestId("carreras-tab")).not.toBeInTheDocument();
+      expect(screen.getByText("Datos del atleta")).toBeInTheDocument();
     });
 
-    await waitFor(() => {
-      expect(screen.getByTestId("mock-ai-analysis-tab")).toBeInTheDocument();
-    });
+    it("salir de Carreras suelta view e insight de la URL", async () => {
+      const user = userEvent.setup();
+      renderPage("?tab=races&view=analisis&insight=7");
+      await screen.findByTestId("carreras-tab");
 
-    const tab = screen.getByTestId("mock-ai-analysis-tab");
-    expect(tab).toHaveAttribute("data-mode", "parent");
-  });
+      await user.click(screen.getByRole("button", { name: /^Datos$/i }));
 
-  it("la vista Análisis IA del padre NO expone datos operativos sensibles", async () => {
-    const user = userEvent.setup();
-    mockHooks();
-    renderWithProviders(<MyAthleteDetailPage />, {
-      initialEntries: ["/my-athletes/42"],
-    });
-
-    await waitFor(() => {
-      expect(screen.getByTestId("parent-tab-ai-analysis")).toBeInTheDocument();
-    });
-    await user.click(screen.getByTestId("parent-tab-ai-analysis"));
-    await waitFor(() => {
-      expect(screen.getByTestId("mock-ai-analysis-tab")).toBeInTheDocument();
-    });
-
-    // Con el mock, el contenido es "ai-analysis-parent". No debe contener
-    // metadatos de IA ni confianza. El componente real (AthleteAIAnalysisTab)
-    // ya tiene sus propios tests de privacidad en AthleteAIAnalysisTab.parent.test.tsx.
-    const tree = document.body.textContent ?? "";
-    const forbidden = [/confidence/i, /\$\d/, /tokens?/i, /\bprompt\b/i, /\bmodel\b/i];
-    forbidden.forEach((p) => {
-      expect(tree).not.toMatch(p);
+      expect(screen.queryByTestId("carreras-tab")).not.toBeInTheDocument();
+      expect(screen.getByTestId("location-search").textContent).toBe("");
     });
   });
 
-  it("en modo default (tab=info) NO monta AthleteAIAnalysisTab", async () => {
-    mockHooks();
-    renderWithProviders(<MyAthleteDetailPage />, {
-      initialEntries: ["/my-athletes/42"],
+  describe("alias de URL (correos ya enviados y enlaces internos)", () => {
+    it("?tab=ai-analysis → ?tab=races&view=analisis", async () => {
+      renderPage("?tab=ai-analysis");
+
+      await screen.findByTestId("carreras-tab");
+      const params = currentSearchParams();
+      expect(params.get("tab")).toBe("races");
+      expect(params.get("view")).toBe("analisis");
+      expect(params.has("insight")).toBe(false);
+      expect(screen.getByTestId("carreras-view-analisis")).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
     });
 
-    await waitFor(() => {
-      expect(screen.getByTestId("parent-tab-ai-analysis")).toBeInTheDocument();
-    });
+    it("?tab=ai-analysis&insight=7 conserva insight y abre Análisis IA", async () => {
+      renderPage("?tab=ai-analysis&insight=7");
 
-    // Sin hacer click, el tab por defecto es "info" → componente IA no montado.
-    expect(screen.queryByTestId("mock-ai-analysis-tab")).not.toBeInTheDocument();
+      await screen.findByTestId("carreras-tab");
+      const params = currentSearchParams();
+      expect(params.get("tab")).toBe("races");
+      expect(params.get("view")).toBe("analisis");
+      expect(params.get("insight")).toBe("7");
+      expect(screen.getByTestId("carreras-view-analisis")).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+    });
   });
 
-  // -------------------------------------------------------------------
-  // 2026-09-23: el parseo de `?tab=` solo reconocía "ai-analysis" — un
-  // deep-link a cualquier otra pestaña válida (ej. "races", que llega
-  // desde el alias de correos de insight ya enviados) caía siempre en
-  // "info" en vez de abrir la pestaña pedida.
-  // -------------------------------------------------------------------
-  it("deep-link ?tab=races abre la pestaña Carreras directamente", async () => {
-    mockHooks();
-    renderWithProviders(<MyAthleteDetailPage />, {
-      initialEntries: ["/my-athletes/42?tab=races"],
-    });
+  describe("«Comparar» es solo-coach (FR-015)", () => {
+    it("view=comparar cae en Progresión — sin error y sin pestaña Comparar", async () => {
+      renderPage("?tab=races&view=comparar");
 
-    await waitFor(() => {
-      expect(screen.getByTestId("mock-history-progression")).toBeInTheDocument();
+      await screen.findByTestId("carreras-tab");
+      expect(screen.getByTestId("carreras-view-progresion")).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      expect(screen.queryByTestId("carreras-view-comparar")).not.toBeInTheDocument();
+      expect(screen.queryByRole("tab", { name: /Comparar/i })).not.toBeInTheDocument();
     });
-    expect(screen.queryByTestId("mock-ai-analysis-tab")).not.toBeInTheDocument();
   });
 
-  it("?tab= con un valor que no es ninguna pestaña cae en la pestaña por defecto", async () => {
-    mockHooks();
-    renderWithProviders(<MyAthleteDetailPage />, {
-      initialEntries: ["/my-athletes/42?tab=algo-que-no-existe"],
+  describe("privacidad familiar (FR-014, spec US4)", () => {
+    it("ninguna vista muestra «Brecha vs. 1.ª posición» ni «Brecha vs. podio»", async () => {
+      const user = userEvent.setup();
+      renderPage("?tab=races");
+      await waitUntilSettled();
+
+      const forbidden = [/Brecha vs\.? 1\.?ª posición/i, /Brecha vs\.? podio/i];
+      const assertClean = () => {
+        const text = document.body.textContent ?? "";
+        forbidden.forEach((pattern) => expect(text).not.toMatch(pattern));
+      };
+
+      assertClean();
+
+      await user.click(screen.getByTestId("carreras-view-analisis"));
+      await waitUntilSettled();
+      assertClean();
     });
 
-    await waitFor(() => {
-      expect(screen.getByTestId("parent-tab-ai-analysis")).toBeInTheDocument();
+    it("cada análisis mostrado a la familia lleva la etiqueta de IA revisada por el entrenador", async () => {
+      renderPage("?tab=races&view=analisis");
+      await waitUntilSettled();
+
+      const labels = await screen.findAllByText(AI_REVIEWED_LABEL);
+      expect(labels.length).toBeGreaterThanOrEqual(1);
     });
-    expect(screen.queryByTestId("mock-ai-analysis-tab")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("mock-history-progression")).not.toBeInTheDocument();
-    expect(screen.getByText("Datos del atleta")).toBeInTheDocument();
+
+    it("no expone metadatos operativos de IA (confianza, tokens, modelo, prompt)", async () => {
+      renderPage("?tab=races&view=analisis");
+      await waitUntilSettled();
+      await screen.findAllByText(AI_REVIEWED_LABEL);
+
+      const tree = document.body.textContent ?? "";
+      [/confidence/i, /\$\d/, /tokens?/i, /\bprompt\b/i, /\bmodel\b/i, /gemini/i].forEach(
+        (pattern) => expect(tree).not.toMatch(pattern),
+      );
+    });
+  });
+
+  describe("accesibilidad", () => {
+    it("jest-axe: cero violaciones en Progresión", async () => {
+      const { container } = renderPage("?tab=races");
+      await waitUntilSettled();
+      expect(await axe(container)).toHaveNoViolations();
+    });
+
+    it("jest-axe: cero violaciones en Análisis IA", async () => {
+      const { container } = renderPage("?tab=races&view=analisis");
+      await waitUntilSettled();
+      await screen.findAllByText(AI_REVIEWED_LABEL);
+      expect(await axe(container)).toHaveNoViolations();
+    });
   });
 });

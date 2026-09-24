@@ -1,17 +1,23 @@
 /**
- * E2E — feature 036, Wave 5 (T072): la vista del padre/madre es una vista
- * de privacidad, no solo un layout distinto.
+ * E2E — feature 036, Wave 5 (T072), migrado a la pestaña única «Carreras» por
+ * la feature 045 (T064): la vista del padre/madre es una vista de privacidad,
+ * no solo un layout distinto.
  *
- * Motivación (spec.md, User Story 7): la vista coach tiene 5 sub-tabs
- * (Panorama, Histórico, Evolución, Distribución, Analizar con IA); la del
- * padre solo 3 (Panorama, Histórico, Evolución) — esa asimetría es
- * intencional y preexistente, documentada en
- * `AthleteAIAnalysisTab.tsx` ("mode='parent' oculta Distribución,
- * 'Analizar con IA', Sheet del Comparador"). Esta spec no se conforma con
+ * Motivación (spec.md, User Story 7 de la 036; FR-015 de la 045): la pestaña
+ * «Carreras» del coach tiene 3 vistas (Progresión, Análisis IA, Comparar) y
+ * la del padre solo 2 (Progresión, Análisis IA) — esa asimetría es
+ * intencional: `CarrerasTab` con `audience="family"` no monta «Comparar»
+ * (distribución del campo + comparador), ni el lanzador, el chat, las casillas
+ * de boletín, ni las métricas contra el líder/podio («Brecha vs. 1.ª
+ * posición», «Brecha vs. podio» son solo-coach). Esta spec no se conforma con
  * "no se ve" (podría estar oculto con CSS): verifica AUSENCIA del DOM y,
  * como refuerzo, que el backend jamás recibe una petición a los endpoints
  * exclusivos de coach — si un regresión futura volviera a montar esos
  * sub-componentes para un padre, esta spec debe fallar por las dos vías.
+ *
+ * Direcciones (contracts/ui-routes.md): `?tab=races[&view=progresion|analisis]`;
+ * el alias `?tab=ai-analysis` redirige a `?tab=races&view=analisis`, y
+ * `?view=comparar` cae en «Progresión» sin error (vista solo-coach).
  *
  * Incluye además el otro borde de la misma invariante de privacidad: un
  * padre que edita la URL para ver el análisis de un atleta que NO es su
@@ -26,6 +32,7 @@
  */
 import { test, expect, type Page } from "@playwright/test";
 import { realTokens } from './helpers/session';
+import { mockAthleteRaceHistory } from './helpers/race-history';
 
 // ---------------------------------------------------------------------------
 // Fixtures — sintéticos, nunca nombres reales (Ley 1581)
@@ -285,30 +292,56 @@ async function mockOtherChildDenied(page: Page): Promise<void> {
 // ---------------------------------------------------------------------------
 
 test.describe("Feature 036 — vista de padre/madre: privacidad, no solo layout (T072)", () => {
-  test("PARENT-001: 3 sub-tabs exactos, sin checkboxes de boletín, datos del propio hijo", async ({
+  test("PARENT-001: 2 vistas exactas (sin Comparar), sin checkboxes de boletín ni brechas contra líder/podio, datos del propio hijo", async ({
     page,
   }) => {
     const { coachOnlyHit } = await mockCommon(page);
+    const requestedHistoryKinds = await mockAthleteRaceHistory(page, CHILD_ID, {
+      audience: "family",
+    });
 
     await setupAuthParent(page);
     await page.goto(`/my-athletes/${CHILD_ID}`);
 
-    await page.getByTestId("parent-tab-ai-analysis").click();
-    await expect(page.getByTestId("athlete-ai-analysis-tab")).toBeVisible({
+    await page.getByTestId("parent-tab-races").click();
+    await expect(page.getByTestId("carreras-tab")).toBeVisible({
       timeout: 15_000,
     });
 
-    // --- Exactamente 3 sub-tabs, nunca 5 ------------------------------------
-    const subtabs = page.locator('[data-testid^="ai-subtab-"]');
-    await expect(subtabs).toHaveCount(3);
-    await expect(page.getByTestId("ai-subtab-panorama")).toBeVisible();
-    await expect(page.getByTestId("ai-subtab-history")).toBeVisible();
-    await expect(page.getByTestId("ai-subtab-evolution")).toBeVisible();
-    await expect(page.getByTestId("ai-subtab-distribution")).toHaveCount(0);
-    await expect(page.getByTestId("ai-subtab-launch")).toHaveCount(0);
+    // --- Exactamente 2 vistas, nunca 3 --------------------------------------
+    const views = page.locator('[data-testid^="carreras-view-"]');
+    await expect(views).toHaveCount(2);
+    await expect(page.getByTestId("carreras-view-progresion")).toBeVisible();
+    await expect(page.getByTestId("carreras-view-analisis")).toBeVisible();
+    await expect(page.getByTestId("carreras-view-comparar")).toHaveCount(0);
 
-    // --- Datos del propio hijo, y ningún nombre/marcador ajeno --------------
-    await expect(page.getByText(OWN_CHILD_INSIGHT.summary_text)).toBeVisible();
+    // --- «Progresión» (vista por defecto): solo mediana, percentil y posición
+    await expect(page.getByTestId("progression-view")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect.poll(() => requestedHistoryKinds, { timeout: 15_000 }).toContain("all");
+    const metricSelect = page.getByTestId("progression-metric-select");
+    await expect(metricSelect).toBeVisible({ timeout: 15_000 });
+    await expect(metricSelect.locator("option")).toHaveCount(3);
+    await expect(metricSelect.locator("option", { hasText: "Brecha vs. mediana" })).toHaveCount(1);
+    await expect(metricSelect.locator("option", { hasText: "Percentil" })).toHaveCount(1);
+    await expect(metricSelect.locator("option", { hasText: "Posición" })).toHaveCount(1);
+    // Ni el líder ni el podio aparecen en NINGÚN lugar de la vista (Ley 1581
+    // + salvaguarda 045): ni como opción ni en la tabla ni en el texto.
+    await expect(page.getByText(/brecha vs\. (podio|1\.ª posición)/i)).toHaveCount(0);
+    await expect(page.getByText(/gap al podio/i)).toHaveCount(0);
+
+    // --- «Análisis IA»: datos del propio hijo, y ningún marcador ajeno ------
+    await page.getByTestId("carreras-view-analisis").click();
+    await expect(page).toHaveURL(/[?&]view=analisis(&|$)/);
+    await expect(page.getByTestId("analysis-view")).toBeVisible({ timeout: 15_000 });
+    // La familia siempre ve la etiqueta de revisión humana.
+    await expect(page.getByTestId("analysis-ai-label")).toHaveText(
+      "Análisis generado con IA y revisado por el entrenador.",
+    );
+    // Panorama (héroe) y Histórico conviven en la misma vista: el texto del
+    // insight aparece en ambos → `.first()` evita el strict-mode.
+    await expect(page.getByText(OWN_CHILD_INSIGHT.summary_text).first()).toBeVisible();
     await expect(page.getByText(OTHER_CHILD_MARKER)).toHaveCount(0);
 
     // --- Sin ningún control de boletín en Panorama --------------------------
@@ -316,8 +349,7 @@ test.describe("Feature 036 — vista de padre/madre: privacidad, no solo layout 
 
     // --- Sin checkboxes de boletín en Histórico, ni para el insight normal
     //     ni para el fallback ------------------------------------------------
-    await page.getByTestId("ai-subtab-history").click();
-    await expect(page.getByText(OWN_CHILD_INSIGHT.summary_text)).toBeVisible();
+    await expect(page.getByTestId(`insight-card-${OWN_CHILD_INSIGHT.id}`)).toBeVisible();
     await expect(page.locator('[data-testid^="insight-checkbox-"]')).toHaveCount(0);
     // El fallback tampoco ofrece "Reintentar" (acción de coach) al padre.
     await expect(
@@ -327,13 +359,52 @@ test.describe("Feature 036 — vista de padre/madre: privacidad, no solo layout 
       page.getByTestId(`insight-regenerate-${OWN_CHILD_INSIGHT.id}`),
     ).toHaveCount(0);
 
-    // --- La barra sticky de boletín no puede existir sin selección posible --
+    // --- Sin herramientas de coach (lanzador + chat) ni barra de boletín ----
+    await expect(page.getByTestId("analysis-coach-tools")).toHaveCount(0);
+    await expect(page.getByTestId("launch-analysis-form")).toHaveCount(0);
     await expect(page.getByTestId("newsletter-action-bar")).toHaveCount(0);
 
-    // --- Botón "Comparar con otro atleta" (Sheet del Comparador, BB3) -------
-    await expect(page.getByTestId("open-comparator-sheet")).toHaveCount(0);
-
     // --- El backend nunca vio una petición a un endpoint exclusivo de coach.
+    expect(coachOnlyHit()).toBeNull();
+  });
+
+  test("PARENT-003: el alias `?tab=ai-analysis` redirige a «Carreras › Análisis IA»; `?view=comparar` cae en «Progresión» sin error", async ({
+    page,
+  }) => {
+    const { coachOnlyHit } = await mockCommon(page);
+    await mockAthleteRaceHistory(page, CHILD_ID, { audience: "family" });
+
+    await setupAuthParent(page);
+
+    // --- Alias legado (correos y notificaciones ya enviados) ----------------
+    await page.goto(`/my-athletes/${CHILD_ID}?tab=ai-analysis`);
+    await expect(page).toHaveURL(
+      new RegExp(`/my-athletes/${CHILD_ID}\\?tab=races&view=analisis$`),
+      { timeout: 15_000 },
+    );
+    await expect(page.getByTestId("carreras-view-analisis")).toHaveAttribute(
+      "data-state",
+      "active",
+      { timeout: 15_000 },
+    );
+    await expect(page.getByTestId("analysis-view")).toBeVisible({ timeout: 15_000 });
+    // La pestaña antigua ya no existe.
+    await expect(page.getByTestId("parent-tab-ai-analysis")).toHaveCount(0);
+
+    // --- `view=comparar` es solo-coach: para la familia cae en «Progresión» --
+    await page.goto(`/my-athletes/${CHILD_ID}?tab=races&view=comparar`);
+    await expect(page.getByTestId("carreras-view-progresion")).toHaveAttribute(
+      "data-state",
+      "active",
+      { timeout: 15_000 },
+    );
+    await expect(page.getByTestId("progression-view")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("compare-view")).toHaveCount(0);
+    await expect(page.getByTestId("comparator-panel")).toHaveCount(0);
+    await expect(page.getByTestId("distribution-chart")).toHaveCount(0);
+    // Caer en «Progresión» no es un error: ningún alert dentro de la pestaña.
+    await expect(page.getByTestId("carreras-tab").getByRole("alert")).toHaveCount(0);
+
     expect(coachOnlyHit()).toBeNull();
   });
 
@@ -346,16 +417,16 @@ test.describe("Feature 036 — vista de padre/madre: privacidad, no solo layout 
     await setupAuthParent(page);
     await page.goto(`/my-athletes/${OTHER_CHILD_ID}`);
 
-    // El frontend respeta el 403 del backend: no monta el tab de IA ni
-    // ningún dato de ese atleta. Timeout generoso: el QueryClient global
+    // El frontend respeta el 403 del backend: no monta la pestaña «Carreras»
+    // ni ningún dato de ese atleta. Timeout generoso: el QueryClient global
     // (App.tsx) usa `retry: 3` como NÚMERO — TanStack Query reintenta
     // igual con un 403 (no distingue 4xx de 5xx salvo que `retry` sea una
     // función) con backoff 1s/2s/4s antes de asentar en `isError`.
     await expect(
       page.getByText(/no se pudo cargar la información del atleta/i),
     ).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByTestId("athlete-ai-analysis-tab")).toHaveCount(0);
+    await expect(page.getByTestId("carreras-tab")).toHaveCount(0);
     await expect(page.getByText(OTHER_CHILD_MARKER)).toHaveCount(0);
-    await expect(page.getByTestId("parent-tab-ai-analysis")).toHaveCount(0);
+    await expect(page.getByTestId("parent-tab-races")).toHaveCount(0);
   });
 });

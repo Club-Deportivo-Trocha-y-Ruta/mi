@@ -273,6 +273,119 @@ class TestSummit:
 
 
 # ---------------------------------------------------------------------------
+# Feature 045 (US4, T060): el gap de las carreras que ve la familia es la
+# «Brecha vs. mediana» del motor — nunca el gap al ganador (FR-022).
+# Los valores de ganador de los fixtures (77,7 / 88,8) son centinelas: si
+# alguno aparece en la salida, algo volvió a leer ``gap_to_winner_pct``.
+# ---------------------------------------------------------------------------
+
+_WINNER_SENTINELS = ("77,7", "88,8")
+
+
+def _race_snapshot(**result_fields) -> dict:
+    result = {
+        "label": "Válida 3",
+        "event_date": "2026-06-12",
+        "position": 2,
+        "category_label": "Prejuvenil A",
+        "gap_to_winner_pct": 77.7,
+        "gap_to_winner_ms": 88_800,
+        **result_fields,
+    }
+    return _base_snapshot(
+        email_blocks={"race_results": {"has_races": True, "results": [result]}},
+    )
+
+
+def _race_waypoint(snapshot: dict):
+    trail = trail_waypoints(
+        snapshot, month_start=date(2026, 6, 1), month_end=date(2026, 6, 30), first_session_date=None
+    )
+    return next(w for w in trail if w.kind.value == "race")
+
+
+class TestRaceGapIsMedianNotWinner:
+    def test_waypoint_sublabel_uses_median_gap(self):
+        waypoint = _race_waypoint(_race_snapshot(gap_to_median_pct=4.1))
+        assert waypoint.sublabel == "Brecha vs. mediana: +4,1 %"
+
+    def test_waypoint_sublabel_keeps_negative_sign_for_faster_than_median(self):
+        waypoint = _race_waypoint(_race_snapshot(position=1, gap_to_median_pct=-3.2))
+        assert waypoint.sublabel == "Brecha vs. mediana: -3,2 %"
+
+    def test_winner_gets_a_median_sublabel_too(self):
+        """El P1 no tiene brecha 0 contra la mediana: el sublabel se muestra."""
+        waypoint = _race_waypoint(_race_snapshot(position=1, gap_to_median_pct=-6.0))
+        assert waypoint.sublabel is not None
+        assert "mediana" in waypoint.sublabel
+
+    def test_median_none_omits_sublabel_and_never_falls_back_to_winner_gap(self):
+        """Parrilla bajo el mínimo del motor (None) → sin sublabel, aunque el
+        snapshot traiga el gap al ganador."""
+        waypoint = _race_waypoint(_race_snapshot(gap_to_median_pct=None))
+        assert waypoint.sublabel is None
+
+    def test_snapshot_without_median_key_omits_sublabel(self):
+        """Snapshots persistidos antes de la 045 no traen ``gap_to_median_pct``."""
+        waypoint = _race_waypoint(_race_snapshot())
+        assert waypoint.sublabel is None
+
+    def test_no_winner_text_in_any_waypoint_field(self):
+        for median in (4.1, None):
+            waypoint = _race_waypoint(_race_snapshot(gap_to_median_pct=median))
+            rendered = f"{waypoint.label} {waypoint.sublabel or ''}"
+            assert "al P1" not in rendered
+            assert not any(sentinel in rendered for sentinel in _WINNER_SENTINELS)
+
+    def test_summit_detail_uses_median_gap(self):
+        result = summit(_race_snapshot(gap_to_median_pct=4.1))
+        assert result is not None
+        assert result.detail == "Prejuvenil A · Brecha vs. mediana: +4,1 %"
+
+    def test_summit_detail_without_median_has_only_category(self):
+        result = summit(_race_snapshot(gap_to_median_pct=None))
+        assert result is not None
+        assert result.detail == "Prejuvenil A"
+
+    def test_summit_has_no_winner_text(self):
+        for median in (4.1, None):
+            result = summit(_race_snapshot(gap_to_median_pct=median))
+            assert result is not None
+            rendered = f"{result.title} {result.detail or ''}"
+            assert "al P1" not in rendered
+            assert not any(sentinel in rendered for sentinel in _WINNER_SENTINELS)
+
+    def test_full_stage_log_has_no_winner_gap_anywhere(self):
+        """De punta a punta: el ``StageLog`` serializado (lo que llega a la
+        familia) no contiene el gap al ganador ni el texto «al P1»."""
+        snapshot = _race_snapshot(gap_to_median_pct=4.1)
+        stage_log = build_stage_log(
+            snapshot,
+            None,
+            None,
+            None,
+            coach_note=None,
+            hidden_blocks=None,
+            athlete_sex="F",
+            athlete_first_name="Atleta Prueba",
+        )
+        dumped = stage_log.model_dump_json()
+        assert "al P1" not in dumped
+        assert "77,7" not in dumped and "77.7" not in dumped
+
+    def test_module_source_no_longer_reads_the_winner_gap(self):
+        """Guarda de privacidad (FR-022): el builder de la bitácora no puede
+        volver a leer ``gap_to_winner_*`` ni escribir «al P1»."""
+        import inspect
+
+        from app.services.training import stage_log_builder
+
+        source = inspect.getsource(stage_log_builder)
+        assert "gap_to_winner" not in source
+        assert "al P1" not in source
+
+
+# ---------------------------------------------------------------------------
 # effort_profile — semanas ISO, límites de mes
 # ---------------------------------------------------------------------------
 

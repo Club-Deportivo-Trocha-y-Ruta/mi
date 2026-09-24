@@ -10,10 +10,11 @@
  * por el test suite propio de cada componente — solo el eje transversal
  * accesibilidad × "todo estado pasa por StatusBadge".
  *
- * Dos componentes (`AthleteAIAnalysisTab`'s confidence badge y
+ * Dos componentes (el badge de confianza del análisis IA —antes en
+ * `AthleteAIAnalysisTab`, retirada en la feature 045— y
  * `AthleteNewslettersDashboardPage`'s card badge) no exponen su
  * sub-componente de badge como export propio y ya tienen su propia suite
- * de axe end-to-end (ver `AthleteAIAnalysisTab.test.tsx` /
+ * de axe end-to-end (ver `athletes/races/__tests__/AnalysisView.test.tsx` /
  * `AthleteNewslettersDashboardPage.test.tsx`) — aquí se valida
  * exhaustivamente, para CADA estado que esos componentes pueden recibir,
  * la composición exacta que ambos renderizan verbatim en su call site
@@ -139,19 +140,20 @@ describe("Sweep §3 — SessionStatusBadge", () => {
 // ---------------------------------------------------------------------------
 // 4. AI insight confidence (lib/insights.ts confidenceStatus + StatusBadge)
 //
-// AthleteAIAnalysisTab.tsx:254-257 renderiza
+// El call site del análisis IA (antes `AthleteAIAnalysisTab.tsx`, hoy la vista
+// «Análisis IA» de Carreras) renderiza
 // `<StatusBadge status={confidenceStatus(latest.confidence).status}
 //               label={confidenceStatus(latest.confidence).label} />`
 // verbatim (sin wrapper adicional que afecte a11y) — se valida aquí la
 // composición exacta para los 3 estados posibles, sin re-montar la página
-// completa (ya cubierta en AthleteAIAnalysisTab.test.tsx con confidence="high").
+// completa (ya cubierta en AnalysisView.test.tsx / PanoramaView.test.tsx).
 // ---------------------------------------------------------------------------
 
 import { confidenceStatus } from "@/lib/insights";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import type { InsightConfidence } from "@/types/athleteRaceAnalysis.types";
 
-describe("Sweep §4 — AI insight confidence badge (AthleteAIAnalysisTab call site)", () => {
+describe("Sweep §4 — AI insight confidence badge (call site del análisis IA)", () => {
   const STATES: InsightConfidence[] = ["high", "medium", "low"];
 
   it.each(STATES)("confidence=%s — 0 violaciones axe + ícono+label pareados", async (confidence) => {

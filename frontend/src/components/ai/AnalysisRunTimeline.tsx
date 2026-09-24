@@ -54,33 +54,38 @@ interface NodeDef {
  * usamos la sucesión completa típica para ayudar al coach a entender
  * en qué fase está. Si el backend introduce nodos nuevos, llegarán
  * como `unknown` y se renderizan al final.
+ *
+ * Las etiquetas están en lenguaje de entrenador (FR-004, feature 045): nunca
+ * el nombre interno de la etapa («Anonimizar datos», «Agente crítico», «HITL»…),
+ * y usan el mismo vocabulario que `PHASE_BY_NODE` — a diferencia de esa tabla,
+ * aquí cada nodo tiene su propia etiqueta porque la lista los muestra uno a uno.
  */
 const GRAPH_NODES: NodeDef[] = [
-  { key: "validate_input", label: "Validar input", icon: ClipboardCheck },
-  { key: "load_race_data", label: "Cargar datos de carrera", icon: Database },
-  { key: "anonymize", label: "Anonimizar datos", icon: ShieldCheck },
-  { key: "compute_metrics", label: "Calcular métricas", icon: TrendingUp },
-  { key: "retrieve_principles", label: "Recuperar principios LTAD", icon: ScanText },
-  { key: "recall_memory", label: "Recordar contexto previo", icon: Brain },
-  { key: "analyst_agent", label: "Agente analista", icon: Bot },
-  { key: "critic_agent", label: "Agente crítico", icon: AlertCircle },
-  { key: "hitl_gate_review", label: "Revisión humana (HITL)", icon: User },
-  { key: "persist_insight", label: "Guardar insight", icon: Save },
-  { key: "rehydrate_names", label: "Rehidratar nombres", icon: ShieldCheck },
-  { key: "render_outputs", label: "Renderizar informe", icon: FileText },
-  { key: "notify_coach", label: "Notificar al coach", icon: Mail },
+  { key: "validate_input", label: "Revisando los datos de la carrera", icon: ClipboardCheck },
+  { key: "load_race_data", label: "Leyendo los resultados oficiales", icon: Database },
+  { key: "anonymize", label: "Protegiendo la identidad de los deportistas", icon: ShieldCheck },
+  { key: "compute_metrics", label: "Calculando los indicadores de la carrera", icon: TrendingUp },
+  { key: "retrieve_principles", label: "Consultando los principios de formación", icon: ScanText },
+  { key: "recall_memory", label: "Recordando el contexto de la temporada", icon: Brain },
+  { key: "analyst_agent", label: "Redactando el análisis", icon: Bot },
+  { key: "critic_agent", label: "Revisando la calidad del análisis", icon: AlertCircle },
+  { key: "hitl_gate_review", label: "Esperando tu aprobación", icon: User },
+  { key: "persist_insight", label: "Guardando el análisis", icon: Save },
+  { key: "rehydrate_names", label: "Restituyendo los nombres en el informe", icon: ShieldCheck },
+  { key: "render_outputs", label: "Preparando el informe", icon: FileText },
+  { key: "notify_coach", label: "Avisando que el análisis está listo", icon: Mail },
 ];
 
 /**
  * Traducción de nodo del grafo → fase en lenguaje de entrenador.
  *
- * Los 13 nodos de `GRAPH_NODES` son vocabulario de ingeniería ("Anonimizar
- * datos", "Rehidratar nombres"): describen el pipeline, no lo que le importa
- * a quien dirige el club. En la vista compacta mostramos SOLO la fase actual
- * con estas etiquetas; el detalle por nodo sigue disponible al expandir.
+ * En la vista compacta mostramos SOLO la fase actual con estas etiquetas; el
+ * detalle por nodo (`GRAPH_NODES`) sigue disponible al expandir, también en
+ * lenguaje de entrenador.
  *
  * Varios nodos comparten fase a propósito — el coach no necesita distinguir
- * entre anonimizar y calcular métricas, ambas son "preparando los datos".
+ * entre proteger la identidad y calcular métricas, ambas son "preparando los
+ * datos".
  */
 const PHASE_BY_NODE: Record<string, string> = {
   validate_input: "Leyendo los resultados oficiales",
@@ -282,7 +287,9 @@ export function AnalysisRunTimeline({
       if (!knownKeys.has(key)) {
         enriched.push({
           key,
-          label: key,
+          // Nodo que el backend agregó y este catálogo aún no conoce: nunca se
+          // muestra su clave interna (FR-004).
+          label: "Otro paso del análisis",
           icon: Send,
           status: val.status,
           durationMs: val.durationMs,
@@ -492,7 +499,7 @@ export function AnalysisRunTimeline({
         className="space-y-2"
         id={`timeline-detail-${runId}`}
         data-testid="timeline-nodes-list"
-        aria-label="Lista de nodos del grafo"
+        aria-label="Pasos del análisis"
       >
         {nodes.map((node) => {
           const isActive =

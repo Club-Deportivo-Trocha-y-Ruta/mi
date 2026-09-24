@@ -1065,3 +1065,103 @@ guards on every push. What genuinely remains untouched by this implementation en
 an actual deploy, and everything that depends on one (T098–T100, T104, and the owner-only
 real load, T105–T107). No historical file, real or synthetic-as-real, has been staged
 against production, and no real data has been loaded.
+
+## Implementation status — Competitions in one place (specs/045-competitions-one-place)
+
+> Condenses every race surface into one area («Competencias»), one athlete tab («Carreras»,
+> coach and family) and one metrics engine, so the same number means the same thing on every
+> screen and families never see the gap to the winner or the podium. Stable reference:
+> `docs/10-race-results/competitions-one-place.md`. Spec, plan, research (R-01…R-15, incl. the
+> G2 verdict in §R-08), data model, three contracts and quickstart are in
+> `specs/045-competitions-one-place/`. Developed on `main` with no branch (owner decision
+> 2026-09-23). State as of 2026-09-23: W1 is committed (`71eb816`); W2–W5 and the
+> owner-decision follow-ups are implemented and **uncommitted**; Phase 8 is in progress
+> (deferred lanes T069–T072 open).
+
+| Phase | Scope | Status |
+|---|---|---|
+| 0 / 0b — Prerequisites | Median gap in the evolution chart and championship card with family filtering, no email on approval, email-link alias, family `?tab=` parsing, competitions-list season and needs-results filter, history rows linking to their competition, calendar-event link; parent redaction of `gap_to_p3_hhmmss` (research R-05) | ✅ Delivered 2026-09-23, outside this feature's task list |
+| 1 — Setup (T001–T003) | Single Alembic head recorded, pre-existing failures baselined (`baseline.md`), local test-DB lane documented in `quickstart.md` | ✅ Complete 2026-09-23 |
+| 2 — Engine core (T004–T008) | `race/field_metrics.py` becomes the only metrics source: time-based percentile, `MIN_FIELD=5` inside the engine, `timed_finishers`, `gap_to_podium_pct`, `compute_category_metrics` | ✅ Complete 2026-09-23, committed |
+| 3 — US2 consumers (T009–T020) | `build_evolution`, `build_distribution`, `history.py`, `results_read.py` and the AI context read the engine; new `race/audience.py` omits winner/podium fields from family payloads; parent `metric=podium_gap_ms` → 403; `test_metrics_consistency.py` (SC-002). Gate G1 passed | ✅ Complete 2026-09-23, committed |
+| 4 — W2 backend (T021–T032) | Per-import identity gate and flat `409 identity_pending`; migration `a76c264449a5` (`race_imports.status` gains `discarded`); `GET /imports/{id}`, `POST /imports/{id}/discard`; `CoachSummaryOut` counts; `GET /pending-analyses`; `POST /runs/{id}/dismiss-stale`; `family_gap_mentions` on the HITL event. Gate G2 PASS-WITH-NOTES (`research.md` §R-08); notes 1–3 closed by the follow-up (GENERAL triples in the gate, rebuild on newer corrections); `pytest -m mysql` passed in T068 | ✅ Implemented 2026-09-23, uncommitted |
+| 5 — W3 athlete tab (T033–T046) | «Carreras» tab (`views progresion\|analisis\|comparar`, `insight=`), one lazy chunk per view, legacy tab aliases, family variant without Comparar and without winner/podium metrics, `raceMetrics.ts` and `AthleteAIAnalysisTab.tsx` retired. Gate G3 passed | ✅ Implemented 2026-09-23, uncommitted |
+| 6 — W4 area (T047–T059) | «Competencias» menu with «Temporada» and «Cargas e identidades» (badge), route redirects, «Circuito y condiciones» tab, vocabulary sweep, 48 px targets on the header and approval card, resumable and discardable imports in the wizard, Home «Pendientes» rows, analyses panel in «Temporada», per-row metrics in `ResultsTable`. `GET /imports/{id}` also returns `parent_committed_at`. Gate G4 (T059) passed | ✅ Implemented 2026-09-23, uncommitted |
+| 7 — W5 family copy (T060–T063) | Bitácora waypoint sublabel and newsletter gap chart switch from «al P1» to «Brecha vs. mediana» at render time; approval-card warning for `family_gap_mentions`; «Insertar aviso de cambios» in the bitácora editor (never sent automatically). Follow-up: persisted stage logs scrubbed at read time, family templates and the newsletter v2 prompt context go through `redact_for_audience(FAMILY)` | ✅ Implemented 2026-09-23, uncommitted |
+| 8 — Polish and closing (T064–T073) | e2e specs (T064), `data-privacy-guard` audit (T065: PASS-WITH-FINDINGS, F-1 fixed, F-2 and F-3 closed by the follow-up), docs (T066–T067), `pytest -m mysql` (T068: 35 passed), final gate (T073); deferred lanes: `pytest -m golden` (T069), Playwright (T070), family LCP (T071), coach tablet check (T072) | 🚧 In progress — T064–T068, T070 and T073 done 2026-09-23; T069 race-analyst golden 0.820 via claude-cli (14/14; CI Gemini gate still on the PR); T071/T072 pending |
+
+**Owner decisions — resolved 2026-09-23 (implemented, uncommitted):**
+
+| # | Decision | Where |
+|---|---|---|
+| 1 | Identity gate closes both gaps: GENERAL-sheet triples are in the gate keys and the identity universe (`GENERAL_VALIDA_NUM = 0`), and a correction newer than the queue forces a rebuild (`_identity_rebuild_needed(latest_correction_at=…)`). Tests for both are written | `services/race/identity_review.py`, `routers/race_imports.py::_identity_gate`, `research.md` §R-08 follow-up |
+| 2 | For a v3 insight, `summary_text`, `recommendations` and top-level `principles_cited` are omitted for parents (keys absent, not null). Pre-v3 and fallback rows keep their text | `routers/athlete_race_analysis.py` |
+| 3 | `GET /athletes/{id}/race-analysis/distribution` is coach/admin only (parent → 403) | `routers/athlete_race_analysis.py::get_distribution` |
+| 4 | Persisted stage logs are scrubbed at read time in `to_parent_dto` (no DB writes); family PDF/newsletter templates receive `redact_for_audience(FAMILY)`; `gap_pcts` joins `FAMILY_EXCLUDED_METRIC_FIELDS` | `services/training/stage_log.py`, `services/notification/athlete_newsletter_pdf.py`, `services/race/audience.py` |
+| 5 | Newsletter v2 prompt speaks only of «Brecha vs. mediana»; its context excludes winner and podium gaps | `services/ai/prompts/athlete_monthly_newsletter_v2.j2`, `services/ai/use_cases/athlete_monthly_newsletter_v2.py` |
+| 6 | The «Aviso de cambios» text condensed to 60 words or fewer is accepted (backend `coach_note` cap) over the 74-word contract text | `frontend/src/components/newsletter/studio/changeNotice.ts` |
+| 7 | Accepted as is: «Análisis IA» tab name; `dismiss-stale` audit event as `AuditAction.update`; `insights_stale` counts runs, not athletes | `routers/race_analysis.py`, `services/dashboard_summary.py` |
+| 8 | `GET /imports/{id}` returns `parent_committed_at` (the resumed wizard shows the date); `GET /pending-analyses` items carry `kind` and season summaries can be re-run from «Temporada» | `schemas/race_imports.py::ImportDetailRead`, `services/race/pending_analyses.py`, `schemas/race_pending_analyses.py` |
+| 9 | Test fixtures use unmistakably fictitious names (F-3 of the privacy audit) | `frontend/e2e/ai-insights-coach.spec.ts`, `backend/tests/services/training/test_stage_log_builder.py` |
+
+**Open items (not resolved):**
+
+| # | Item | Where |
+|---|---|---|
+| 1 | Season summaries never become stale automatically: `run_staleness.invalidate_runs_for_event` only covers insights with an `event_id`. «Re-ejecutar» for a season summary therefore applies only to one marked stale by another path | `services/race/run_staleness.py` |
+| 2 | The read-time scrub of persisted stage logs is a numeric pattern («N % al P1», «N % del primer lugar»). Free text without figures, `coach_note`, `analyst_reading` and `family_compass` are not scrubbed and rely on the FR-022 coach notice (`family_gap_mentions`) | `services/training/stage_log.py`, `services/race/family_gap_mentions.py` |
+| 3 | The correction-triggered rebuild repeats on every commit of the same import when it yields no new candidate: `max(created_at)` does not move and a persistent marker needs a migration | `routers/race_imports.py::_identity_rebuild_needed` |
+| 4 | Golden fixtures need regeneration with the time-based percentile so they match production semantics (they embed static metrics, so SC-008 is insulated from the change) | `specs/045-competitions-one-place/research.md` §R-02; `backend/evals/race_analyst/golden_v3/` |
+| 5 | T069 race-analyst golden passed locally via `claude-cli` (0.820) and must still pass the Gemini gate in CI on the PR; T070 Playwright run on the isolated stack (see qa.md; 043 CourseTab/CourseDescriptionCard feedback bugs and an e2e race-results seed are follow-ups); T071 (family LCP) and T072 (coach tablet check) pending. Results go to `specs/045-competitions-one-place/qa.md` | `specs/045-competitions-one-place/tasks.md` |
+
+**What is verified and what is not, stated plainly**: gates G1–G4 are recorded as passed in
+`tasks.md`. The mandatory `data-privacy-guard` audit (T065) returned PASS-WITH-FINDINGS; the
+HIGH finding (F-1) is fixed and the owner decisions 1–5 above closed the rest, each written
+failing-first. `pytest -m mysql` (T068) passed on `trocha_ruta_test`: 35 tests, single head
+`a76c264449a5`, upgrade/downgrade round trip clean. The final gate (T073) recorded 214 backend
+failures / 5794 passed, all in the `baseline.md` set except two environment-dependent tests
+outside 045 (details in `qa.md`), and frontend 4732 passed / 1 failed (`SessionWizardRouteNotify`,
+baseline). After the follow-up, the family-privacy suites re-ran green on the default (offline)
+lane. Race-analyst golden (T069) passed locally via claude-cli (0.820), CI Gemini gate pending on the PR; Playwright (T070) ran on the isolated stack (results in `qa.md`); the family «Carreras» LCP on a mid-tier Android over 3G (T071) and the coach tablet
+check (T072) are manual and pending. The follow-up frontend tests were not proven red before the
+fix (no `git stash` in the shared tree). Nothing is deployed.
+
+## Implementation status — Body composition by skinfolds (specs/046-body-composition-skinfolds)
+
+> Adds a coach-captured skinfold protocol (six sites: triceps, biceps, subscapular, medial
+> calf, iliac crest, supraspinale) to the anthropometry module: a plastic-caliper wizard
+> with precheck/decline, mean-of-2/median-of-3 site values, Σ4/Σ6 sums, Slaughter TC
+> body-fat estimates, FUPRECOL (Ramírez-Vélez et al. 2016) percentile references, a
+> verde/ámbar/rojo coach band collapsed to verde/ámbar for families, a rojo-only PDF
+> referral note, an AI leaf on the anthropometry analyst/critic (v2 prompts, rules
+> R13–R14), and a "Composición corporal" newsletter annex. Delivered by parallel agent
+> lanes on `main` with no branch (owner decision, matching feature 045's pattern); no
+> deploy or real-infra run yet. Research corpus and owner decisions in
+> `docs/21-body-composition/`; contracts in
+> `specs/046-body-composition-skinfolds/contracts/`.
+
+| Lane(s) | Scope | Status |
+|---|---|---|
+| fuprecol, db-core, seed+reference, schemas | Vendored FUPRECOL LMS CSV (54 rows, 3 indicators × 2 sexes × 9 age bands); `SkinfoldMeasurement` model + migration `be4595de1ad2` (single head, on top of `a76c264449a5`); FUPRECOL seeding wired into `seed_growth_data.py`; `reference_skinfolds.reference_context`; `app/schemas/body_composition.py` (`SkinfoldSetIn/Out`, `BodyCompositionReading`, `BodyCompositionFamilySummary` strict 5-key shape) | ✅ Complete 2026-09-24, uncommitted |
+| service, reading | `app/services/body_composition.py` (site value mean-of-2/median-of-3, needs-third-reading edges, Σ4/Σ6, Slaughter TC estimates, min-age/interval guards) and `build_reading()` (verde/ámbar/rojo classification, family-band capping, never rojo for families, `legs_missing`, copy dicts) | ✅ Complete 2026-09-24, uncommitted |
+| router US1/US2/US3 | `PUT`/`DELETE .../skinfolds`, `GET .../body-composition` (series/reading/estimates/reference), `GET .../body-composition/referral-note.pdf` (rojo-only, no numbers/names), audit wiring, `growth-summary` coach + parent `body_composition` blocks | ✅ Complete 2026-09-24, uncommitted |
+| frontend (fe-foundations, diagram-svg, site-diagrams, fe-steps, fe-wizard, fe-capture, fe-reading, fe-band, fe-family, fe-family-mount, service) | Six-step `SkinfoldWizard` (precheck/decline, per-site capture with SVG diagrams, review, offline retry, draft autosave) at `/athletes/:id/anthropometry/:recordId/skinfolds`; `BodyCompositionCard`/`BodyCompositionDetailDialog` + band/escalation/referral-note UI for coaches; `FamilyBodyCompositionCard`/`FamilySkinfoldNotice` for parents (band + one sentence only, no numbers); `FieldGuideDownloadButton` | ✅ Complete 2026-09-24, uncommitted |
+| ai prompts+context, gate AI | Anthropometry analyst/critic v2 prompts with a body-composition section, prechecks R13 (numeric leak to family, must-block) and R14 (diet/weight-loss language, must-block, both audiences); `AI_ANTHRO_PROMPT_VERSION` default moved to v2; golden gate passed (composite 0.786 on the CI Gemini provider, 0.804 via claude-cli cross-check, both ≥ 0.75; `baseline.json` refreshed) | ✅ Complete 2026-09-24, uncommitted |
+| newsletter | "Composición corporal" PDF-only annex (month-gated, family copy, no %/mm), threaded through both coach and family newsletter PDF routes | ✅ Complete 2026-09-24, uncommitted |
+| runbook, gate T017 | `runbook-coach.md` (calibration protocol, TEM formula, escalation ladder, referral-note guidance), foundational quality gate passed (`checklists/gates.md`) | ✅ Complete 2026-09-24, uncommitted |
+| docs (T074) | This table, the `docs/technical-notes.md` dated entry, `docs/README.md` row 21 and `docs/21-body-composition/proposal.md`'s status line | ✅ Complete 2026-09-24, this pass |
+
+**Carried-forward decisions/open items** (see the lane reports and `checklists/gates.md` for detail):
+
+| # | Item | Where |
+|---|---|---|
+| 1 | Ámbar reason order: `sum_up_velocity_low` can never fire because `sum_up_unexplained` always matches first in the contract's listed order — band and family projection are unaffected, only the coach sentence differs; contract owner to confirm the intended order | `app/services/body_composition.py::classify_band` |
+| 2 | Coach band labels in `lib/growth/bands.ts` are derived from contract prose, not quoted verbatim — confirm wording when a UI consumer needs it | `frontend/src/lib/growth/bands.ts` |
+| 3 | `AI_ANTHRO_PROMPT_VERSION` v1→v2 default flip means `tests/test_ai_config.py`'s v1-default assertion needed updating (done); any future rollback to v1 should re-check that test | `backend/app/config.py`, `backend/tests/test_ai_config.py` |
+| 4 | On the CI Gemini provider, 13/18 golden cases end in the deterministic fallback rather than model-authored text (same pattern as feature 042) — a prompt-quality concern, not a blocker | `backend/evals/anthropometry_analyst/` |
+
+**Deferred (needs real infra or the owner)**: `pytest -m mysql` was run by the db-core lane
+against a throwaway container (passed) but not yet against the shared `TEST_DATABASE_URL`;
+Playwright was not run; T075 post-deploy smoke is explicitly deferred to after merge/deploy.
+Nothing in this feature is deployed or merged; the working tree carries uncommitted changes
+from this feature interleaved with feature 045's own uncommitted state.

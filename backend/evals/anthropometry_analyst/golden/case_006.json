@@ -36,7 +36,7 @@
     }
   },
   "expected_themes": ["cambio de fase confirmado", "fase Circa-PHV", "mayor velocidad de crecimiento"],
-  "forbidden_terms": ["percentil", "z-score", "diagnóstico", "pendiente de confirmación"],
+  "forbidden_terms": ["percentil", "z-score", "diagnóstico", "pendiente de confirmación", "%", "mm"],
   "max_words": 180,
   "min_confidence_level": "medium",
   "max_confidence_level": "high",

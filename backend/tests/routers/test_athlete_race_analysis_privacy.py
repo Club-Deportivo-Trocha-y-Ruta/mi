@@ -10,11 +10,12 @@ recursivamente que NO contiene keys prohibidas:
   generó el insight/run).
 - ``agent_run_id`` / PK BigInt interna de agent_runs.
 
-Política display_name en /distribution
----------------------------------------
+Política de acceso a /distribution
+-----------------------------------
 - Coach/admin → ``display_name`` PUEDE venir (fuente: PDF federativo público).
   No está en ``FORBIDDEN_KEYS_GLOBAL`` para ese test.
-- Parent → ``display_name`` siempre ``null`` / ausente.
+- Parent → 403 (feature 045, 2026-09-23): la lista de tiempos de toda la
+  categoría permite derivar la brecha a la ganadora/podio.
   Verificado en ``test_distribution_parent_no_real_names``.
 
 El helper ``assert_no_keys_recursively`` baja por listas y dicts hasta
@@ -368,7 +369,11 @@ async def test_distribution_coach_receives_display_name_no_competitor_id(
 
 @pytest.mark.asyncio
 async def test_distribution_parent_no_real_names(seeded_factory):
-    """Parent recibe display_name=None; nombres reales del seed no aparecen."""
+    """Parent → 403 (feature 045, decisión del dueño 2026-09-23): el cuerpo de
+    ``/distribution`` lista el tiempo de TODOS los corredores de la categoría
+    (``points[].time_ms``), de donde se deriva la brecha a la ganadora y al
+    podio. Es solo de coach/admin; al padre no le llega ni el pseudónimo ni
+    ningún nombre real del seed."""
     from types import SimpleNamespace
 
     parent_user = SimpleNamespace(
@@ -409,13 +414,12 @@ async def test_distribution_parent_no_real_names(seeded_factory):
                 params={"season": 2026, "event_id": 1},
                 headers={"Authorization": "Bearer fake"},
             )
-        assert resp.status_code == 200
+        assert resp.status_code == 403
         body = resp.json()
-        # Parent no debe recibir display_name.
-        for pt in body.get("points", []):
-            assert pt.get("display_name") is None
-        # Nombres reales del seed no deben aparecer en texto crudo.
+        assert "points" not in body
+        # Ni tiempos del pelotón ni nombres reales del seed en el cuerpo.
         raw = resp.text
+        assert "time_ms" not in raw
         assert "Athlete Real Name" not in raw
         assert "Runner Real" not in raw
         assert "Winner Real" not in raw

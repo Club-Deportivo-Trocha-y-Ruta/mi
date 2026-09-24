@@ -82,7 +82,9 @@ def audience_for_role(role: UserRole) -> Audience:
 #: (``gap_to_winner_pct``, ``gap_to_winner_ms``, ``gap_to_podium_pct``,
 #: ``gap_to_podium_ms``) y los heredados que aún circulan: ``gap_pct``
 #: (``EvolutionPoint`` y ``compute_field_metrics``), ``gap_to_p1_ms`` y
-#: ``gap_to_p3_ms``.
+#: ``gap_to_p3_ms``, más ``gap_pcts`` — la serie de gap al ganador que los
+#: ``charts_context`` de boletines anteriores a la 045 aún traen en la base de
+#: datos (el motor actual escribe ``median_gap_pcts``, la brecha vs. mediana).
 FAMILY_EXCLUDED_METRIC_FIELDS: frozenset[str] = frozenset(
     {
         "gap_to_winner_pct",
@@ -90,6 +92,7 @@ FAMILY_EXCLUDED_METRIC_FIELDS: frozenset[str] = frozenset(
         "gap_to_podium_pct",
         "gap_to_podium_ms",
         "gap_pct",
+        "gap_pcts",
         "gap_to_p1_ms",
         "gap_to_p3_ms",
     }

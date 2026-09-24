@@ -27,11 +27,12 @@ import { test, expect, type Page } from "@playwright/test";
 // ---------------------------------------------------------------------------
 
 const COACH = { email: "entrenador@trochyruta.com", password: "Coach2026!" };
-const BACKEND = "http://localhost:8000";
+const BACKEND = process.env.E2E_API_BASE_URL ?? "http://localhost:8000";
 
 // IDs del seed
 const CUP_RACE_EVENT_ID = 5; // Válida IV Cali — is_championship=false, completed
-const CHAMPIONSHIP_SERIES_ID = 4; // Campeonato Departamental 2026 — kind=championship
+// La serie de campeonato se descubre por `kind === "championship"` (su id
+// depende de la BD: en la pila e2e aislada NO es 4).
 
 // Timeouts — tolerancia a cold-start del backend (primera query a MySQL)
 const COLD_START_TIMEOUT = 90_000;
@@ -230,7 +231,7 @@ test.describe("spec 014 — Crear evento de campeonato", () => {
       items?: { id: number; kind: string; event_count: number }[];
     };
     const champSeries = (seriesData.items ?? []).find(
-      (s) => s.id === CHAMPIONSHIP_SERIES_ID,
+      (s) => s.kind === "championship",
     );
 
     if (champSeries && champSeries.event_count > 0) {
@@ -255,7 +256,7 @@ test.describe("spec 014 — Crear evento de campeonato", () => {
         items?: { id: number; is_championship: boolean; series_id: number }[];
       };
       const champEvent = (eventsData.items ?? []).find(
-        (e) => e.is_championship && e.series_id === CHAMPIONSHIP_SERIES_ID,
+        (e) => e.is_championship,
       );
 
       if (!champEvent) {
@@ -269,7 +270,7 @@ test.describe("spec 014 — Crear evento de campeonato", () => {
       // Navegar al detalle del campeonato existente
       await page.goto(`/competitions/${champEvent.id}`);
 
-      await expect(page.getByTestId("competition-title")).toBeVisible({
+      await expect(page.getByRole("heading", { level: 1 })).toBeVisible({
         timeout: NAV_TIMEOUT,
       });
 
@@ -351,8 +352,9 @@ test.describe("spec 014 — Crear evento de campeonato", () => {
     await expect(submitButton).toBeVisible();
     await submitButton.click();
 
-    // Creación exitosa → navega a /competitions/:newId
-    await expect(page).toHaveURL(/\/competitions\/\d+$/, {
+    // Creación exitosa → navega a /competitions/:newId?tab=circuito (feature
+    // 045: el flujo de alta aterriza en «Circuito y condiciones»).
+    await expect(page).toHaveURL(/\/competitions\/\d+(\?tab=circuito)?$/, {
       timeout: NAV_TIMEOUT,
     });
 
@@ -362,7 +364,7 @@ test.describe("spec 014 — Crear evento de campeonato", () => {
     });
 
     // El título existe (structurally, sin asumir texto específico)
-    await expect(page.getByTestId("competition-title")).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 
     // El tab Clasificación NO existe para campeonatos
     await expect(
@@ -404,7 +406,7 @@ test.describe("spec 014 — Guard single-event campeonato", () => {
       items?: { id: number; kind: string; event_count: number }[];
     };
     const champSeries = (seriesData.items ?? []).find(
-      (s) => s.id === CHAMPIONSHIP_SERIES_ID,
+      (s) => s.kind === "championship",
     );
 
     if (!champSeries || champSeries.event_count === 0) {
@@ -439,8 +441,9 @@ test.describe("spec 014 — Guard single-event campeonato", () => {
       await page.locator("#event-date").fill("2026-06-12");
       await page.getByRole("button", { name: /crear competencia/i }).click();
 
-      // Esperar navegación al detalle (primer evento creado)
-      await expect(page).toHaveURL(/\/competitions\/\d+$/, {
+      // Esperar navegación al detalle (primer evento creado; la 045 aterriza
+      // en `?tab=circuito`)
+      await expect(page).toHaveURL(/\/competitions\/\d+(\?tab=circuito)?$/, {
         timeout: NAV_TIMEOUT,
       });
     }
@@ -511,7 +514,7 @@ test.describe("spec 014 — Detalle: tabs copa vs campeonato", () => {
     await page.goto(`/competitions/${CUP_RACE_EVENT_ID}`);
 
     // El detalle carga
-    await expect(page.getByTestId("competition-title")).toBeVisible({
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible({
       timeout: COLD_START_TIMEOUT,
     });
 
@@ -552,7 +555,7 @@ test.describe("spec 014 — Detalle: tabs copa vs campeonato", () => {
       items?: { id: number; is_championship: boolean; series_id: number }[];
     };
     const champEvent = (eventsData.items ?? []).find(
-      (e) => e.is_championship && e.series_id === CHAMPIONSHIP_SERIES_ID,
+      (e) => e.is_championship,
     );
 
     if (!champEvent) {
@@ -567,7 +570,7 @@ test.describe("spec 014 — Detalle: tabs copa vs campeonato", () => {
     await page.goto(`/competitions/${champEvent.id}`);
 
     // El detalle carga
-    await expect(page.getByTestId("competition-title")).toBeVisible({
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible({
       timeout: NAV_TIMEOUT,
     });
 
@@ -581,7 +584,9 @@ test.describe("spec 014 — Detalle: tabs copa vs campeonato", () => {
       page.getByRole("tab", { name: /clasificación/i }),
     ).toHaveCount(0, { timeout: NAV_TIMEOUT });
 
-    // Los demás tabs sí deben existir: Información, Resultados, Condiciones, Atletas, Insights IA
+    // Los demás tabs sí deben existir (feature 045): Información, Resultados,
+    // «Circuito y condiciones» (antes «Condiciones») y «Análisis IA» (antes
+    // «Insights IA»).
     await expect(
       page.getByRole("tab", { name: /información/i }),
     ).toBeVisible();
@@ -589,7 +594,10 @@ test.describe("spec 014 — Detalle: tabs copa vs campeonato", () => {
       page.getByRole("tab", { name: /resultados/i }),
     ).toBeVisible();
     await expect(
-      page.getByRole("tab", { name: /condiciones/i }),
+      page.getByRole("tab", { name: /circuito y condiciones/i }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("tab", { name: /análisis ia/i }),
     ).toBeVisible();
   });
 });

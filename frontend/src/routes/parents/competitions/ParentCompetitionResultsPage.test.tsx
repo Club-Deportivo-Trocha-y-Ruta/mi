@@ -4,6 +4,8 @@
  * Cubre (FR-030 / US1 escenario 5):
  *   - Render de resultados del hijo propio (solo su fila visible)
  *   - Render del header con event_name, event_date, location
+ *   - Métricas de familia (feature 045): Parrilla, Percentil y Brecha vs.
+ *     mediana; jamás la brecha contra el líder ni el podio
  *   - Estado vacío parent-friendly (sin CTA de importar)
  *   - Estado de carga (skeleton)
  *   - axe: 0 violaciones a11y
@@ -33,6 +35,7 @@ import {
   parentRaceResultsHandlers,
   raceResultsEmptyHandler,
   standingsEmptyHandler,
+  makeFamilyMetricSet,
   makeParentRaceEventResultsResponse,
   makeRaceResultRow,
 } from "@/test/msw/raceResultsHandlers";
@@ -373,6 +376,84 @@ describe("ParentCompetitionResultsPage — circuito (CourseSummary)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Métricas de familia (feature 045, US2/US4, T058)
+// ---------------------------------------------------------------------------
+
+describe("ParentCompetitionResultsPage — métricas de familia", () => {
+  function useResultsWithMetrics(metricOverrides: Parameters<typeof makeFamilyMetricSet>[0]) {
+    server.use(
+      http.get(`${BASE}/:id/results`, ({ params }) =>
+        HttpResponse.json(
+          makeParentRaceEventResultsResponse({
+            race_event_id: Number(params.id),
+            categories: [
+              {
+                category_id: 1,
+                code: "INF_M",
+                label: "Infantil Masculino",
+                rows: [
+                  makeRaceResultRow({
+                    competitor_id: 101,
+                    display_name: "Mi Hijo",
+                    athlete_id: 55,
+                    is_our_club: true,
+                    position: 4,
+                    race_time_ms: 3_720_000,
+                    metrics: makeFamilyMetricSet(metricOverrides),
+                  }),
+                ],
+              },
+            ],
+          }),
+        ),
+      ),
+    );
+  }
+
+  it("muestra Parrilla, Percentil y Brecha vs. mediana con los valores del motor", async () => {
+    useResultsWithMetrics({
+      field_size: 12,
+      timed_finishers: 11,
+      position: 4,
+      percentile: 73,
+      gap_to_median_pct: -3.4,
+    });
+    renderPage();
+
+    await screen.findByTestId("results-row-101", {}, { timeout: 4000 });
+    expect(screen.getByTestId("results-field-size-1")).toHaveTextContent("Parrilla: 12");
+    expect(screen.getByTestId("results-percentile-101")).toHaveTextContent("P73");
+    expect(screen.getByTestId("results-gap-median-101")).toHaveTextContent("-3.4 %");
+    expect(screen.getByRole("columnheader", { name: "Percentil" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Brecha vs. mediana" })).toBeInTheDocument();
+  });
+
+  it("con menos de 5 cronometrados, «sin dato» con su explicación (nunca 0 ni un guion)", async () => {
+    // Fixture por defecto: 3 cronometrados.
+    renderPage();
+
+    await screen.findByTestId("results-row-101", {}, { timeout: 4000 });
+    expect(screen.getByTestId("results-field-size-1")).toHaveTextContent(
+      "Parrilla: 3 · con menos de 5 tiempos no hay percentil ni brecha vs. mediana",
+    );
+    expect(screen.getByTestId("results-percentile-101")).toHaveTextContent("sin dato");
+    expect(screen.getByTestId("results-gap-median-101")).toHaveTextContent("sin dato");
+  });
+
+  it("NUNCA muestra «Brecha vs. 1.ª posición» ni «Brecha vs. podio» en la página de la familia", async () => {
+    useResultsWithMetrics({ field_size: 12, timed_finishers: 11, percentile: 73, gap_to_median_pct: -3.4 });
+    renderPage();
+
+    await screen.findByTestId("results-row-101", {}, { timeout: 4000 });
+    expect(screen.queryByText(/Brecha vs\. 1\.ª posición/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Brecha vs\. podio/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: /posición|podio/i })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("results-gap-winner-101")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("results-gap-podium-101")).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Accessibility (axe)
 // ---------------------------------------------------------------------------
 
@@ -381,6 +462,15 @@ describe("ParentCompetitionResultsPage — accesibilidad", () => {
     const { container } = renderPage();
 
     await screen.findByTestId("results-row-101", {}, { timeout: 5000 });
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+
+  it("no tiene violaciones axe con las métricas de familia visibles", async () => {
+    const { container } = renderPage();
+
+    await screen.findByTestId("results-percentile-101", {}, { timeout: 5000 });
 
     const results = await axe(container);
     expect(results).toHaveNoViolations();

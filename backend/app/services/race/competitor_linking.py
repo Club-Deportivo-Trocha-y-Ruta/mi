@@ -33,7 +33,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from rapidfuzz import fuzz
-from sqlalchemy import func, select, update
+from sqlalchemy import Select, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.athlete import Athlete
@@ -274,6 +274,80 @@ async def suggest_athletes_for_competitor(
     return [_candidate_to_view(c) for c in candidates[:limit]]
 
 
+# Filtro de club con el que la pestaña «Sin enlazar» de «Cargas e identidades»
+# abre por defecto («Solo Trocha y Ruta» activo) y con el que el resumen del
+# coach cuenta los competidores que esperan acción (feature 045, FR-033). Una
+# sola constante: si el default de la UI cambia, la insignia cambia con él.
+UNLINKED_INBOX_CLUB_FILTER: str = "trocha"
+
+
+def _unlinked_base_stmt(season: Optional[int]) -> Select:
+    """Consulta base de «competidores sin enlazar» (``athlete_id IS NULL``).
+
+    Es el único lugar donde vive el predicado: ``list_unlinked_competitors`` (la
+    lista) y ``count_unlinked_competitors`` (la insignia del menú) parten de
+    aquí, así que el conteo coincide con la lista por construcción (SC-005).
+    """
+    stmt = select(RaceCompetitor).where(RaceCompetitor.athlete_id.is_(None))
+
+    # Filtro por temporada vía join transitivo
+    if season is not None:
+        # Competidores que tienen ≥1 race_result no eliminado en algún evento
+        # de la temporada solicitada.
+        subq = (
+            select(RaceResult.competitor_id)
+            .join(RaceEvent, RaceEvent.id == RaceResult.event_id)
+            .join(RaceSeries, RaceSeries.id == RaceEvent.series_id)
+            .where(
+                RaceResult.deleted_at.is_(None),
+                RaceSeries.season_year == season,
+            )
+            .distinct()
+            .subquery()
+        )
+        stmt = stmt.where(RaceCompetitor.id.in_(select(subq.c.competitor_id)))
+    return stmt
+
+
+def _is_trocha_filter(club_filter: Optional[str]) -> bool:
+    return club_filter is not None and club_filter.strip().lower() == UNLINKED_INBOX_CLUB_FILTER
+
+
+async def _trocha_unlinked_competitors(
+    db: AsyncSession, base_stmt: Select
+) -> list[RaceCompetitor]:
+    """Competidores sin enlazar del club (todos, sin paginar), ordenados por id.
+
+    Prefiltro SQL grueso (LIKE '%trocha%') + refinamiento fuzzy en Python
+    (``is_trocha_y_ruta``): el refinamiento corre ANTES de paginar para que el
+    total cuente solo Trocha y Ruta.
+    """
+    rough_stmt = base_stmt.where(
+        func.lower(RaceCompetitor.club_text).like("%trocha%")
+    ).order_by(RaceCompetitor.id)
+    rough_result = await db.execute(rough_stmt)
+    return [c for c in rough_result.scalars().all() if is_trocha_y_ruta(c.club_text)]
+
+
+async def count_unlinked_competitors(
+    db: AsyncSession,
+    *,
+    club_filter: Optional[str] = UNLINKED_INBOX_CLUB_FILTER,
+    season: Optional[int] = None,
+) -> int:
+    """Cuántos competidores sin enlazar devuelve ``list_unlinked_competitors``.
+
+    Mismo predicado que la lista (``_unlinked_base_stmt`` + filtro de club),
+    sin paginar y sin sugerencias: es el conteo de la insignia de «Cargas e
+    identidades». Los defaults son los de la pestaña «Sin enlazar» al abrirla.
+    """
+    base_stmt = _unlinked_base_stmt(season)
+    if _is_trocha_filter(club_filter):
+        return len(await _trocha_unlinked_competitors(db, base_stmt))
+    total_result = await db.execute(select(func.count()).select_from(base_stmt.subquery()))
+    return int(total_result.scalar() or 0)
+
+
 async def list_unlinked_competitors(
     db: AsyncSession,
     *,
@@ -308,36 +382,10 @@ async def list_unlinked_competitors(
     Returns:
         Tupla ``(items, total)``. ``total`` es el conteo ANTES de paginar.
     """
-    base_stmt = select(RaceCompetitor).where(RaceCompetitor.athlete_id.is_(None))
+    base_stmt = _unlinked_base_stmt(season)
 
-    # Filtro por temporada vía join transitivo
-    if season is not None:
-        # Competidores que tienen ≥1 race_result no eliminado en algún evento
-        # de la temporada solicitada.
-        subq = (
-            select(RaceResult.competitor_id)
-            .join(RaceEvent, RaceEvent.id == RaceResult.event_id)
-            .join(RaceSeries, RaceSeries.id == RaceEvent.series_id)
-            .where(
-                RaceResult.deleted_at.is_(None),
-                RaceSeries.season_year == season,
-            )
-            .distinct()
-            .subquery()
-        )
-        base_stmt = base_stmt.where(RaceCompetitor.id.in_(select(subq.c.competitor_id)))
-
-    if club_filter and club_filter.strip().lower() == "trocha":
-        # Prefiltro SQL grueso (LIKE '%trocha%') + refinamiento fuzzy en Python.
-        # El filtro fuzzy debe correr ANTES de paginar para que `total` cuente
-        # solo Trocha y Ruta y la paginación no quede limitada a los primeros
-        # `limit` ids globales (que pueden no incluir TyR).
-        rough_stmt = base_stmt.where(
-            func.lower(RaceCompetitor.club_text).like("%trocha%")
-        ).order_by(RaceCompetitor.id)
-        rough_result = await db.execute(rough_stmt)
-        rough_competitors = list(rough_result.scalars().all())
-        filtered = [c for c in rough_competitors if is_trocha_y_ruta(c.club_text)]
+    if _is_trocha_filter(club_filter):
+        filtered = await _trocha_unlinked_competitors(db, base_stmt)
         total = len(filtered)
         competitors = filtered[offset : offset + limit]
     else:

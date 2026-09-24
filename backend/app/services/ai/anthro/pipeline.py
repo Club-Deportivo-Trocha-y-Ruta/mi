@@ -86,6 +86,8 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Optional, TypeVar
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.config import settings
 from app.services.ai.anthro.context import build_context
 from app.services.ai.anthro.critic import run_critic
@@ -101,6 +103,7 @@ from app.services.ai.anthro.schemas import (
     ConfidenceLevel,
 )
 from app.services.ai.errors import LLMConfigError
+from app.services.body_composition import load_reading as load_body_composition_reading
 from app.services.llm.factory import resolve_configured_model
 from app.services.llm.observability import keyed_session_id, llm_tracing, trace_id_for
 from app.services.race.ai.athlete_context import load_club_forbidden_names
@@ -224,6 +227,47 @@ async def _resolve_forbidden_names(state: dict) -> list[str]:
     return await load_club_forbidden_names(db, club_id)
 
 
+async def _resolve_body_composition(state: dict) -> dict[str, Any]:
+    """Claves de composición corporal para ``context.build_context`` (feature 046, T080).
+
+    Cierra el hallazgo F7 de ``specs/046-body-composition-skinfolds/
+    privacy-audit.md``: ``build_context`` lee ``state["body_composition_reading"]``
+    y, hasta T080, nadie lo ponía — la hoja de IA nunca se construía (FR-029).
+    Usa el mismo cargador compartido que la ficha del entrenador, la tarjeta
+    del resumen de crecimiento y la Bitácora (``services.body_composition.
+    load_reading``), anclado en la medición analizada (``at_record_id``):
+    nunca mira mediciones posteriores y solo produce lectura si ESA medición
+    tiene un set contado ("when a measurement has a skinfold set").
+
+    Devuelve ``{}`` (sin hoja, comportamiento previo) si el llamador ya trae la
+    clave (tests/evals), si no hay sesión, o si la lectura falla contra la base
+    — degradar en vez de fallar, igual que ``training_load_window``: la hoja
+    es opcional y su ausencia es segura para la privacidad. Solo se registra
+    el id del atleta, nunca un valor.
+    """
+    if "body_composition_reading" in state:
+        return {}
+    db = state.get("db")
+    if db is None:
+        return {}
+    athlete = state["athlete"]
+    target_record = state["target_record"]
+    try:
+        loaded = await load_body_composition_reading(
+            db, athlete, at_record_id=target_record.id
+        )
+    except SQLAlchemyError:
+        logger.warning(
+            "anthro.body_composition_unavailable",
+            extra={"athlete_id": getattr(athlete, "id", None)},
+        )
+        return {}
+    return {
+        "body_composition_reading": loaded.reading,
+        "body_composition_previous_set_record": loaded.previous_set_record,
+    }
+
+
 async def run_analysis(state: dict, config: Optional[dict] = None) -> dict[str, Any]:
     """Corre el pipeline antropométrico completo y persiste el resultado.
 
@@ -241,6 +285,9 @@ async def run_analysis(state: dict, config: Optional[dict] = None) -> dict[str, 
       ``context.py::build_context``, que los consume tal cual.
     - ``actor``: ``User`` autenticado que pidió la generación — solo lo lee
       ``persist.py`` (T038), threadeado sin cambios por este módulo.
+    - ``body_composition_reading`` / ``body_composition_previous_set_record``
+      (opcionales, feature 046): si faltan, este módulo los resuelve con
+      :func:`_resolve_body_composition` antes del paso de contexto.
 
     Returns:
         Un dict con, como mínimo, ``insight`` (``AnthropometryInsightV1`` final),
@@ -296,6 +343,9 @@ async def run_analysis(state: dict, config: Optional[dict] = None) -> dict[str, 
         # salir hacia el proveedor externo en el siguiente prompt. Hallazgo
         # CRÍTICO de la auditoría data-privacy-guard (T057).
         forbidden_names = await _resolve_forbidden_names(state)
+        # Feature 046 (T080): la lectura de composición corporal entra al
+        # estado ANTES del contexto, que la proyecta a la hoja cualitativa.
+        state = {**state, **await _resolve_body_composition(state)}
         context_update = await build_context(
             {**state, "forbidden_names": forbidden_names}, llm_config
         )

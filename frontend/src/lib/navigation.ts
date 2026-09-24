@@ -43,6 +43,12 @@ export interface NavItem {
   label: string;
   /** Static path, or a getter for a dynamic segment (e.g. season year). */
   to: string | (() => string);
+  /**
+   * Ruta base contra la que `resolveActiveItemId` decide si el ítem está
+   * activo, cuando difiere de `to` (p. ej. `to` lleva el año vigente pero el
+   * ítem debe seguir activo en cualquier otro año). Por defecto, `to`.
+   */
+  matchPath?: string;
   /** Which roles see this item. */
   roles: NavRole[];
 }
@@ -127,23 +133,29 @@ export const NAV_AREAS: NavArea[] = [
     group: "operacion",
     roles: ["coach", "admin"],
     matchPrefixes: ["/competitions"],
+    // Feature 045 (US6): un área, un vocabulario. Tres ítems — «Válidas» y
+    // «Sin enlazar» dejan de ser destinos propios (las cargas y las
+    // identidades viven ahora en «Cargas e identidades»).
     items: [
       {
-        id: "competitions.valid",
-        label: "Válidas",
+        id: "competitions.list",
+        label: "Competencias",
         to: "/competitions",
         roles: ["coach", "admin"],
       },
       {
-        id: "competitions.unlinked",
-        label: "Sin enlazar",
-        to: "/competitions/unlinked",
+        id: "competitions.season",
+        label: "Temporada",
+        to: () => `/competitions/season/${currentSeason()}`,
+        // Cualquier año (`/competitions/season/2025`) sigue marcando «Temporada»
+        // aunque `to` apunte a la temporada vigente.
+        matchPath: "/competitions/season",
         roles: ["coach", "admin"],
       },
       {
-        id: "competitions.seasonInsights",
-        label: "Panorama de temporada",
-        to: () => `/competitions/insights/season/${currentSeason()}`,
+        id: "competitions.imports",
+        label: "Cargas e identidades",
+        to: "/competitions/imports",
         roles: ["coach", "admin"],
       },
     ],
@@ -256,17 +268,20 @@ export function isAreaActive(area: NavArea, pathname: string): boolean {
  * Resolves which single item within an area's sub-item list is "active" for
  * `pathname` — same exact-match-first / longest-prefix-fallback algorithm as
  * `SiblingViewTabs.tsx`'s `resolveActiveTo`. Required because sibling items
- * within an area can nest path-wise (e.g. competitions.valid's `/competitions`
- * is a literal prefix of competitions.unlinked's `/competitions/unlinked` and
- * competitions.seasonInsights's `/competitions/insights/season/:year`); a
- * naive `NavLink` default match (prefix, non-`end`) marks multiple siblings
- * active simultaneously.
+ * within an area can nest path-wise (e.g. competitions.list's `/competitions`
+ * is a literal prefix of competitions.imports's `/competitions/imports` and
+ * competitions.season's `/competitions/season/:year`); a naive `NavLink`
+ * default match (prefix, non-`end`) marks multiple siblings active
+ * simultaneously. Se compara contra `item.matchPath ?? item.to`.
  */
 export function resolveActiveItemId(
   items: NavItem[],
   pathname: string,
 ): string | undefined {
-  const resolved = items.map((item) => ({ item, to: resolveTo(item.to) }));
+  const resolved = items.map((item) => ({
+    item,
+    to: item.matchPath ?? resolveTo(item.to),
+  }));
 
   const exactMatch = resolved.find(({ to }) => to === pathname);
   if (exactMatch) return exactMatch.item.id;

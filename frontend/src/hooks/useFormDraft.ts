@@ -12,10 +12,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
  *  - Los borradores pueden contener ids de atletas (dato sensible de menores):
  *    NUNCA se registran en logs y se limpian al guardar o descartar.
  *  - Guardas SSR/quota: todo acceso a localStorage va envuelto en try/catch.
+ *  - Expiración: un borrador con más de `DRAFT_TTL_MS` (24 h, alineado con
+ *    "dentro del mismo día" del spec 046 US1 #7) se descarta al leerlo en
+ *    vez de ofrecerse para restaurar (privacy-audit F8). Además, `logout()`
+ *    (`auth.store.ts`) llama a `clearAllDrafts()` para borrar cualquier
+ *    borrador — vigente o no — de la tablet compartida.
  */
 
 const DRAFT_VERSION = "v1";
 const KEY_PREFIX = "tyr:session-draft";
+const DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
 
 export interface FormDraft<T> {
   version: string;
@@ -55,6 +61,25 @@ function safeRemove(key: string): void {
   }
 }
 
+/**
+ * Borra todo borrador persistido (cualquier usuario/destino) al hacer
+ * logout, para que una tablet compartida no arrastre un borrador entre
+ * cuentas (privacy-audit F8).
+ */
+export function clearAllDrafts(): void {
+  try {
+    if (typeof window === "undefined" || !window.localStorage) return;
+    const keys: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i += 1) {
+      const key = window.localStorage.key(i);
+      if (key && key.startsWith(`${KEY_PREFIX}:`)) keys.push(key);
+    }
+    for (const key of keys) window.localStorage.removeItem(key);
+  } catch {
+    /* noop */
+  }
+}
+
 export interface UseFormDraftOptions {
   userId: number | null;
   /** "new" para creación, o el id de la sesión en edición. */
@@ -82,6 +107,10 @@ export function useFormDraft<T>({
 }: UseFormDraftOptions): UseFormDraft<T> {
   const key = buildKey(userId, target);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Último valor pasado a `saveDraft` todavía no persistido (el debounce
+  // sigue en vuelo) — lo necesita el flush síncrono de `pagehide`/
+  // `beforeunload` de abajo.
+  const pendingRef = useRef<{ values: T; step: number } | null>(null);
 
   // Leemos el candidato a restaurar UNA vez al montar (no reactivo a cambios
   // posteriores de localStorage, para no re-ofrecer tras restaurar/descartar).
@@ -92,6 +121,12 @@ export function useFormDraft<T>({
     try {
       const parsed = JSON.parse(raw) as FormDraft<T>;
       if (parsed && parsed.version === DRAFT_VERSION && parsed.values) {
+        const updatedAt = Date.parse(parsed.updatedAt);
+        const isExpired = !Number.isNaN(updatedAt) && Date.now() - updatedAt > DRAFT_TTL_MS;
+        if (isExpired) {
+          safeRemove(key);
+          return null;
+        }
         return parsed;
       }
       return null;
@@ -100,27 +135,63 @@ export function useFormDraft<T>({
     }
   });
 
+  const persist = useCallback(
+    (values: T, step: number) => {
+      const draft: FormDraft<T> = {
+        version: DRAFT_VERSION,
+        values,
+        step,
+        updatedAt: new Date().toISOString(),
+      };
+      safeSet(key, JSON.stringify(draft));
+      pendingRef.current = null;
+    },
+    [key],
+  );
+
   const saveDraft = useCallback(
     (values: T, step: number) => {
       if (!enabled) return;
       if (timerRef.current) clearTimeout(timerRef.current);
+      pendingRef.current = { values, step };
       timerRef.current = setTimeout(() => {
-        const draft: FormDraft<T> = {
-          version: DRAFT_VERSION,
-          values,
-          step,
-          updatedAt: new Date().toISOString(),
-        };
-        safeSet(key, JSON.stringify(draft));
+        timerRef.current = null;
+        persist(values, step);
       }, debounceMs);
     },
-    [enabled, key, debounceMs],
+    [enabled, debounceMs, persist],
   );
 
   const clearDraft = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = null;
+    pendingRef.current = null;
     safeRemove(key);
   }, [key]);
+
+  // Flush síncrono: si hay un guardado debounced todavía pendiente cuando la
+  // pestaña se recarga/cierra, el timeout nunca llega a disparar y el
+  // borrador se pierde — justo el escenario ("recarga a mitad de captura")
+  // que esta función existe para cubrir. `pagehide` corre de forma
+  // confiable en recarga/navegación/cierre (a diferencia de `beforeunload`,
+  // cada vez más restringido por los navegadores); se registran ambos por
+  // compatibilidad. `localStorage.setItem` es síncrono, así que es seguro
+  // llamarlo desde estos handlers.
+  useEffect(() => {
+    function flushPending() {
+      if (timerRef.current && pendingRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+        persist(pendingRef.current.values, pendingRef.current.step);
+      }
+    }
+    window.addEventListener("pagehide", flushPending);
+    window.addEventListener("beforeunload", flushPending);
+    return () => {
+      window.removeEventListener("pagehide", flushPending);
+      window.removeEventListener("beforeunload", flushPending);
+    };
+  }, [persist]);
 
   useEffect(() => {
     return () => {

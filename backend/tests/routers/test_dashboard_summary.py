@@ -44,6 +44,13 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.pool import StaticPool
 
+from app.models.race_identity_candidate import (
+    IdentityCandidateKind,
+    IdentityCandidateState,
+    RaceIdentityCandidate,
+)
+from app.models.race_import import RaceImport, RaceImportStatus
+
 # ``ParentalConsent.policy`` is mapper-level ``lazy="joined"`` — creating the
 # ``parental_consents`` table pulls in ``privacy_policies`` (whose
 # ``content_html`` is MySQL ``LONGTEXT``, which SQLite has no compiler for).
@@ -64,6 +71,7 @@ from app.models.athlete import Sex
 from app.models.club import ClubRole
 from app.models.parental_consent import ParentalConsent
 from app.models.privacy_policy import PrivacyPolicy
+from app.models.race_competitor import RaceCompetitor
 from app.models.training_session import SessionAttendance, SessionStatus, TrainingSession
 from app.models.user import UserRole
 from app.services.category import compute_age_decimal
@@ -71,6 +79,7 @@ from tests.fixtures.race_history_fixtures import (
     create_athlete,
     create_club,
     create_insight,
+    create_race_competitor,
     create_user,
     link_user_to_club,
 )
@@ -89,6 +98,13 @@ _TABLES = (
     "athlete_ai_insights",
     "training_sessions",
     "session_attendance",
+    "race_identity_candidates",
+    "race_imports",
+    # «Sin enlazar» (FR-033): el conteo y la lista leen estas cuatro.
+    "race_competitors",
+    "race_results",
+    "race_events",
+    "race_series",
     *AUDIT_TABLES,
 )
 
@@ -307,6 +323,7 @@ async def seed_agent_run(
     athlete_id: int,
     requested_by_user_id: int = 10,
     stale_since: datetime | None = None,
+    status: AgentRunStatus = AgentRunStatus.completed,
 ) -> AgentRun:
     run = AgentRun(
         id=run_id,
@@ -314,7 +331,7 @@ async def seed_agent_run(
         graph_name="race-analyst",
         prompt_version="race_analyst_v2",
         started_at=_utc(),
-        status=AgentRunStatus.completed,
+        status=status,
         requested_by_user_id=requested_by_user_id,
         athlete_id=athlete_id,
         checkpoint_thread_id=f"run-{run_id}",
@@ -748,3 +765,353 @@ class TestPrivacyInvariant:
         _walk_keys(data, found_keys)
         leaked = found_keys & _FORBIDDEN_KEYS
         assert not leaked, f"Athlete-identifying key(s) leaked in payload: {leaked}"
+
+
+# ===========================================================================
+# F. Feature 045 (US5, T027): identity / imports / awaiting-approval counts
+# ===========================================================================
+
+
+async def seed_identity_candidate(
+    session: AsyncSession, n: int, *, state: IdentityCandidateState
+) -> RaceIdentityCandidate:
+    cand = RaceIdentityCandidate(
+        kind=IdentityCandidateKind.same_person_suspect,
+        pair_hash=f"{n:064x}",
+        left_record={"key": f"left-{n}"},
+        right_record={"key": f"right-{n}"},
+        score=90,
+        signals=[],
+        state=state,
+    )
+    session.add(cand)
+    await session.flush()
+    return cand
+
+
+async def seed_race_import(
+    session: AsyncSession,
+    import_id: int,
+    *,
+    status: RaceImportStatus,
+    uploader_id: int = 10,
+) -> RaceImport:
+    imp = RaceImport(
+        id=import_id,
+        filename=f"import-{import_id}.pdf",
+        sha256=f"{import_id:064x}",
+        series_id=1,
+        status=status,
+        stats_json={},
+        imported_by_user_id=uploader_id,
+    )
+    session.add(imp)
+    await session.flush()
+    return imp
+
+
+class TestPendingWorkCounts:
+    """``identity_decisions_pending`` / ``imports_in_progress`` /
+    ``analyses_awaiting_approval`` (data-model §7)."""
+
+    async def _seed(self, session: AsyncSession) -> None:
+        await create_club(session, club_id=1, name="Club Uno", code="uno")
+        await create_club(session, club_id=2, name="Club Dos", code="dos")
+        await create_user(session, user_id=10, role=UserRole.coach)
+        await create_user(session, user_id=11, role=UserRole.coach)
+        await create_user(session, user_id=20, role=UserRole.parent)
+        await link_user_to_club(session, user_id=10, club_id=1, role_in_club=ClubRole.coach)
+        await link_user_to_club(session, user_id=11, club_id=2, role_in_club=ClubRole.coach)
+
+        for athlete_id, club_id in ((101, 1), (102, 1), (103, 2), (104, 1)):
+            await create_user(
+                session, user_id=900 + athlete_id, role=UserRole.athlete, can_login=False
+            )
+            athlete = await create_athlete(
+                session, athlete_id=athlete_id, first_name="Atleta", last_name=str(athlete_id),
+                birth_date=_BIRTH_10_12, sex=Sex.M, club_id=club_id,
+                user_id=900 + athlete_id, created_by=10,
+            )
+            if athlete_id == 104:  # soft-deleted: must never be counted
+                athlete.deleted_at = _utc()
+
+        # Identity queue: 3 pending; decided ones do not count.
+        for n in (1, 2, 3):
+            await seed_identity_candidate(session, n, state=IdentityCandidateState.pending)
+        await seed_identity_candidate(session, 4, state=IdentityCandidateState.same_person)
+        await seed_identity_candidate(session, 5, state=IdentityCandidateState.different_people)
+
+        # Imports: club 1 uploader (10) has pending + dry_run in progress,
+        # plus committed/failed (not in progress). Club 2 uploader (11) has one
+        # pending import.
+        await seed_race_import(session, 1, status=RaceImportStatus.pending)
+        await seed_race_import(session, 2, status=RaceImportStatus.dry_run)
+        await seed_race_import(session, 3, status=RaceImportStatus.committed)
+        await seed_race_import(session, 4, status=RaceImportStatus.failed)
+        await seed_race_import(session, 5, status=RaceImportStatus.pending, uploader_id=11)
+        # ``discarded`` is added by US3 (T024); count only pending/dry_run so it
+        # is excluded whether or not the enum value exists yet.
+        discarded = RaceImportStatus.__members__.get("discarded")
+        if discarded is not None:
+            await seed_race_import(session, 6, status=discarded)
+
+        # Awaiting approval: two in club 1, one in club 2, one completed, one
+        # for the soft-deleted athlete.
+        await seed_agent_run(session, 1, athlete_id=101, status=AgentRunStatus.awaiting_hitl)
+        await seed_agent_run(session, 2, athlete_id=102, status=AgentRunStatus.awaiting_hitl)
+        await seed_agent_run(session, 3, athlete_id=103, status=AgentRunStatus.awaiting_hitl)
+        await seed_agent_run(session, 4, athlete_id=101, status=AgentRunStatus.completed)
+        await seed_agent_run(session, 5, athlete_id=104, status=AgentRunStatus.awaiting_hitl)
+        await session.commit()
+
+    async def test_coach_counts_are_club_scoped(self, session):
+        await self._seed(session)
+
+        async with make_client(session, user=coach_user()) as client:
+            resp = await client.get("/api/dashboard/coach-summary")
+
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["identity_decisions_pending"] == 3  # whole queue, pending only
+        assert data["imports_in_progress"] == 2  # pending + dry_run of club 1
+        assert data["analyses_awaiting_approval"] == 2  # 101 + 102 (not 103/104)
+
+    async def test_admin_without_club_sees_everything(self, session):
+        await self._seed(session)
+
+        async with make_client(session, user=admin_user()) as client:
+            resp = await client.get("/api/dashboard/coach-summary")
+
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["identity_decisions_pending"] == 3
+        assert data["imports_in_progress"] == 3  # club 1 pending+dry_run, club 2 pending
+        assert data["analyses_awaiting_approval"] == 3  # 101 + 102 + 103
+
+    async def test_admin_scoped_to_a_club(self, session):
+        await self._seed(session)
+
+        async with make_client(session, user=admin_user()) as client:
+            resp = await client.get("/api/dashboard/coach-summary", params={"club_id": 2})
+
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["imports_in_progress"] == 1
+        assert data["analyses_awaiting_approval"] == 1
+
+    async def test_parent_denied(self, session):
+        await self._seed(session)
+
+        async with make_client(session, user=parent_user()) as client:
+            resp = await client.get("/api/dashboard/coach-summary")
+
+        assert resp.status_code == 403
+        assert "analyses_awaiting_approval" not in resp.text
+
+    async def test_zero_pending_is_zero_not_null(self, session):
+        await create_club(session, club_id=1, name="Club Uno", code="uno")
+        await create_user(session, user_id=10, role=UserRole.coach)
+        await link_user_to_club(session, user_id=10, club_id=1, role_in_club=ClubRole.coach)
+        await session.commit()
+
+        async with make_client(session, user=coach_user()) as client:
+            resp = await client.get("/api/dashboard/coach-summary")
+
+        data = resp.json()
+        assert data["identity_decisions_pending"] == 0
+        assert data["imports_in_progress"] == 0
+        assert data["analyses_awaiting_approval"] == 0
+        assert data["unlinked_competitors_pending"] == 0
+
+    async def test_coach_without_clubs_gets_zeroes(self, session):
+        """A coach with no membership short-circuits before any query."""
+        homeless = SimpleNamespace(id=10, role=UserRole.coach, club_memberships=[])
+
+        async with make_client(session, user=homeless) as client:
+            resp = await client.get("/api/dashboard/coach-summary")
+
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["identity_decisions_pending"] == 0
+        assert data["imports_in_progress"] == 0
+        assert data["analyses_awaiting_approval"] == 0
+        assert data["unlinked_competitors_pending"] == 0
+
+    @pytest.mark.parametrize(
+        "patched_name, failing_field, healthy_fields",
+        [
+            (
+                "RaceIdentityCandidate",
+                "identity_decisions_pending",
+                (
+                    "imports_in_progress",
+                    "analyses_awaiting_approval",
+                    "insights_stale",
+                    "unlinked_competitors_pending",
+                ),
+            ),
+            (
+                "RaceImport",
+                "imports_in_progress",
+                (
+                    "identity_decisions_pending",
+                    "analyses_awaiting_approval",
+                    "insights_stale",
+                    "unlinked_competitors_pending",
+                ),
+            ),
+            (
+                "count_pending_analyses",
+                "analyses_awaiting_approval",
+                ("identity_decisions_pending", "imports_in_progress", "unlinked_competitors_pending"),
+            ),
+            (
+                "count_unlinked_competitors",
+                "unlinked_competitors_pending",
+                (
+                    "identity_decisions_pending",
+                    "imports_in_progress",
+                    "analyses_awaiting_approval",
+                ),
+            ),
+        ],
+    )
+    async def test_each_new_count_fails_in_isolation_as_null(
+        self, session, monkeypatch, patched_name, failing_field, healthy_fields
+    ):
+        await self._seed(session)
+        # Sabotage only the symbol the target aggregate relies on.
+        monkeypatch.setattr(dashboard_summary, patched_name, None)
+
+        async with make_client(session, user=coach_user()) as client:
+            resp = await client.get("/api/dashboard/coach-summary")
+
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data[failing_field] is None  # never 0: null means "unavailable"
+        for field in healthy_fields:
+            assert data[field] is not None, field
+
+
+class TestUnlinkedCompetitorsPending:
+    """``unlinked_competitors_pending`` (FR-033): la insignia de «Cargas e
+    identidades» cuenta exactamente lo que lista «Sin enlazar» al abrirla."""
+
+    async def _seed(self, session: AsyncSession) -> None:
+        await create_club(session, club_id=1, name="Club Uno", code="uno")
+        await create_user(session, user_id=10, role=UserRole.coach)
+        await create_user(session, user_id=20, role=UserRole.parent)
+        await link_user_to_club(session, user_id=10, club_id=1, role_in_club=ClubRole.coach)
+        await create_user(session, user_id=901, role=UserRole.athlete, can_login=False)
+        await create_athlete(
+            session, athlete_id=101, first_name="Atleta", last_name="Uno",
+            birth_date=_BIRTH_10_12, sex=Sex.M, club_id=1, user_id=901, created_by=10,
+        )
+
+        # Unlinked, from the club (three spellings of the club name): counted.
+        await create_race_competitor(
+            session, competitor_id=1, normalized_name="corredor uno",
+            display_name="Corredor Uno", club_text="Club Trocha y Ruta",
+        )
+        await create_race_competitor(
+            session, competitor_id=2, normalized_name="corredor dos",
+            display_name="Corredor Dos", club_text="TROCHA Y RUTA",
+        )
+        await create_race_competitor(
+            session, competitor_id=3, normalized_name="corredor tres",
+            display_name="Corredor Tres", club_text="Trocha y Ruta MTB",
+        )
+        # Already linked to a club athlete: never needs action.
+        await create_race_competitor(
+            session, competitor_id=4, normalized_name="corredor cuatro",
+            display_name="Corredor Cuatro", club_text="Club Trocha y Ruta", athlete_id=101,
+        )
+        # Unlinked but from another club: outside the list's default filter.
+        await create_race_competitor(
+            session, competitor_id=5, normalized_name="corredor cinco",
+            display_name="Corredor Cinco", club_text="Liga Antioquia",
+        )
+        # Passes the coarse SQL prefilter (contains «trocha») but is not the
+        # club: the fuzzy refinement must drop it from BOTH the count and list.
+        await create_race_competitor(
+            session, competitor_id=6, normalized_name="corredor seis",
+            display_name="Corredor Seis", club_text="Trocha Norte",
+        )
+        await session.commit()
+
+    async def _list_total(self, client: AsyncClient) -> int:
+        """``total`` of the list «Sin enlazar» opens with (its UI defaults)."""
+        resp = await client.get(
+            "/api/race-competitors/",
+            params={"unlinked": True, "club_filter": "trocha", "include_suggestions": False},
+        )
+        assert resp.status_code == 200, resp.text
+        return resp.json()["total"]
+
+    async def test_count_equals_the_unlinked_section_list(self, session):
+        await self._seed(session)
+
+        async with make_client(session, user=coach_user()) as client:
+            summary = await client.get("/api/dashboard/coach-summary")
+            list_total = await self._list_total(client)
+
+        assert summary.status_code == 200, summary.text
+        assert summary.json()["unlinked_competitors_pending"] == list_total
+        # Pinned so both sides cannot drift together: competitors 1-3 only
+        # (4 is linked, 5 is another club, 6 fails the fuzzy club refinement).
+        assert list_total == 3
+
+    async def test_linked_and_other_club_competitors_are_not_counted(self, session):
+        await self._seed(session)
+
+        async with make_client(session, user=coach_user()) as client:
+            before = (await client.get("/api/dashboard/coach-summary")).json()[
+                "unlinked_competitors_pending"
+            ]
+
+        # Link one of the club's competitors: the count drops by exactly one.
+        competitor = await session.get(RaceCompetitor, 1)
+        competitor.athlete_id = 101
+        await session.commit()
+
+        async with make_client(session, user=coach_user()) as client:
+            after = (await client.get("/api/dashboard/coach-summary")).json()[
+                "unlinked_competitors_pending"
+            ]
+            list_total = await self._list_total(client)
+
+        assert after == before - 1
+        assert after == list_total
+
+    async def test_admin_sees_the_same_count(self, session):
+        await self._seed(session)
+
+        async with make_client(session, user=coach_user()) as client:
+            coach_count = (await client.get("/api/dashboard/coach-summary")).json()[
+                "unlinked_competitors_pending"
+            ]
+        async with make_client(session, user=admin_user()) as client:
+            admin_count = (await client.get("/api/dashboard/coach-summary")).json()[
+                "unlinked_competitors_pending"
+            ]
+
+        assert admin_count == coach_count
+
+    async def test_parent_denied_and_count_not_leaked(self, session):
+        await self._seed(session)
+
+        async with make_client(session, user=parent_user()) as client:
+            resp = await client.get("/api/dashboard/coach-summary")
+
+        assert resp.status_code == 403
+        assert "unlinked_competitors_pending" not in resp.text
+
+    async def test_no_competitor_names_in_the_payload(self, session):
+        """Privacy (FR-010): only the count leaves; never names or club text."""
+        await self._seed(session)
+
+        async with make_client(session, user=coach_user()) as client:
+            resp = await client.get("/api/dashboard/coach-summary")
+
+        for fragment in ("Corredor", "Trocha", "Antioquia"):
+            assert fragment not in resp.text

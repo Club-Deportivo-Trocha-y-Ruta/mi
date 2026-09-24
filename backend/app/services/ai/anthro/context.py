@@ -73,17 +73,26 @@ if TYPE_CHECKING:
 
 _TRAINING_WINDOW_DAYS = 28
 
-__all__ = ["AnalysisContext", "build_context"]
+__all__ = [
+    "AnalysisContext",
+    "build_context",
+    "_build_body_composition_dict",
+    "_render_body_composition_block",
+]
 
 
 @dataclass(frozen=True)
 class AnalysisContext:
     """Entrada determinística y saneada que el prompt del analista renderiza.
 
-    Verbatim de ``data-model.md`` §2.2 — no le agregues campos aquí; el
-    texto pre-formateado para el prompt viaja aparte, en ``context_blocks``
-    (ver el docstring del módulo), precisamente para no ensanchar esta forma
-    ya fijada por el contrato.
+    Verbatim de ``data-model.md`` §2.2 — no le agregues campos aquí sin
+    actualizar ese contrato; ``body_composition`` es la única excepción
+    documentada, agregada por la feature 046
+    (``specs/046-body-composition-skinfolds/contracts/
+    ai-body-composition-leaf.md`` §1). El texto pre-formateado para el
+    prompt viaja aparte, en ``context_blocks`` (ver el docstring del
+    módulo), precisamente para no ensanchar esta forma ya fijada por el
+    contrato.
     """
 
     identity: dict
@@ -92,6 +101,7 @@ class AnalysisContext:
     growth_summary: dict
     training_load_window: dict | None
     previous_analysis: dict | None
+    body_composition: dict | None = None
 
 
 def _status_value(record: "AnthropometricRecord") -> str:
@@ -295,6 +305,192 @@ def _build_previous_analysis_dict(
 
 
 # ---------------------------------------------------------------------------
+# Hoja de composición corporal (feature 046, contracts/ai-body-composition-
+# leaf.md §1) — SIEMPRE códigos cualitativos, nunca un `*_mm`/`*_pct`/`*_kg`.
+# ---------------------------------------------------------------------------
+
+#: `band_reason_code` que también son válidos como `growth_explanation_code`
+#: (contract §2 de ``body-composition-reading.md``, filas de la banda verde).
+_GROWTH_EXPLANATION_REASON_CODES = frozenset(
+    {"expected_pubertal_gain", "pre_spurt_accumulation", "post_phv_lean_gain"}
+)
+
+_REFERENCE_WORST_ORDER = ("low", "high", "normal")
+
+
+def _collapse_reference_code(code: str | None) -> str:
+    """`low_extreme`/`low` -> `low`; `high_extreme`/`high` -> `high` (contract §1)."""
+    if code in ("low_extreme", "low"):
+        return "low"
+    if code in ("high_extreme", "high"):
+        return "high"
+    if code == "normal":
+        return "normal"
+    return "unavailable"
+
+
+def _worst_reference_context_code(triceps_code: str | None, subscapular_code: str | None) -> str:
+    """Peor de los dos sitios de referencia, extremos colapsados a low/high."""
+    collapsed = {_collapse_reference_code(triceps_code), _collapse_reference_code(subscapular_code)}
+    for candidate in _REFERENCE_WORST_ORDER:
+        if candidate in collapsed:
+            return candidate
+    return "unavailable"
+
+
+def _build_body_composition_dict(
+    latest_record: "AnthropometricRecord | None",
+    previous_record: "AnthropometricRecord | None",
+    reading: Any | None,
+) -> dict | None:
+    """Las diez claves cualitativas de ``contracts/ai-body-composition-leaf.md`` §1.
+
+    ``reading`` es el ``BodyCompositionReading`` (o ``None`` si el atleta no
+    tiene ningún set contado) ya calculado por
+    ``app/services/body_composition.py::build_reading`` — este builder NO
+    recalcula la lógica de banda, solo proyecta el resultado a códigos
+    cualitativos aptos para prompt. ``None`` cuando ``reading`` es ``None``
+    (ningún set con datos), igual que el resto de hojas de este módulo.
+    """
+    if reading is None:
+        return None
+
+    weeks_since_prev_set: int | None = None
+    if previous_record is not None and latest_record is not None:
+        weeks_since_prev_set = max(
+            int((latest_record.evaluation_date - previous_record.evaluation_date).days / 7), 0
+        )
+
+    growth_explanation_code = (
+        reading.band_reason_code
+        if reading.band_reason_code in _GROWTH_EXPLANATION_REASON_CODES
+        else "none"
+    )
+
+    return {
+        "sets_count": min(reading.sets_count, 9),
+        "weeks_since_prev_set": weeks_since_prev_set,
+        "sum_change_code": reading.sum_change_code,
+        "growth_explanation_code": growth_explanation_code,
+        "ffm_trend_code": reading.ffm_trend_code,
+        # Coach-only en el prompt (ver `_render_body_composition_block`) —
+        # viajan en el leaf igual para que el analista de la audiencia coach
+        # los reciba; la audiencia familiar nunca los renderiza.
+        "band": reading.band,
+        "band_reason_code": reading.band_reason_code,
+        "family_band": reading.family_band,
+        "reference_context_code": _worst_reference_context_code(
+            reading.reference_triceps.code, reading.reference_subscapular.code
+        ),
+        "sites_declined_count": reading.sites_declined_count,
+    }
+
+
+#: Español (Colombia) — significado de una línea por código, nunca un número.
+_FAMILY_BAND_LINE = {
+    "verde": "En su curva esperada: sigue acompañando el proceso con normalidad.",
+    "ambar": "En observación: el entrenador está acompañando el proceso de cerca.",
+}
+
+_SUM_CHANGE_MEANING = {
+    "none": "sin una medición anterior para comparar",
+    "within_noise": "sin cambio real frente a la medición anterior",
+    "up_real": "un aumento real frente a la medición anterior",
+    "down_real": "una disminución real frente a la medición anterior",
+}
+
+_GROWTH_EXPLANATION_MEANING = {
+    "expected_pubertal_gain": "una ganancia esperada asociada a la etapa puberal",
+    "pre_spurt_accumulation": "una acumulación previa al estirón de crecimiento",
+    "post_phv_lean_gain": "una ganancia de masa magra posterior al pico de velocidad",
+    "none": "sin una explicación de crecimiento asociada todavía",
+}
+
+_FFM_TREND_MEANING = {
+    "up": "en aumento",
+    "flat": "estable",
+    "down": "en descenso",
+    "unavailable": "sin dato suficiente para establecer una tendencia",
+}
+
+_REFERENCE_CONTEXT_MEANING = {
+    "low": "por debajo de lo habitual en la referencia poblacional",
+    "high": "por encima de lo habitual en la referencia poblacional",
+    "normal": "dentro de lo habitual en la referencia poblacional",
+    "unavailable": "sin referencia poblacional disponible",
+}
+
+#: Coach-only (nunca se usa en la rama familiar del renderizador).
+_BAND_REASON_MEANING = {
+    "energy_availability_pattern": "un patrón de disponibilidad energética para conversar en persona",
+    "sum_down_unexplained": "una disminución de pliegues sin explicación de talla o peso",
+    "sum_up_unexplained": "un aumento de pliegues sin explicación de crecimiento",
+    "sum_up_velocity_low": "un aumento de pliegues con velocidad de crecimiento baja",
+    "reference_extreme": "un sitio de referencia en el extremo de la población",
+    "bmi_z_drop": "una caída relevante del z-score de índice de masa corporal",
+    "velocity_low_persistent": "una velocidad de crecimiento baja en dos ciclos seguidos",
+    "expected_pubertal_gain": "una ganancia esperada asociada a la etapa puberal",
+    "pre_spurt_accumulation": "una acumulación previa al estirón de crecimiento",
+    "post_phv_lean_gain": "una ganancia de masa magra posterior al pico de velocidad",
+    "first_set": "la primera medición registrada, sin comparación previa",
+    "no_real_change": "un patrón estable respecto a la medición anterior",
+    "stable": "una composición corporal estable",
+}
+
+
+def _render_body_composition_block(leaf: dict | None, audience: str) -> str | None:
+    """Bloque "Composición corporal (códigos cualitativos)" del prompt.
+
+    ``None`` cuando ``leaf`` es ``None`` (sin set con datos) — se agrega a
+    ``context_blocks`` solo cuando existe (contract §2). La rama familiar
+    SOLO usa ``family_band``; ``band``/``band_reason_code`` (contenido
+    exclusivo del entrenador) se renderizan únicamente para ``audience ==
+    "coach"``.
+    """
+    if leaf is None:
+        return None
+
+    is_coach = audience == "coach"
+    lines = ["Composición corporal (códigos cualitativos):"]
+    if is_coach:
+        reason = _BAND_REASON_MEANING.get(leaf["band_reason_code"], leaf["band_reason_code"])
+        lines.append(f"- Banda del entrenador: {leaf['band']}, por {reason}.")
+        lines.append(f"- Sets de pliegues registrados: {leaf['sets_count']}.")
+    else:
+        # Defensa en profundidad: nunca una frase roja para familias, aunque
+        # llegue un `family_band` inesperado (contract §3c).
+        family_band = "verde" if leaf.get("family_band") == "verde" else "ambar"
+        lines.append(f"- {_FAMILY_BAND_LINE[family_band]}")
+    if leaf.get("weeks_since_prev_set") is not None:
+        lines.append(f"- Semanas desde el set anterior: {leaf['weeks_since_prev_set']}.")
+    lines.append(
+        "- Cambio de la sumatoria de pliegues: "
+        f"{_SUM_CHANGE_MEANING.get(leaf['sum_change_code'], leaf['sum_change_code'])}."
+    )
+    lines.append(
+        "- Explicación de crecimiento asociada: "
+        f"{_GROWTH_EXPLANATION_MEANING.get(leaf['growth_explanation_code'], leaf['growth_explanation_code'])}."
+    )
+    lines.append(
+        "- Tendencia de masa libre de grasa: "
+        f"{_FFM_TREND_MEANING.get(leaf['ffm_trend_code'], leaf['ffm_trend_code'])}."
+    )
+    # Coach-only (T069, hallazgo F3): la referencia poblacional es contexto
+    # exclusivo del entrenador (spec, aclaración Q4 — un ámbar solo por
+    # referencia se ve "En su curva esperada"), y el prompt familiar prohíbe
+    # mencionar la referencia, los sitios no medidos o el número de tomas;
+    # el proveedor no recibe esas líneas en la audiencia familiar.
+    if is_coach:
+        lines.append(
+            "- Contexto frente a la referencia poblacional: "
+            f"{_REFERENCE_CONTEXT_MEANING.get(leaf['reference_context_code'], leaf['reference_context_code'])}."
+        )
+        if leaf.get("sites_declined_count"):
+            lines.append(f"- Sitios que el/la deportista prefirió no medir: {leaf['sites_declined_count']}.")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
 # Bloques pre-formateados para el prompt (español neutro, mismo dict saneado)
 # ---------------------------------------------------------------------------
 
@@ -474,6 +670,26 @@ async def build_context(state: dict, config: dict | None = None) -> dict[str, An
             if raw_previous is not None:
                 previous_analysis = sanitize_insight_context(raw_previous)
 
+    # Feature 046: hoja opcional de composición corporal. El llamador
+    # (pipeline.py) pasa el `BodyCompositionReading` ya calculado bajo
+    # `body_composition_reading`; sin esa clave (o sin ningún set contado)
+    # la hoja es `None` y no aparece en el contexto ni en el prompt.
+    # `weeks_since_prev_set` se mide entre SETS de pliegues, no entre
+    # mediciones: pipeline.py (T080) pasa el registro del set contado
+    # anterior (o `None` si es la primera toma). Sin esa clave (llamadores
+    # previos a T080) se conserva el registro antropométrico anterior.
+    body_composition_previous = (
+        state["body_composition_previous_set_record"]
+        if "body_composition_previous_set_record" in state
+        else previous_record
+    )
+    raw_body_composition = _build_body_composition_dict(
+        target_record, body_composition_previous, state.get("body_composition_reading")
+    )
+    body_composition = (
+        sanitize_insight_context(raw_body_composition) if raw_body_composition is not None else None
+    )
+
     context = AnalysisContext(
         identity=identity,
         measurement_deltas=measurement_deltas,
@@ -481,6 +697,7 @@ async def build_context(state: dict, config: dict | None = None) -> dict[str, An
         growth_summary=growth_summary,
         training_load_window=training_load_window,
         previous_analysis=previous_analysis,
+        body_composition=body_composition,
     )
 
     context_blocks = {
@@ -490,6 +707,7 @@ async def build_context(state: dict, config: dict | None = None) -> dict[str, An
         "growth_summary_block": _render_growth_summary_block(growth_summary),
         "training_load_block": _render_training_load_block(training_load_window),
         "previous_analysis_block": _render_previous_analysis_block(previous_analysis),
+        "body_composition_block": _render_body_composition_block(body_composition, audience),
     }
 
     return {"analysis_context": context, "context_blocks": context_blocks}

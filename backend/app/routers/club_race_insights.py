@@ -40,6 +40,7 @@ Query params:
 """
 from __future__ import annotations
 
+import json
 import logging
 from typing import Optional
 
@@ -68,6 +69,32 @@ router = APIRouter()
 
 _MASKED_NAME = "[Atleta del club]"
 _EXCERPT_LEN = 200
+
+
+def _parent_excerpt_source(insight) -> Optional[str]:
+    """Texto del que se recorta el ``summary_excerpt`` de un padre.
+
+    Feature 045 (re-auditoría 2026-09-23, decisión del dueño): el
+    ``summary_text`` de una fila v3 (``structured_json`` presente) es el
+    markdown que se renderiza desde la estructura e incluye «gap a P3 …» y
+    esperado-vs-real, que la familia nunca recibe (ver
+    ``athlete_race_analysis._V3_FAMILY_OMITTED_FIELDS``). Para esas filas el
+    extracto sale solo del ``headline`` (que la tarjeta de familia sí
+    muestra); sin ``headline`` utilizable, ``None``. Las filas v1/v2 no tienen
+    tarjeta estructurada y conservan su texto.
+    """
+    if insight is None:
+        return None
+    structured = getattr(insight, "structured_json", None)
+    if isinstance(structured, str):
+        try:
+            structured = json.loads(structured)
+        except ValueError:
+            structured = None
+    if not structured:
+        return insight.summary_text
+    headline = structured.get("headline") if isinstance(structured, dict) else None
+    return headline if isinstance(headline, str) and headline.strip() else None
 
 
 # ---------------------------------------------------------------------------
@@ -294,7 +321,7 @@ async def list_club_insights_by_race(
                         display_name=display_name,
                         valida_num=event.sequence_number,
                         insight_id=ins.id if ins else None,
-                        summary_text=ins.summary_text if ins else None,
+                        summary_text=_parent_excerpt_source(ins),
                         generated_at=ins.generated_at if ins else None,
                     )
                 )

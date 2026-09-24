@@ -28,10 +28,17 @@
  * navegable con el año/mes/estado correctos. Ver también 'realBugsFound'
  * en el reporte de esta tarea.
  *
+ * Feature 045 (T064): la barra vive ahora dentro de «Carreras › Análisis IA»
+ * (`?tab=races&view=analisis`, `NewsletterSelectionBar` montada por
+ * `AnalysisView`, solo coach). Panorama (héroe) y Histórico (filas con
+ * casilla) ya no son sub-tabs: conviven en la misma vista, así que no hay
+ * que cambiar de sub-tab para llegar a las casillas.
+ *
  * Privacidad: todo nombre de atleta/coach en este archivo es sintético.
  */
 import { test, expect, type Page, type Route } from "@playwright/test";
 import { realTokens } from './helpers/session';
+import { makeStageLog } from './helpers/stage-log';
 
 // ---------------------------------------------------------------------------
 // Fixtures — sintéticos, nunca nombres reales (Ley 1581)
@@ -234,8 +241,11 @@ async function mockInsightsList(
 }
 
 async function gotoAiTab(page: Page): Promise<void> {
-  await page.goto(`/athletes/${ATHLETE_ID}?tab=ai_analysis`);
-  await expect(page.getByTestId("athlete-ai-analysis-tab")).toBeVisible({
+  await page.goto(`/athletes/${ATHLETE_ID}?tab=races&view=analisis`);
+  await expect(page.getByTestId("carreras-tab")).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(page.getByTestId("analysis-view")).toBeVisible({
     timeout: 15_000,
   });
 }
@@ -289,7 +299,6 @@ test.describe("Feature 036 — barra sticky del boletín, de punta a punta (T074
     );
 
     await gotoAiTab(page);
-    await page.getByTestId("ai-subtab-history").click();
 
     // La fila fallback NUNCA tiene checkbox — la única forma de seleccionarla
     // para el boletín simplemente no existe en el DOM.
@@ -320,7 +329,7 @@ test.describe("Feature 036 — barra sticky del boletín, de punta a punta (T074
 
     await expect(page.getByTestId("newsletter-action-bar-success")).toBeVisible();
     await expect(bar).toContainText("Agregados al boletín del mes");
-    // T013 (comentario en AthleteAIAnalysisTab.tsx): la confirmación se
+    // T013 (feature 036; hoy en `NewsletterSelectionBar`): la confirmación se
     // limpia sola a los 3 s — la barra debe desaparecer del todo, no
     // quedarse pegada mostrando "éxito" para siempre.
     await expect(bar).toHaveCount(0, { timeout: 6_000 });
@@ -340,16 +349,22 @@ test.describe("Feature 036 — barra sticky del boletín, de punta a punta (T074
             year: NL_YEAR,
             month: NL_MONTH,
             status: "draft",
+            edit_version: 1,
             email_blocks: {},
-            ai_narrative: {
-              strengths: "Buen manejo técnico en trazado sinuoso.",
-              area_to_develop: "Consistencia de cadencia en subidas largas.",
-              milestone: "Primer podio de la temporada.",
-              model: "gemini-3.1-flash-lite",
-              prompt_version: "monthly_v3",
-              confidence: "medium",
-            },
-            coach_narrative_overrides: null,
+            coach_note: null,
+            coach_note_author: null,
+            coach_note_updated_at: null,
+            last_edited_by: null,
+            generated_by: null,
+            approved_by: null,
+            // Bitácora de etapa (feature 038): sin `stage_log` el estudio solo
+            // muestra «todavía no tiene contenido generado» y ningún <h1>.
+            stage_log: makeStageLog(null),
+            stage_overrides: {},
+            hidden_blocks: [],
+            read_at: null,
+            delivery: [],
+            selected_race_insight_ids: [],
             badges_earned: [],
             has_pdf: false,
             pdf_generated_at: null,
@@ -407,7 +422,7 @@ test.describe("Feature 036 — barra sticky del boletín, de punta a punta (T074
 
     await gotoAiTab(page);
 
-    // Panorama (subtab por defecto): el Hero muestra el estado fallback
+    // Panorama (arriba de «Análisis IA»): el Hero muestra el estado fallback
     // pero SIN el botón "Agregar al boletín" (Wave 1, segunda ruta).
     const hero = page.getByTestId("hero-last-insight-card");
     await expect(hero).toBeVisible();
@@ -415,8 +430,10 @@ test.describe("Feature 036 — barra sticky del boletín, de punta a punta (T074
     await expect(hero.getByText(FALLBACK_SUMMARY_TEXT)).toBeVisible();
     await expect(page.getByTestId("hero-btn-add-newsletter")).toHaveCount(0);
 
-    // Histórico: la misma fila tampoco tiene checkbox.
-    await page.getByTestId("ai-subtab-history").click();
+    // Histórico (misma vista, más abajo): la misma fila tampoco tiene checkbox.
+    await expect(
+      page.getByTestId(`insight-card-${FALLBACK_ONLY.id}`),
+    ).toBeVisible();
     await expect(
       page.getByTestId(`insight-checkbox-${FALLBACK_ONLY.id}`),
     ).toHaveCount(0);

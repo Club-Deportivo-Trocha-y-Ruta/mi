@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { useMeasurementExplanationCached } from "@/hooks/ai/useMeasurementExplanation";
 import type { AnthropometricRecordExplanationResponse } from "@/types/ai.types";
+import { ageAtEvaluation, SKINFOLD_MIN_AGE_YEARS } from "@/lib/bodyComposition/eligibility";
 import type { AnthropometricRecord } from "@/types/anthropometry.types";
 
 interface AnthropometryHistoryProps {
@@ -23,6 +24,63 @@ interface AnthropometryHistoryProps {
   athleteId?: number;
   /** Modo de usuario: 'coach' permite generar/regenerar, 'parent' solo lee. */
   mode?: "coach" | "parent";
+  /**
+   * Feature 046 (T031): acción de fila "Agregar pliegues" / "Editar
+   * pliegues" (sólo coach). El llamador navega al asistente de captura.
+   * Si se omite, la columna de acción no se renderiza.
+   */
+  onSkinfoldsAction?: (record: AnthropometricRecord) => void;
+}
+
+/** La evaluación ya tiene un set de pliegues (el backend lo manda `null` a padres). */
+function hasSkinfolds(record: AnthropometricRecord): boolean {
+  return record.skinfolds != null;
+}
+
+/**
+ * La acción de fila se ofrece para editar un set existente, o para agregar
+ * uno cuando el deportista tenía ≥ 9 años en esa fecha. El intervalo mínimo
+ * entre sets lo valida el backend (409 explicado en el asistente).
+ */
+function canOfferSkinfoldsAction(record: AnthropometricRecord): boolean {
+  if (hasSkinfolds(record)) return true;
+  const age = ageAtEvaluation(record);
+  return age !== null && age >= SKINFOLD_MIN_AGE_YEARS;
+}
+
+function SkinfoldsMarker() {
+  return (
+    <span
+      data-testid="history-skinfolds-marker"
+      className="inline-flex items-center whitespace-nowrap rounded-full bg-light-gray px-2 py-0.5 text-[11px] font-medium text-charcoal"
+    >
+      Pliegues
+    </span>
+  );
+}
+
+function SkinfoldsActionButton({
+  record,
+  onAction,
+}: {
+  record: AnthropometricRecord;
+  onAction: (record: AnthropometricRecord) => void;
+}) {
+  const label = hasSkinfolds(record) ? "Editar pliegues" : "Agregar pliegues";
+  return (
+    <button
+      type="button"
+      onClick={(event) => {
+        // La fila de escritorio abre el detalle al hacer clic: no propagar.
+        event.stopPropagation();
+        onAction(record);
+      }}
+      aria-label={`${label} de la medición del ${formatDate(record.evaluation_date)}`}
+      className="inline-flex min-h-[48px] items-center whitespace-nowrap rounded-lg px-3 text-xs font-medium text-link-blue ring-1 ring-hairline transition-colors hover:bg-light-gray focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link-blue/50"
+    >
+      {label}
+    </button>
+  );
 }
 
 function formatDate(dateStr: string): string {
@@ -84,6 +142,7 @@ export function AnthropometryHistory({
   isLoading,
   athleteId,
   mode = "coach",
+  onSkinfoldsAction,
 }: AnthropometryHistoryProps) {
   const [selectedRecord, setSelectedRecord] =
     useState<AnthropometricRecord | null>(null);
@@ -105,6 +164,10 @@ export function AnthropometryHistory({
   // etiqueta clínica de etapa ni la edad estimada del PHV — esos campos son
   // exclusivos del coach. En modo padre el historial se limita a las medidas.
   const showClinical = mode === "coach";
+  // Feature 046: marcador "Pliegues" y acción de fila — sólo coach.
+  const skinfoldsAction = showClinical ? onSkinfoldsAction : undefined;
+  const showSkinfoldsColumn =
+    showClinical && (!!skinfoldsAction || records.some(hasSkinfolds));
 
   const sorted = [...records].sort(
     (a, b) =>
@@ -153,6 +216,11 @@ export function AnthropometryHistory({
                 </span>
                 {showClinical && <PHVBadge status={record.maturation_status} />}
               </div>
+              {showClinical && hasSkinfolds(record) && (
+                <div className="mt-2">
+                  <SkinfoldsMarker />
+                </div>
+              )}
               <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
                 <span className="text-mid-gray">Peso: <span className="text-charcoal">{record.weight_kg} kg</span></span>
                 <span className="text-mid-gray">Talla: <span className="text-charcoal">{record.standing_height_cm} cm</span></span>
@@ -165,6 +233,11 @@ export function AnthropometryHistory({
                 )}
               </div>
             </button>
+            {skinfoldsAction && canOfferSkinfoldsAction(record) && (
+              <div className="mt-1 flex justify-end">
+                <SkinfoldsActionButton record={record} onAction={skinfoldsAction} />
+              </div>
+            )}
           </li>
         ))}
       </ul>
@@ -188,6 +261,9 @@ export function AnthropometryHistory({
                   <th className="px-3 py-2.5 text-xs font-medium uppercase tracking-wide text-mid-gray">Estado PHV</th>
                   <th className="px-3 py-2.5 text-xs font-medium uppercase tracking-wide text-mid-gray">Edad PHV</th>
                 </>
+              )}
+              {showSkinfoldsColumn && (
+                <th className="px-3 py-2.5 text-xs font-medium uppercase tracking-wide text-mid-gray">Pliegues</th>
               )}
             </tr>
           </thead>
@@ -223,6 +299,16 @@ export function AnthropometryHistory({
                     </td>
                     <td className="px-3 py-2.5 text-mid-gray">{record.age_at_phv} años</td>
                   </>
+                )}
+                {showSkinfoldsColumn && (
+                  <td className="px-3 py-2.5">
+                    <span className="flex items-center gap-2">
+                      {hasSkinfolds(record) && <SkinfoldsMarker />}
+                      {skinfoldsAction && canOfferSkinfoldsAction(record) && (
+                        <SkinfoldsActionButton record={record} onAction={skinfoldsAction} />
+                      )}
+                    </span>
+                  </td>
                 )}
               </tr>
             ))}

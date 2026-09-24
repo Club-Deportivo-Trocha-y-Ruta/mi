@@ -5,7 +5,8 @@
  * Cubre:
  *  - Identidad render como texto read-only, no inputs editables (T012, FR-004).
  *  - Sin control para editar tipo/serie in-flow (T012, FR-005).
- *  - Link "Editar metadata" presente → /competitions/{id}/edit (T012, FR-006).
+ *  - Link "Editar datos" presente → /competitions/{id}/edit (T012, FR-006;
+ *    feature 045: «Editar metadata» pasó a «Editar datos»).
  *  - Estado bloqueado cuando la serie es irresoluble (FR-009).
  *  - jest-axe: cero violaciones en el paso 1 prefill (T014, WCAG 2.1 AA).
  *
@@ -79,12 +80,15 @@ describe("ImportWizard — link protegido (US2)", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("escape hatch 'Editar metadata' → /competitions/{id}/edit (FR-006)", async () => {
+  it("escape hatch 'Editar datos' → /competitions/{id}/edit (FR-006)", async () => {
     mswServer.use(...raceSeriesHandlers, prefillCupEventHandler);
     wrap(<ImportWizard raceEventId={2} />);
 
     const link = await screen.findByTestId("prefill-edit-metadata");
     expect(link).toHaveAttribute("href", "/competitions/2/edit");
+    // Vocabulario 045: «Editar datos», nunca «Editar metadata».
+    expect(link).toHaveTextContent("Editar datos");
+    expect(link).not.toHaveTextContent(/metadata/i);
   });
 
   it("estado bloqueado: serie irresoluble muestra bloqueo + escape hatch (FR-009)", async () => {
@@ -95,9 +99,9 @@ describe("ImportWizard — link protegido (US2)", () => {
     expect(blocked).toBeInTheDocument();
     // El formulario de paso 1 NO se renderiza (la importación no puede proceder).
     expect(screen.queryByTestId("wizard-step1-submit")).not.toBeInTheDocument();
-    expect(
-      screen.getByTestId("prefill-blocked-edit-metadata"),
-    ).toHaveAttribute("href", "/competitions/777/edit");
+    const blockedLink = screen.getByTestId("prefill-blocked-edit-metadata");
+    expect(blockedLink).toHaveAttribute("href", "/competitions/777/edit");
+    expect(blockedLink).toHaveTextContent("Editar datos");
   });
 
   it("a11y: cero violaciones en el paso 1 prefill (WCAG 2.1 AA, T014)", async () => {

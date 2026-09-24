@@ -1,6 +1,20 @@
 /**
- * E2E — coach flows for the athlete AI insights tab (feature 036, Wave 5 /
- * US7, tasks T070/T071/T075).
+ * E2E — coach flows for the athlete «Carreras» tab (feature 036, Wave 5 / US7,
+ * tasks T070/T071/T075; migrated to the single «Carreras» tab by feature 045,
+ * T064).
+ *
+ * Feature 045 replaced the old «Insights IA» tab (`?tab=ai_analysis`, five
+ * sub-tabs Panorama/Histórico/Evolución/Distribución/Analizar) with ONE tab,
+ * `?tab=races`, holding three views driven by the URL:
+ * `?view=progresion|analisis|comparar[&insight=<id>]`. What lived where:
+ *   - Panorama + Histórico + Analizar con IA → «Análisis IA» (`view=analisis`,
+ *     all three stacked in one scroll — no sub-tab switching any more);
+ *   - Evolución → «Progresión» (`view=progresion`, `/race-analysis/history`);
+ *   - Distribución + comparador → «Comparar» (`view=comparar`, coach only;
+ *     the comparator is inline — the lateral Sheet and its
+ *     `open-comparator-sheet` button are gone).
+ * The legacy `?tab=ai_analysis` address is an alias that redirects to
+ * `?tab=races&view=analisis` (covered by the last test of this file).
  *
  * Self-contained, no backend/docker required: auth + every API response are
  * mocked via `page.route`, mirroring `cold-start.spec.ts` and
@@ -11,13 +25,13 @@
  * are never swallowed (e.g. `src/api/athletes.ts` shares path segments with
  * the real `/api/athletes` route).
  *
- * Three tests, three synthetic athletes (fake names, no real minor — Ley
+ * Four tests over three synthetic athletes (fake names, no real minor — Ley
  * 1581), each isolated so a failure in one can't cascade into another:
  *
- *   T070 — Camila Restrepo (id 701): coach happy path. Enter the tab, see
- *          Panorama with its KPIs, visit each of the five sub-tabs, open
- *          and close the comparator sheet.
- *   T071 — Valeria Ospina (id 703): the module's central business flow,
+ *   T070 — Atleta Prueba Uno (id 701): coach happy path. Enter «Análisis IA»,
+ *          see Panorama with its KPIs, the history and the launcher, then
+ *          visit «Progresión» and «Comparar» (inline comparator, no Sheet).
+ *   T071 — Deportista Ficticia Tres (id 703): the module's central business flow,
  *          which had NO e2e coverage before this file — launch an analysis,
  *          watch the run timeline progress, approve the HITL gate, and
  *          confirm the newly-created insight appears in the history. The
@@ -27,10 +41,10 @@
  *          dispatches to the most-recently-registered matching handler, so
  *          re-registering acts as an override for every following poll
  *          without needing to model the `since` cursor.
- *   T075 — Camila Restrepo (701) then Nicolás Duarte (702): the US3
+ *   T075 — Atleta Prueba Uno (701) then Ciclista Ficticia Dos (702): the US3
  *          regression at the outermost level. Selects a newsletter checkbox
- *          on Camila's history (populating `newsletterSelection`), then
- *          drives a SAME-ROUTE transition to Nicolás's profile — never a
+ *          on Atleta Prueba Uno's history (populating `newsletterSelection`), then
+ *          drives a SAME-ROUTE transition to Ciclista Ficticia Dos's profile — never a
  *          second `page.goto()` (a real document reload, which would
  *          trivially "fix" the bug by remounting everything), and, per a
  *          finding made while writing this test, deliberately not "click
@@ -45,15 +59,21 @@
  *          exact transition via `history.pushState` + a manually dispatched
  *          `popstate` (the event `BrowserRouter` itself listens for — both
  *          genuine DOM/browser APIs, no app internals reached into). Without
- *          `key={athlete.id}` on the `AthleteAIAnalysisTab` mount
+ *          `key={athlete.id}` on the `CarrerasTab` mount
  *          (`AthleteDetailPage.tsx`), React reuses the same component
- *          instance across that transition and its internal `useState`
- *          (sub-tab, newsletter selection) survives the athlete switch.
+ *          instance across that transition and `AnalysisView`'s internal
+ *          `useState` (newsletter selection, active run) survives the
+ *          athlete switch. (The view itself lives in the URL now, so it is
+ *          no longer local state that can leak.)
+ *   045  — legacy alias: `?tab=ai_analysis[&insight=<id>]` lands on
+ *          `?tab=races&view=analisis[&insight=<id>]`, and the analysis the
+ *          `insight` param points at is the one expanded.
  *
  * Run just this file: `cd frontend && npx playwright test e2e/ai-insights-coach.spec.ts`
  */
 import { test, expect, type Page, type Route } from "@playwright/test";
 import { realTokens } from './helpers/session';
+import { makeHistoryPoint, mockAthleteRaceHistory } from './helpers/race-history';
 
 const WAIT_TIMEOUT = 15_000;
 
@@ -150,9 +170,9 @@ interface AthleteFixture {
   last_name: string;
 }
 
-const ATHLETE_A: AthleteFixture = { id: 701, first_name: "Camila", last_name: "Restrepo" };
-const ATHLETE_B: AthleteFixture = { id: 702, first_name: "Nicolás", last_name: "Duarte" };
-const ATHLETE_C: AthleteFixture = { id: 703, first_name: "Valeria", last_name: "Ospina" };
+const ATHLETE_A: AthleteFixture = { id: 701, first_name: "Atleta", last_name: "Prueba Uno" };
+const ATHLETE_B: AthleteFixture = { id: 702, first_name: "Ciclista", last_name: "Ficticia Dos" };
+const ATHLETE_C: AthleteFixture = { id: 703, first_name: "Deportista", last_name: "Ficticia Tres" };
 
 function athleteDetail(a: AthleteFixture) {
   return {
@@ -259,10 +279,12 @@ const AI_STATUS_OK = {
 };
 
 /**
- * Registers every endpoint `/athletes/:id?tab=ai_analysis` touches across
- * its five sub-tabs. Path-only matching (query params ignored) means one
- * route per endpoint covers every param variant each sub-tab requests it
- * with — same convention as `target-size.spec.ts`'s `mockAthleteAiTabApi`.
+ * Registers every endpoint `/athletes/:id?tab=races` touches across its
+ * «Análisis IA» and «Comparar» views (`/race-analysis/history`, used by
+ * «Progresión», is mocked separately by `mockAthleteRaceHistory`). Path-only
+ * matching (query params ignored) means one route per endpoint covers every
+ * param variant each view requests it with — same convention as
+ * `target-size.spec.ts`'s `mockAthleteAiTabApi`.
  *
  * `insights` is a live array reference (not a snapshot): T071 mutates it
  * in place between the launch and the HITL approval so the SAME registered
@@ -284,7 +306,7 @@ function mockAthleteAiEndpoints(
     }>;
     distribution?: unknown;
   },
-): Promise<void[]> {
+): Promise<unknown[]> {
   const base = `/api/athletes/${athleteId}/race-analysis`;
   return Promise.all([
     page.route(
@@ -349,17 +371,22 @@ function mockAthleteAiEndpoints(
   ]);
 }
 
-/** Navigates straight to the AI tab and waits for real data (not the
- * loading Skeleton) — tolerates the Suspense fallback the lazy-loaded tab
- * renders first (T096, feature 036). */
-async function gotoAthleteAiTab(page: Page, athleteId: number): Promise<void> {
-  await page.goto(`/athletes/${athleteId}?tab=ai_analysis`);
-  await expect(page.getByTestId("athlete-ai-analysis-tab")).toBeVisible({
-    timeout: WAIT_TIMEOUT,
-  });
-  await expect(page.getByTestId("ai-header-summary")).toBeVisible({
-    timeout: WAIT_TIMEOUT,
-  });
+/** Address of the «Análisis IA» view of «Carreras» (feature 045). */
+const analysisUrl = (athleteId: number, extra = ""): string =>
+  `/athletes/${athleteId}?tab=races&view=analisis${extra}`;
+
+/** Navigates straight to «Carreras › Análisis IA» and waits for the view
+ * itself (not the lazy-chunk Suspense skeleton, T096 feature 036, nor the
+ * page-level skeleton) — each test then waits for the data it needs. */
+async function gotoAthleteAnalysisView(page: Page, athleteId: number): Promise<void> {
+  await page.goto(analysisUrl(athleteId));
+  await expect(page.getByTestId("carreras-tab")).toBeVisible({ timeout: WAIT_TIMEOUT });
+  await expect(page.getByTestId("analysis-view")).toBeVisible({ timeout: WAIT_TIMEOUT });
+  await expect(page.getByTestId("carreras-view-analisis")).toHaveAttribute(
+    "data-state",
+    "active",
+    { timeout: WAIT_TIMEOUT },
+  );
 }
 
 /**
@@ -395,7 +422,7 @@ test.beforeEach(async ({ page }) => {
 // T070 — coach happy path
 // ---------------------------------------------------------------------------
 
-test("T070: coach happy path — Panorama KPIs, all five sub-tabs, comparator sheet open/close", async ({
+test("T070: coach happy path — Panorama KPIs, history and launcher in «Análisis IA», then «Progresión» and inline «Comparar»", async ({
   page,
 }) => {
   const EVENT_1 = 71001; // Válida I
@@ -438,15 +465,40 @@ test("T070: coach happy path — Panorama KPIs, all five sub-tabs, comparator sh
       athlete_time_ms: 3_500_000,
       athlete_z_score: -1,
       athlete_percentile: 82,
-      points: [{ pseudonym: "C0001", time_ms: 3_500_000, is_self: true, display_name: "Camila Restrepo" }],
+      points: [{ pseudonym: "C0001", time_ms: 3_500_000, is_self: true, display_name: "Atleta Prueba Uno" }],
       curve: [{ x_ms: 3_500_000, density: 0.2 }],
       confidence: "high",
     },
   });
 
-  await gotoAthleteAiTab(page, ATHLETE_A.id);
+  // «Progresión» AND the inline comparator both read the server engine's
+  // history points, matched by `event_id` — so the two points below share the
+  // ids of the two válidas above (the comparator's default pair).
+  const requestedHistoryKinds = await mockAthleteRaceHistory(page, ATHLETE_A.id, {
+    audience: "coach",
+    points: [
+      makeHistoryPoint({
+        event_id: EVENT_1,
+        event_date: `${SEASON}-02-08`,
+        season: SEASON,
+        label: "Válida 1 — Cali",
+        position: 3,
+        gap_to_median_pct: -3.1,
+      }),
+      makeHistoryPoint({
+        event_id: EVENT_2,
+        event_date: `${SEASON}-04-12`,
+        season: SEASON,
+        label: "Válida 2 — Palmira",
+        position: 1,
+        gap_to_median_pct: -6.4,
+      }),
+    ],
+  });
 
-  // --- Panorama (default sub-tab) with its KPIs ---------------------------
+  await gotoAthleteAnalysisView(page, ATHLETE_A.id);
+
+  // --- Panorama (top of «Análisis IA») with its KPIs ------------------------
   await expect(page.getByTestId("panorama-view")).toBeVisible({ timeout: WAIT_TIMEOUT });
   await expect(page.getByTestId("hero-last-insight-card")).toBeVisible({ timeout: WAIT_TIMEOUT });
   await expect(page.getByTestId("panorama-kpi-total")).toBeVisible({ timeout: WAIT_TIMEOUT });
@@ -454,32 +506,47 @@ test("T070: coach happy path — Panorama KPIs, all five sub-tabs, comparator sh
   await expect(page.getByTestId("panorama-kpi-best-position")).toBeVisible({ timeout: WAIT_TIMEOUT });
   await expect(page.getByTestId("panorama-kpi-races")).toBeVisible({ timeout: WAIT_TIMEOUT });
 
-  // --- Histórico ------------------------------------------------------------
-  await page.getByTestId("ai-subtab-history").click();
+  // --- Histórico (same view, below Panorama — no sub-tab to switch) --------
   await expect(page.getByTestId(`insight-card-${INSIGHT_2.id}`)).toBeVisible({ timeout: WAIT_TIMEOUT });
   await expect(page.getByTestId(`insight-card-${INSIGHT_1.id}`)).toBeVisible({ timeout: WAIT_TIMEOUT });
 
-  // --- Evolución --------------------------------------------------------------
-  await page.getByTestId("ai-subtab-evolution").click();
-  await expect(page.getByTestId("evolution-chart")).toBeVisible({ timeout: WAIT_TIMEOUT });
-
-  // --- Distribución + comparador (Sheet) — open then close -------------------
-  await page.getByTestId("ai-subtab-distribution").click();
-  await expect(page.getByTestId("distribution-chart")).toBeVisible({ timeout: WAIT_TIMEOUT });
-  await expect(page.getByTestId("open-comparator-sheet")).toBeVisible({ timeout: WAIT_TIMEOUT });
-
-  await page.getByTestId("open-comparator-sheet").click();
-  await expect(page.getByTestId("comparator-panel")).toBeVisible({ timeout: WAIT_TIMEOUT });
-  // Fullest state of the Sheet — both sides of the default válida pair loaded.
-  await expect(page.getByTestId("comparator-diff-table")).toBeVisible({ timeout: WAIT_TIMEOUT });
-
-  await page.getByRole("button", { name: "Cerrar panel" }).click();
-  await expect(page.getByTestId("comparator-panel")).not.toBeVisible({ timeout: WAIT_TIMEOUT });
-
-  // --- Analizar con IA ---------------------------------------------------------
-  await page.getByTestId("ai-subtab-launch").click();
+  // --- Analizar con IA (coach tools, same view) -------------------------------
+  await expect(page.getByTestId("analysis-coach-tools")).toBeVisible({ timeout: WAIT_TIMEOUT });
   await expect(page.getByTestId("launch-analysis-form")).toBeVisible({ timeout: WAIT_TIMEOUT });
   await expect(page.getByTestId(`launch-event-${EVENT_2}`)).toBeVisible({ timeout: WAIT_TIMEOUT });
+
+  // «Análisis IA» does not fetch the history: only the ACTIVE view mounts.
+  expect(requestedHistoryKinds).toHaveLength(0);
+
+  // --- Progresión (replaces the old «Evolución» sub-tab) ---------------------
+  await page.getByTestId("carreras-view-progresion").click();
+  await expect(page).toHaveURL(/[?&]view=progresion(&|$)/, { timeout: WAIT_TIMEOUT });
+  await expect(page.getByTestId("progression-view")).toBeVisible({ timeout: WAIT_TIMEOUT });
+  await expect(page.getByTestId("history-latest-three")).toBeVisible({ timeout: WAIT_TIMEOUT });
+  // «Progresión» asks for cups AND championships in one call.
+  await expect.poll(() => requestedHistoryKinds, { timeout: WAIT_TIMEOUT }).toContain("all");
+  // The coach sees the leader/podium gaps as extra metrics next to the
+  // default «Brecha vs. mediana» (the family never does — see the parent spec).
+  const metricSelect = page.getByTestId("progression-metric-select");
+  await expect(metricSelect).toBeVisible({ timeout: WAIT_TIMEOUT });
+  await expect(metricSelect.locator("option", { hasText: "Brecha vs. mediana" })).toHaveCount(1);
+  await expect(metricSelect.locator("option", { hasText: "Brecha vs. podio" })).toHaveCount(1);
+  await expect(metricSelect.locator("option", { hasText: "Brecha vs. 1.ª posición" })).toHaveCount(1);
+  // The retired label must not come back.
+  await expect(page.getByText(/gap al podio/i)).toHaveCount(0);
+
+  // --- Comparar: field distribution + INLINE comparator (no Sheet) ------------
+  await page.getByTestId("carreras-view-comparar").click();
+  await expect(page).toHaveURL(/[?&]view=comparar(&|$)/, { timeout: WAIT_TIMEOUT });
+  await expect(page.getByTestId("compare-view")).toBeVisible({ timeout: WAIT_TIMEOUT });
+  await expect(page.getByTestId("distribution-chart")).toBeVisible({ timeout: WAIT_TIMEOUT });
+  // The comparator renders in-line — there is no intermediate button and no
+  // dialog to open or close any more.
+  await expect(page.getByTestId("open-comparator-sheet")).toHaveCount(0);
+  await expect(page.getByTestId("comparator-panel")).toBeVisible({ timeout: WAIT_TIMEOUT });
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  // Fullest state of the comparator — both sides of the default válida pair loaded.
+  await expect(page.getByTestId("comparator-diff-table")).toBeVisible({ timeout: WAIT_TIMEOUT });
 });
 
 // ---------------------------------------------------------------------------
@@ -534,6 +601,13 @@ test("T071: launch an analysis, approve the HITL gate, and the new insight appea
     (url) =>
       isBackend(url) && url.pathname === `/api/athletes/${ATHLETE_C.id}/race-analysis/runs`,
     (route: Route) => {
+      // The «Análisis IA» view also GETs this path (runs-recovery query,
+      // coach only): answer it with an empty page so it can neither adopt a
+      // phantom run nor clobber `launchRequestBody`.
+      if (route.request().method() !== "POST") {
+        route.fulfill({ status: 200, json: { items: [], total: 0, limit: 20, offset: 0 } });
+        return;
+      }
       launchRequestBody = route.request().postDataJSON();
       route.fulfill({
         status: 200,
@@ -606,10 +680,9 @@ test("T071: launch an analysis, approve the HITL gate, and the new insight appea
     },
   );
 
-  await gotoAthleteAiTab(page, ATHLETE_C.id);
+  await gotoAthleteAnalysisView(page, ATHLETE_C.id);
 
-  // --- Launch -----------------------------------------------------------------
-  await page.getByTestId("ai-subtab-launch").click();
+  // --- Launch (the launcher lives at the bottom of «Análisis IA» now) ---------
   await expect(page.getByTestId(`launch-event-${EVENT_2}`)).toBeVisible({ timeout: WAIT_TIMEOUT });
   await page.getByTestId(`launch-event-${EVENT_2}`).click();
   await page.getByTestId("launch-submit").click();
@@ -618,14 +691,22 @@ test("T071: launch an analysis, approve the HITL gate, and the new insight appea
     .poll(() => launchRequestBody, { timeout: WAIT_TIMEOUT })
     .toMatchObject({ season: SEASON, event_id: EVENT_2 });
 
-  // `onStarted` switches the sub-tab to "history" automatically.
-  await expect(page.getByTestId("ai-subtab-history")).toHaveAttribute("data-state", "active", {
-    timeout: WAIT_TIMEOUT,
-  });
+  // There is no sub-tab to switch any more: the live run appears in the
+  // «Pendiente» block at the top of the SAME view, and the URL keeps pointing
+  // at «Análisis IA».
+  await expect(page.getByTestId("analysis-pending")).toBeVisible({ timeout: WAIT_TIMEOUT });
+  await expect(page.getByTestId("carreras-view-analisis")).toHaveAttribute("data-state", "active");
 
   // --- Run timeline (running) ---------------------------------------------
   await expect(page.getByTestId("analysis-run-timeline")).toBeVisible({ timeout: WAIT_TIMEOUT });
-  await expect(page.getByText("En proceso")).toBeVisible({ timeout: WAIT_TIMEOUT });
+  // The compact timeline headline names the phase of the current node
+  // (`analyst_agent` → «Redactando el análisis»).
+  await expect(page.getByTestId("timeline-headline")).toContainText("Redactando el análisis", {
+    timeout: WAIT_TIMEOUT,
+  });
+  // The per-node list only renders behind «Ver detalle técnico» (compact +
+  // collapsible timeline).
+  await page.getByTestId("timeline-detail-toggle").click();
   await expect(page.getByTestId("timeline-node-validate_input")).toHaveAttribute(
     "data-status",
     "done",
@@ -704,7 +785,7 @@ test("T075: switching athletes with the tab open carries over zero local state",
     evolutionSeries: [],
   });
 
-  await gotoAthleteAiTab(page, ATHLETE_A.id);
+  await gotoAthleteAnalysisView(page, ATHLETE_A.id);
 
   // Warm-up: visit athlete B once, then come back to A, all client-side,
   // BEFORE the real transition under test. Without this, `useAthlete(id)`'s
@@ -712,7 +793,7 @@ test("T075: switching athletes with the tab open carries over zero local state",
   // through its OWN `athleteQuery.isLoading` early-return (a completely
   // different top-level JSX subtree — see the file right after this
   // one's `if (athleteQuery.isLoading) return (...)`), which by itself
-  // unmounts and remounts everything under it, `AthleteAIAnalysisTab`
+  // unmounts and remounts everything under it, `CarrerasTab`
   // included — a remount for the wrong reason that would mask whatever
   // `key={athlete.id}` does or doesn't do. Same problem, same fix as the
   // T010 unit test in `AthleteDetailPage.test.tsx` (which pre-seeds the
@@ -721,17 +802,23 @@ test("T075: switching athletes with the tab open carries over zero local state",
   // first so TanStack Query's cache (`staleTime` 5 min, `gcTime` 24 h —
   // `App.tsx`) is already warm for both by the time the real switch
   // happens a few lines down.
-  await spaNavigate(page, `/athletes/${ATHLETE_B.id}?tab=ai_analysis`);
-  await expect(page.getByTestId("athlete-ai-analysis-tab")).toBeVisible({ timeout: WAIT_TIMEOUT });
-  await expect(page.getByText("Sin análisis aprobados aún.")).toBeVisible({ timeout: WAIT_TIMEOUT });
+  //
+  // These in-app transitions use the CANONICAL address on purpose: the legacy
+  // `?tab=ai_analysis` alias makes `AthleteDetailPage` render a `<Navigate>`
+  // (a different top-level subtree), which would remount everything and mask
+  // exactly what this test measures.
+  await spaNavigate(page, analysisUrl(ATHLETE_B.id));
+  await expect(page.getByTestId("analysis-view")).toBeVisible({ timeout: WAIT_TIMEOUT });
+  await expect(page.getByText("Aún no hay análisis aprobados para este deportista.")).toBeVisible({
+    timeout: WAIT_TIMEOUT,
+  });
 
-  await spaNavigate(page, `/athletes/${ATHLETE_A.id}?tab=ai_analysis`);
-  await expect(page.getByTestId("athlete-ai-analysis-tab")).toBeVisible({ timeout: WAIT_TIMEOUT });
-  await expect(page.getByTestId("ai-header-summary")).toBeVisible({ timeout: WAIT_TIMEOUT });
+  await spaNavigate(page, analysisUrl(ATHLETE_A.id));
+  await expect(page.getByTestId("analysis-view")).toBeVisible({ timeout: WAIT_TIMEOUT });
 
-  // Deja el tab en un estado NO default con selección de boletín activa:
-  // sub-tab "Histórico" + un insight marcado para el boletín.
-  await page.getByTestId("ai-subtab-history").click();
+  // Deja la vista con selección de boletín activa: el histórico vive debajo
+  // del Panorama en «Análisis IA» (ya no hay sub-tab), se marca un insight
+  // para el boletín.
   await expect(page.getByTestId(`insight-card-${INSIGHT_A.id}`)).toBeVisible({
     timeout: WAIT_TIMEOUT,
   });
@@ -741,26 +828,26 @@ test("T075: switching athletes with the tab open carries over zero local state",
 
   // --- La transición real bajo prueba: A -> B, con la cache de B ya
   // tibia, así que `athleteQuery.isLoading` nunca vuelve a ser true y la
-  // única variable que decide si `AthleteAIAnalysisTab` remonta es
+  // única variable que decide si `CarrerasTab` remonta es
   // `key={athlete.id}`. -----------------------------------------------------
-  await spaNavigate(page, `/athletes/${ATHLETE_B.id}?tab=ai_analysis`);
+  await spaNavigate(page, analysisUrl(ATHLETE_B.id));
 
-  await expect(page).toHaveURL(new RegExp(`/athletes/${ATHLETE_B.id}\\?tab=ai_analysis`), {
-    timeout: WAIT_TIMEOUT,
-  });
-  await expect(page.getByTestId("athlete-ai-analysis-tab")).toBeVisible({
+  await expect(page).toHaveURL(
+    new RegExp(`/athletes/${ATHLETE_B.id}\\?tab=races&view=analisis`),
+    { timeout: WAIT_TIMEOUT },
+  );
+  await expect(page.getByTestId("analysis-view")).toBeVisible({
     timeout: WAIT_TIMEOUT,
   });
   // Atleta B no tiene insights (a propósito): confirma que la data mostrada
   // es la SUYA, no la del atleta A arrastrada de algún cache mal keyeado.
-  await expect(page.getByText("Sin análisis aprobados aún.")).toBeVisible({
+  await expect(page.getByText("Aún no hay análisis aprobados para este deportista.")).toBeVisible({
     timeout: WAIT_TIMEOUT,
   });
 
-  // --- Las dos aserciones centrales de la regresión US3 -----------------------
-  // 1) El sub-tab vuelve a Panorama (el default de un `useState` fresco) en
-  //    vez de seguir en "Histórico" (heredado del atleta A).
-  await expect(page.getByTestId("panorama-view")).toBeVisible({ timeout: WAIT_TIMEOUT });
+  // --- Las aserciones centrales de la regresión US3 ---------------------------
+  // 1) El insight del atleta A ya no está en pantalla: la lista es la de B.
+  await expect(page.getByTestId(`insight-card-${INSIGHT_A.id}`)).toHaveCount(0);
   // 2) La barra de boletín — cuya sola presencia implica
   //    `newsletterSelection.size > 0` — no sobrevive el cambio de atleta.
   //    Sin el fix, seguiría mostrando el insight del atleta A seleccionado,
@@ -768,4 +855,72 @@ test("T075: switching athletes with the tab open carries over zero local state",
   await expect(page.getByTestId("newsletter-action-bar")).toHaveCount(0, {
     timeout: WAIT_TIMEOUT,
   });
+});
+
+// ---------------------------------------------------------------------------
+// 045 — legacy alias + default view of the single «Carreras» tab
+// ---------------------------------------------------------------------------
+
+test("045: `?tab=ai_analysis&insight=` redirects to «Carreras › Análisis IA» with that analysis open; bare `?tab=races` lands on «Progresión»", async ({
+  page,
+}) => {
+  const EVENT_1 = 74001;
+  const INSIGHT_1 = makeInsight({
+    id: 94001,
+    valida_num: 1,
+    event_id: EVENT_1,
+    event_date: `${SEASON}-03-15`,
+    generated_at: `${SEASON}-03-16T10:00:00Z`,
+  });
+
+  await mockAthleteShell(page, ATHLETE_A);
+  await mockAthleteAiEndpoints(page, ATHLETE_A.id, {
+    insights: [INSIGHT_1],
+    races: [
+      { event_id: EVENT_1, sequence_number: 1, event_date: `${SEASON}-03-15`, event_name: "Copa Valle I", location: "Cali" },
+    ],
+    evolutionSeries: [
+      { valida_num: 1, event_id: EVENT_1, event_date: `${SEASON}-03-15`, value: 4, label: "Válida I" },
+    ],
+  });
+  await mockAthleteRaceHistory(page, ATHLETE_A.id, {
+    audience: "coach",
+    points: [
+      makeHistoryPoint({
+        event_id: EVENT_1,
+        event_date: `${SEASON}-03-15`,
+        season: SEASON,
+        label: "Válida 1 — Cali",
+      }),
+    ],
+  });
+
+  // --- Old address, as it still arrives from e-mails already sent ------------
+  await page.goto(`/athletes/${ATHLETE_A.id}?tab=ai_analysis&insight=${INSIGHT_1.id}`);
+
+  // Canonical URL: `tab`, `view`, `insight` — in that order (contracts/ui-routes.md).
+  await expect(page).toHaveURL(
+    new RegExp(
+      `/athletes/${ATHLETE_A.id}\\?tab=races&view=analisis&insight=${INSIGHT_1.id}$`,
+    ),
+    { timeout: WAIT_TIMEOUT },
+  );
+  await expect(page.getByTestId("athlete-tab-races")).toBeVisible({ timeout: WAIT_TIMEOUT });
+  await expect(page.getByTestId("carreras-view-analisis")).toHaveAttribute("data-state", "active", {
+    timeout: WAIT_TIMEOUT,
+  });
+  // `insight` opens that analysis (desktop viewport → detail dialog).
+  await expect(page.getByRole("dialog", { name: "Detalle del análisis" })).toBeVisible({
+    timeout: WAIT_TIMEOUT,
+  });
+
+  // --- The retired tab is gone -------------------------------------------------
+  await expect(page.getByTestId("athlete-tab-ai-analysis")).toHaveCount(0);
+
+  // --- Bare `?tab=races` → «Progresión» (the default view) ---------------------
+  await page.goto(`/athletes/${ATHLETE_A.id}?tab=races`);
+  await expect(page.getByTestId("carreras-view-progresion")).toHaveAttribute("data-state", "active", {
+    timeout: WAIT_TIMEOUT,
+  });
+  await expect(page.getByTestId("progression-view")).toBeVisible({ timeout: WAIT_TIMEOUT });
 });

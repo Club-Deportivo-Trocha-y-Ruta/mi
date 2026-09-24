@@ -394,6 +394,9 @@ META_ALLOWLIST: frozenset[str] = frozenset(
         # el flag y un conteo de categorías restantes.
         "commit_pending",
         "pending_categories_remaining",
+        # Feature 046 — skinfolds.saved / skinfolds.deleted: a count only,
+        # never a reading value (`event_type` already covers the label).
+        "site_count",
     }
 )
 
@@ -807,6 +810,9 @@ MUTATING_GETS: frozenset[tuple[str, str]] = frozenset(
         ("GET", "/api/intervals/sessions/{training_session_id}/instructivo"),
         ("GET", "/api/race-analysis/runs/{run_id}/pdf"),
         ("GET", "/api/integrations/strava/callback"),
+        # Feature 046 (T045) — generates a PDF and writes
+        # `skinfolds.referral_note_generated`.
+        ("GET", "/api/athletes/{athlete_id}/body-composition/referral-note.pdf"),
     }
 )
 
@@ -889,6 +895,17 @@ _ATHLETES: dict[tuple[str, str], AuditPolicy] = {
     ("POST", "/api/athletes/{athlete_id}/anthropometry"): Audited(
         frozenset({AuditEntityType.anthropometric_record})
     ),
+    # Feature 046 — skinfold capture, same entity type as the parent record
+    # (no new AuditEntityType member; `meta_json.event_type` distinguishes
+    # `skinfolds.saved`/`skinfolds.deleted` from a plain field edit).
+    (
+        "PUT",
+        "/api/athletes/{athlete_id}/anthropometry/{record_id}/skinfolds",
+    ): Audited(frozenset({AuditEntityType.anthropometric_record})),
+    (
+        "DELETE",
+        "/api/athletes/{athlete_id}/anthropometry/{record_id}/skinfolds",
+    ): Audited(frozenset({AuditEntityType.anthropometric_record})),
     ("POST", "/api/ai/athletes/{athlete_id}/phv-explanation"): Audited(
         frozenset({AuditEntityType.athlete_ai_explanation})
     ),
@@ -1043,6 +1060,10 @@ _AI_RUNS: dict[tuple[str, str], AuditPolicy] = {
     ("POST", "/api/race-analysis/runs/{run_id}/invalidate"): Audited(
         frozenset({AuditEntityType.agent_run})
     ),
+    # Feature 045 (US5): el coach descarta el aviso "desactualizado" (T029).
+    ("POST", "/api/race-analysis/runs/{run_id}/dismiss-stale"): Audited(
+        frozenset({AuditEntityType.agent_run})
+    ),
     ("POST", "/api/race-analysis/runs/{run_id}/cancel"): Audited(
         frozenset({AuditEntityType.agent_run})
     ),
@@ -1139,6 +1160,12 @@ _RACE_RESULTS: dict[tuple[str, str], AuditPolicy] = {
         frozenset({AuditEntityType.race_import})
     ),
     ("POST", "/api/race-analysis/imports/{parse_id}/acknowledge"): Audited(
+        frozenset({AuditEntityType.race_import})
+    ),
+    # Feature 045 (US3, T026): el coach descarta una carga en staging
+    # (`pending|dry_run` → `discarded`). `update` sobre `status`, igual que el
+    # resto de cambios de estado de un `race_import`.
+    ("POST", "/api/race-analysis/imports/{import_id}/discard"): Audited(
         frozenset({AuditEntityType.race_import})
     ),
     ("POST", "/api/race-analysis/race-events/"): Audited(
@@ -1320,6 +1347,13 @@ _MUTATING_GET_ENTRIES: dict[tuple[str, str], AuditPolicy] = {
     ("GET", "/api/integrations/strava/callback"): Audited(
         frozenset({AuditEntityType.strava_connection})
     ),
+    # Feature 046 (T045) — generates a PDF and writes
+    # `meta_json.event_type=skinfolds.referral_note_generated` against the
+    # same entity type as the skinfold set it is generated from.
+    (
+        "GET",
+        "/api/athletes/{athlete_id}/body-composition/referral-note.pdf",
+    ): Audited(frozenset({AuditEntityType.anthropometric_record})),
 }
 assert set(_MUTATING_GET_ENTRIES.keys()) == MUTATING_GETS
 

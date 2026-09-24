@@ -20,9 +20,10 @@
  *     esta ruta en `state.from`; `LoginPage` vuelve aquí tras autenticar
  *     (ver `routes/auth/LoginPage.tsx`).
  *
- * Destino final según rol:
- *   - parent      → /my-athletes/:athleteId?tab=ai-analysis&insight=:id
- *   - coach/admin → /athletes/:athleteId?tab=ai_analysis&insight=:id
+ * Destino final según rol (feature 045, T043 — pestaña única «Carreras»,
+ * vista «Análisis IA», con el análisis expandido):
+ *   - parent      → /my-athletes/:athleteId?tab=races&view=analisis&insight=:id
+ *   - coach/admin → /athletes/:athleteId?tab=races&view=analisis&insight=:id
  *   - cualquier otro rol (ej. athlete, que no debería recibir este correo)
  *     → NotFoundPage — no existe un panorama de atleta para ese rol.
  */
@@ -46,7 +47,7 @@ export function RaceInsightEmailRedirect() {
   if (role === UserRole.parent) {
     return (
       <Navigate
-        to={`/my-athletes/${athleteId}?tab=ai-analysis&insight=${insightId}`}
+        to={`/my-athletes/${athleteId}?tab=races&view=analisis&insight=${insightId}`}
         replace
       />
     );
@@ -55,7 +56,7 @@ export function RaceInsightEmailRedirect() {
   if (role === UserRole.coach || role === UserRole.admin) {
     return (
       <Navigate
-        to={`/athletes/${athleteId}?tab=ai_analysis&insight=${insightId}`}
+        to={`/athletes/${athleteId}?tab=races&view=analisis&insight=${insightId}`}
         replace
       />
     );

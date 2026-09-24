@@ -34,6 +34,10 @@ export function makeCoachSummary(
     generated_at: "2026-07-11T20:03:00Z",
     consents_pending: 3,
     insights_stale: 1,
+    identity_decisions_pending: 2,
+    imports_in_progress: 1,
+    analyses_awaiting_approval: 2,
+    unlinked_competitors_pending: 3,
     weekly_load: [
       makeWeeklyLoadBand(),
       makeWeeklyLoadBand({

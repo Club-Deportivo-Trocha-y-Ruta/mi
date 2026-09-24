@@ -16,10 +16,12 @@ See `specs/040-growth-module-redesign/data-model.md` §3 and
 from __future__ import annotations
 
 from datetime import date
+from typing import TYPE_CHECKING
 
 from app.models.anthropometry import AnthropometricRecord, MaturationStatus, NutritionalStatus
 from app.models.athlete import Athlete
 from app.schemas.alerts import MeasurementStatus
+from app.schemas.body_composition import BodyCompositionSummary
 from app.schemas.growth import (
     BandReading,
     GrowthSummaryAlert,
@@ -28,6 +30,7 @@ from app.schemas.growth import (
     LatestBands,
     MeasurementDue,
 )
+from app.services.body_composition import COACH_REASON_COPY, FAMILY_COPY
 from app.services.category import compute_age_decimal
 from app.services.growth import classify_nutritional_status_height
 from app.services.measurement_alerts import (
@@ -39,6 +42,9 @@ from app.services.measurement_alerts import (
     detect_approaching_circa,
     get_measurement_interval,
 )
+
+if TYPE_CHECKING:
+    from app.services.body_composition import LoadedBodyComposition
 
 # Rango esperado de velocidad de crecimiento en talla, cm/año, por etapa PHV y
 # sexo (research.md R-05). Deliberadamente amplio y orientativo — informa al
@@ -192,11 +198,52 @@ def _build_alerts(
     return alerts
 
 
+def _build_body_composition(loaded: "LoadedBodyComposition | None") -> BodyCompositionSummary:
+    """`GrowthSummaryOut.body_composition` for coach/admin (feature 046, T036).
+
+    `loaded` comes from the shared `services.body_composition.load_reading`
+    (T080, privacy-audit F6): the same velocity windows, previous-cycle
+    velocity, FUPRECOL reference context and latest attempt as
+    `GET …/body-composition`, the newsletter annex and the AI leaf, so the
+    card, the coach detail and the Bitácora can never disagree. The router
+    projects this to the 5-key family model for parents.
+    """
+    if loaded is None or loaded.reading is None or loaded.latest_set_record is None:
+        return BodyCompositionSummary(has_data=False)
+
+    reading = loaded.reading
+    latest = loaded.latest_set_record.skinfolds
+    copy = FAMILY_COPY[reading.family_band]
+    return BodyCompositionSummary(
+        has_data=True,
+        latest_set_date=loaded.latest_set_record.evaluation_date,
+        band=reading.band,
+        family_band=reading.family_band,
+        family_label=copy["family_label"],
+        family_sentence=copy["family_sentence"],
+        next_due_date=reading.next_due_date,
+        days_until_due=reading.days_until_due,
+        latest_attempt_declined=reading.latest_attempt_declined,
+        coach_reason=COACH_REASON_COPY.get(reading.band_reason_code),
+        sum4_mm=float(latest.sum4_mm) if latest.sum4_mm is not None else None,
+        sum4_change_mm=reading.sum4_change_mm,
+        sum_change_code=reading.sum_change_code,
+        sum6_mm=float(latest.sum6_mm) if latest.sum6_mm is not None else None,
+        body_fat_pct=float(latest.body_fat_pct) if latest.body_fat_pct is not None else None,
+        fat_free_mass_kg=(
+            float(latest.fat_free_mass_kg) if latest.fat_free_mass_kg is not None else None
+        ),
+        legs_missing=reading.legs_missing,
+    )
+
+
 def build_growth_summary(
     athlete: Athlete,
     latest: AnthropometricRecord | None,
     previous: AnthropometricRecord | None,
     today: date | None = None,
+    *,
+    body_composition: "LoadedBodyComposition | None" = None,
 ) -> GrowthSummaryOut:
     """Deriva el `GrowthSummaryOut` de un atleta a partir de sus dos
     mediciones antropométricas más recientes (ya cargadas por el router con
@@ -204,6 +251,9 @@ def build_growth_summary(
 
     No consulta la base de datos ni recalcula Z-scores/percentiles/bandas:
     es una función pura sobre los objetos recibidos.
+
+    ``body_composition`` (feature 046): resultado ya cargado de
+    ``services.body_composition.load_reading``; ``None`` → ``has_data=False``.
     """
     today = today or date.today()
     records_count = sum(1 for r in (latest, previous) if r is not None)
@@ -222,6 +272,7 @@ def build_growth_summary(
             measurement=_build_measurement_due(None, today),
             alerts=[],
             latest=None,
+            body_composition=_build_body_composition(body_composition),
         )
 
     stage_value = latest.maturation_status.value
@@ -233,7 +284,6 @@ def build_growth_summary(
     velocity = _build_velocity(latest, previous, stage_value, athlete.sex.value)
     measurement = _build_measurement_due(latest, today)
     alerts = _build_alerts(stage_value, latest, previous, velocity)
-
     return GrowthSummaryOut(
         athlete_id=athlete.id,
         computed_at=today,
@@ -247,4 +297,5 @@ def build_growth_summary(
         measurement=measurement,
         alerts=alerts,
         latest=_build_latest_bands(latest),
+        body_composition=_build_body_composition(body_composition),
     )

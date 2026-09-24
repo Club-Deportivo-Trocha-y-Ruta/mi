@@ -1,6 +1,6 @@
 # Contract — AI explainer extension: `body_composition` leaf (feature 046)
 
-Extends the feature-042 anthropometry pipeline (`context → analyst → prechecks → critic → guardrails → persist`). Nothing numeric about body composition ever reaches the provider or a family text.
+Extends the feature-042 anthropometry pipeline (`context → analyst → prechecks → critic → guardrails → persist`). Nothing numeric about body composition ever reaches the provider or a family text. Scope: the anthropometry explainer only — the monthly newsletter AI never receives body-composition data (spec FR-036).
 
 ## 1. Context leaf (`AnalysisContext.body_composition: dict | None`)
 
@@ -13,8 +13,9 @@ Built by `context.py::_build_body_composition_dict(latest_record, previous_recor
 | `sum_change_code` | `none` \| `within_noise` \| `up_real` \| `down_real` |
 | `growth_explanation_code` | `expected_pubertal_gain` \| `pre_spurt_accumulation` \| `post_phv_lean_gain` \| `none` |
 | `ffm_trend_code` | `up` \| `flat` \| `down` \| `unavailable` |
-| `band` | `verde` \| `ambar` \| `rojo` |
-| `band_reason_code` | as in `body-composition-reading.md` §3 |
+| `band` | `verde` \| `ambar` \| `rojo` — **coach audience only** |
+| `band_reason_code` | as in `body-composition-reading.md` §3 — **coach audience only** |
+| `family_band` | `verde` \| `ambar` (projection of `body-composition-reading.md` §3c) — the only band used for the family audience |
 | `reference_context_code` | `low` \| `normal` \| `high` \| `unavailable` (worst of triceps/subscapular, extremes collapsed into low/high) |
 | `sites_declined_count` | int 0–6 |
 
@@ -22,7 +23,7 @@ Forbidden in the leaf (tested): any `*_mm`, `*_pct`, `*_kg`, percentile numbers,
 
 ## 2. Prompt rendering
 
-`_render_body_composition_block(leaf)` produces a Spanish block "Composición corporal (códigos cualitativos)" listing the codes with one-line meanings; appended to `context_blocks` only when the leaf exists. Prompts `anthropometry_analyst_v2.md` and `anthropometry_critic_v2.md` add:
+The family-audience rendering uses `family_band` and never `band`/`band_reason_code` (a coach-side rojo is described to the family as "en observación"; a reference-only ámbar as "en su curva esperada"). `_render_body_composition_block(leaf)` produces a Spanish block "Composición corporal (códigos cualitativos)" listing the codes with one-line meanings; appended to `context_blocks` only when the leaf exists. Prompts `anthropometry_analyst_v2.md` and `anthropometry_critic_v2.md` add:
 
 - an optional section instructing the analyst to weave body composition into `changes`/`meaning` (family: reassurance-first, process language; coach: pattern + suggested conversation), **never** stating a percentage, a millimetre value, a weight goal or diet advice;
 - the critic rule list gains R13 and R14 descriptions.
@@ -40,7 +41,7 @@ Both feed the critic feedback loop like R01–R12 and count toward the fallback 
 
 ## 4. Fallback
 
-`fallback.build_fallback_insight` adds one sentence per audience when the leaf exists, from `band_reason_code` (family: the family sentence of the band; coach: the coach reason), never numbers.
+`fallback.build_fallback_insight` adds one sentence per audience when the leaf exists, (family: the family sentence of `family_band`, never a rojo sentence; coach: the coach reason from `band_reason_code`), never numbers.
 
 ## 5. Guardrails and persistence
 
@@ -48,7 +49,7 @@ Unchanged: forbidden-names scrub, word budgets (family 180, coach 110), `critic_
 
 ## 6. Golden evaluation
 
-Add `backend/evals/anthropometry_analyst/golden/case_013…case_016.json` with a `body_composition` input leaf: (13) family, verde `expected_pubertal_gain`; (14) coach, rojo `energy_availability_pattern` (expected theme: conversation + referral, forbidden: numbers, "dieta"); (15) family, ámbar `sum_up_unexplained` (forbidden: any `%`/`mm`); (16) coach, `first_set` with `sites_declined_count = 2` (theme: second set needed, respect the decline). Extend every existing case's `forbidden_terms` with `%` patterns where audience is family. Refresh `baseline.json` after the prompt change (requires an AI key; `pytest -m golden` composite ≥ 0.75 remains the gate).
+Add `backend/evals/anthropometry_analyst/golden/case_013…case_018.json` with a `body_composition` input leaf: (13) family, verde `expected_pubertal_gain`; (14) coach, rojo `energy_availability_pattern` (expected theme: conversation + referral, forbidden: numbers, "dieta"); (15) family, ámbar `sum_up_unexplained` (forbidden: any `%`/`mm`); (16) coach, `first_set` with `sites_declined_count = 2` (theme: second set needed, respect the decline); (17) family, coach-side rojo `energy_availability_pattern` → `family_band = ambar` (forbidden: "profesional de la salud", "remisión", "requiere acompañamiento", any `%`/`mm`); (18) family, reference-only ámbar → `family_band = verde` (forbidden: "observación", "extremo", "percentil"). Extend every existing case's `forbidden_terms` with `%` patterns where audience is family. Refresh `baseline.json` after the prompt change (requires an AI key; `pytest -m golden` composite ≥ 0.75 remains the gate).
 
 ## 7. Tests
 

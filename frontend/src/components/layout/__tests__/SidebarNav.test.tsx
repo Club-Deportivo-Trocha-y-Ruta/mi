@@ -9,7 +9,11 @@ import { MemoryRouter, useLocation } from "react-router-dom";
 // sin montar un QueryClientProvider ni tocar la red; su lógica de filtrado
 // tiene pruebas propias en hooks/layout/__tests__/useNavBadges.test.tsx.
 const badgeState = vi.hoisted(() => ({
-  current: {} as { competitions?: number; families?: number },
+  current: {} as {
+    competitions?: number;
+    families?: number;
+    "competitions.imports"?: number;
+  },
 }));
 
 vi.mock("@/hooks/layout/useNavBadges", () => ({
@@ -56,6 +60,17 @@ function renderSidebar(
       <LocationDisplay />
     </MemoryRouter>,
   );
+}
+
+/**
+ * Feature 045: el ítem «Competencias» (la lista) comparte nombre con el área
+ * «Competencias». Con el disclosure abierto hay DOS enlaces con ese nombre y
+ * el mismo `href`; el del área va primero en el DOM y el del ítem después.
+ */
+function getCompetitionsListItem(): HTMLElement {
+  const links = screen.getAllByRole("link", { name: "Competencias" });
+  expect(links).toHaveLength(2);
+  return links[1];
 }
 
 beforeEach(() => {
@@ -176,29 +191,48 @@ describe("SidebarNav — estado activo (tinte + barra + semibold, nunca sólo co
   });
 
   it("el sub-item de la ruta actual queda marcado como página actual y en semibold", () => {
-    renderSidebar("coach", { initialPath: "/competitions/unlinked" });
+    renderSidebar("coach", { initialPath: "/competitions/imports" });
 
-    const current = screen.getByRole("link", { name: "Sin enlazar" });
+    const current = screen.getByRole("link", { name: "Cargas e identidades" });
     expect(current).toHaveAttribute("aria-current", "page");
     expect(current.className).toMatch(/bg-nav-active-bg/);
     expect(current.className).toMatch(/font-semibold/);
 
-    const sibling = screen.getByRole("link", { name: "Válidas" });
+    const sibling = getCompetitionsListItem();
     expect(sibling).not.toHaveAttribute("aria-current");
     expect(sibling.className).not.toMatch(/bg-nav-active-bg/);
   });
 
-  it("en /competitions/insights/season/2026 sólo 'Panorama de temporada' queda activo", () => {
-    renderSidebar("coach", {
-      initialPath: "/competitions/insights/season/2026",
-    });
+  it("en /competitions/season/2026 sólo 'Temporada' queda activo", () => {
+    renderSidebar("coach", { initialPath: "/competitions/season/2026" });
 
-    expect(
-      screen.getByRole("link", { name: "Panorama de temporada" }),
-    ).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("link", { name: "Válidas" })).not.toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Temporada" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(getCompetitionsListItem()).not.toHaveAttribute("aria-current");
+  });
+
+  it("'Temporada' sigue activa en otro año (matchPath), no cae a 'Competencias'", () => {
+    renderSidebar("coach", { initialPath: "/competitions/season/2024" });
+
+    expect(screen.getByRole("link", { name: "Temporada" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(getCompetitionsListItem()).not.toHaveAttribute("aria-current");
+  });
+
+  it("en el detalle de una competencia sólo el ítem 'Competencias' (lista) queda activo", () => {
+    renderSidebar("coach", { initialPath: "/competitions/12" });
+
+    expect(getCompetitionsListItem()).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "Temporada" })).not.toHaveAttribute(
       "aria-current",
     );
+    expect(
+      screen.getByRole("link", { name: "Cargas e identidades" }),
+    ).not.toHaveAttribute("aria-current");
   });
 });
 
@@ -235,20 +269,140 @@ describe("SidebarNav — insignias de pendientes (useNavBadges)", () => {
   });
 });
 
+// Feature 045 (US3/US5): «Cargas e identidades» lleva su PROPIA insignia
+// (`identity_decisions_pending + imports_in_progress +
+// unlinked_competitors_pending`, la suma la hace `useNavBadges`); la clave es el `NavItem.id`. El área «Competencias» suma
+// sus dos fuentes (resultados por importar + cargas e identidades) para que
+// el pendiente se vea desde otras secciones; el sub-ítem conserva el suyo.
+describe("SidebarNav — insignia por sub-ítem («Cargas e identidades», feature 045)", () => {
+  it("muestra el conteo como píldora y lo anuncia en el nombre accesible del ítem", () => {
+    badgeState.current = { "competitions.imports": 3 };
+    renderSidebar("coach", { initialPath: "/competitions" });
+
+    const item = screen.getByRole("link", {
+      name: "Cargas e identidades · 3 pendientes",
+    });
+    expect(within(item).getByText("3")).toBeInTheDocument();
+    expect(item).toHaveAttribute("href", "/competitions/imports");
+    // La píldora es decorativa: el conteo se anuncia por el nombre accesible.
+    expect(within(item).getByText("3")).toHaveAttribute("aria-hidden", "true");
+  });
+
+  it("el área suma ambas fuentes (2 + 3 = 5) y el sub-ítem conserva SÓLO el suyo (3)", () => {
+    badgeState.current = { competitions: 2, "competitions.imports": 3 };
+    renderSidebar("coach", { initialPath: "/competitions" });
+
+    const area = screen.getByRole("link", { name: "Competencias · 5 pendientes" });
+    expect(within(area).getByText("5")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Cargas e identidades · 3 pendientes" }),
+    ).toBeInTheDocument();
+  });
+
+  it("área plegada (otra sección activa): la píldora ya refleja el pendiente de «Cargas e identidades»", () => {
+    badgeState.current = { "competitions.imports": 3 };
+    renderSidebar("coach", { initialPath: "/dashboard" });
+
+    // Sin resultados por importar, el área muestra sólo las cargas/identidades.
+    const area = screen.getByRole("link", { name: "Competencias · 3 pendientes" });
+    expect(within(area).getByText("3")).toBeInTheDocument();
+    // El sub-ítem no está en el DOM (área plegada).
+    expect(
+      screen.queryByRole("link", { name: /Cargas e identidades/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("sólo resultados por importar: el área conserva su conteo de siempre", () => {
+    badgeState.current = { competitions: 2 };
+    renderSidebar("coach", { initialPath: "/dashboard" });
+
+    expect(
+      screen.getByRole("link", { name: "Competencias · 2 pendientes" }),
+    ).toBeInTheDocument();
+  });
+
+  it("sin conteo (cargando, error o cero) el ítem no lleva píldora ni cambia de nombre", () => {
+    badgeState.current = {};
+    renderSidebar("coach", { initialPath: "/competitions" });
+
+    const item = screen.getByRole("link", { name: "Cargas e identidades" });
+    expect(item).toHaveAccessibleName("Cargas e identidades");
+    expect(
+      screen.queryByTestId("nav-item-badge-competitions.imports"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("sólo «Cargas e identidades» tiene insignia de ítem: los demás sub-ítems no", () => {
+    badgeState.current = { "competitions.imports": 3 };
+    renderSidebar("coach", { initialPath: "/competitions" });
+
+    expect(screen.getByRole("link", { name: "Temporada" })).toHaveAccessibleName(
+      "Temporada",
+    );
+    expect(document.querySelectorAll('[data-testid^="nav-item-badge-"]')).toHaveLength(1);
+  });
+
+  it("el ítem con insignia sigue marcándose activo en su ruta", () => {
+    badgeState.current = { "competitions.imports": 3 };
+    renderSidebar("coach", { initialPath: "/competitions/imports" });
+
+    const item = screen.getByRole("link", {
+      name: "Cargas e identidades · 3 pendientes",
+    });
+    expect(item).toHaveAttribute("aria-current", "page");
+    expect(item.className).toMatch(/bg-nav-active-bg/);
+  });
+
+  it("modo riel: no hay sub-ítems, pero el tile del área lleva el pendiente (punto + total en el nombre)", () => {
+    badgeState.current = { competitions: 2, "competitions.imports": 3 };
+    renderSidebar("coach", { collapsed: true });
+
+    expect(
+      screen.queryByTestId("nav-item-badge-competitions.imports"),
+    ).not.toBeInTheDocument();
+    const tile = screen.getByRole("link", { name: "Competencias · 5 pendientes" });
+    expect(tile.querySelector("span[aria-hidden='true'].bg-warning")).not.toBeNull();
+  });
+
+  it("modo riel: sólo cargas/identidades pendientes también marca el tile", () => {
+    badgeState.current = { "competitions.imports": 3 };
+    renderSidebar("coach", { collapsed: true });
+
+    expect(
+      screen.getByRole("link", { name: "Competencias · 3 pendientes" }),
+    ).toBeInTheDocument();
+  });
+
+  it("sin violaciones jest-axe con la insignia del ítem", async () => {
+    badgeState.current = { competitions: 2, "competitions.imports": 3 };
+    const { container } = renderSidebar("coach", { initialPath: "/competitions" });
+
+    expect(await axe(container)).toHaveNoViolations();
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Feature 030 — contratos de disclosure preservados
 // ---------------------------------------------------------------------------
 
 describe("SidebarNav — auto-expand del área activa en deep link", () => {
-  it("un deep link a /competitions/unlinked expande Competencias y muestra sus items", () => {
-    renderSidebar("coach", { initialPath: "/competitions/unlinked" });
+  it("un deep link a /competitions/imports expande Competencias y muestra sus items", () => {
+    renderSidebar("coach", { initialPath: "/competitions/imports" });
 
     const chevron = screen.getByRole("button", { name: /Competencias/ });
     expect(chevron).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByRole("link", { name: "Válidas" })).toBeInTheDocument();
+    expect(getCompetitionsListItem()).toBeInTheDocument();
     expect(
-      screen.getByRole("link", { name: "Sin enlazar" }),
+      screen.getByRole("link", { name: "Temporada" }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Cargas e identidades" }),
+    ).toBeInTheDocument();
+    // Vocabulario retirado (feature 045, FR-001).
+    expect(screen.queryByRole("link", { name: "Válidas" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "Sin enlazar" }),
+    ).not.toBeInTheDocument();
   });
 
   it("un grupo no activo permanece colapsado (sus items no están en el DOM)", () => {

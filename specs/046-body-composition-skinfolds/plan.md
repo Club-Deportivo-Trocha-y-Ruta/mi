@@ -26,7 +26,7 @@ Attach an optional **skinfold set** (six sites, raw readings, per-site decline) 
 
 **Constraints**: Ley 1581 (no names with values in logs, errors, provider prompts); parents never receive numeric body-composition data on any surface (API, PDF, AI text); capture only for athletes aged ≥ 9 at the evaluation date; new sets at most every 90 days; thresholds (7 mm Σ4, 10 mm Σ6, 90 days, min age) as `Settings` values overridable by env; MySQL enum alteration must downgrade cleanly; SQLite test lane must not need the enum alter; production refuses `claude-cli`/Langfuse as before (unchanged)
 
-**Scale/Scope**: ~20 athletes, ≤ 4 sets per athlete per year, one coach measuring; 6 SVG diagrams; ~8 backend files touched + 1 migration + 1 router; ~15 frontend files; 4 golden-eval cases added
+**Scale/Scope**: ~20 athletes, ≤ 4 sets per athlete per year, one coach measuring; 6 SVG diagrams; ~8 backend files touched + 1 migration + 1 router; ~15 frontend files; 6 golden-eval cases added
 
 ## Constitution Check
 
@@ -77,7 +77,10 @@ backend/
 │   ├── schemas/growth.py               # GrowthSummaryOut.body_composition
 │   ├── services/body_composition.py    # readings → values, sums, Slaughter TC estimate, delta classifier, band classifier, interval rule, plausible ranges
 │   ├── services/reference_skinfolds.py # percentile context from growth_reference_lms (FUPRECOL) — thin wrapper over services/growth.py
-│   ├── services/growth_summary.py      # builds `body_composition` block (coach vs family projection)
+│   ├── services/growth_summary.py      # builds `body_composition` block (coach vs family projection, `family_band` capped at ámbar)
+│   ├── services/training/newsletter_builder.py  # PDF-only `body_composition` block in the snapshot (fixed copy, month of a counted set only), same pattern as `_build_anthropometry_block`
+│   ├── services/training/stage_log_builder.py   # carries the block into the Bitácora PDF context
+│   ├── services/ai/use_cases/athlete_monthly_newsletter_v2.py  # unchanged prompt; test that the AI context never contains `body_composition`
 │   ├── seed_growth_data.py             # FUPRECOL source entries
 │   ├── routers/body_composition.py     # PUT/DELETE …/anthropometry/{record_id}/skinfolds, GET …/body-composition, GET …/referral-note.pdf, GET /body-composition/field-guide.pdf
 │   ├── routers/anthropometry.py        # list: eager-load skinfolds, parent projection strips them
@@ -90,6 +93,7 @@ backend/
 ├── templates/documents/pdf/
 │   ├── skinfold_field_guide.html       # generic instructivo (coach/admin)
 │   ├── body_composition_referral_note.html
+│   ├── athlete_stage_log.html          # + fixed-copy "Composición corporal" block (family label, sentence, short notice)
 │   └── diagrams/skinfold_{site}.svg.jinja   # 6 partials, same landmark data as the React diagrams
 ├── evals/anthropometry_analyst/golden/case_013…016.json (+ baseline refresh)
 └── tests/
@@ -157,7 +161,7 @@ See [research.md](research.md). All Technical Context items are resolved; no `NE
 | W1 Backend core | migration, model, enums + FUPRECOL CSV/seed, `body_composition.py`, `reference_skinfolds.py`, settings, unit tests | — |
 | W2 API + summary + PDFs | router, schemas, `AnthropometryOut.skinfolds`, growth-summary block + projection, field guide + referral note templates and SVG partials, RBAC/interval/projection tests | W1 |
 | W3 Frontend capture | route, wizard, diagrams, readings lib, draft, MSW, vitest + axe, two-exit form, history actions | W2 contract (can start on MSW) |
-| W4 Frontend reading | coach card + detail dialog, family card + notice, bands vocabulary, download buttons, query invalidation fix, tests | W2, W3 |
+| W4 Frontend reading + newsletter | coach card + detail dialog, family card + notice, deterministic newsletter block (backend builder + PDF template), bands vocabulary, download buttons, query invalidation fix, tests | W2, W3 |
 | W5 AI | context leaf, allow-list, prompts v2, prechecks R13/R14, fallback, privacy property, golden cases + baseline refresh (needs AI key) | W1, W2 |
 | W6 Verification & docs | Playwright spec, `pytest -m mysql` (enum alter + downgrade), `data-privacy-guard` audit, `docs/21-body-composition/` as-built notes, `docs/implementation-status.md`, `docs/technical-notes.md` | all |
 

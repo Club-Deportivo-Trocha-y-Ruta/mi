@@ -1,5 +1,11 @@
 import { lazy, Suspense, useMemo } from "react";
-import { Navigate, Route, Routes, useParams } from "react-router-dom";
+import {
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useParams,
+} from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 
@@ -36,14 +42,17 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { RouteFallback } from "@/components/shared/RouteFallback";
 
-// Paso 3: página de competidores sin enlazar (wrapper sobre UnlinkedCompetitorsTab).
-const UnlinkedCompetitorsPage = lazy(() =>
-  import("@/routes/competitions/UnlinkedCompetitorsPage").then((m) => ({
-    default: m.UnlinkedCompetitorsPage,
+// «Cargas e identidades» (feature 045, US3): una sola bandeja con las secciones
+// Cargas, ¿Es la misma persona? y Sin enlazar. Reemplaza a las páginas sueltas
+// de carga histórica, revisión de identidad y competidores sin enlazar.
+const CompetitionImportsPage = lazy(() =>
+  import("@/routes/competitions/CompetitionImportsPage").then((m) => ({
+    default: m.CompetitionImportsPage,
   })),
 );
-// Panorama de temporada (única vista no duplicada del extinto hub IA cross-válida;
-// relocada fuera de competitions/insights/ en feature 029).
+// «Temporada» (única vista no duplicada del extinto hub IA cross-válida;
+// relocada fuera de competitions/insights/ en feature 029; ruta canónica
+// `/competitions/season/:year` desde la feature 045).
 const SeasonInsightsPage = lazy(
   () => import("@/routes/competitions/SeasonInsightsPage"),
 );
@@ -77,6 +86,12 @@ const AthleteDetailPage = lazy(() =>
 const AthleteFormPage = lazy(() =>
   import("@/routes/athletes/AthleteFormPage").then((m) => ({
     default: m.AthleteFormPage,
+  })),
+);
+// Feature 046 (T029) — captura de pliegues cutáneos de una evaluación.
+const SkinfoldCapturePage = lazy(() =>
+  import("@/routes/athletes/SkinfoldCapturePage").then((m) => ({
+    default: m.SkinfoldCapturePage,
   })),
 );
 
@@ -254,21 +269,6 @@ const CompetitionImportPage = lazy(() =>
     default: m.CompetitionImportPage,
   })),
 );
-// Revisión de identidad del histórico Copa Valle (feature 044, US4) — gate
-// del commit de una carga histórica (contracts/identity-review-api.md).
-const IdentityReviewPage = lazy(() =>
-  import("@/routes/competitions/history/IdentityReviewPage").then((m) => ({
-    default: m.IdentityReviewPage,
-  })),
-);
-// Tablero de carga histórica Copa Valle (feature 044, US5) — estado por
-// temporada/válida del mismo camino preview → dry-run → commit
-// (contracts/historical-load.md, contracts/ui-history.md §3).
-const HistoricalLoadPage = lazy(() =>
-  import("@/routes/competitions/history/HistoricalLoadPage").then((m) => ({
-    default: m.HistoricalLoadPage,
-  })),
-);
 
 // Strava Activity Sync (feature 025) — revisión de actividades, coach/admin only (lazy)
 const ActivityReviewPage = lazy(() =>
@@ -315,6 +315,14 @@ function ClubInsightsRedirect() {
   return (
     <Navigate to={`/competitions/${raceEventId}?tab=insights`} replace />
   );
+}
+
+/** Feature 045 — `/competitions/insights/season/:year` → `/competitions/season/:year`.
+ *  Conserva la búsqueda (`?analisis=…`) por si un enlace viejo la traía. */
+function SeasonRedirect() {
+  const { year } = useParams<{ year: string }>();
+  const { search } = useLocation();
+  return <Navigate to={`/competitions/season/${year}${search}`} replace />;
 }
 
 function RootRedirect() {
@@ -387,6 +395,16 @@ export default function App() {
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
               <Suspense fallback={<RouteFallback label="Cargando deportista..." />}>
                 <AthleteDetailPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/athletes/:id/anthropometry/:recordId/skinfolds"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <Suspense fallback={<RouteFallback label="Cargando medición de pliegues..." />}>
+                <SkinfoldCapturePage />
               </Suspense>
             </ProtectedRoute>
           }
@@ -782,12 +800,15 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+        {/* ── «Cargas e identidades» (feature 045, US3). Las tres rutas viejas
+              (carga histórica, revisión de identidad, sin enlazar) redirigen a
+              la sección que corresponde (contracts/ui-routes.md). ── */}
         <Route
-          path="/competitions/identity-review"
+          path="/competitions/imports"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense fallback={<RouteFallback label="Cargando revisión de identidad..." />}>
-                <IdentityReviewPage />
+              <Suspense fallback={<RouteFallback label="Cargando cargas e identidades..." />}>
+                <CompetitionImportsPage />
               </Suspense>
             </ProtectedRoute>
           }
@@ -795,11 +816,13 @@ export default function App() {
         <Route
           path="/competitions/history"
           element={
-            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense fallback={<RouteFallback label="Cargando carga histórica..." />}>
-                <HistoricalLoadPage />
-              </Suspense>
-            </ProtectedRoute>
+            <Navigate to="/competitions/imports?seccion=cargas" replace />
+          }
+        />
+        <Route
+          path="/competitions/identity-review"
+          element={
+            <Navigate to="/competitions/imports?seccion=identidades" replace />
           }
         />
         <Route
@@ -841,30 +864,32 @@ export default function App() {
               (confirmado en research.md R1) — solo bookmarks viejos. ── */}
         <Route path="/competitions/insights" element={<NotFoundPage />} />
 
-        {/* ── Competidores sin enlazar — reubicado desde el hub ── */}
+        {/* ── Competidores sin enlazar → sección de «Cargas e identidades» ── */}
         <Route
           path="/competitions/unlinked"
           element={
-            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense fallback={<RouteFallback label="Cargando competidores..." />}>
-                <UnlinkedCompetitorsPage />
-              </Suspense>
-            </ProtectedRoute>
+            <Navigate to="/competitions/imports?seccion=sin-enlazar" replace />
           }
         />
 
-        {/* ── Panorama de temporada — única vista no duplicada del extinto hub IA
+        {/* ── «Temporada» — única vista no duplicada del extinto hub IA
               cross-válida (feature 029). RBAC coach/admin (parent → redirect por
-              ProtectedRoute; backend devuelve 403). ── */}
+              ProtectedRoute; backend devuelve 403). Ruta canónica
+              `/competitions/season/:year` (feature 045); la vieja
+              `/competitions/insights/season/:year` redirige. ── */}
         <Route
-          path="/competitions/insights/season/:year"
+          path="/competitions/season/:year"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense fallback={<RouteFallback label="Cargando panorama de temporada..." />}>
+              <Suspense fallback={<RouteFallback label="Cargando temporada..." />}>
                 <SeasonInsightsPage />
               </Suspense>
             </ProtectedRoute>
           }
+        />
+        <Route
+          path="/competitions/insights/season/:year"
+          element={<SeasonRedirect />}
         />
 
         {/* ── Wave B (D7): /coach/race-analysis → redirect 301. El hub IA fue

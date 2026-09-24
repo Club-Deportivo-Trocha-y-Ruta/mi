@@ -858,7 +858,7 @@ describe("DashboardPage", () => {
         expect(screen.queryByText("Actividades sin enlazar")).not.toBeInTheDocument();
         expect(screen.queryByText("Boletines pendientes del mes")).not.toBeInTheDocument();
         expect(screen.queryByText("Consentimientos pendientes")).not.toBeInTheDocument();
-        expect(screen.queryByText("Insights IA desactualizados")).not.toBeInTheDocument();
+        expect(screen.queryByText("Análisis desactualizados")).not.toBeInTheDocument();
         expect(
           screen.queryByText("Todo al día — sin pendientes esta semana"),
         ).not.toBeInTheDocument();
@@ -1015,7 +1015,7 @@ describe("DashboardPage", () => {
         expect(screen.queryByText("Carga semanal")).not.toBeInTheDocument();
       });
       expect(screen.queryByText("Consentimientos pendientes")).not.toBeInTheDocument();
-      expect(screen.queryByText("Insights IA desactualizados")).not.toBeInTheDocument();
+      expect(screen.queryByText("Análisis desactualizados")).not.toBeInTheDocument();
       expect(screen.queryAllByRole("alert")).toHaveLength(0);
       expect(
         screen.queryByText(
@@ -1130,11 +1130,24 @@ function renderAdminRouteCheck(href: string) {
             </AdminRouteGuard>
           }
         />
+        {/* Feature 045: «Temporada» (`/competitions/season/:year`) y
+            «Cargas e identidades» (`/competitions/imports`) — ambas
+            allowedRoles=[coach, admin] en App.tsx; destinos de las filas
+            «Análisis por aprobar» / «Análisis desactualizados» e
+            «Identidades por decidir» de `PendingInbox`. */}
         <Route
-          path="/competitions/insights/season/:year"
+          path="/competitions/season/:year"
           element={
             <AdminRouteGuard allowed>
-              <div data-testid="target">Insights de temporada</div>
+              <div data-testid="target">Temporada</div>
+            </AdminRouteGuard>
+          }
+        />
+        <Route
+          path="/competitions/imports"
+          element={
+            <AdminRouteGuard allowed>
+              <div data-testid="target">Cargas e identidades</div>
             </AdminRouteGuard>
           }
         />
@@ -1333,7 +1346,11 @@ describe("DashboardPage — admin variant (US4, T049): 0 role dead-ends (SC-004)
       await screen.findByText("Actividades sin enlazar");
       await screen.findByText("Boletines pendientes del mes");
       await screen.findByText("Consentimientos pendientes");
-      await screen.findByText("Insights IA desactualizados");
+      await screen.findByText("Análisis desactualizados");
+      // Feature 045 (US5): las dos filas nuevas también deben ser destinos
+      // navegables para admin (0 callejones sin salida, SC-004).
+      await screen.findByText("Identidades por decidir");
+      await screen.findByText("Análisis por aprobar");
       await screen.findByText("Atleta Ficticio 10");
       const verTodas = await screen.findByText(/ver todas/i);
       // `/athletes` (the list) is coach-only in App.tsx, same as

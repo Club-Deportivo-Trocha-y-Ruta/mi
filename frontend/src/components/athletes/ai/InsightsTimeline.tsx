@@ -456,7 +456,7 @@ export function InsightsTimeline({
           </p>
           <p className="mt-1 text-xs text-mid-gray">
             {mode === "coach"
-              ? 'Lanza un análisis desde la pestaña "Analizar con IA" para crear el primero.'
+              ? 'Lanza el primero con «Analizar con IA», más abajo en esta vista.'
               : "Cuando tu entrenador apruebe un análisis, lo verás aquí."}
           </p>
         </div>
@@ -775,8 +775,8 @@ function InsightCard({
               {insight.headline
                 ? insight.headline
                 : insight.prompt_version === PROMPT_VERSION_V2
-                  ? getV2Preview(insight.summary_text)
-                  : insight.summary_text}
+                  ? getV2Preview(insight.summary_text ?? "")
+                  : (insight.summary_text ?? "")}
             </p>
           </div>
           <ChevronRight
@@ -933,7 +933,11 @@ function InsightDetailDrawer({
     }
     const insight = detailQuery.data;
     const isV2 = insight.prompt_version === PROMPT_VERSION_V2;
-    const sections = isV2 ? parseV2Sections(insight.summary_text) : null;
+    // Feature 045: `summary_text`/`recommendations` no llegan a un padre en
+    // filas v3 (la tarjeta estructurada lee `structured`); se leen tolerando
+    // su ausencia.
+    const sections = isV2 ? parseV2Sections(insight.summary_text ?? "") : null;
+    const recommendations = insight.recommendations ?? [];
     const progression = extractProgressionAssessment(insight);
     const isFallback = insight.is_fallback === true;
 
@@ -1000,10 +1004,10 @@ function InsightDetailDrawer({
         ) : isV2 && sections ? (
           <InsightV2Sections sections={sections} mode={mode} />
         ) : (
-          <MarkdownReportViewer markdown={insight.summary_text} />
+          <MarkdownReportViewer markdown={insight.summary_text ?? ""} />
         )}
 
-        {insight.recommendations.length > 0 && (
+        {recommendations.length > 0 && (
           <section
             aria-label="Recomendaciones"
             className="rounded-card bg-surface-raised p-4 shadow-card ring-1 ring-hairline space-y-2"
@@ -1014,7 +1018,7 @@ function InsightDetailDrawer({
               Recomendaciones
             </h3>
             <ul className="space-y-2 text-sm text-charcoal">
-              {insight.recommendations.map((rec, idx) => {
+              {recommendations.map((rec, idx) => {
                 const text =
                   typeof rec === "object" && rec !== null && "text" in rec
                     ? String((rec as { text: unknown }).text ?? "")

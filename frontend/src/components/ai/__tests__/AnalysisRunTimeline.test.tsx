@@ -173,9 +173,9 @@ describe("AnalysisRunTimeline", () => {
       );
 
       // Header del wizard también refleja la pausa.
-      expect(
-        screen.getByText(/Esperando tu aprobación/i),
-      ).toBeInTheDocument();
+      expect(screen.getByTestId("timeline-headline")).toHaveTextContent(
+        /Esperando tu aprobación/i,
+      );
     },
   );
 
@@ -413,7 +413,9 @@ describe("AnalysisRunTimeline", () => {
         ),
       );
       // El vocabulario de ingeniería no debe aparecer en la vista por defecto.
-      expect(screen.queryByText("Anonimizar datos")).not.toBeInTheDocument();
+      expect(
+        screen.queryByText("Protegiendo la identidad de los deportistas"),
+      ).not.toBeInTheDocument();
     });
 
     it("expande el detalle técnico al pulsar el toggle", async () => {
@@ -427,10 +429,36 @@ describe("AnalysisRunTimeline", () => {
       await user.click(toggle);
 
       expect(await screen.findByTestId("timeline-nodes-list")).toBeInTheDocument();
-      expect(screen.getByText("Anonimizar datos")).toBeInTheDocument();
+      expect(
+        screen.getByText("Protegiendo la identidad de los deportistas"),
+      ).toBeInTheDocument();
       expect(
         screen.getByTestId("timeline-detail-toggle"),
       ).toHaveAttribute("aria-expanded", "true");
+    });
+
+    it("el detalle expandido usa lenguaje de entrenador, sin nombres internos de etapa (FR-004)", async () => {
+      const user = userEvent.setup();
+      mockRunning("analyst_agent");
+      wrap(<AnalysisRunTimeline runId="r1" variant="compact" collapsible />);
+
+      await user.click(await screen.findByTestId("timeline-detail-toggle"));
+
+      const list = await screen.findByTestId("timeline-nodes-list");
+      for (const internal of [
+        "Validar input",
+        "Anonimizar datos",
+        "Rehidratar nombres",
+        "Agente analista",
+        "Agente crítico",
+        "HITL",
+        "insight",
+      ]) {
+        expect(list).not.toHaveTextContent(internal);
+      }
+      expect(list).toHaveTextContent("Redactando el análisis");
+      expect(list).toHaveTextContent("Revisando la calidad del análisis");
+      expect(list).toHaveTextContent("Esperando tu aprobación");
     });
 
     it("sin violaciones de accesibilidad en estado colapsado", async () => {

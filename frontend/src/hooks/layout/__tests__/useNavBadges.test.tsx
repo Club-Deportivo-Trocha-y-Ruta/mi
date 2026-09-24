@@ -12,9 +12,15 @@ import { renderHook } from "@testing-library/react";
 
 import type { RaceEventListItem } from "@/types/raceEvents.types";
 import type { NewsletterStatusSummaryItem } from "@/hooks/training/useNewsletterStatusSummary";
+import type { CoachSummary } from "@/types/dashboard.types";
 
 const mockUseRaceEventsList = vi.hoisted(() => vi.fn());
 const mockUseNewsletterStatusSummary = vi.hoisted(() => vi.fn());
+const mockUseCoachSummary = vi.hoisted(() => vi.fn());
+
+vi.mock("@/hooks/dashboard/useCoachSummary", () => ({
+  useCoachSummary: mockUseCoachSummary,
+}));
 
 vi.mock("@/hooks/race/useRaceEvents", () => ({
   useRaceEventsList: mockUseRaceEventsList,
@@ -80,6 +86,28 @@ function mockNewsletters(items: NewsletterStatusSummaryItem[]) {
   });
 }
 
+function mockCoachSummary(
+  counts: Partial<
+    Pick<
+      CoachSummary,
+      | "identity_decisions_pending"
+      | "imports_in_progress"
+      | "unlinked_competitors_pending"
+    >
+  >,
+) {
+  mockUseCoachSummary.mockReturnValue({
+    data: {
+      generated_at: "2026-09-23T12:00:00Z",
+      consents_pending: 0,
+      insights_stale: 0,
+      weekly_load: null,
+      ...counts,
+    } satisfies CoachSummary,
+    isSuccess: true,
+  });
+}
+
 /** Fuente aún cargando o caída: sin `data` y sin éxito. */
 const NOT_READY = { data: undefined, isSuccess: false } as const;
 
@@ -87,6 +115,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockUseRaceEventsList.mockReturnValue(NOT_READY);
   mockUseNewsletterStatusSummary.mockReturnValue(NOT_READY);
+  mockUseCoachSummary.mockReturnValue(NOT_READY);
 });
 
 // ---------------------------------------------------------------------------
@@ -194,5 +223,123 @@ describe("useNavBadges — visibilidad por rol", () => {
     const { result } = renderHook(() => useNavBadges("coach"));
 
     expect(result.current).toEqual({ families: 2 });
+  });
+});
+
+describe("useNavBadges — «Cargas e identidades» (feature 045)", () => {
+  it("suma decisiones de identidad + cargas en curso + competidores sin enlazar, en la clave del ítem (FR-033)", () => {
+    mockCoachSummary({
+      identity_decisions_pending: 3,
+      imports_in_progress: 2,
+      unlinked_competitors_pending: 4,
+    });
+
+    const { result } = renderHook(() => useNavBadges("coach"));
+
+    expect(result.current["competitions.imports"]).toBe(9);
+    // El conteo de resultados por importar del área no cambia de fuente.
+    expect(result.current.competitions).toBeUndefined();
+  });
+
+  it("un backend sin `unlinked_competitors_pending` (campo ausente) suma sólo los otros dos", () => {
+    mockCoachSummary({ identity_decisions_pending: 3, imports_in_progress: 2 });
+
+    const { result } = renderHook(() => useNavBadges("coach"));
+
+    expect(result.current["competitions.imports"]).toBe(5);
+  });
+
+  it("`unlinked_competitors_pending: null` (agregado caído) no cuenta; los otros sí", () => {
+    mockCoachSummary({
+      identity_decisions_pending: 1,
+      imports_in_progress: 1,
+      unlinked_competitors_pending: null,
+    });
+
+    const { result } = renderHook(() => useNavBadges("coach"));
+
+    expect(result.current["competitions.imports"]).toBe(2);
+  });
+
+  it("los competidores sin enlazar bastan por sí solos para mostrar la insignia", () => {
+    mockCoachSummary({
+      identity_decisions_pending: 0,
+      imports_in_progress: 0,
+      unlinked_competitors_pending: 6,
+    });
+
+    const { result } = renderHook(() => useNavBadges("coach"));
+
+    expect(result.current["competitions.imports"]).toBe(6);
+  });
+
+  it("competidores sin enlazar en cero + resto en cero → sin insignia", () => {
+    mockCoachSummary({
+      identity_decisions_pending: 0,
+      imports_in_progress: 0,
+      unlinked_competitors_pending: 0,
+    });
+
+    const { result } = renderHook(() => useNavBadges("coach"));
+
+    expect(result.current["competitions.imports"]).toBeUndefined();
+  });
+
+  it("sólo `unlinked_competitors_pending` disponible (los otros null) → esa cifra", () => {
+    mockCoachSummary({
+      identity_decisions_pending: null,
+      imports_in_progress: null,
+      unlinked_competitors_pending: 2,
+    });
+
+    const { result } = renderHook(() => useNavBadges("coach"));
+
+    expect(result.current["competitions.imports"]).toBe(2);
+  });
+
+  it("un sumando null (agregado caído) no cuenta; el otro sí", () => {
+    mockCoachSummary({ identity_decisions_pending: null, imports_in_progress: 2 });
+
+    const { result } = renderHook(() => useNavBadges("coach"));
+
+    expect(result.current["competitions.imports"]).toBe(2);
+  });
+
+  it("un backend previo a la 045 (claves ausentes) no produce insignia", () => {
+    mockCoachSummary({});
+
+    const { result } = renderHook(() => useNavBadges("coach"));
+
+    expect(result.current["competitions.imports"]).toBeUndefined();
+  });
+
+  it("ambos sumandos null → sin insignia (nunca un '0')", () => {
+    mockCoachSummary({ identity_decisions_pending: null, imports_in_progress: null });
+
+    const { result } = renderHook(() => useNavBadges("coach"));
+
+    expect(result.current["competitions.imports"]).toBeUndefined();
+  });
+
+  it("cero + cero → sin insignia", () => {
+    mockCoachSummary({ identity_decisions_pending: 0, imports_in_progress: 0 });
+
+    const { result } = renderHook(() => useNavBadges("coach"));
+
+    expect(result.current["competitions.imports"]).toBeUndefined();
+  });
+
+  it("mientras el resumen carga o falla no hay insignia", () => {
+    const { result } = renderHook(() => useNavBadges("coach"));
+
+    expect(result.current["competitions.imports"]).toBeUndefined();
+  });
+
+  it("admin también la recibe (ve el área Competencias)", () => {
+    mockCoachSummary({ identity_decisions_pending: 1, imports_in_progress: 0 });
+
+    const { result } = renderHook(() => useNavBadges("admin"));
+
+    expect(result.current["competitions.imports"]).toBe(1);
   });
 });

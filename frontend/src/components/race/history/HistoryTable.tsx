@@ -47,6 +47,7 @@
 import { Link } from "react-router-dom";
 
 import { cn } from "@/lib/utils";
+import { raceEventHref } from "@/lib/raceEventHref";
 import {
   formatFieldSize,
   formatGapPct,
@@ -130,16 +131,6 @@ function groupHeadingLabel(group: TableGroup): string {
  * válida — la fila nunca oculta cuál era su etiqueta real. */
 function rowCategoryNote(point: RaceHistoryPoint, headingLabel: string): string | null {
   return point.category_label !== headingLabel ? point.category_label : null;
-}
-
-/** Ruta de la competencia asociada a una fila — coach va al detalle
- * interno, familia a su vista de solo lectura. Mismo par de rutas que
- * `CompetitionsListPage` (`/competitions/:id`) y `ParentEventDetailPage`
- * (`/parents/competitions/:raceEventId`). */
-function raceEventHref(audience: "coach" | "family", eventId: number): string {
-  return audience === "family"
-    ? `/parents/competitions/${eventId}`
-    : `/competitions/${eventId}`;
 }
 
 function positionCell(point: RaceHistoryPoint): string {
@@ -359,9 +350,10 @@ export function HistoryTable({
                     <tr key={p.event_id} className="text-charcoal">
                       <td className="px-3 py-1.5">{formatRaceDateShort(p.event_date)}</td>
                       <td className="px-3 py-1.5">
+                        {/* min-h-12: 48px táctiles también en tablet (constitución III). */}
                         <Link
                           to={raceEventHref(audience, p.event_id)}
-                          className="font-medium text-charcoal underline-offset-2 hover:underline"
+                          className="inline-flex min-h-12 items-center font-medium text-charcoal underline-offset-2 hover:underline"
                         >
                           {p.label}
                         </Link>

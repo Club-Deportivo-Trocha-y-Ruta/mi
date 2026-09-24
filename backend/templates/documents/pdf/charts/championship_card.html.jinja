@@ -3,14 +3,24 @@
 
   Un campeonato reúne un pelotón propio, distinto al de las válidas de copa
   (spec 014/023) — por eso se lee como una tarjeta de estadísticas puntuales
-  (Posición / Pelotón / Gap al P1 / Percentil) en vez de un punto más sobre
-  la línea de evolución de la copa (research.md D3/D5, contracts/
-  newsletter-context.md §Card partial).
+  (Posición / Parrilla / Brecha vs. mediana / Percentil — glosario 045) en
+  vez de un punto más sobre la línea de evolución de la copa (research.md
+  D3/D5, contracts/newsletter-context.md §Card partial).
 
   Entrada: un dict ``ChampionshipReading`` — ver
   ``newsletter_builder._build_race_block`` → ``championships[]``:
     label, short_label, level, location, event_date, category_label,
-    finished, position, field_size, gap_pct, percentile.
+    finished, position, field_size, gap_to_median_pct, percentile.
+
+  Feature 045 (FR-022): la tarjeta llega a la familia, así que muestra la
+  brecha contra la mediana de la categoría y NUNCA el gap al ganador — aunque
+  el dict siga trayendo ``gap_pct`` para el coach, esta plantilla no lo lee.
+  ``gap_to_median_pct`` ausente (snapshot anterior a la 045) o ``None``
+  (parrilla bajo el mínimo del motor) → «sin dato».
+
+  Feature 045 (FR-020, US2/AC3): una estadística sin valor se rotula siempre
+  «sin dato» — el mismo texto que la pestaña del atleta —, nunca un guion, que
+  la familia puede leer como cero o como error de impresión.
 
   ``finished`` en ``false`` (DNF/DSQ) reemplaza las cuatro estadísticas por
   la nota "No completó la prueba." — no tiene sentido mostrar celdas vacías
@@ -34,10 +44,10 @@
   <div style="display: table; width: 100%; table-layout: fixed;">
     <div style="display: table-cell; width: 25%; text-align: center; padding: 2pt;">
       <p style="margin: 0; font-size: 8pt; color: #6b7280;">Posición</p>
-      <p style="margin: 2pt 0 0 0; font-size: 10pt; font-weight: 700; color: #374151;">{% if reading.get('position') is not none %}P{{ reading.get('position') }}{% else %}—{% endif %}</p>
+      <p style="margin: 2pt 0 0 0; font-size: 10pt; font-weight: 700; color: #374151;">{% if reading.get('position') is not none %}P{{ reading.get('position') }}{% else %}sin dato{% endif %}</p>
     </div>
     <div style="display: table-cell; width: 25%; text-align: center; padding: 2pt;">
-      <p style="margin: 0; font-size: 8pt; color: #6b7280;">Pelotón</p>
+      <p style="margin: 0; font-size: 8pt; color: #6b7280;">Parrilla</p>
       <p style="margin: 2pt 0 0 0; font-size: 10pt; font-weight: 700; color: #374151;">
         {%- if reading.get('field_size') is not none -%}
           {%- if reading.get('category_label') -%}
@@ -45,12 +55,12 @@
           {%- else -%}
             {{ reading.get('field_size') }} corredores
           {%- endif -%}
-        {%- else -%}—{%- endif -%}
+        {%- else -%}sin dato{%- endif -%}
       </p>
     </div>
     <div style="display: table-cell; width: 25%; text-align: center; padding: 2pt;">
-      <p style="margin: 0; font-size: 8pt; color: #6b7280;">Gap al P1</p>
-      <p style="margin: 2pt 0 0 0; font-size: 10pt; font-weight: 700; color: #374151;">{% if reading.get('gap_pct') is not none %}{{ reading.get('gap_pct') | num_es(1, sign=True) }} %{% else %}—{% endif %}</p>
+      <p style="margin: 0; font-size: 8pt; color: #6b7280;">Brecha vs. mediana</p>
+      <p style="margin: 2pt 0 0 0; font-size: 10pt; font-weight: 700; color: #374151;">{% if reading.get('gap_to_median_pct') is not none %}{{ reading.get('gap_to_median_pct') | num_es(1, sign=True) }} %{% else %}sin dato{% endif %}</p>
     </div>
     <div style="display: table-cell; width: 25%; text-align: center; padding: 2pt;">
       <p style="margin: 0; font-size: 8pt; color: #6b7280;">Percentil</p>
@@ -67,7 +77,7 @@
       #}
       {% set _pct = reading.get('percentile') %}
       {% set _field = reading.get('field_size') %}
-      <p style="margin: 2pt 0 0 0; font-size: 10pt; font-weight: 700; color: #374151;">{% if _pct is not none and _field is not none and _field >= 5 %}{{ "%.0f"|format(_pct) }}{% else %}—{% endif %}</p>
+      <p style="margin: 2pt 0 0 0; font-size: 10pt; font-weight: 700; color: #374151;">{% if _pct is not none and _field is not none and _field >= 5 %}{{ "%.0f"|format(_pct) }}{% else %}sin dato{% endif %}</p>
     </div>
   </div>
   {%- endif %}

@@ -127,13 +127,32 @@ export type RaceEventStatus = "scheduled" | "completed" | "cancelled";
  */
 export type RaceEventPriority = "A" | "B" | "C" | "CD";
 
-/** Etiquetas de la prioridad para chips/badges. */
+/**
+ * Etiquetas de la prioridad para chips/badges — ÚNICO mapa (feature 045,
+ * FR-003): los códigos A/B/C/CD nunca se muestran crudos. El significado sale
+ * de la dosificación que dispara cada nivel (ver `RaceEventPriority` en el
+ * backend): A = tapering completo, B = mini-tapering, C = diagnóstica sin
+ * tapering, CD = nivel campeonato.
+ */
 export const RACE_EVENT_PRIORITY_LABELS: Record<RaceEventPriority, string> = {
-  A: "A",
-  B: "B",
-  C: "C",
-  CD: "CD",
+  A: "A · Objetivo principal",
+  B: "B · Secundaria",
+  C: "C · Diagnóstica",
+  CD: "Campeonato",
 };
+
+/**
+ * Etiqueta de la fila «Prioridad» / del chip de tipo de un evento. Un
+ * campeonato siempre es `CD` (lo fuerza el backend), sin importar
+ * `priority`; una válida de copa sin prioridad devuelve `null`.
+ */
+export function raceEventPriorityLabel(
+  priority: RaceEventPriority | null | undefined,
+  isChampionship: boolean,
+): string | null {
+  if (isChampionship) return RACE_EVENT_PRIORITY_LABELS.CD;
+  return priority ? RACE_EVENT_PRIORITY_LABELS[priority] : null;
+}
 
 /**
  * Payload de creación de un evento de carrera.

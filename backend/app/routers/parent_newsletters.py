@@ -216,6 +216,7 @@ async def download_parent_newsletter_pdf(
     # (`_to_detail` arriba) — ambos pasan por to_parent_dto(), nunca por el
     # stage_log_json crudo.
     from app.services.notification.athlete_newsletter_pdf import generate_stage_log_pdf
+    from app.services.training.stage_log_builder import body_composition_annex
 
     snapshot = nl.metrics_snapshot or {}
     pdf_only_blocks = snapshot.get("pdf_only_blocks", {})
@@ -223,6 +224,11 @@ async def download_parent_newsletter_pdf(
     stage_log = StageLog.model_validate(nl.stage_log_json)
     dto = to_parent_dto(stage_log, nl.hidden_blocks)
 
+    # Feature 045 (FR-022): ``race_results``/``charts_context`` salen del
+    # snapshot tal como se persistieron (con la brecha a la ganadora/podio
+    # para el coach). ``generate_stage_log_pdf`` los pasa por la política de
+    # audiencia de familia antes de armar el contexto de la plantilla: la
+    # limpieza vive en el módulo de render para cubrir a todos sus llamadores.
     doc, sha256 = await generate_stage_log_pdf(
         generator=document_generator,
         athlete_first_name=athlete.first_name,
@@ -235,6 +241,7 @@ async def download_parent_newsletter_pdf(
         charts_context=pdf_only_blocks.get("charts_context"),
         percentile_curves=pdf_only_blocks.get("percentile_curves"),
         race_results=email_blocks.get("race_results"),
+        body_composition=body_composition_annex(snapshot),
     )
 
     if nl.pdf_sha256 != sha256:

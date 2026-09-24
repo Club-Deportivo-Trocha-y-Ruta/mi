@@ -177,6 +177,9 @@ function coachSummaryResolved(overrides: Partial<CoachSummary> = {}): CoachSumma
       consents_pending: 5,
       insights_stale: 3,
       weekly_load: null,
+      identity_decisions_pending: 4,
+      imports_in_progress: 1,
+      analyses_awaiting_approval: 2,
       ...overrides,
     },
     error: null,
@@ -205,7 +208,9 @@ const LABELS = {
   activities: "Actividades sin enlazar",
   newsletters: "Boletines pendientes del mes",
   consents: "Consentimientos pendientes",
-  insights: "Insights IA desactualizados",
+  insights: "Análisis desactualizados",
+  identities: "Identidades por decidir",
+  analyses: "Análisis por aprobar",
 } as const;
 
 describe("PendingInbox", () => {
@@ -418,8 +423,8 @@ describe("PendingInbox", () => {
     });
   });
 
-  describe('fila "Insights IA desactualizados" (T036)', () => {
-    it("poblada: usa insights_stale y enlaza a /competitions/insights/season/{temporada actual}", () => {
+  describe('fila "Análisis desactualizados" (T036)', () => {
+    it("poblada: usa insights_stale y enlaza a «Temporada» con ?analisis=desactualizados (feature 045)", () => {
       setAllResolved();
       mockUseCoachSummary.mockReturnValue(coachSummaryResolved({ insights_stale: 4 }));
 
@@ -428,7 +433,7 @@ describe("PendingInbox", () => {
       const link = screen.getByText(LABELS.insights).closest("a");
       expect(link).toHaveAttribute(
         "href",
-        `/competitions/insights/season/${currentSeason()}`,
+        `/competitions/season/${currentSeason()}?analisis=desactualizados`,
       );
       expect(link).toHaveTextContent("4");
     });
@@ -445,6 +450,102 @@ describe("PendingInbox", () => {
       expect(screen.getByText(LABELS.results)).toBeInTheDocument();
       expect(screen.getByText(LABELS.activities)).toBeInTheDocument();
       expect(screen.getByText(LABELS.newsletters)).toBeInTheDocument();
+    });
+  });
+
+  describe('filas de la feature 045 — «Identidades por decidir» y «Análisis por aprobar» (T056)', () => {
+    it("«Identidades por decidir»: poblada con identity_decisions_pending y enlaza a «Cargas e identidades»", () => {
+      setAllResolved();
+      mockUseCoachSummary.mockReturnValue(
+        coachSummaryResolved({ identity_decisions_pending: 6 }),
+      );
+
+      renderInbox();
+
+      const link = screen.getByText(LABELS.identities).closest("a");
+      expect(link).toHaveAttribute("href", "/competitions/imports?seccion=identidades");
+      expect(link).toHaveTextContent("6");
+      expect(link?.className).toMatch(/min-h-12/);
+    });
+
+    it("«Análisis por aprobar»: poblada con analyses_awaiting_approval y enlaza a «Temporada» ?analisis=por-aprobar", () => {
+      setAllResolved();
+      mockUseCoachSummary.mockReturnValue(
+        coachSummaryResolved({ analyses_awaiting_approval: 3 }),
+      );
+
+      renderInbox();
+
+      const link = screen.getByText(LABELS.analyses).closest("a");
+      expect(link).toHaveAttribute(
+        "href",
+        `/competitions/season/${currentSeason()}?analisis=por-aprobar`,
+      );
+      expect(link).toHaveTextContent("3");
+    });
+
+    it("cada fila nueva se omite por completo cuando su conteo es null (agregado caído), sin tocar las demás", () => {
+      setAllResolved();
+      mockUseCoachSummary.mockReturnValue(
+        coachSummaryResolved({
+          identity_decisions_pending: null,
+          analyses_awaiting_approval: null,
+        }),
+      );
+
+      renderInbox();
+
+      expect(screen.queryByText(LABELS.identities)).not.toBeInTheDocument();
+      expect(screen.queryByText(LABELS.analyses)).not.toBeInTheDocument();
+      // Las filas de siempre, con sus agregados sanos, siguen.
+      expect(screen.getByText(LABELS.consents)).toBeInTheDocument();
+      expect(screen.getByText(LABELS.insights)).toBeInTheDocument();
+      expect(screen.getByText(LABELS.results)).toBeInTheDocument();
+    });
+
+    it("un backend previo a la 045 (claves ausentes) omite las filas nuevas en vez de mostrar 0 o NaN", () => {
+      setAllResolved();
+      const legacy = coachSummaryResolved();
+      // El payload previo a la 045 no trae estas claves.
+      delete (legacy.data as Partial<CoachSummary>).identity_decisions_pending;
+      delete (legacy.data as Partial<CoachSummary>).analyses_awaiting_approval;
+      mockUseCoachSummary.mockReturnValue(legacy);
+
+      renderInbox();
+
+      expect(screen.queryByText(LABELS.identities)).not.toBeInTheDocument();
+      expect(screen.queryByText(LABELS.analyses)).not.toBeInTheDocument();
+      expect(screen.getByText(LABELS.consents)).toBeInTheDocument();
+    });
+
+    it("mientras el resumen carga, las filas nuevas no muestran etiqueta (esqueleto)", () => {
+      setAllResolved();
+      mockUseCoachSummary.mockReturnValue({
+        isLoading: true,
+        isError: false,
+        data: undefined,
+        error: null,
+        refetch: vi.fn(),
+      } as unknown as CoachSummaryQueryResult);
+
+      renderInbox();
+
+      expect(screen.queryByText(LABELS.identities)).not.toBeInTheDocument();
+      expect(screen.queryByText(LABELS.analyses)).not.toBeInTheDocument();
+    });
+
+    it("las filas nuevas siguen el orden fijo: identidades tras «por importar», análisis antes de «desactualizados»", () => {
+      setAllResolved();
+
+      renderInbox();
+
+      const order = screen
+        .getAllByRole("link")
+        .map((a) => a.textContent ?? "");
+      const idx = (label: string) => order.findIndex((text) => text.includes(label));
+      expect(idx(LABELS.results)).toBeLessThan(idx(LABELS.identities));
+      expect(idx(LABELS.identities)).toBeLessThan(idx(LABELS.activities));
+      expect(idx(LABELS.analyses)).toBeLessThan(idx(LABELS.insights));
     });
   });
 
@@ -479,11 +580,16 @@ describe("PendingInbox", () => {
         }),
       );
       mockUseCoachSummary.mockReturnValue(
-        coachSummaryResolved({ consents_pending: 0, insights_stale: 0 }),
+        coachSummaryResolved({
+          consents_pending: 0,
+          insights_stale: 0,
+          identity_decisions_pending: 0,
+          analyses_awaiting_approval: 0,
+        }),
       );
     }
 
-    it("se muestra cuando las 5 filas resueltas reportan count === 0", () => {
+    it("se muestra cuando todas las filas resueltas reportan count === 0", () => {
       setAllResolvedZero();
 
       renderInbox();
@@ -498,6 +604,8 @@ describe("PendingInbox", () => {
       expect(screen.queryByText(LABELS.newsletters)).not.toBeInTheDocument();
       expect(screen.queryByText(LABELS.consents)).not.toBeInTheDocument();
       expect(screen.queryByText(LABELS.insights)).not.toBeInTheDocument();
+      expect(screen.queryByText(LABELS.identities)).not.toBeInTheDocument();
+      expect(screen.queryByText(LABELS.analyses)).not.toBeInTheDocument();
     });
 
     it("NO se muestra mientras alguna fila sigue en undefined/cargando", () => {
@@ -541,7 +649,7 @@ describe("PendingInbox", () => {
         getActivities({ linked: "false", page: 1, page_size: 1 }),
       ).rejects.toBeTruthy();
 
-      // "Consentimientos pendientes" + "Insights IA desactualizados"
+      // "Consentimientos pendientes" + "Análisis desactualizados"
       // comparten la única instancia de `useCoachSummary()` → ambas caen
       // juntas cuando ese agregado falla.
       mockUseCoachSummary.mockReturnValue({

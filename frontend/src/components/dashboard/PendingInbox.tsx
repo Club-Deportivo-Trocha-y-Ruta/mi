@@ -3,9 +3,10 @@
  * coach (feature 031, US2, `contracts/home-tiles.md` §"Row 2 — Pending-work
  * inbox").
  *
- * Shell únicamente (T032): fija el orden de las 5 filas (resultados por
- * importar → actividades sin enlazar → boletines pendientes →
- * consentimientos pendientes → insights IA desactualizados) y el manejo
+ * Shell únicamente (T032): fija el orden de las filas (resultados por
+ * importar → identidades por decidir → actividades sin enlazar → boletines
+ * pendientes → consentimientos pendientes → análisis por aprobar → insights
+ * IA desactualizados; las dos filas de la feature 045 se explican abajo) y el manejo
  * genérico de `RowState` (`data-model.md` §2):
  *   - `undefined` → la fuente todavía está cargando → fila-esqueleto.
  *   - `null`      → la fuente no está disponible → la fila se **omite**
@@ -24,8 +25,15 @@
  *   - T035 "Boletines pendientes del mes" — 028's
  *     `useNewsletterStatusSummary(currentYear, currentMonth)`, contando
  *     ítems con `status !== "sent"`.
- *   - T036 "Consentimientos pendientes" / "Insights IA desactualizados" —
+ *   - T036 "Consentimientos pendientes" / "Análisis desactualizados" —
  *     `useCoachSummary().consents_pending` / `.insights_stale`.
+ * Feature 045 (US5, T056) suma dos filas de `useCoachSummary()` y repunta la
+ * de insights: «Identidades por decidir» → «Cargas e identidades»
+ * (`/competitions/imports?seccion=identidades`), «Análisis por aprobar» →
+ * «Temporada» (`?analisis=por-aprobar`) y «Análisis desactualizados» →
+ * «Temporada» (`?analisis=desactualizados`). Cada destino lista exactamente los
+ * ítems contados (SC-005). Un conteo `null` — o ausente, con un backend previo
+ * a la 045 — omite la fila, nunca la muestra como cero.
  * T037 (este archivo) agrega el estado positivo "todo al día": se muestra
  * únicamente cuando toda fila que **ya resolvió** (no `undefined`) reporta
  * `count === 0` y al menos una fila resolvió de verdad — nunca mientras
@@ -41,11 +49,13 @@ import type { LucideIcon } from "lucide-react";
 import {
   CheckCircle2,
   ChevronRight,
+  ClipboardCheck,
   FileClock,
   Link2Off,
   Mail,
   ShieldAlert,
   Sparkles,
+  UserRoundSearch,
 } from "lucide-react";
 
 import { EmptyState } from "@/components/shared/EmptyState";
@@ -154,22 +164,49 @@ export function PendingInbox() {
     : coachSummaryQuery.isError || coachSummaryQuery.data?.consents_pending == null
       ? null
       : { count: coachSummaryQuery.data.consents_pending, href: "/athletes" };
+  const season = currentSeason();
   const insightsStaleState: RowState = coachSummaryQuery.isLoading
     ? undefined
     : coachSummaryQuery.isError || coachSummaryQuery.data?.insights_stale == null
       ? null
       : {
           count: coachSummaryQuery.data.insights_stale,
-          href: `/competitions/insights/season/${currentSeason()}`,
+          href: `/competitions/season/${season}?analisis=desactualizados`,
         };
 
-  // Orden fijo (contracts/home-tiles.md "Row 2").
+  // Feature 045 (US5, T056) — mismos agregados; `== null` cubre tanto el
+  // `null` explícito (sub-agregado caído) como la clave ausente (backend
+  // previo a la 045): en ambos casos la fila se omite.
+  const identityDecisionsState: RowState = coachSummaryQuery.isLoading
+    ? undefined
+    : coachSummaryQuery.isError || coachSummaryQuery.data?.identity_decisions_pending == null
+      ? null
+      : {
+          count: coachSummaryQuery.data.identity_decisions_pending,
+          href: "/competitions/imports?seccion=identidades",
+        };
+  const analysesAwaitingState: RowState = coachSummaryQuery.isLoading
+    ? undefined
+    : coachSummaryQuery.isError || coachSummaryQuery.data?.analyses_awaiting_approval == null
+      ? null
+      : {
+          count: coachSummaryQuery.data.analyses_awaiting_approval,
+          href: `/competitions/season/${season}?analisis=por-aprobar`,
+        };
+
+  // Orden fijo (contracts/home-tiles.md "Row 2" + feature 045).
   const rows: PendingRowSpec[] = [
     {
       id: "results-to-import",
       icon: FileClock,
       label: "Resultados por importar",
       state: resultsToImportState,
+    },
+    {
+      id: "identity-decisions",
+      icon: UserRoundSearch,
+      label: "Identidades por decidir",
+      state: identityDecisionsState,
     },
     {
       id: "activities-unlinked",
@@ -190,9 +227,15 @@ export function PendingInbox() {
       state: consentsPendingState,
     },
     {
+      id: "analyses-awaiting-approval",
+      icon: ClipboardCheck,
+      label: "Análisis por aprobar",
+      state: analysesAwaitingState,
+    },
+    {
       id: "insights-stale",
       icon: Sparkles,
-      label: "Insights IA desactualizados",
+      label: "Análisis desactualizados",
       state: insightsStaleState,
     },
   ];

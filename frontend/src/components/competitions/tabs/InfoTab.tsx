@@ -33,7 +33,7 @@ import { Pencil } from "lucide-react";
 import { ActorChip } from "@/components/audit/ActorChip";
 import { EditSeriesShortNameDialog } from "@/components/competitions/EditSeriesShortNameDialog";
 import {
-  RACE_EVENT_PRIORITY_LABELS,
+  raceEventPriorityLabel,
   type RaceEventRead,
   type RaceEventStatus,
 } from "@/types/raceEvents.types";
@@ -115,9 +115,11 @@ export function InfoTab({
   seriesShortName,
 }: InfoTabProps) {
   const [editShortNameOpen, setEditShortNameOpen] = useState(false);
-  const priorityLabel = event.priority
-    ? RACE_EVENT_PRIORITY_LABELS[event.priority]
-    : null;
+  // Feature 045 (FR-003): los códigos A/B/C/CD se muestran con su significado.
+  const priorityLabel = raceEventPriorityLabel(
+    event.priority,
+    event.is_championship,
+  );
 
   return (
     <div className="space-y-4">
@@ -164,12 +166,12 @@ export function InfoTab({
           <InfoRow label="Prioridad">
             {event.is_championship ? (
               <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
-                CD
+                {priorityLabel}
               </span>
             ) : priorityLabel ? (
               <span
                 className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${
-                  priorityLabel === "A"
+                  event.priority === "A"
                     ? "bg-blue-100 text-blue-800"
                     : "bg-[rgba(34,42,53,0.08)] text-charcoal"
                 }`}

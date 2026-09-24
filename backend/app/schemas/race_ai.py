@@ -186,7 +186,19 @@ class RunEvent(BaseModel):
     ts: datetime
     type: str = Field(..., min_length=1, max_length=32)
     node: Optional[str] = Field(default=None, max_length=64)
-    payload: dict[str, Any] = Field(default_factory=dict)
+    payload: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Contenido del evento, libre según ``type``. Los eventos "
+            "``hitl_request`` (borrador a aprobar) agregan "
+            "``family_gap_mentions: list[str]`` (feature 045, FR-022): hasta 3 "
+            "fragmentos de ≤80 caracteres del texto visible para la familia "
+            "que mencionan al líder, la ganadora, P1/P3, el primer o tercer "
+            "lugar o el podio; ``[]`` si no hay. Sólo coach/admin (este "
+            "endpoint responde 403 a padres); ningún otro tipo de evento "
+            "lleva la clave."
+        ),
+    )
 
 
 class RunStatusResponse(BaseModel):

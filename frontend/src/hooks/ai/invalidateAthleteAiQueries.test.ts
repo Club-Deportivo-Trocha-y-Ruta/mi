@@ -65,6 +65,22 @@ describe("invalidateAthleteAiQueries", () => {
     expect(predicate({ queryKey: ["season-panorama", 2026, 1] })).toBe(true);
   });
 
+  it("feature 045: invalida la lista de análisis pendientes y el resumen del Home (coach-summary), sin filtrar por athleteId", () => {
+    const qc = makeQueryClient();
+    const spy = vi.spyOn(qc, "invalidateQueries");
+
+    void invalidateAthleteAiQueries(qc, 42);
+
+    const predicate = spy.mock.calls[0]?.[0]?.predicate as (q: {
+      queryKey: unknown;
+    }) => boolean;
+
+    expect(predicate({ queryKey: ["race-pending-analyses", "stale", 2026] })).toBe(true);
+    expect(predicate({ queryKey: ["dashboard", "coach-summary"] })).toBe(true);
+    // Otras queries del dashboard no se tocan.
+    expect(predicate({ queryKey: ["dashboard", "stats"] })).toBe(false);
+  });
+
   it("NO invalida claves de Strava (athlete-activities) ni de boletín (athlete-newsletter/athlete-newsletters) — el predicate startsWith('athlete-') que reemplaza sí lo hacía", () => {
     const qc = makeQueryClient();
     const spy = vi.spyOn(qc, "invalidateQueries");

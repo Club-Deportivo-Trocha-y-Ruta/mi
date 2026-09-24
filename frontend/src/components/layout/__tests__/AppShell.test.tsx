@@ -213,7 +213,7 @@ describe("AppShell", () => {
       expect(legacy).toHaveLength(0);
     });
 
-    it("NO debería existir un enlace a la URL exacta del hub eliminado /competitions/insights, aunque 'Panorama de temporada' viva en un path con ese prefijo", async () => {
+    it("NO debería existir un enlace a la URL exacta del hub eliminado /competitions/insights; 'Temporada' apunta a /competitions/season/:año", async () => {
       const user = userEvent.setup();
       renderShell(UserRole.coach);
 
@@ -221,14 +221,13 @@ describe("AppShell", () => {
         screen.getByRole("button", { name: "Expandir Competencias" }),
       );
 
-      // "Panorama de temporada" es una entrada legítima cuyo href empieza
-      // con el mismo prefijo del hub K3 eliminado (029 FR-001) — no debe
-      // confundirse con un enlace directo a la URL exacta del hub.
-      const panorama = screen.getByRole("link", {
-        name: "Panorama de temporada",
-      });
-      expect(panorama.getAttribute("href")).toMatch(
-        /^\/competitions\/insights\//,
+      // Feature 045: «Temporada» (antes «Panorama de temporada», que vivía
+      // bajo /competitions/insights/season/:año) apunta ahora a
+      // /competitions/season/:año — y el hub K3 eliminado (029 FR-001) sigue
+      // sin tener un enlace directo.
+      const temporada = screen.getByRole("link", { name: "Temporada" });
+      expect(temporada.getAttribute("href")).toMatch(
+        /^\/competitions\/season\/\d{4}$/,
       );
 
       const exactHub = screen
@@ -256,38 +255,43 @@ describe("AppShell", () => {
     });
 
     // Regression: "competitions" is the one area whose items nest path-wise
-    // ("Válidas" → /competitions is a literal prefix of "Sin enlazar" →
-    // /competitions/unlinked and "Panorama de temporada" →
-    // /competitions/insights/season/:year). A naive NavLink prefix match
-    // (no `end`) marks more than one sibling active simultaneously.
-    it("en /competitions/insights/season/2026, solo 'Panorama de temporada' queda marcado activo (no también 'Válidas')", () => {
-      renderShell(UserRole.coach, "/competitions/insights/season/2026");
+    // ("Competencias" → /competitions is a literal prefix of "Cargas e
+    // identidades" → /competitions/imports and "Temporada" →
+    // /competitions/season/:year). A naive NavLink prefix match (no `end`)
+    // marks more than one sibling active simultaneously. Feature 045: el
+    // ítem «Competencias» (lista) comparte nombre con el área — con el
+    // disclosure abierto hay dos enlaces con ese nombre y el del ítem va
+    // después del del área en el DOM.
+    it("en /competitions/season/2026, solo 'Temporada' queda marcado activo (no también 'Competencias')", () => {
+      renderShell(UserRole.coach, "/competitions/season/2026");
 
       const sidebar = getSidebar();
-      const seasonItem = within(sidebar).getByRole("link", {
-        name: "Panorama de temporada",
-      });
-      const validasItem = within(sidebar).getByRole("link", { name: "Válidas" });
+      const seasonItem = within(sidebar).getByRole("link", { name: "Temporada" });
+      const listItem = within(sidebar).getAllByRole("link", {
+        name: "Competencias",
+      })[1];
 
       expect(seasonItem).toHaveAttribute("aria-current", "page");
       expect(seasonItem.className).toMatch(/bg-nav-active-bg/);
-      expect(validasItem).not.toHaveAttribute("aria-current", "page");
-      expect(validasItem.className).not.toMatch(/bg-nav-active-bg/);
+      expect(listItem).not.toHaveAttribute("aria-current", "page");
+      expect(listItem.className).not.toMatch(/bg-nav-active-bg/);
     });
 
-    it("en /competitions/unlinked, solo 'Sin enlazar' queda marcado activo (no también 'Válidas')", () => {
-      renderShell(UserRole.coach, "/competitions/unlinked");
+    it("en /competitions/imports, solo 'Cargas e identidades' queda marcado activo (no también 'Competencias')", () => {
+      renderShell(UserRole.coach, "/competitions/imports");
 
       const sidebar = getSidebar();
-      const unlinkedItem = within(sidebar).getByRole("link", {
-        name: "Sin enlazar",
+      const importsItem = within(sidebar).getByRole("link", {
+        name: "Cargas e identidades",
       });
-      const validasItem = within(sidebar).getByRole("link", { name: "Válidas" });
+      const listItem = within(sidebar).getAllByRole("link", {
+        name: "Competencias",
+      })[1];
 
-      expect(unlinkedItem).toHaveAttribute("aria-current", "page");
-      expect(unlinkedItem.className).toMatch(/bg-nav-active-bg/);
-      expect(validasItem).not.toHaveAttribute("aria-current", "page");
-      expect(validasItem.className).not.toMatch(/bg-nav-active-bg/);
+      expect(importsItem).toHaveAttribute("aria-current", "page");
+      expect(importsItem.className).toMatch(/bg-nav-active-bg/);
+      expect(listItem).not.toHaveAttribute("aria-current", "page");
+      expect(listItem.className).not.toMatch(/bg-nav-active-bg/);
     });
   });
 

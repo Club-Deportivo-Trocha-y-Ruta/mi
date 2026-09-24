@@ -1,0 +1,28 @@
+{
+  "_source": "Same numeric fixtures as backend/tests/services/test_body_composition.py (T007), contracts/body-composition-reading.md §2 and tasks.md T007/T008. Keep both files in sync.",
+  "siteValue": {
+    "meanOfTwo": [
+      { "readings": [8.0, 9.0], "expected": 8.5 },
+      { "readings": [20.0, 21.0], "expected": 20.5 }
+    ],
+    "medianOfThree": [
+      { "readings": [7.0, 8.0, 7.5], "expected": 7.5 },
+      { "readings": [6.0, 9.5, 6.5], "expected": 6.5 }
+    ]
+  },
+  "needsThirdReading": [
+    { "r1": 8.0, "r2": 9.0, "expected": false, "note": "1.0mm floor edge, exactly equal" },
+    { "r1": 8.0, "r2": 9.5, "expected": true },
+    { "r1": 20.0, "r2": 21.0, "expected": false, "note": "1.0 < 1.025 (5% of mean 20.5)" },
+    { "r1": 20.0, "r2": 21.5, "expected": true }
+  ],
+  "plausibleRanges9to12": {
+    "triceps": [4, 30],
+    "biceps": [2, 20],
+    "subscapular": [4, 30],
+    "medial_calf": [4, 30],
+    "iliac_crest": [4, 40],
+    "supraspinale": [3, 35]
+  },
+  "upperBoundIncrement13to17Mm": 10
+}

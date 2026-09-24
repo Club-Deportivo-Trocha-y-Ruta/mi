@@ -75,7 +75,9 @@ Built by `services/body_composition.py::build_reading(latest_set, previous_set, 
 | `reference_triceps`, `reference_subscapular` | `{percentile, code}` with code `low_extreme` (< P5) \| `low` (P5–P10) \| `normal` \| `high` (P85–P95) \| `high_extreme` (≥ P95) \| `unavailable` | FUPRECOL |
 | `ffm_trend_code` | `up` \| `flat` \| `down` \| `unavailable` | Δfat_free_mass ≥ +1.0 kg / ≤ −1.0 kg |
 | `sites_declined_count` | int | latest set |
-| `band` | `verde` \| `ambar` \| `rojo` | rules in `contracts/body-composition-reading.md` |
+| `band` | `verde` \| `ambar` \| `rojo` | rules in `contracts/body-composition-reading.md` §3 (coach only) |
+| `family_band` | `verde` \| `ambar` | projection in `contracts/body-composition-reading.md` §3c; the only band any family surface receives (never `rojo`; reference-only ámbar → `verde`) |
+| `latest_attempt_declined` | date or null | date of a fully declined attempt newer than the latest counted set (coach only, §3b) |
 | `band_reason_code` | enum (see contract) | drives Spanish sentences for coach, family and AI |
 | `legs_missing` | list of `weight` \| `height` \| `velocity` \| `bmi_z` \| `reference` \| `previous_set` | |
 | `next_due_date`, `days_until_due` | date, int | latest counted set + 90 days |
@@ -84,7 +86,8 @@ Built by `services/body_composition.py::build_reading(latest_set, previous_set, 
 
 - `SkinfoldSetOut` (coach/admin): every column of §1 plus `needs_third_reading_unconfirmed: list[site]` (sites with two readings beyond tolerance).
 - `BodyCompositionOut` (coach/admin): `athlete_id`, `sets: list[SkinfoldSetOut]` (ascending by evaluation date), `reading: BodyCompositionReading`, `series: {sum4: [{date, value}], sum6: [...], per_site: {site: [...]}}`, `estimates_latest: {body_fat_pct, fat_mass_kg, fat_free_mass_kg, equation_version, margin_pct: 4}`.
-- `BodyCompositionSummary` (in `GrowthSummaryOut.body_composition`, both roles): `has_data`, `latest_set_date`, `band`, `family_label`, `family_sentence`, `next_due_date`, `days_until_due`; **coach/admin only** additional fields `coach_reason`, `sum4_mm`, `sum4_change_mm`, `sum_change_code`, `sum6_mm`, `body_fat_pct`, `fat_free_mass_kg`, `legs_missing`. For parents those fields are omitted (schema `BodyCompositionFamilySummary`), never nulled-but-present.
+- `BodyCompositionSummary` (in `GrowthSummaryOut.body_composition`, coach/admin): `has_data`, `latest_set_date`, `band`, `family_band`, `family_label`, `family_sentence`, `next_due_date`, `days_until_due`, `latest_attempt_declined`, `coach_reason`, `sum4_mm`, `sum4_change_mm`, `sum_change_code`, `sum6_mm`, `body_fat_pct`, `fat_free_mass_kg`, `legs_missing`. Parents receive `BodyCompositionFamilySummary` = exactly `{has_data, latest_set_date, family_band, family_label, family_sentence}` (`contracts/skinfolds-api.md` §5); every other field is omitted, never nulled-but-present.
+- Newsletter `body_composition` block (spec FR-036): `{family_label, family_sentence, notice_text}` built from the family projection, only in the month of a counted set's evaluation date; never part of the newsletter AI context.
 - `AnthropometryOut.skinfolds: SkinfoldSetOut | None` — `None` for parents.
 
 ## 7. State transitions

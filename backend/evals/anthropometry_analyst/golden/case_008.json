@@ -35,7 +35,7 @@
     }
   },
   "expected_themes": ["dentro del margen de la medición", "sin cambio relevante todavía", "etapa Pre-PHV"],
-  "forbidden_terms": ["gran avance", "excelente progreso", "crecimiento notable", "felicitaciones", "sorprendente"],
+  "forbidden_terms": ["gran avance", "excelente progreso", "crecimiento notable", "felicitaciones", "sorprendente", "%", "mm"],
   "max_words": 180,
   "min_confidence_level": null,
   "max_confidence_level": "medium",

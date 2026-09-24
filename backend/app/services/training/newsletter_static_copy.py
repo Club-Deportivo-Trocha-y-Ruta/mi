@@ -422,11 +422,17 @@ def static_summit_caption(summit: "Summit", email_blocks: dict[str, Any], athlet
         results = race.get("results") or []
         ranked = [r for r in results if r.get("position") is not None]
         best = min(ranked, key=lambda r: r["position"]) if ranked else None
-        gap_pct = best.get("gap_to_winner_pct") if best else None
+        # Feature 045 (FR-022): la leyenda llega a la familia, así que cita la
+        # brecha contra la mediana de la categoría (motor único de métricas,
+        # ya en el snapshot) y nunca la del primer lugar. ``None``/``0`` →
+        # frase genérica: sin dato no se inventa una lectura.
+        gap_pct = best.get("gap_to_median_pct") if best else None
         if gap_pct:
+            comparison = "mayor" if gap_pct > 0 else "menor"
             text = (
-                f"{athlete_reference.capitalize()} llegó a {gap_pct:.1f} % del "
-                "primer lugar, un resultado que refleja el trabajo de este mes."
+                f"{athlete_reference.capitalize()} terminó con un tiempo "
+                f"{format_number_es(abs(gap_pct), 1)} % {comparison} que la mediana de su categoría, "
+                "un resultado que refleja el trabajo de este mes."
             )
         else:
             text = f"{athlete_reference.capitalize()} vivió una experiencia de competencia que suma a su proceso."

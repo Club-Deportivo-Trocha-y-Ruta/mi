@@ -30,7 +30,7 @@
     "previous_analysis": null
   },
   "expected_themes": ["velocidad", "fase Circa-PHV", "rango esperado"],
-  "forbidden_terms": ["percentil", "z-score", "diagnóstico", "riesgo", "13.3 años"],
+  "forbidden_terms": ["percentil", "z-score", "diagnóstico", "riesgo", "13.3 años", "%", "mm"],
   "max_words": 180,
   "min_confidence_level": "medium",
   "max_confidence_level": "high",

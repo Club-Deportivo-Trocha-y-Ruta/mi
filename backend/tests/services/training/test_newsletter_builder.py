@@ -377,7 +377,7 @@ class TestBuildChartsContext:
         ctx = _build_charts_context(race_block)
         assert ctx["has_data"] is True
         assert len(ctx["positions"]) == 3
-        assert len(ctx["gap_pcts"]) == 3
+        assert len(ctx["median_gap_pcts"]) == 3
         assert len(ctx["points_accumulated"]) == 3
 
     def test_points_accumulated_is_cumulative(self):
@@ -740,7 +740,7 @@ class TestBuildChartsContextComparisonGroups:
         assert cup_ctx["n_samples"] == 5
         assert cup_ctx["low_confidence"] is False
 
-        for key in ("positions", "gap_pcts", "points_accumulated"):
+        for key in ("positions", "median_gap_pcts", "points_accumulated"):
             points = cup_ctx[key]
             assert [p["x"] for p in points] == [1, 2, 3, 4, 5]
             assert [p["label"] for p in points] == [f"V{i}" for i in range(1, 6)]
@@ -892,3 +892,299 @@ class TestTwoCupsOrderingAndIsolation:
 
         assert main_ctx["points_accumulated"][-1]["y"] == expected_main_total
         assert liga_ctx["points_accumulated"][-1]["y"] == expected_liga_total
+
+
+# ---------------------------------------------------------------------------
+# Feature 045 (US4, T061): la gráfica de brecha de la bitácora familiar usa la
+# «Brecha vs. mediana» del motor único de métricas — nunca el gap al ganador
+# (FR-020 / FR-022). Valores centinela: 77,7 = gap al ganador (no debe salir).
+# ---------------------------------------------------------------------------
+
+_WINNER_GAP_SENTINEL = 77.7
+
+
+def _history_row(idx: int, median: float | None, **extra: Any) -> dict[str, Any]:
+    return {
+        "event_id": 100 + idx,
+        "valida_num": idx,
+        "position": idx + 1,
+        "points_awarded": 10,
+        "gap_to_winner_pct": _WINNER_GAP_SENTINEL,
+        "gap_to_median_pct": median,
+        "series_kind": "cup",
+        "series_level": "departmental",
+        "label": f"V{idx}",
+        **extra,
+    }
+
+
+class TestChartsContextMedianGap:
+    def test_cup_series_carries_median_gap_and_no_winner_gap(self):
+        race_block = {
+            "has_races": True,
+            "cups": [
+                {
+                    "series_id": 1,
+                    "label": "Copa ficticia 2026",
+                    "history": [_history_row(1, 1.5), _history_row(2, -2.0), _history_row(3, None)],
+                }
+            ],
+            "championships": [],
+        }
+        cup_ctx = _build_charts_context(race_block)["cups"][0]
+
+        assert [p["y"] for p in cup_ctx["median_gap_pcts"]] == [1.5, -2.0, None]
+        assert [p["x"] for p in cup_ctx["median_gap_pcts"]] == [1, 2, 3]
+        assert [p["label"] for p in cup_ctx["median_gap_pcts"]] == ["V1", "V2", "V3"]
+        assert "gap_pcts" not in cup_ctx
+
+    def test_no_winner_gap_value_anywhere_in_cups_context(self):
+        import json
+
+        race_block = {
+            "has_races": True,
+            "cups": [{"series_id": 1, "label": "Copa ficticia", "history": [_history_row(1, 1.5)]}],
+            "championships": [],
+        }
+        dumped = json.dumps(_build_charts_context(race_block))
+        assert str(_WINNER_GAP_SENTINEL) not in dumped
+
+    def test_history_without_median_key_never_falls_back_to_winner_gap(self):
+        """Snapshot de una carga anterior a la 045: la fila trae solo
+        ``gap_to_winner_pct``. La serie queda vacía de datos (y = None)."""
+        legacy_row = _history_row(1, None)
+        del legacy_row["gap_to_median_pct"]
+        race_block = {
+            "has_races": True,
+            "cups": [{"series_id": 1, "label": "Copa ficticia", "history": [legacy_row]}],
+            "championships": [],
+        }
+        cup_ctx = _build_charts_context(race_block)["cups"][0]
+        assert [p["y"] for p in cup_ctx["median_gap_pcts"]] == [None]
+
+    def test_legacy_flat_curve_also_uses_median_gap(self):
+        """Sin la clave ``cups`` (snapshot previo a la 039) se conserva la
+        curva plana, pero con la brecha vs. mediana."""
+        import json
+
+        race_block = {
+            "has_races": True,
+            "progression_history": [_history_row(1, 0.8), _history_row(2, None)],
+        }
+        ctx = _build_charts_context(race_block)
+
+        assert [p["y"] for p in ctx["median_gap_pcts"]] == [0.8, None]
+        assert "gap_pcts" not in ctx
+        assert str(_WINNER_GAP_SENTINEL) not in json.dumps(ctx)
+
+    def test_legacy_flat_curve_empty_history_has_empty_median_series(self):
+        ctx = _build_charts_context({"has_races": False, "results": []})
+        assert ctx["has_data"] is False
+        assert ctx["median_gap_pcts"] == []
+        assert "gap_pcts" not in ctx
+
+
+# --- _build_race_block: el valor sale del motor, sin consultas por fila -----
+
+_EXTRA_RIVAL_BASE_ID = 8600
+
+
+async def _add_extra_riders(
+    session: Any,
+    *,
+    event_id: int,
+    category_id: int,
+    winner_time_ms: int,
+    extra_positions: list[int],
+    gap_per_position_ms: int,
+    first_competitor_id: int,
+) -> None:
+    """Agrega rivales ficticios a un evento ya sembrado para que la parrilla
+    con tiempo llegue a ``MIN_FIELD`` (5) y el motor publique la mediana."""
+    from tests.fixtures.race_history_fixtures import create_race_competitor, create_race_result
+
+    for offset, position in enumerate(extra_positions):
+        competitor_id = first_competitor_id + offset
+        await create_race_competitor(
+            session,
+            competitor_id=competitor_id,
+            normalized_name=f"rival extra ficticio {competitor_id}",
+            display_name=f"Rival Extra Ficticio {competitor_id}",
+            club_text="Club Rival Ficticio",
+        )
+        await create_race_result(
+            session,
+            event_id=event_id,
+            category_id=category_id,
+            competitor_id=competitor_id,
+            position=position,
+            race_time_ms=winner_time_ms + gap_per_position_ms * position,
+            bib_number=position,
+            points_awarded=4,
+            created_by_user_id=910,
+        )
+
+
+@pytest_asyncio.fixture
+async def race_groups_with_measurable_fields(race_groups_base_season):
+    """Escenario base + parrillas con ≥5 tiempos en (1) la Válida 1 de la copa
+    y (2) el Cto. Departamental. El resto sigue con 4 corredores (< MIN_FIELD)."""
+    scenario = race_groups_base_season
+    session = scenario.session
+
+    # Válida 1 de la copa: ganador 1.702.000 ms; el atleta P2 (+30.000), rellenos
+    # P3 (+45.000) y P4 (+60.000); extras P5 (+75.000) y P6 (+90.000).
+    # Tiempos: 1.702.000 · 1.732.000 · 1.747.000 · 1.762.000 · 1.777.000 · 1.792.000
+    # → mediana 1.754.500; atleta: (1.732.000 − 1.754.500) ÷ 1.754.500 = −1,3 %.
+    await _add_extra_riders(
+        session,
+        event_id=scenario.cup_event_ids[0],
+        category_id=scenario.category_id,
+        winner_time_ms=1_702_000,
+        extra_positions=[5, 6],
+        gap_per_position_ms=15_000,
+        first_competitor_id=_EXTRA_RIVAL_BASE_ID,
+    )
+    # Cto. Departamental: ganador 1.900.000 ms; P2 +40.000, P3 +60.000, atleta
+    # P4 +80.000 (1.980.000), extra P5 +100.000.
+    # Tiempos: 1.900.000 · 1.940.000 · 1.960.000 · 1.980.000 · 2.000.000
+    # → mediana 1.960.000; atleta: 20.000 ÷ 1.960.000 = +1,0 %.
+    await _add_extra_riders(
+        session,
+        event_id=scenario.departmental_event_id,
+        category_id=scenario.category_id,
+        winner_time_ms=1_900_000,
+        extra_positions=[5],
+        gap_per_position_ms=20_000,
+        first_competitor_id=_EXTRA_RIVAL_BASE_ID + 10,
+    )
+    await session.commit()
+    return scenario
+
+
+class TestBuildRaceBlockMedianGap:
+    @pytest.mark.asyncio
+    async def test_cup_history_and_progression_carry_engine_median_gap(
+        self, race_groups_with_measurable_fields
+    ):
+        from app.services.training.newsletter_builder import _build_race_block
+
+        scenario = race_groups_with_measurable_fields
+        block = await _build_race_block(scenario.session, scenario.athlete_id, scenario.season, 8)
+
+        history = block["cups"][0]["history"]
+        by_event = {row["event_id"]: row for row in history}
+        assert by_event[scenario.cup_event_ids[0]]["gap_to_median_pct"] == -1.3
+        # Válidas con solo 4 corredores: el motor no publica mediana.
+        for event_id in scenario.cup_event_ids[1:]:
+            assert by_event[event_id]["gap_to_median_pct"] is None
+
+        flat = {row["event_id"]: row for row in block["progression_history"]}
+        assert flat[scenario.cup_event_ids[0]]["gap_to_median_pct"] == -1.3
+
+    @pytest.mark.asyncio
+    async def test_month_results_carry_median_gap(self, race_groups_with_measurable_fields):
+        """``results[]`` (las carreras del mes) alimenta el sublabel de la
+        bitácora: la Válida 1 corrió en enero."""
+        from app.services.training.newsletter_builder import _build_race_block
+
+        scenario = race_groups_with_measurable_fields
+        block = await _build_race_block(scenario.session, scenario.athlete_id, scenario.season, 1)
+
+        assert len(block["results"]) == 1
+        assert block["results"][0]["gap_to_median_pct"] == -1.3
+
+    @pytest.mark.asyncio
+    async def test_month_result_without_measurable_field_is_none(self, race_groups_base_season):
+        from app.services.training.newsletter_builder import _build_race_block
+
+        scenario = race_groups_base_season
+        block = await _build_race_block(scenario.session, scenario.athlete_id, scenario.season, 2)
+
+        assert block["results"][0]["gap_to_median_pct"] is None
+
+    @pytest.mark.asyncio
+    async def test_championship_reading_carries_median_gap(self, race_groups_with_measurable_fields):
+        from app.services.training.newsletter_builder import _build_race_block
+
+        scenario = race_groups_with_measurable_fields
+        block = await _build_race_block(scenario.session, scenario.athlete_id, scenario.season, 8)
+
+        by_event = {c["event_id"]: c for c in block["championships"]}
+        assert by_event[scenario.departmental_event_id]["gap_to_median_pct"] == 1.0
+        # El nacional sigue con 4 corredores: sin mediana, pero la clave existe.
+        assert "gap_to_median_pct" in by_event[scenario.national_event_id]
+        assert by_event[scenario.national_event_id]["gap_to_median_pct"] is None
+
+    @pytest.mark.asyncio
+    async def test_charts_context_from_real_block_plots_median_gap_only(
+        self, race_groups_with_measurable_fields
+    ):
+        from app.services.training.newsletter_builder import _build_race_block
+
+        scenario = race_groups_with_measurable_fields
+        block = await _build_race_block(scenario.session, scenario.athlete_id, scenario.season, 8)
+        cup_ctx = _build_charts_context(block)["cups"][0]
+
+        assert "gap_pcts" not in cup_ctx
+        assert [p["y"] for p in cup_ctx["median_gap_pcts"]] == [-1.3, None, None, None, None]
+
+    @pytest.mark.asyncio
+    async def test_dnf_result_has_no_median_gap(self, race_groups_dnf_championship):
+        from app.services.training.newsletter_builder import _build_race_block
+
+        scenario = race_groups_dnf_championship
+        block = await _build_race_block(scenario.session, scenario.athlete_id, scenario.season, 8)
+
+        national = next(c for c in block["championships"] if c["event_id"] == scenario.national_event_id)
+        assert national["gap_to_median_pct"] is None
+
+    @pytest.mark.asyncio
+    async def test_query_count_does_not_grow_with_number_of_events(self, race_groups_base_season):
+        """Sin consultas por fila: con 7 eventos y con 10 (se siembra una
+        segunda copa de 3 rondas) el bloque cuesta exactamente las mismas
+        consultas."""
+        from sqlalchemy import event as sa_event
+
+        from app.services.training.newsletter_builder import _build_race_block
+        from tests.fixtures.race_groups import (
+            SECOND_CUP_LOCATION,
+            SECOND_CUP_SERIES_ID,
+            SECOND_CUP_SERIES_NAME,
+            SEASON,
+            _seed_cup_series,
+        )
+
+        scenario = race_groups_base_season
+        session = scenario.session
+
+        async def _count_selects() -> int:
+            statements: list[str] = []
+            sync_engine = session.bind.sync_engine
+
+            def _capture(_conn, _cursor, statement, *_args):
+                if statement.lstrip().upper().startswith("SELECT"):
+                    statements.append(statement)
+
+            sa_event.listen(sync_engine, "before_cursor_execute", _capture)
+            try:
+                await _build_race_block(session, scenario.athlete_id, scenario.season, 8)
+            finally:
+                sa_event.remove(sync_engine, "before_cursor_execute", _capture)
+            return len(statements)
+
+        selects_with_7_events = await _count_selects()
+
+        await _seed_cup_series(
+            session,
+            series_id=SECOND_CUP_SERIES_ID,
+            name=SECOND_CUP_SERIES_NAME,
+            num_rounds=3,
+            round_dates=[date(SEASON, 1, 5), date(SEASON, 2, 5), date(SEASON, 3, 5)],
+            location=SECOND_CUP_LOCATION,
+        )
+        await session.commit()
+        selects_with_10_events = await _count_selects()
+
+        assert selects_with_7_events == selects_with_10_events
+        assert selects_with_7_events <= 12

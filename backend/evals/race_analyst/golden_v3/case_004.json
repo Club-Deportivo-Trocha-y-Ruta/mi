@@ -27,14 +27,16 @@
       "series_level": "departmental",
       "is_championship": false,
       "field_size": 14,
+      "timed_finishers": 14,
       "position": 7,
-      "percentile": 53.8,
+      "percentile": 50,
       "race_time_ms": 2310000,
       "gap_to_p1_ms": 246000,
       "gap_pct": 11.92,
       "gap_to_p3_ms": 138000,
-      "category_median_time_ms": 2298000,
-      "gap_to_median_pct": 0.52,
+      "gap_to_podium_pct": 6.4,
+      "category_median_time_ms": 2327250,
+      "gap_to_median_pct": -0.7,
       "laps_behind": 0,
       "prior_index": null,
       "expected_position": null,
@@ -50,7 +52,7 @@
         "is_championship": false,
         "position": 7,
         "field_size": 14,
-        "percentile": 53.8,
+        "percentile": 50,
         "gap_pct": 11.92,
         "gap_to_p3_ms": 138000,
         "expected_position": null,
@@ -131,16 +133,16 @@
   "expected_headline_keywords": [
     "referencia",
     "primera",
-    "53.8",
+    "50",
     "mediana"
   ],
   "must_reference_catalog": true,
   "max_words": 450,
   "ideal_output": {
     "schema_version": "v3",
-    "headline": "Primera referencia del año: terminó junto a la mediana de la categoría (percentil 53.8) con una pretemporada de asistencia 80%.",
+    "headline": "Primera referencia del año: terminó junto a la mediana de la categoría (percentil 50) con una pretemporada de asistencia 80%.",
     "field_reading": {
-      "percentile": 53.8,
+      "percentile": 50,
       "expected_position": null,
       "actual_position": 7,
       "delta_vs_expected": null,
@@ -153,8 +155,8 @@
       {
         "claim": "El resultado queda a la altura de la mediana de la categoría, así que sirve como línea base y no como señal de nivel alto ni bajo.",
         "evidence": [
-          "percentil 53.8 en un pelotón de 14",
-          "gap a la mediana 0.52%"
+          "percentil 50 en un pelotón de 14",
+          "gap a la mediana -0.7%"
         ],
         "domain": "field",
         "confidence": "high"

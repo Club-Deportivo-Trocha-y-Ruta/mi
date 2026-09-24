@@ -344,6 +344,8 @@ describe("HistoryTable", () => {
         name: "Válida V — Roldanillo",
       });
       expect(desktopLink).toHaveAttribute("href", "/competitions/55");
+      // La variante tabla es la que ve el coach en tablet: también 48px (045, T070).
+      expect(desktopLink.className).toMatch(/min-h-12/);
 
       const mobile = screen.getByTestId("history-table-mobile");
       const mobileLink = within(mobile).getByRole("link", {

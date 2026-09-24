@@ -78,7 +78,10 @@ def test_single_head_on_previous_revision():
         for p in versions.glob("*.py")
         if f'down_revision: Union[str, None] = "{mod.revision}"' in p.read_text()
     ]
-    assert children == []
+    # Sin bifurcación: a lo sumo un sucesor. (Antes exigía ``== []`` —"esta es
+    # la cabeza"— y se rompe con cada migración posterior; la cabeza única de
+    # toda la cadena la vigila ``test_audit_mysql.py::test_single_head``.)
+    assert len(children) <= 1
 
 
 def test_old_rule_rejects_finished_without_time(conn):

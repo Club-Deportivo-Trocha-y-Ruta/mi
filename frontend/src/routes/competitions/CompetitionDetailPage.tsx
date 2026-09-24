@@ -3,13 +3,18 @@
  *
  * Layout:
  *   - Header: "← Competencias", título (nombre), badges, subtitle (sede · fecha)
- *   - Action bar: "Editar metadata", "Eliminar" (admin)
- *   - Acción primaria contextual (importar / ver insights)
- *   - Tabs URL-driven: info | results | conditions | insights
+ *   - Action bar: "Editar datos", "Eliminar" (admin)
+ *   - Acción primaria contextual (importar / ver análisis)
+ *   - Tabs URL-driven: info | results | standings | circuito | insights
+ *     («Información · Resultados · Clasificación · Circuito y condiciones ·
+ *     Análisis IA»). «Clasificación» solo existe en válidas de copa.
  *
  * Acceso: coach + admin. Configurado en App.tsx.
  *
- * URL: /competitions/:id?tab=info|results|conditions|insights
+ * URL: /competitions/:id?tab=info|results|standings|circuito|insights
+ * Alias (feature 045, R-12): `?tab=conditions` → `?tab=circuito` (las
+ * condiciones viven ahora en «Circuito y condiciones»; el enlace viejo se
+ * reescribe con `replace`, sin ensuciar el historial).
  */
 import { lazy, Suspense, useEffect, useState } from "react";
 import {
@@ -52,7 +57,10 @@ import { useRaceSeriesList } from "@/hooks/race/useRaceSeries";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth.store";
 import { UserRole } from "@/types/enums";
-import type { RaceEventStatus } from "@/types/raceEvents.types";
+import {
+  RACE_EVENT_PRIORITY_LABELS,
+  type RaceEventStatus,
+} from "@/types/raceEvents.types";
 
 // ---------------------------------------------------------------------------
 // Lazy-load de tabs pesados
@@ -68,34 +76,23 @@ const StandingsTab = lazy(() =>
     default: m.StandingsTab,
   })),
 );
-const CourseTab = lazy(() =>
-  import("@/components/race/course/CourseTab").then((m) => ({
-    default: m.CourseTab,
-  })),
-);
 
-// Tabs livianos — importados directamente (no lazy)
+// Tabs livianos — importados directamente (no lazy). `CircuitAndConditionsTab`
+// carga `CourseTab` (mapa + elevación) con su propio `React.lazy`.
 import { InfoTab } from "@/components/competitions/tabs/InfoTab";
-import { ConditionsTab } from "@/components/competitions/tabs/ConditionsTab";
+import { CircuitAndConditionsTab } from "@/components/competitions/tabs/CircuitAndConditionsTab";
 import { ResultsTab } from "@/components/competitions/tabs/ResultsTab";
 
 // ---------------------------------------------------------------------------
 // Constantes
 // ---------------------------------------------------------------------------
 
-type TabValue =
-  | "info"
-  | "results"
-  | "standings"
-  | "conditions"
-  | "circuito"
-  | "insights";
+type TabValue = "info" | "results" | "standings" | "circuito" | "insights";
 
 const TAB_VALUES: TabValue[] = [
   "info",
   "results",
   "standings",
-  "conditions",
   "circuito",
   "insights",
 ];
@@ -104,10 +101,18 @@ const TAB_LABELS: Record<TabValue, string> = {
   info: "Información",
   results: "Resultados",
   standings: "Clasificación",
-  conditions: "Condiciones",
-  circuito: "Circuito",
-  insights: "Insights IA",
+  circuito: "Circuito y condiciones",
+  insights: "Análisis IA",
 };
+
+/** Valores de `?tab=` legados que hoy apuntan a otra pestaña (feature 045). */
+const TAB_ALIASES: Record<string, TabValue> = {
+  conditions: "circuito",
+};
+
+function isTabValue(value: string | null): value is TabValue {
+  return value !== null && (TAB_VALUES as string[]).includes(value);
+}
 
 const STATUS_LABELS: Record<RaceEventStatus, string> = {
   scheduled: "Planificada",
@@ -219,14 +224,29 @@ export function CompetitionDetailPage() {
 
   const raceEventId = Number(id);
 
-  // Tab activo — sincronizado con URL
-  const tabParam = searchParams.get("tab") as TabValue | null;
-  const activeTab: TabValue =
-    tabParam && TAB_VALUES.includes(tabParam) ? tabParam : "info";
+  // Tab activo — sincronizado con URL. Un alias legado (`?tab=conditions`)
+  // resuelve a su pestaña actual y la URL se reescribe (más abajo).
+  const rawTab = searchParams.get("tab");
+  const tabAlias = rawTab !== null ? TAB_ALIASES[rawTab] : undefined;
+  const tabParam = tabAlias ?? rawTab;
+  const activeTab: TabValue = isTabValue(tabParam) ? tabParam : "info";
 
   function handleTabChange(value: string) {
     setSearchParams({ tab: value }, { replace: true });
   }
+
+  // Alias → URL canónica con `replace`, conservando el resto de parámetros.
+  useEffect(() => {
+    if (!tabAlias) return;
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set("tab", tabAlias);
+        return next;
+      },
+      { replace: true },
+    );
+  }, [tabAlias, setSearchParams]);
 
   // Datos del evento
   const { data: event, isLoading, isError, refetch, isFetching, error } =
@@ -415,7 +435,7 @@ export function CompetitionDetailPage() {
                   data-testid="badge-championship"
                 >
                   <Trophy size={10} aria-hidden="true" />
-                  CD
+                  {RACE_EVENT_PRIORITY_LABELS.CD}
                 </span>
               )}
 
@@ -435,7 +455,7 @@ export function CompetitionDetailPage() {
                 data-testid="btn-edit"
               >
                 <Edit2 size={14} aria-hidden="true" />
-                Editar metadata
+                Editar datos
               </Link>
 
               {/* CF6: badge "En calendario" cuando ya tiene calendar_event */}
@@ -602,16 +622,9 @@ export function CompetitionDetailPage() {
           </TabsPrimitive.Content>
         )}
 
-        {/* ── Tab: Condiciones ─────────────────────────────────────── */}
-        <TabsPrimitive.Content value="conditions" className="mt-4">
-          <ConditionsTab raceEventId={raceEventId} event={event} />
-        </TabsPrimitive.Content>
-
-        {/* ── Tab: Circuito ────────────────────────────────────────── */}
+        {/* ── Tab: Circuito y condiciones (feature 045, R-12) ─────── */}
         <TabsPrimitive.Content value="circuito" className="mt-4">
-          <Suspense fallback={<TabFallback />}>
-            <CourseTab raceEventId={raceEventId} />
-          </Suspense>
+          <CircuitAndConditionsTab raceEventId={raceEventId} event={event} />
         </TabsPrimitive.Content>
 
         {/* ── Tab: Insights ────────────────────────────────────────── */}
@@ -631,15 +644,19 @@ export function CompetitionDetailPage() {
       {/* ── Dialog de confirmación de eliminación ─────────────────── */}
       <ConfirmDialog
         open={deleteOpen}
-        title="Eliminar válida"
+        title={event.is_championship ? "Eliminar campeonato" : "Eliminar válida"}
         description={
           <>
             <span className="font-medium text-charcoal">{event.name}</span>
             <br />
-            Esta acción es irreversible. La válida se eliminará permanentemente del sistema. Los datos históricos no podrán recuperarse.
+            {event.is_championship
+              ? "Esta acción es irreversible. El campeonato se eliminará permanentemente del sistema. Los datos históricos no podrán recuperarse."
+              : "Esta acción es irreversible. La válida se eliminará permanentemente del sistema. Los datos históricos no podrán recuperarse."}
           </>
         }
-        confirmLabel="Eliminar válida"
+        confirmLabel={
+          event.is_championship ? "Eliminar campeonato" : "Eliminar válida"
+        }
         tone="danger"
         isPending={deleteMutation.isPending}
         errorMessage={deleteError ?? undefined}

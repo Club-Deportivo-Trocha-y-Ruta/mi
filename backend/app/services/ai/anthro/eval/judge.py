@@ -173,6 +173,10 @@ def has_configured_model_key() -> bool:
     return bool(settings.ai_api_key or os.getenv("GOOGLE_API_KEY"))
 
 
+#: Body-composition leaf keys the family-audience prompt never receives.
+_COACH_ONLY_LEAF_KEYS = frozenset({"band", "band_reason_code"})
+
+
 def _render_context_json(context: "AnalysisContext") -> str:
     """Serializa el ``AnalysisContext`` (ya saneado) como JSON legible para el juez."""
     payload = {
@@ -183,6 +187,17 @@ def _render_context_json(context: "AnalysisContext") -> str:
         "training_load_window": context.training_load_window,
         "previous_analysis": context.previous_analysis,
     }
+    # Feature 046 (contracts/ai-body-composition-leaf.md §6): the judge must see
+    # the same qualitative leaf the analyst saw — otherwise every body-composition
+    # statement looks ungrounded. Family audience never sees the coach-only
+    # ``band``/``band_reason_code`` (same projection as
+    # ``context._render_body_composition_block``).
+    leaf = getattr(context, "body_composition", None)
+    if leaf is not None:
+        audience = (context.identity or {}).get("audience")
+        if audience != "coach":
+            leaf = {k: v for k, v in leaf.items() if k not in _COACH_ONLY_LEAF_KEYS}
+        payload["body_composition"] = leaf
     return json.dumps(payload, ensure_ascii=False, indent=2, default=str)
 
 

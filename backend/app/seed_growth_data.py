@@ -53,6 +53,19 @@ WHO_SOURCES: list[dict[str, str]] = [
     {"filename": "who_weight_for_age.csv", "indicator": "weight_for_age"},
 ]
 
+# Directorio con el CSV vendorizado del estudio FUPRECOL (Ramírez-Vélez et
+# al. 2016, Bogotá) — referencia de pliegues cutáneos del feature 046 (datos
+# de referencia poblacional; NO contienen datos de menores del club). Ver
+# app/data/fuprecol_lms/README.md.
+FUPRECOL_DATA_DIR: Path = Path(__file__).parent / "data" / "fuprecol_lms"
+
+# El CSV trae las tres columnas indicator/sex/age_months en un único archivo
+# (a diferencia del CDC/OMS, que usan un archivo por indicador), por lo que
+# basta con una entrada que apunte al archivo completo.
+FUPRECOL_SOURCES: list[dict[str, str]] = [
+    {"filename": "fuprecol_skinfolds.csv"},
+]
+
 BATCH_SIZE: int = 100
 
 
@@ -78,6 +91,14 @@ async def seed_growth_data() -> None:
                 inserted = await bulk_insert_lms(session, rows)
                 total_inserted += inserted
                 print(f"  {source_info['indicator']} (OMS): {inserted} filas procesadas")
+
+            for source_info in FUPRECOL_SOURCES:
+                csv_path = FUPRECOL_DATA_DIR / source_info["filename"]
+                print(f"Cargando pliegues cutáneos (FUPRECOL) desde {csv_path.name}...")
+                rows = parse_fuprecol_csv_file(csv_path)
+                inserted = await bulk_insert_lms(session, rows)
+                total_inserted += inserted
+                print(f"  FUPRECOL: {inserted} filas procesadas")
 
             # Una sola fila resumen por invocación (§3.3 audit-recording.md):
             # datos de referencia poblacional, sin club ni deportista, sin
@@ -208,6 +229,58 @@ def _parse_who_csv_content(content: str, indicator: str) -> list[dict[str, Any]]
         rows.append(
             {
                 "source": "WHO",
+                "indicator": indicator,
+                "sex": sex,
+                "age_months": age_months,
+                "L": l_val,
+                "M": m_val,
+                "S": s_val,
+            }
+        )
+
+    return rows
+
+
+def parse_fuprecol_csv_file(csv_path: Path) -> list[dict[str, Any]]:
+    """Lee el CSV vendorizado de FUPRECOL (``app/data/fuprecol_lms/``) y retorna filas LMS.
+
+    A diferencia de los CSV del CDC/OMS (un archivo por indicador), este CSV
+    trae las columnas ``indicator,sex,age_months,L,M,S`` en un solo archivo
+    porque cubre tres indicadores de pliegues cutáneos a la vez.
+    """
+    content = csv_path.read_text(encoding="utf-8")
+    return _parse_fuprecol_csv_content(content)
+
+
+def _parse_fuprecol_csv_content(content: str) -> list[dict[str, Any]]:
+    """Parsea el contenido CSV de FUPRECOL (separado para pruebas con fixtures)."""
+    reader = csv.DictReader(content.splitlines())
+    rows: list[dict[str, Any]] = []
+
+    for row in reader:
+        indicator = (row.get("indicator") or "").strip()
+        sex = (row.get("sex") or "").strip()
+        age_raw = (row.get("age_months") or "").strip()
+        l_raw = (row.get("L") or "").strip()
+        m_raw = (row.get("M") or "").strip()
+        s_raw = (row.get("S") or "").strip()
+
+        if not all([indicator, sex, age_raw, l_raw, m_raw, s_raw]):
+            continue
+        if sex not in ("M", "F"):
+            continue
+
+        try:
+            age_months = float(age_raw)
+            l_val = float(l_raw)
+            m_val = float(m_raw)
+            s_val = float(s_raw)
+        except ValueError:
+            continue
+
+        rows.append(
+            {
+                "source": "FUPRECOL",
                 "indicator": indicator,
                 "sex": sex,
                 "age_months": age_months,

@@ -138,6 +138,119 @@ describe("HITLApprovalCard", () => {
     expect(screen.getByText(/Sin evidencia LTAD/)).toBeInTheDocument();
   });
 
+  // Feature 045 (T051, FR-002): el resumen del feedback se llama «Revisión
+  // automática»; «Crítico LLM dice» es jerga retirada del glosario.
+  it("el resumen del feedback dice «Revisión automática (N)», nunca «Crítico LLM dice»", () => {
+    wrap(
+      <HITLApprovalCard
+        runId="r1"
+        stepId="hitl_1"
+        draftMarkdown="t"
+        criticFeedback={[
+          { section: "Recomendaciones", problem: "Sin evidencia LTAD" },
+          { problem: "Tono demasiado técnico" },
+        ]}
+      />,
+    );
+    expect(screen.getByText("Revisión automática (2)")).toBeInTheDocument();
+    expect(screen.queryByText(/Crítico LLM/i)).not.toBeInTheDocument();
+  });
+
+  // Feature 045 (T051, FR-019/constitución III): Editar y Rechazar llegan a
+  // 48 px como Aprobar y Descartar (el botón por defecto queda en ~36-44 px).
+  it.each([
+    ["hitl-edit-button", "Editar"],
+    ["hitl-reject-button", "Rechazar"],
+    ["hitl-discard-button", "Descartar análisis"],
+  ])("el botón %s (%s) cumple el touch target mínimo de 48px", (testId) => {
+    wrap(
+      <HITLApprovalCard runId="r1" stepId="hitl_1" draftMarkdown="texto" />,
+    );
+    expect(screen.getByTestId(testId).className).toMatch(/min-h-12/);
+  });
+
+  // Feature 045 (T062, FR-022): aviso cuando el borrador menciona la brecha
+  // con el primer lugar o el podio en el texto que verá la familia. Es
+  // informativo — Aprobar y Rechazar siguen disponibles.
+  describe("aviso de brecha con el podio (family_gap_mentions, T062)", () => {
+    const WARNING =
+      "Este análisis menciona la brecha con el primer lugar o el podio, y la familia lo verá. Puedes aprobarlo igual o pedir una revisión.";
+
+    it("con fragmentos muestra el aviso del contrato y cada fragmento", () => {
+      wrap(
+        <HITLApprovalCard
+          runId="r1"
+          stepId="hitl_1"
+          draftMarkdown="texto"
+          familyGapMentions={[
+            "terminó a 40 s del ganador",
+            "quedó lejos del podio",
+          ]}
+        />,
+      );
+      const warning = screen.getByTestId("hitl-family-gap-warning");
+      expect(warning).toHaveTextContent(WARNING);
+      const snippets = screen.getByRole("list", {
+        name: "Fragmentos que mencionan la brecha",
+      });
+      expect(snippets).toHaveTextContent("«terminó a 40 s del ganador»");
+      expect(snippets).toHaveTextContent("«quedó lejos del podio»");
+      expect(screen.getAllByRole("listitem")).toHaveLength(2);
+    });
+
+    it.each([
+      ["lista vacía", []],
+      ["prop ausente", undefined],
+    ])("%s: no hay aviso", (_label, mentions) => {
+      wrap(
+        <HITLApprovalCard
+          runId="r1"
+          stepId="hitl_1"
+          draftMarkdown="texto"
+          familyGapMentions={mentions}
+        />,
+      );
+      expect(screen.queryByTestId("hitl-family-gap-warning")).not.toBeInTheDocument();
+      expect(screen.queryByText(/brecha con el primer lugar/i)).not.toBeInTheDocument();
+    });
+
+    it("Aprobar y Rechazar siguen disponibles y funcionan con el aviso visible", async () => {
+      vi.mocked(raceApi.submitHITLDecision).mockResolvedValue(ACK);
+      const user = userEvent.setup();
+      wrap(
+        <HITLApprovalCard
+          runId="r1"
+          stepId="hitl_1"
+          draftMarkdown="texto"
+          familyGapMentions={["terminó a 40 s del ganador"]}
+        />,
+      );
+      expect(screen.getByTestId("hitl-family-gap-warning")).toBeInTheDocument();
+      expect(screen.getByTestId("hitl-approve-button")).toBeEnabled();
+      expect(screen.getByTestId("hitl-reject-button")).toBeEnabled();
+
+      await user.click(screen.getByTestId("hitl-approve-button"));
+      await waitFor(() =>
+        expect(raceApi.submitHITLDecision).toHaveBeenCalledWith("r1", "hitl_1", {
+          decision: "approve",
+        }),
+      );
+    });
+
+    it("sin violaciones jest-axe con el aviso visible", async () => {
+      wrap(
+        <HITLApprovalCard
+          runId="r1"
+          stepId="hitl_1"
+          draftMarkdown="# Draft de prueba"
+          criticFeedback={[{ problem: "Sin evidencia LTAD" }]}
+          familyGapMentions={["terminó a 40 s del ganador", "lejos del podio"]}
+        />,
+      );
+      expect(await axe(document.body)).toHaveNoViolations();
+    });
+  });
+
   it("muestra error cuando la mutation falla", async () => {
     vi.mocked(raceApi.submitHITLDecision).mockRejectedValue(
       new Error("422 invalid edits"),
@@ -179,6 +292,25 @@ describe("HITLApprovalCard", () => {
 
       const textarea = await screen.findByTestId("hitl-edit-textarea");
       expect(textarea).toHaveValue("# Borrador original");
+    });
+
+    // Feature 045 (T078, FR-063 / SC-010): touch target mínimo de 48 px en el
+    // pie del diálogo de edición.
+    it("los botones «Cancelar» y «Guardar y aprobar» del diálogo cumplen min-h-12", async () => {
+      const user = userEvent.setup();
+      wrap(
+        <HITLApprovalCard runId="r1" stepId="hitl_1" draftMarkdown="Original" />,
+      );
+
+      await user.click(screen.getByTestId("hitl-edit-button"));
+      await screen.findByTestId("hitl-edit-textarea");
+
+      expect(screen.getByRole("button", { name: "Cancelar" }).className).toMatch(
+        /min-h-12/,
+      );
+      expect(screen.getByTestId("hitl-edit-save-button").className).toMatch(
+        /min-h-12/,
+      );
     });
 
     it("escribe una edición y Guardar y aprobar envía decision=edit con el markdown editado, y cierra el diálogo", async () => {

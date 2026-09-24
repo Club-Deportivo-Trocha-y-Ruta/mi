@@ -24,6 +24,7 @@ from pydantic import BaseModel
 from app.models.anthropometry import MaturationStatus, NutritionalStatus
 from app.models.growth import GrowthSource
 from app.schemas.alerts import MeasurementStatus
+from app.schemas.body_composition import BodyCompositionFamilySummary, BodyCompositionSummary
 
 
 class GrowthSummaryAlert(str, enum.Enum):
@@ -119,3 +120,6 @@ class GrowthSummaryOut(BaseModel):
     alerts: list[GrowthSummaryAlert] = []
     latest: LatestBands | None = None
     latest_ai_analysis: LatestAiAnalysis | None = None  # feature 042 (T066) — null conditions §4
+    # Feature 046 — coach/admin get BodyCompositionSummary, parents get the
+    # 5-key BodyCompositionFamilySummary (router picks the variant per role).
+    body_composition: BodyCompositionSummary | BodyCompositionFamilySummary | None = None

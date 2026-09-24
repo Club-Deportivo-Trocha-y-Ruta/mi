@@ -180,7 +180,13 @@ def test_ai_analyst_and_critic_model_default_empty():
 
 
 def test_ai_anthro_prompt_version_default():
+    # Feature 046 (T065): default v2 (sección de composición corporal).
     s = Settings(_env_file=None)
+    assert s.ai_anthro_prompt_version == "anthropometry_analyst_v2"
+
+
+def test_ai_anthro_prompt_version_v1_still_allowed_for_rollback():
+    s = Settings(_env_file=None, ai_anthro_prompt_version="v1")
     assert s.ai_anthro_prompt_version == "anthropometry_analyst_v1"
 
 

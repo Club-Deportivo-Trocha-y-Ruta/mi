@@ -11,12 +11,18 @@ from app.models.base import Base
 class GrowthSource(str, enum.Enum):
     WHO = "WHO"
     CDC = "CDC"
+    # Feature 046 — skinfold reference (Ramírez-Vélez et al. 2016, Bogotá).
+    FUPRECOL = "FUPRECOL"
 
 
 class GrowthIndicator(str, enum.Enum):
     height_for_age = "height_for_age"
     weight_for_age = "weight_for_age"
     bmi_for_age = "bmi_for_age"
+    # Feature 046 — skinfold indicators (FUPRECOL LMS only).
+    triceps_skinfold_for_age = "triceps_skinfold_for_age"
+    subscapular_skinfold_for_age = "subscapular_skinfold_for_age"
+    triceps_subscapular_sum_for_age = "triceps_subscapular_sum_for_age"
 
 
 class GrowthReferenceLms(Base):

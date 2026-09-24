@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.database import engine
-from app.routers import ai, alerts, audit, auth, users, clubs, athletes, anthropometry, athlete_race_analysis, calendar, dashboard, growth, intervals, parent_athletes, profile, race_analysis, race_competitors, race_events, race_identity, race_imports, race_series, reports, training_sessions
+from app.routers import ai, alerts, audit, auth, users, clubs, athletes, anthropometry, athlete_race_analysis, body_composition, calendar, dashboard, growth, intervals, parent_athletes, profile, race_analysis, race_competitors, race_events, race_identity, race_imports, race_series, reports, training_sessions
 from app.routers.session_assistant import router as session_assistant_router
 from app.routers.club_race_insights import router as club_race_insights_router
 from app.routers.consent import consent_router, public_router as consent_public_router
@@ -196,6 +196,12 @@ app.include_router(alerts.router, prefix="/api/athletes", tags=["alerts"])
 app.include_router(dashboard.router, prefix="/api/dashboard", tags=["dashboard"])
 app.include_router(athletes.router, prefix="/api/athletes", tags=["athletes"])
 app.include_router(anthropometry.router, prefix="/api/athletes", tags=["anthropometry"])
+# Feature 046 — skinfold capture (PUT/DELETE), same prefix as anthropometry.
+app.include_router(body_composition.router, prefix="/api/athletes", tags=["body-composition"])
+# Feature 046, US5 (T057) — not athlete-scoped, own prefix.
+app.include_router(
+    body_composition.field_guide_router, prefix="/api/body-composition", tags=["body-composition"]
+)
 app.include_router(reports.router, prefix="/api/athletes", tags=["reports"])
 app.include_router(growth.router, prefix="/api", tags=["growth"])
 app.include_router(parent_athletes.router, prefix="/api/parent-athletes", tags=["parent-athletes"])

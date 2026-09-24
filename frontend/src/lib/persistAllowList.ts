@@ -57,7 +57,11 @@ export const PERSIST_ALLOWLIST_PREFIXES: readonly (readonly unknown[])[] = [
   // Closed catalog of revision reasons.
   ["revision-reasons"],
   // Coach-home mission-control summary (feature 031): counts + per-band
-  // minute sums only (consents_pending, insights_stale, weekly_load). No
+  // minute sums only (consents_pending, insights_stale, weekly_load). Feature
+  // 045 adds three more COUNTS (identity_decisions_pending, imports_in_progress,
+  // analyses_awaiting_approval) — re-reviewed 2026-09-23 (T065): integers only,
+  // the lists behind them (["race-pending-analyses", …], athlete_ref) stay off this
+  // list. No
   // athlete ids/names/session content — data-privacy-guard reviewed
   // (research.md R9).
   ["dashboard", "coach-summary"],

@@ -50,10 +50,11 @@ import logging
 import os
 import re
 from collections import OrderedDict
+from collections.abc import Mapping, Sequence
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path as PathLib
-from typing import Annotated, Optional
+from typing import Annotated, Any, Optional
 
 from fastapi import (
     APIRouter,
@@ -65,6 +66,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.responses import JSONResponse
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -75,10 +77,7 @@ from app.models.athlete import Athlete
 from app.models.audit_log import AuditAction
 from app.models.club import ClubMember, ClubRole
 from app.models.race_category import RaceCategory
-from app.models.race_identity_candidate import (
-    IdentityCandidateState,
-    RaceIdentityCandidate,
-)
+from app.models.race_identity_candidate import RaceIdentityCandidate
 from app.models.race_import import RaceImport, RaceImportKind, RaceImportStatus
 from app.models.race_event import RaceEvent
 from app.models.race_series import RaceSeries, RaceSeriesKind, RaceSeriesLevel
@@ -93,6 +92,7 @@ from app.schemas.race_imports import (
     DryRunCounts,
     ImportCommitRequest,
     ImportCommitResponse,
+    ImportDetailRead,
     ImportDryRunResponse,
     ImportListItem,
     ImportListResponse,
@@ -134,6 +134,7 @@ from app.services.race.pdf_parser import (
     ParsedResults,
     ResultsRow,
 )
+from app.services.race.revision import detect_revision
 from app.services.race.revision_diff_view import build_event_diff_view
 from app.services.race.run_staleness import invalidate_runs_for_event
 from app.services.request_context import AuditContext, get_request_context
@@ -598,7 +599,7 @@ def _matches_unresolved_error(missing: set[str]) -> HTTPException:
     """``409 matches_unresolved`` — el coach del `HistoricalLoadPage` commitea
     con ``resolved_matches: []`` siempre (no hay UI de resolución de matches
     en el tablero); si el acta trae competidores TyR sin decisión, el board
-    debe poder distinguir esto de ``identity_review_pending``/
+    debe poder distinguir esto de ``identity_pending``/
     ``nothing_pending`` y mandar al coach al Import Wizard en vez de
     commitear sin vincular en silencio. ``missing`` son slugs normalizados
     (``competitor_normalized_name``), nunca el nombre de pila — misma
@@ -892,7 +893,30 @@ async def _reload_parsed_from_storage(
 IDENTITY_REBUILD_TIMEOUT_S = 30.0
 
 
-async def _identity_rebuild_needed(db: AsyncSession) -> bool:
+def _latest_correction_at(imp: RaceImport) -> Optional[datetime]:
+    """Instante de la corrección manual más reciente de la carga (UTC sin
+    zona, como las columnas ``DateTime``), o ``None`` si no tiene ninguna.
+
+    ``add_correction`` guarda ``at`` (ISO, UTC) en cada entrada de
+    ``parse_meta_json["corrections"]``; una entrada sin ``at`` legible se
+    ignora.
+    """
+    latest: Optional[datetime] = None
+    for correction in (imp.parse_meta_json or {}).get("corrections") or []:
+        try:
+            at = datetime.fromisoformat(correction["at"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if at.tzinfo is not None:
+            at = at.astimezone(timezone.utc).replace(tzinfo=None)
+        if latest is None or at > latest:
+            latest = at
+    return latest
+
+
+async def _identity_rebuild_needed(
+    db: AsyncSession, *, latest_correction_at: Optional[datetime] = None
+) -> bool:
     """¿Hace falta recalcular la cola antes de este commit?
 
     El rebuild reparsea TODOS los imports en staging: con las quince válidas
@@ -901,11 +925,19 @@ async def _identity_rebuild_needed(db: AsyncSession) -> bool:
     algún import en staging es más nuevo que el último candidato calculado
     — si nada se subió desde entonces, la cola ya está al día y basta con
     leer el contador de `pending`.
+
+    ``latest_correction_at``: la última corrección manual de ESTA carga
+    (``POST /corrections`` agrega/edita filas pero no toca ``imported_at``). Si
+    es posterior al último candidato, la cola no vio esas filas (research R-08,
+    nota 2 del G2). Las correcciones de otras cargas no cuentan: el candado
+    solo mira las filas de la que se confirma.
     """
     last_candidate = (
         await db.execute(select(func.max(RaceIdentityCandidate.created_at)))
     ).scalar()
     if last_candidate is None:
+        return True
+    if latest_correction_at is not None and latest_correction_at > last_candidate:
         return True
     newest_staged = (
         await db.execute(
@@ -919,38 +951,109 @@ async def _identity_rebuild_needed(db: AsyncSession) -> bool:
     return newest_staged is not None and newest_staged > last_candidate
 
 
-async def _identity_pending_count(db: AsyncSession) -> int:
-    """Candidatos `pending` de la cola, sin recalcular."""
-    return int(
-        (
-            await db.execute(
-                select(func.count())
-                .select_from(RaceIdentityCandidate)
-                .where(RaceIdentityCandidate.state == IdentityCandidateState.pending)
-            )
-        ).scalar()
-        or 0
+def _identity_pending_response(parse_id: int, pending_for_import: int) -> JSONResponse:
+    """``409 identity_pending`` (feature 045, contracts/api.md §"Changed
+    behaviour"). Cuerpo plano, no ``{"detail": {...}}``: ``HTTPException`` no
+    admite claves hermanas de ``detail``, por eso se devuelve la respuesta
+    directamente. ``review_path`` lleva al coach a las identidades de ESTA
+    carga en «Cargas e identidades». Solo ids y conteos, nunca nombres.
+    """
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content={
+            "detail": "identity_pending",
+            "pending_for_import": pending_for_import,
+            "review_path": (
+                f"/competitions/imports?seccion=identidades&import={parse_id}"
+            ),
+        },
     )
 
 
-async def load_identity_rows(imp: RaceImport) -> dict[str, list[ResultsRow]]:
+async def _identity_gate(
+    db: AsyncSession,
+    imp: RaceImport,
+    rows_by_category: Mapping[str, Sequence[ResultsRow]],
+    general_by_category: Optional[Mapping[str, Sequence[Any]]] = None,
+    *,
+    operation: str,
+) -> Optional[JSONResponse]:
+    """Candado de identidad POR CARGA de ``/commit`` y ``/commit-pending``
+    (feature 045, research R-08; antes de 045 miraba la cola entera).
+
+    Recalcula la cola solo si hace falta (``_identity_rebuild_needed``, que
+    también mira las correcciones de esta carga; ``identity_review.rebuild``
+    es idempotente y nunca pisa una decisión) y bloquea únicamente con los
+    candidatos ``pending`` cuyas claves pertenecen a las filas que ESTE
+    commit va a ingestar: ``rows_by_category`` (RESULTADOS de las categorías
+    elegibles) y ``general_by_category`` (GENERAL completo — el ingestor
+    resuelve competidores desde TODAS sus categorías). Devuelve ``None`` si
+    puede seguir, o la respuesta ``409 identity_pending``.
+    ``503`` si el recálculo excede ``IDENTITY_REBUILD_TIMEOUT_S``.
+
+    Cierra la transacción (``commit``) antes de volver: el llamador sigue con
+    SFTP/parseo/ingesta y no debe conservar la conexión MySQL abierta.
+    """
+    parse_id = imp.id
+    try:
+        if await _identity_rebuild_needed(
+            db, latest_correction_at=_latest_correction_at(imp)
+        ):
+            await identity_review.rebuild(
+                db,
+                rows_loader=load_identity_rows,
+                timeout_s=IDENTITY_REBUILD_TIMEOUT_S,
+            )
+    except TimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "identity_rebuild_timeout",
+                "message": (
+                    "El recálculo de identidad tardó demasiado antes del "
+                    f"{operation}. Intenta de nuevo en unos minutos."
+                ),
+            },
+        )
+    blocking = await identity_review.pending_candidates_for_import(
+        db, identity_review.import_record_keys(rows_by_category, general_by_category)
+    )
+    await db.commit()
+    if not blocking:
+        return None
+    logger.info(
+        "race_import_%s identity_pending parse_id=%s pending_for_import=%d",
+        operation.replace("-", "_"),
+        parse_id,
+        len(blocking),
+    )
+    return _identity_pending_response(parse_id, len(blocking))
+
+
+async def load_identity_rows(imp: RaceImport) -> identity_review.ImportRows:
     """``RowsLoader`` de ``identity_review.rebuild`` (feature 044, T050/T049).
 
-    Adapta ``_reload_parsed_from_storage`` — descarta ``GENERAL`` y los
-    metadatos que el universo de identidad no usa, y conserva solo RESULTADOS
-    con las correcciones ya reaplicadas. Vive en este router, no en el
-    servicio, porque reutiliza su descarga SFTP + reparseo; el servicio de
+    Adapta ``_reload_parsed_from_storage`` — descarta los metadatos que el
+    universo de identidad no usa y conserva RESULTADOS con las correcciones ya
+    reaplicadas más, en una carga en staging, su GENERAL (feature 045, R-08:
+    el ingestor crea competidores desde GENERAL en todas las categorías, así
+    que el commit debe poder preguntar por ellos). Vive en este router, no en
+    el servicio, porque reutiliza su descarga SFTP + reparseo; el servicio de
     identidad no debe importar el router (contrato §Resolver, docstring de
     ``identity_review.load_universe``).
     """
-    parsed_results, _general, _ext, _headers, cats = await _reload_parsed_from_storage(imp)
+    parsed_results, parsed_general, _ext, _headers, cats = await _reload_parsed_from_storage(imp)
     if imp.status == RaceImportStatus.committed:
         # Import confirmado a medias: solo sus categorías pendientes siguen
-        # en el universo de identidad; las ya ingestadas son resultados.
+        # en el universo de identidad; las ya ingestadas son resultados, y
+        # su GENERAL ya se resolvió en el primer commit (esos competidores
+        # ya existen y entran por su firma).
         pending = set((imp.parse_meta_json or {}).get("pending_categories") or [])
         pending_codes = {c.code for c in cats if c.header_raw in pending and c.code}
-        return {code: rows for code, rows in parsed_results.items() if code in pending_codes}
-    return parsed_results
+        return identity_review.ImportRows(
+            results={code: rows for code, rows in parsed_results.items() if code in pending_codes}
+        )
+    return identity_review.ImportRows(results=parsed_results, general=parsed_general or {})
 
 
 def _build_event_meta_from_parse_meta(
@@ -1177,8 +1280,14 @@ async def commit_import(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
     ctx: AuditContext = Depends(get_request_context),
-) -> ImportCommitResponse:
-    """Endpoint 3 wizard (commit) — promueve pending → committed con resolved matches."""
+) -> ImportCommitResponse | JSONResponse:
+    """Endpoint 3 wizard (commit) — promueve pending → committed con resolved matches.
+
+    ``409 identity_pending`` (feature 045, R-08) si algún candidato de identidad
+    ``pending`` involucra a las filas de ESTA carga; ``JSONResponse`` porque su
+    cuerpo plano (``detail`` + ``pending_for_import`` + ``review_path``) no cabe
+    en ``HTTPException``.
+    """
     imp = await _load_pending_import(db, parse_id, current_user, for_update=True)
     parse_meta = imp.parse_meta_json or {}
 
@@ -1201,50 +1310,22 @@ async def commit_import(
         categories, parse_meta
     )
 
-    # Feature 044 (US4, T050) — candado de revisión de identidad. Mientras
-    # exista al menos un candidato `pending`, el resolver del ingestor podría
-    # fusionar homónimos en silencio (o partir a una misma persona) sin que
-    # el coach haya decidido. `identity_review.rebuild` es idempotente
-    # (nunca pisa una decisión tomada, `pair_hash` no cambia), así que
-    # llamarlo aquí — incluso si el coach nunca pulsó "recalcular" en la
-    # pantalla de revisión — es barato y cierra estructuralmente el hueco:
-    # sin este rebuild, `pending` podría leer 0 solo porque nadie reconstruyó
-    # la cola desde que se subió el import, y el commit avanzaría igual.
-    try:
-        if await _identity_rebuild_needed(db):
-            identity_pending = (
-                await identity_review.rebuild(
-                    db,
-                    rows_loader=load_identity_rows,
-                    timeout_s=IDENTITY_REBUILD_TIMEOUT_S,
-                )
-            ).pending
-        else:
-            identity_pending = await _identity_pending_count(db)
-    except TimeoutError:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={
-                "code": "identity_rebuild_timeout",
-                "message": (
-                    "El recálculo de identidad tardó demasiado antes del "
-                    "commit. Intenta de nuevo en unos minutos."
-                ),
-            },
-        )
-    await db.commit()
-    if identity_pending > 0:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "code": "identity_review_pending",
-                "pending": identity_pending,
-                "message": (
-                    "Hay candidatos de identidad sin decidir. Resuélvelos en "
-                    "la revisión de identidad antes de confirmar la carga."
-                ),
-            },
-        )
+    # Feature 044 (US4, T050) — candado de revisión de identidad: el resolver
+    # del ingestor podría fusionar homónimos en silencio (o partir a una misma
+    # persona) sin que el coach haya decidido. Feature 045 (US3, R-08): solo
+    # frena un candidato `pending` que involucre a las filas que ESTE commit
+    # ingesta (`eligible_codes`) — uno que habla de otra carga ya no bloquea.
+    # `_identity_gate` recalcula la cola si hace falta (idempotente), así que
+    # el candado sigue cerrado aunque nadie pulsara "recalcular".
+    blocked = await _identity_gate(
+        db,
+        imp,
+        {code: rows for code, rows in parsed_results.items() if code in eligible_codes},
+        parsed_general,
+        operation="commit",
+    )
+    if blocked is not None:
+        return blocked
 
     # Construir EventMeta (incluye condiciones de carrera si fueron capturadas en /parse)
     try:
@@ -1469,14 +1550,15 @@ async def commit_pending_import(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
     ctx: AuditContext = Depends(get_request_context),
-) -> ImportCommitResponse:
+) -> ImportCommitResponse | JSONResponse:
     """Termina de ingestar un import ``committed`` cuyas categorías
     pendientes se corrigieron o reconocieron después del primer ``/commit``
     (contracts/historical-load.md §"Idempotence and resumption", FR-027).
 
-    Mismo candado de identidad que ``/commit`` (FR-018): recalcula la cola
-    antes de decidir, ``409 identity_review_pending`` si algo sigue sin
-    decidir. ``409 nothing_pending`` si no queda ninguna categoría pendiente
+    Mismo candado de identidad por carga que ``/commit`` (FR-018, 045 R-08):
+    recalcula la cola antes de decidir, ``409 identity_pending`` si algún
+    candidato pendiente involucra a las filas que va a ingestar.
+    ``409 nothing_pending`` si no queda ninguna categoría pendiente
     (ni en el caché de meta, ni tras re-verificar contra el acta corregida).
     """
     imp = await _load_committed_import_with_pending(
@@ -1491,43 +1573,23 @@ async def commit_pending_import(
         await _reload_parsed_from_storage(imp)
     )
 
-    # Mismo candado de identidad que /commit — reutiliza el patrón
-    # rebuild-then-check (FR-018).
-    try:
-        if await _identity_rebuild_needed(db):
-            identity_pending = (
-                await identity_review.rebuild(
-                    db,
-                    rows_loader=load_identity_rows,
-                    timeout_s=IDENTITY_REBUILD_TIMEOUT_S,
-                )
-            ).pending
-        else:
-            identity_pending = await _identity_pending_count(db)
-    except TimeoutError:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={
-                "code": "identity_rebuild_timeout",
-                "message": (
-                    "El recálculo de identidad tardó demasiado antes del "
-                    "commit-pending. Intenta de nuevo en unos minutos."
-                ),
-            },
-        )
-    await db.commit()
-    if identity_pending > 0:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "code": "identity_review_pending",
-                "pending": identity_pending,
-                "message": (
-                    "Hay candidatos de identidad sin decidir. Resuélvelos en "
-                    "la revisión de identidad antes de confirmar la carga."
-                ),
-            },
-        )
+    # Categorías que este commit-pending ingesta ahora: las pendientes que ya
+    # son consistentes o reconocidas. Su conjunto de filas es el alcance del
+    # candado de identidad — mismo `_identity_gate` que /commit (FR-018, 045 R-08).
+    eligible_codes, pending_categories = _eligible_and_pending_categories(
+        categories,
+        parse_meta,
+        restrict_to_headers=set(parse_meta.get("pending_categories") or []),
+    )
+    blocked = await _identity_gate(
+        db,
+        imp,
+        {code: rows for code, rows in parsed_results.items() if code in eligible_codes},
+        parsed_general,
+        operation="commit-pending",
+    )
+    if blocked is not None:
+        return blocked
 
     try:
         meta_obj = _build_event_meta_from_parse_meta(parse_meta, imp.filename)
@@ -1537,11 +1599,6 @@ async def commit_pending_import(
             detail=f"parse_meta inválido: {exc}",
         )
 
-    eligible_codes, pending_categories = _eligible_and_pending_categories(
-        categories,
-        parse_meta,
-        restrict_to_headers=set(parse_meta.get("pending_categories") or []),
-    )
     if not eligible_codes:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -1908,6 +1965,8 @@ async def list_imports(
     suyos, más — respaldo de autoría, igual que ``_has_club_access`` — sus
     propios cargues cuando el club no resuelve. Filtrado en SQL para que
     ``limit``/``offset`` y ``total`` sigan siendo correctos.
+
+    Sin ``status`` no lista las cargas ``discarded`` (feature 045, US3).
     """
     stmt = select(RaceImport)
     count_stmt = select(RaceImport)
@@ -1921,6 +1980,11 @@ async def list_imports(
             )
         stmt = stmt.where(RaceImport.status == status_enum)
         count_stmt = count_stmt.where(RaceImport.status == status_enum)
+    else:
+        # Feature 045 (US3): una carga descartada ya no es trabajo en curso;
+        # solo se lista si se pide explícitamente con ``?status=discarded``.
+        stmt = stmt.where(RaceImport.status != RaceImportStatus.discarded)
+        count_stmt = count_stmt.where(RaceImport.status != RaceImportStatus.discarded)
 
     if current_user.role != UserRole.admin:
         # Usuarios coach-o-admin de los clubes del solicitante: cualquier
@@ -2082,3 +2146,210 @@ async def get_event_revision_diff(
 ) -> RaceEventDiffResponse:
     """``GET /api/race-analysis/imports/{race_event_id}/diff`` (coach/admin)."""
     return await build_event_diff_view(db, race_event_id)
+
+
+# ---------------------------------------------------------------------------
+# Feature 045 (US3, research R-09): retomar y descartar una carga
+#
+# Se registran al FINAL del módulo: ``GET /{import_id}`` no debe quedar antes
+# de las rutas estáticas ``/revision-reasons`` y ``/acknowledge-reasons``.
+# ---------------------------------------------------------------------------
+
+#: Claves de ``parse_meta_json`` que el wizard necesita para retomar la carga.
+#: Lista permitida, no denegada: una clave nueva del meta no sale al cliente
+#: hasta que alguien decida que es seguro. Quedan fuera las rutas de storage,
+#: ``parse_uuid``/``results_ext`` (detalles internos) y ``corrections`` (filas
+#: con nombre/club/ciudad de un menor).
+_PUBLIC_PARSE_META_KEYS = (
+    "header",
+    "conditions",
+    "categories_found",
+    "n_rows_resultados",
+    "n_rows_general",
+    "categories",
+    "unreadable_rows",
+    "acknowledged",
+    "pending_categories",
+)
+
+#: Estados desde los que se puede descartar una carga.
+_DISCARDABLE_STATUSES = (RaceImportStatus.pending, RaceImportStatus.dry_run)
+
+
+async def _load_import_in_scope(
+    db: AsyncSession,
+    import_id: int,
+    current_user: User,
+    *,
+    for_update: bool = False,
+) -> RaceImport:
+    """Carga un ``RaceImport`` de cualquier estado dentro del alcance por club.
+
+    ``404`` tanto si no existe como si es de otro club: a diferencia de
+    ``_load_pending_import`` (``403`` por club), estos dos endpoints no revelan
+    que la carga existe. El admin ve todo.
+    """
+    stmt = select(RaceImport).where(RaceImport.id == import_id)
+    if for_update:
+        stmt = stmt.with_for_update()
+    imp = (await db.execute(stmt)).scalar_one_or_none()
+    not_found = HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=f"import_id={import_id} no existe.",
+    )
+    if imp is None:
+        raise not_found
+    try:
+        await ensure_import_club_access(db, imp, current_user)
+    except HTTPException as exc:
+        if exc.status_code != status.HTTP_403_FORBIDDEN:
+            raise
+        raise not_found from None
+    return imp
+
+
+async def _import_season(db: AsyncSession, imp: RaceImport) -> Optional[int]:
+    """Temporada de la carga: la del encabezado del meta mientras lo conserva;
+    si no (confirmada por completo), la de la serie de su evento."""
+    season = ((imp.parse_meta_json or {}).get("header") or {}).get("season")
+    if season is not None:
+        return int(season)
+    if imp.event_id is None:
+        return None
+    return (
+        await db.execute(
+            select(RaceSeries.season_year)
+            .join(RaceEvent, RaceEvent.series_id == RaceSeries.id)
+            .where(RaceEvent.id == imp.event_id)
+        )
+    ).scalar_one_or_none()
+
+
+async def _import_parent_committed_at(
+    db: AsyncSession, imp: RaceImport
+) -> Optional[datetime]:
+    """Cuándo se confirmó la versión previa de la válida de una carga en
+    staging — el mismo dato que ``POST /parse`` devuelve como
+    ``parent_committed_at`` (``detect_revision``).
+
+    Solo para ``pending``/``dry_run`` con encabezado: una carga ``committed``
+    (incluida la confirmada a medias, que conserva su ``header`` y su evento)
+    se encontraría a sí misma como «previa».
+    """
+    if imp.status not in _DISCARDABLE_STATUSES:
+        return None
+    header = (imp.parse_meta_json or {}).get("header") or {}
+    try:
+        season = int(header["season"])
+        valida_num = int(header["valida_num"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    revision = await detect_revision(
+        db,
+        series_name=header.get("series_name") or "",
+        season=season,
+        valida_num=valida_num,
+        series_id=imp.series_id,
+    )
+    return revision.parent_committed_at if revision is not None else None
+
+
+async def _import_detail(db: AsyncSession, imp: RaceImport) -> ImportDetailRead:
+    meta = imp.parse_meta_json
+    return ImportDetailRead(
+        id=imp.id,
+        status=imp.status.value,
+        source_filename=imp.original_filename or imp.filename,
+        parse_meta=(
+            {k: meta[k] for k in _PUBLIC_PARSE_META_KEYS if k in meta}
+            if meta is not None
+            else None
+        ),
+        created_at=imp.imported_at,
+        event_id=imp.event_id,
+        season=await _import_season(db, imp),
+        parent_committed_at=await _import_parent_committed_at(db, imp),
+    )
+
+
+@router.get(
+    "/{import_id}",
+    response_model=ImportDetailRead,
+    summary="Una carga, para retomar el wizard",
+    description=(
+        "Devuelve el estado y el meta público de una carga (pending, dry_run, "
+        "committed, failed o discarded) para que el wizard la retome desde "
+        "`?import=<id>`. RBAC coach/admin, alcance por club: otro club o un id "
+        "desconocido responden 404."
+    ),
+)
+async def get_import(
+    import_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+) -> ImportDetailRead:
+    """``GET /api/race-analysis/imports/{import_id}`` (coach/admin)."""
+    imp = await _load_import_in_scope(db, import_id, current_user)
+    return await _import_detail(db, imp)
+
+
+@router.post(
+    "/{import_id}/discard",
+    response_model=ImportDetailRead,
+    summary="Descarta una carga en curso",
+    description=(
+        "`pending`/`dry_run` → `discarded` (200). Ya `discarded` → 200 sin "
+        "cambios (idempotente). `committed` o `failed` → 409 "
+        "`import_not_discardable`. RBAC coach/admin, alcance por club (404 si "
+        "es de otro club). Los archivos de storage no se tocan."
+    ),
+)
+async def discard_import(
+    import_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
+    ctx: AuditContext = Depends(get_request_context),
+) -> ImportDetailRead:
+    """``POST /api/race-analysis/imports/{import_id}/discard`` (coach/admin).
+
+    Máquina de estados (data-model §5): ``pending | dry_run → discarded``;
+    un ``committed`` nunca se descarta. Solo cambia ``status``: el PDF y el
+    meta quedan como estaban, así una carga descartada por error se puede
+    reconstruir a mano, y el mismo archivo se puede volver a subir (el staging
+    solo reusa ``pending``/``dry_run``).
+    """
+    imp = await _load_import_in_scope(db, import_id, current_user, for_update=True)
+
+    if imp.status == RaceImportStatus.discarded:
+        return await _import_detail(db, imp)
+    if imp.status not in _DISCARDABLE_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "import_not_discardable",
+                "message": (
+                    f"Una carga en estado {imp.status.value} no se puede "
+                    "descartar. Solo las cargas pendientes o en simulación."
+                ),
+            },
+        )
+
+    previous = imp.status
+    imp.status = RaceImportStatus.discarded
+    await db.flush()
+    await record_audit(
+        db,
+        action=AuditAction.update,
+        entity_type=AuditEntityType.race_import,
+        entity_id=imp.id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=None,
+        changed_fields=["status"],
+        diff={"status": (previous.value, RaceImportStatus.discarded.value)},
+        request_id=ctx.request_id,
+    )
+    logger.info(
+        "race_import_discard import_id=%s from=%s", import_id, previous.value
+    )
+    return await _import_detail(db, imp)

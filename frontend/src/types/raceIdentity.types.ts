@@ -26,7 +26,7 @@ export type IdentityCandidateState =
  * Código de señal — cada uno se traduce a una frase en español en el
  * componente (nunca se muestra el código crudo). Tipado como `string`, no
  * como union cerrada: el backend puede sumar señales nuevas sin que el
- * frontend deje de compilar; `signalLabel()` en `IdentityReviewPage.tsx`
+ * frontend deje de compilar; `signalLabel()` en `IdentitySection.tsx`
  * usa un lookup con reserva genérica para cualquier código no reconocido.
  *
  * Códigos conocidos a la fecha (`identity_review.py::SIGNAL_*`):

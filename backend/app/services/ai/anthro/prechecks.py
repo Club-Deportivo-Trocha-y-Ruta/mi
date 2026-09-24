@@ -1,4 +1,4 @@
-"""Prechecks deterministas R01-R12 (feature 042, T029).
+"""Prechecks deterministas R01-R14 (feature 042, T029; R13/R14 feature 046).
 
 Implementa ``specs/042-traceable-growth-ai/data-model.md`` §2.3 y el
 catálogo de reglas de ``specs/042-traceable-growth-ai/contracts/
@@ -11,8 +11,9 @@ regla con ``must_block=True`` dispara, el pipeline (T039) va directo al
 fallback determinista sin invocar al crítico (FR-014). Las reglas
 ``must_block=False`` solo degradan la confianza reportada al crítico.
 
-Catálogo (``must_block`` set: R01, R02, R04, R06, R09, R11, R12 — privacidad
-y seguridad de desarrollo; degradan solamente: R03, R05, R07, R08, R10):
+Catálogo (``must_block`` set: R01, R02, R04, R06, R09, R11, R12, R13, R14 —
+privacidad y seguridad de desarrollo; degradan solamente: R03, R05, R07, R08,
+R10):
 
 | Regla | Categoría | Bloquea | Qué revisa |
 |-------|-----------|---------|------------|
@@ -28,6 +29,8 @@ y seguridad de desarrollo; degradan solamente: R03, R05, R07, R08, R10):
 | R10   | style     | no      | Markdown/viñetas dentro de un campo de texto. |
 | R11   | grounding | sí      | Cruce de fase de maduración sin corroborar, presentado como confirmado. |
 | R12   | privacy   | sí      | Contenido exclusivo del entrenador filtrado a una audiencia familiar. |
+| R13   | privacy   | sí      | Cifra de composición corporal (%/mm) filtrada a una audiencia familiar (feature 046). |
+| R14   | safety    | sí      | Lenguaje de dieta, restricción calórica o pérdida de peso (feature 046). |
 
 REUSO deliberado (para no duplicar reglas ya auditadas, instrucción
 explícita del feature):
@@ -82,22 +85,24 @@ __all__ = [
     "check_r10_markdown_in_fields",
     "check_r11_uncorroborated_phase_crossing",
     "check_r12_coach_only_leak_to_family",
+    "check_r13_body_comp_numeric_leak_to_family",
+    "check_r14_diet_or_weight_loss_language",
 ]
 
 
-PrecheckCategory = Literal["privacy", "ltad", "grounding", "style"]
+PrecheckCategory = Literal["privacy", "ltad", "grounding", "style", "safety"]
 
 
 @dataclass(frozen=True)
 class PrecheckViolation:
-    """Una violación puntual de una de las reglas R01-R12 (data-model.md §2.3).
+    """Una violación puntual de una de las reglas R01-R14 (data-model.md §2.3; R13/R14 feature 046).
 
     ``detail`` es breve y nunca reproduce el texto del atleta/familia ni el
     fragmento que disparó la regla — ver la nota de privacidad del docstring
     del módulo.
     """
 
-    rule_id: str  # "R01".."R12"
+    rule_id: str  # "R01".."R14"
     category: PrecheckCategory
     must_block: bool
     detail: str
@@ -181,7 +186,15 @@ def check_r02_diagnostic_label(
 # "próximas 2-4 semanas", listas de longitud fija) y que por lo tanto no
 # están respaldadas por un campo específico del contexto, pero tampoco son
 # una alucinación — son la propia forma del contrato de salida.
-_R03_STRUCTURAL_NUMBERS: frozenset[str] = frozenset({"2", "3", "4"})
+#
+# "28" es el tamaño de la ventana de entrenamiento: el propio bloque que ve el
+# analista dice "Sesiones registradas en los últimos 28 días" (y el prompt lo
+# repite cuando no hay ventana), pero ese número vive en el sufijo de las
+# claves (``sessions_count_28d``), no como valor, así que sin esta entrada
+# R03 marcaba como inventada una cifra que el sistema mismo le dio al modelo
+# (4/4 casos coach del golden, 2026-09-24). Debe coincidir con
+# ``context._TRAINING_WINDOW_DAYS`` — lo verifica ``tests/anthro/test_prechecks.py``.
+_R03_STRUCTURAL_NUMBERS: frozenset[str] = frozenset({"2", "3", "4", "28"})
 
 
 def _normalize_number_token(token: str) -> str:
@@ -552,6 +565,77 @@ def check_r12_coach_only_leak_to_family(
 
 
 # ---------------------------------------------------------------------------
+# R13 — fuga numérica de composición corporal a la audiencia familiar
+# (privacy, must_block; feature 046, contracts/ai-body-composition-leaf.md §3)
+# ---------------------------------------------------------------------------
+
+_R13_NUMERIC_LEAK_PATTERN = re.compile(
+    r"\d+(?:[.,]\d+)?\s*%|\d+(?:[.,]\d+)?\s*mm",
+    re.IGNORECASE,
+)
+
+
+def check_r13_body_comp_numeric_leak_to_family(
+    insight: "AnthropometryInsightV1",
+) -> PrecheckViolation | None:
+    """Ningún porcentaje ni milímetro de composición corporal para familia.
+
+    Solo aplica a ``audience == "family"`` — el coach sí puede recibir esas
+    magnitudes (contract §3, tabla R13).
+    """
+    if insight.audience != "family":
+        return None
+    if _R13_NUMERIC_LEAK_PATTERN.search(_joined_text(insight)):
+        return PrecheckViolation(
+            rule_id="R13",
+            category="privacy",
+            must_block=True,
+            detail="Cifra de composición corporal (porcentaje o milímetros) detectada en un texto familiar.",
+        )
+    return None
+
+
+# ---------------------------------------------------------------------------
+# R14 — lenguaje de dieta o pérdida de peso (safety, must_block; ambas
+# audiencias; feature 046, contracts/ai-body-composition-leaf.md §3)
+# ---------------------------------------------------------------------------
+
+_R14_DIET_LEXICON_PATTERN = re.compile(
+    # Plurals/conjugations added by the T069 privacy audit (finding F5):
+    # "dietas", "bajar peso", "perder de peso", "adelgace", "adelgazamiento".
+    r"\bdietas?\b"
+    r"|bajar\s+(?:de\s+)?peso"
+    r"|perder\s+(?:de\s+)?peso"
+    r"|\badelga(?:z|c)\w*"
+    r"|calor[íi]as"
+    r"|d[ée]ficit\s+cal[óo]rico"
+    r"|quemar\s+grasa"
+    r"|restricci[óo]n"
+    r"|porcentaje\s+de\s+grasa\s*(?:\w+\s+)?\d",
+    re.IGNORECASE,
+)
+
+
+def check_r14_diet_or_weight_loss_language(
+    insight: "AnthropometryInsightV1",
+) -> PrecheckViolation | None:
+    """Ninguna mención de dieta, restricción calórica o pérdida de peso.
+
+    Aplica a ambas audiencias — un menor de 10-15 años nunca debe leer (ni el
+    entrenador recibir para transmitir) lenguaje de dieta o pérdida de peso
+    (contract §3, tabla R14; LTAD/seguridad psicológica del atleta joven).
+    """
+    if _R14_DIET_LEXICON_PATTERN.search(_joined_text(insight)):
+        return PrecheckViolation(
+            rule_id="R14",
+            category="safety",
+            must_block=True,
+            detail="Lenguaje de dieta, restricción calórica o pérdida de peso detectado en el texto generado.",
+        )
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Orquestador
 # ---------------------------------------------------------------------------
 
@@ -562,7 +646,7 @@ def run_prechecks(
     *,
     forbidden_names: Sequence[str] = (),
 ) -> PrecheckResult:
-    """Corre las doce reglas R01-R12 sobre ``insight`` y devuelve el resultado agregado.
+    """Corre las catorce reglas R01-R14 sobre ``insight`` y devuelve el resultado agregado.
 
     ``forbidden_names`` es opcional (R06 solamente) para que el llamador
     pueda pasar la lista cargada de DB (``load_club_forbidden_names``) sin
@@ -582,6 +666,8 @@ def run_prechecks(
         check_r10_markdown_in_fields(insight),
         check_r11_uncorroborated_phase_crossing(insight, context),
         check_r12_coach_only_leak_to_family(insight),
+        check_r13_body_comp_numeric_leak_to_family(insight),
+        check_r14_diet_or_weight_loss_language(insight),
     )
     violations = tuple(v for v in checks if v is not None)
     must_block = any(v.must_block for v in violations)

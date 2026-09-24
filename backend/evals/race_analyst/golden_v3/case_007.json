@@ -27,12 +27,14 @@
       "series_level": "departmental",
       "is_championship": false,
       "field_size": 9,
+      "timed_finishers": 9,
       "position": 4,
-      "percentile": 62.5,
+      "percentile": 56,
       "race_time_ms": 2988000,
       "gap_to_p1_ms": 168000,
       "gap_pct": 5.96,
       "gap_to_p3_ms": 42000,
+      "gap_to_podium_pct": 1.4,
       "category_median_time_ms": 3036000,
       "gap_to_median_pct": -1.58,
       "laps_behind": 0,
@@ -63,7 +65,7 @@
         "is_championship": false,
         "position": 4,
         "field_size": 8,
-        "percentile": 57.1,
+        "percentile": 46,
         "gap_pct": 5.44,
         "gap_to_p3_ms": 33000,
         "expected_position": 4,
@@ -76,7 +78,7 @@
         "is_championship": false,
         "position": 4,
         "field_size": 9,
-        "percentile": 62.5,
+        "percentile": 56,
         "gap_pct": 5.96,
         "gap_to_p3_ms": 42000,
         "expected_position": 4,
@@ -116,7 +118,7 @@
       ]
     },
     "memory_recent_insights": [
-      "Válida 2 · Copa: percentil 57.1 en un pelotón de 8"
+      "Válida 2 · Copa: percentil 46 en un pelotón de 8"
     ]
   },
   "expected_themes": [
@@ -138,16 +140,16 @@
   "expected_headline_keywords": [
     "esperada",
     "percentil",
-    "62.5",
+    "56",
     "barro"
   ],
   "must_reference_catalog": true,
   "max_words": 450,
   "ideal_output": {
     "schema_version": "v3",
-    "headline": "Tercera válida seguida clavado en su posición esperada: el percentil 62.5 en barro repite el patrón, sin datos de entrenamiento que lo expliquen.",
+    "headline": "Tercera válida seguida clavado en su posición esperada: el percentil 56 en barro repite el patrón, sin datos de entrenamiento que lo expliquen.",
     "field_reading": {
-      "percentile": 62.5,
+      "percentile": 56,
       "expected_position": 4,
       "actual_position": 4,
       "delta_vs_expected": 0,
@@ -161,7 +163,7 @@
         "claim": "El rendimiento relativo se estancó: tres válidas seguidas terminando exactamente donde lo ubica su historial.",
         "evidence": [
           "esperada 4 y real 4",
-          "percentil 75, 57.1 y 62.5 en la temporada"
+          "percentil 75, 46 y 56 en la temporada"
         ],
         "domain": "field",
         "confidence": "high"

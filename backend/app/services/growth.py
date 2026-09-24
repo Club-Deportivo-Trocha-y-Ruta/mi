@@ -46,7 +46,17 @@ async def get_lms_params(
         .order_by(GrowthReferenceLms.age_months)
     )
     rows = result.scalars().all()
+    return interpolate_lms(rows, age_months)
 
+
+def interpolate_lms(rows, age_months: float) -> tuple[float, float, float] | None:
+    """Interpolación lineal pura de (L, M, S) sobre filas LMS ya cargadas.
+
+    ``rows`` debe venir ordenado por ``age_months`` ascendente (una sola
+    fuente/indicador/sexo). Misma lógica que ``get_lms_params`` —extraída
+    para que ``reference_skinfolds`` resuelva dos indicadores con UNA
+    consulta (feature 046, T080)—. ``None`` si no hay filas.
+    """
     if not rows:
         return None
 

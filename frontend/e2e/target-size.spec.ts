@@ -21,6 +21,10 @@
  *      rewrite: `NextSessionTile`, `NextRaceTile`, `WeeklyLoadMeter`, and
  *      `PendingInbox`'s five rows (T057).
  *   4. Sessions list (`/training/sessions`) — representative list page.
+ *   5. Athlete «Carreras» (`/athletes/:id?tab=races&view=…`, features 036 +
+ *      045) — the single tab that replaced «Insights IA»: «Progresión»,
+ *      «Análisis IA» (Panorama + Histórico + Analizar con IA + the newsletter
+ *      bar) and «Comparar» (distribution + inline comparator).
  *
  * Self-contained, no backend/docker required (there is no live backend in
  * this environment either way): auth + every API response are mocked via
@@ -36,6 +40,7 @@
  */
 import { test, expect, type Page, type Route } from "@playwright/test";
 import { realTokens } from './helpers/session';
+import { makeHistoryPoint, mockAthleteRaceHistory } from './helpers/race-history';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -442,6 +447,40 @@ const AI_TAB_RACES = {
   ],
 };
 
+// Feature 045 — `GET .../race-analysis/history` (server engine) feeds BOTH
+// «Progresión» and the inline comparator (matched by `event_id`, so the two
+// cup points reuse the válida ids above). The extra championship point makes
+// «Progresión» render its group filter and a championship reading card.
+const AI_TAB_HISTORY_POINTS = [
+  makeHistoryPoint({
+    event_id: AI_TAB_RACE_EVENT_A_ID,
+    event_date: "2026-03-15",
+    season: 2026,
+    label: "Válida 1 — Cali",
+    position: 3,
+    gap_to_median_pct: -3.1,
+  }),
+  makeHistoryPoint({
+    event_id: AI_TAB_RACE_EVENT_B_ID,
+    event_date: "2026-07-20",
+    season: 2026,
+    label: "Válida 4 — Palmira",
+    position: 1,
+    gap_to_median_pct: -6.4,
+  }),
+  makeHistoryPoint({
+    event_id: 812,
+    event_date: "2026-06-07",
+    season: 2026,
+    label: "Cto. Departamental — Tuluá",
+    series_id: 9,
+    series_name: "Campeonato Departamental 2026",
+    series_kind: "championship",
+    position: 5,
+    gap_to_median_pct: -1.8,
+  }),
+];
+
 const AI_TAB_DISTRIBUTION = {
   season: 2026,
   event_id: AI_TAB_RACE_EVENT_B_ID,
@@ -543,6 +582,11 @@ const DASHBOARD_COACH_SUMMARY = {
   generated_at: "2026-07-12T12:00:00Z",
   consents_pending: 2,
   insights_stale: 1,
+  // Feature 045 (US5): the two extra inbox rows — «Identidades por decidir»
+  // and «Análisis por aprobar» — only render when the aggregate is present.
+  identity_decisions_pending: 2,
+  imports_in_progress: 1,
+  analyses_awaiting_approval: 3,
   weekly_load: [
     { age_band: "10-12", planned_minutes: 300, cap_minutes: 600, athlete_count: 5 },
     { age_band: "13-15", planned_minutes: 700, cap_minutes: 780, athlete_count: 6 },
@@ -630,7 +674,8 @@ async function mockDashboardApi(page: Page): Promise<void> {
     jsonRoute(DASHBOARD_NEWSLETTER_SUMMARY),
   );
   // WeeklyLoadMeter + PendingInbox's "Consentimientos pendientes" /
-  // "Insights IA desactualizados" rows.
+  // "Análisis por aprobar" / "Identidades por decidir" (045) /
+  // "Análisis desactualizados" rows.
   await page.route(
     (url) => isBackend(url) && url.pathname === "/api/dashboard/coach-summary",
     jsonRoute(DASHBOARD_COACH_SUMMARY),
@@ -655,12 +700,13 @@ async function mockCompetitionResultsApi(page: Page): Promise<void> {
 }
 
 /**
- * Mocks every endpoint `/athletes/:id?tab=ai_analysis` touches across its
- * five sub-tabs (feature 036, T090/T091b): the page shell (athlete,
- * anthropometry, linked parents) plus the AI tab's own insights/evolution/
- * races/distribution/status queries. Path-only matching (query params
- * ignored, same convention as the rest of this file) means one route per
- * endpoint covers every param variant each sub-tab requests it with.
+ * Mocks every endpoint `/athletes/:id?tab=races` touches across its three
+ * views (feature 036 T090/T091b, migrated by feature 045 T064): the page
+ * shell (athlete, anthropometry, linked parents) plus the tab's own
+ * insights/evolution/races/distribution/history/status queries. Path-only
+ * matching (query params ignored, same convention as the rest of this file)
+ * means one route per endpoint covers every param variant each view requests
+ * it with.
  */
 async function mockAthleteAiTabApi(page: Page): Promise<void> {
   await page.route(
@@ -720,20 +766,29 @@ async function mockAthleteAiTabApi(page: Page): Promise<void> {
     (url) => isBackend(url) && url.pathname === "/api/ai/status",
     jsonRoute(AI_STATUS_OK),
   );
+  // «Progresión» and the comparator read the server engine's history.
+  await mockAthleteRaceHistory(page, OUR_ATHLETE_ID, {
+    audience: "coach",
+    points: AI_TAB_HISTORY_POINTS,
+  });
 }
 
-/** Navigates to the AI tab and waits for the header (real data, not the
- * loading Skeleton) before handing control back — shared by every test
- * below so each one only has to drive its own sub-tab from there. */
-async function gotoAthleteAiTab(page: Page): Promise<void> {
+type CarrerasView = "progresion" | "analisis" | "comparar";
+
+/** Navigates to «Carreras» on the given view and waits for the tab itself
+ * (not the lazy-chunk skeleton) before handing control back — shared by
+ * every test below so each one only has to wait for its own view's data. */
+async function gotoAthleteCarreras(page: Page, view: CarrerasView): Promise<void> {
   await mockAthleteAiTabApi(page);
-  await page.goto(`/athletes/${OUR_ATHLETE_ID}?tab=ai_analysis`);
-  await expect(page.getByTestId("athlete-ai-analysis-tab")).toBeVisible({
+  await page.goto(`/athletes/${OUR_ATHLETE_ID}?tab=races&view=${view}`);
+  await expect(page.getByTestId("carreras-tab")).toBeVisible({
     timeout: WAIT_TIMEOUT,
   });
-  await expect(page.getByTestId("ai-header-summary")).toBeVisible({
-    timeout: WAIT_TIMEOUT,
-  });
+  await expect(page.getByTestId(`carreras-view-${view}`)).toHaveAttribute(
+    "data-state",
+    "active",
+    { timeout: WAIT_TIMEOUT },
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1005,7 +1060,11 @@ test.describe("Feature 028 (T023) — target-size sweep (>=48x48px)", () => {
     await expect(page.getByText(SESSION.technical_focus)).toBeVisible({
       timeout: WAIT_TIMEOUT,
     });
-    await expect(page.getByText("Próxima carrera Copa Valle")).toBeVisible({
+    // El hero muestra la etiqueta «Próxima carrera» y, en un párrafo aparte, el
+    // nombre de la válida (verificado en la línea siguiente): ningún nodo de
+    // texto contiene «Próxima carrera Copa Valle» desde el rediseño del
+    // dashboard (feature 035), solo el nombre accesible del enlace.
+    await expect(page.getByText("Próxima carrera", { exact: true })).toBeVisible({
       timeout: WAIT_TIMEOUT,
     });
     await expect(page.getByText(DASHBOARD_RACE_EVENTS.items[0].name)).toBeVisible({
@@ -1021,6 +1080,14 @@ test.describe("Feature 028 (T023) — target-size sweep (>=48x48px)", () => {
       timeout: WAIT_TIMEOUT,
     });
     await expect(page.getByText("Consentimientos pendientes")).toBeVisible({
+      timeout: WAIT_TIMEOUT,
+    });
+    // Feature 045: the two new inbox rows are links into «Competencias» and
+    // must clear the same 48px floor as the rest.
+    await expect(page.getByText("Identidades por decidir")).toBeVisible({
+      timeout: WAIT_TIMEOUT,
+    });
+    await expect(page.getByText("Análisis por aprobar")).toBeVisible({
       timeout: WAIT_TIMEOUT,
     });
 
@@ -1042,46 +1109,57 @@ test.describe("Feature 028 (T023) — target-size sweep (>=48x48px)", () => {
   });
 
   // ---------------------------------------------------------------------
-  // Feature 036 (US6) — athlete AI insights tab. T091b: this tab had never
-  // been added to the sweep, which is exactly why T091's violations
-  // (sub-48px race chips in LaunchAnalysisForm, history checkboxes in
-  // InsightsTimeline) survived undetected. Split into one test per
-  // sub-tab/state (rather than one test with several sequential sweeps) so
-  // a violation in one state doesn't prevent the others from being swept
-  // and reported in the same run.
+  // Feature 036 (US6) + 045 (T064) — athlete «Carreras» tab. T091b: the AI
+  // tab had never been added to the sweep, which is exactly why T091's
+  // violations (sub-48px race chips in LaunchAnalysisForm, history
+  // checkboxes in InsightsTimeline) survived undetected. Feature 045 folded
+  // the old five sub-tabs into ONE tab with three URL-driven views, so the
+  // sweep now covers:
+  //   - «Progresión»  — the history chart's metric/group filters, the
+  //                     championship reading cards and the history table;
+  //   - «Análisis IA» — Panorama + Histórico (checkboxes) + Analizar con IA
+  //                     (race chips, modo explicativo) in one scroll, plus
+  //                     the sticky newsletter bar in its two active shapes;
+  //   - «Comparar»    — distribution picker + the INLINE comparator (there
+  //                     is no Sheet any more).
+  // Split into one test per view/state (rather than one test with several
+  // sequential sweeps) so a violation in one state doesn't prevent the
+  // others from being swept and reported in the same run.
   // ---------------------------------------------------------------------
 
-  test("athlete AI insights tab (360px) — every sub-tab is reachable without a hidden scroll affordance (T090)", async ({
+  test("athlete Carreras (360px) — the three views are reachable without a hidden scroll affordance (T090)", async ({
     page,
   }) => {
     // spec.md US6: "at 360–400 px the sub-tab row clips ... with the
     // scrollbar deliberately hidden". 360px is the narrowest width called
-    // out there and in T090's own task text.
+    // out there and in T090's own task text. Feature 045 kept the rule for
+    // the view switcher of «Carreras».
     await page.setViewportSize({ width: 360, height: 800 });
-    await gotoAthleteAiTab(page);
+    await gotoAthleteCarreras(page, "progresion");
 
-    const tabList = page.getByRole("tablist");
+    // `aria-label="Vistas de Carreras"` — other tablists can share the page
+    // (e.g. the distribution chart/table toggle in «Comparar»).
+    const tabList = page.getByRole("tablist", { name: "Vistas de Carreras" });
     await expect(tabList).toBeVisible({ timeout: WAIT_TIMEOUT });
 
-    const subtabIds = [
-      "ai-subtab-panorama",
-      "ai-subtab-history",
-      "ai-subtab-evolution",
-      "ai-subtab-distribution",
-      "ai-subtab-launch",
+    const viewIds = [
+      "carreras-view-progresion",
+      "carreras-view-analisis",
+      "carreras-view-comparar",
     ];
-    for (const testId of subtabIds) {
+    for (const testId of viewIds) {
       await expect(page.getByTestId(testId)).toBeVisible({ timeout: WAIT_TIMEOUT });
     }
 
     // The real regression check: `toBeVisible()` above only confirms each
     // trigger has a non-empty box and isn't CSS-hidden — Playwright's
     // definition of "visible" doesn't care whether it's scrolled out of an
-    // `overflow-x-auto` ancestor. Before T090, all 5 triggers passed that
-    // same `toBeVisible()` check while "Analizar con IA" still needed a
+    // `overflow-x-auto` ancestor. Before T090, all triggers passed that
+    // same `toBeVisible()` check while the last one still needed a
     // horizontal swipe to reach — the bug was scrollWidth > clientWidth
     // with the scrollbar hidden, not an invisible element. `flex-wrap`
-    // (T090's fix) means the strip never overflows horizontally at all.
+    // (T090's fix, kept by `CarrerasTab`) means the strip never overflows
+    // horizontally at all.
     const overflow = await tabList.evaluate((el) => ({
       scrollWidth: el.scrollWidth,
       clientWidth: el.clientWidth,
@@ -1089,26 +1167,61 @@ test.describe("Feature 028 (T023) — target-size sweep (>=48x48px)", () => {
     expect(
       overflow.scrollWidth,
       `tablist scrollWidth (${overflow.scrollWidth}px) > clientWidth (${overflow.clientWidth}px) at 360px ` +
-        `— a sub-tab needs horizontal scroll to reach, with no visible affordance to discover it.`,
+        `— a view needs horizontal scroll to reach, with no visible affordance to discover it.`,
     ).toBeLessThanOrEqual(overflow.clientWidth);
   });
 
-  test("athlete AI insights tab — panorama (default) — every control >=48x48px", async ({
+  test("athlete Carreras — progresión (default view) — every control >=48x48px, incl. metric/group filters and championship card", async ({
     page,
   }) => {
-    await gotoAthleteAiTab(page);
+    await gotoAthleteCarreras(page, "progresion");
+    await expect(page.getByTestId("progression-view")).toBeVisible({ timeout: WAIT_TIMEOUT });
+    // The two `<select>` filters and the championship card only render with
+    // data — wait for them so a stalled fetch can't shrink the swept surface.
+    await expect(page.getByTestId("progression-group-select")).toBeVisible({
+      timeout: WAIT_TIMEOUT,
+    });
+    await expect(page.getByTestId("progression-metric-select")).toBeVisible({
+      timeout: WAIT_TIMEOUT,
+    });
+    await expect(page.getByTestId("progression-championships")).toBeVisible({
+      timeout: WAIT_TIMEOUT,
+    });
+    // The recharts chunk is lazy: wait for the chart so the sweep sees it.
+    await expect(page.getByTestId("history-chart")).toBeVisible({ timeout: WAIT_TIMEOUT });
+
+    await expectNoTargetSizeViolations(page, "Athlete Carreras — progresión");
+  });
+
+  test("athlete Carreras — análisis IA — every control >=48x48px, incl. the newsletter checkboxes, race chips + modo explicativo (T091)", async ({
+    page,
+  }) => {
+    await gotoAthleteCarreras(page, "analisis");
+    // Panorama (top), Histórico (middle) and «Analizar con IA» (bottom) now
+    // share one scroll: confirm all three rendered real data before sweeping.
     await expect(page.getByTestId("hero-last-insight-card")).toBeVisible({
       timeout: WAIT_TIMEOUT,
     });
+    await expect(page.getByTestId(`insight-card-${AI_TAB_INSIGHT_B.id}`)).toBeVisible({
+      timeout: WAIT_TIMEOUT,
+    });
+    await expect(page.getByTestId(`insight-checkbox-${AI_TAB_INSIGHT_B.id}`)).toBeVisible({
+      timeout: WAIT_TIMEOUT,
+    });
+    await expect(page.getByTestId(`launch-event-${AI_TAB_RACE_EVENT_B_ID}`)).toBeVisible({
+      timeout: WAIT_TIMEOUT,
+    });
+    await expect(page.getByTestId("launch-explain-switch")).toBeVisible({
+      timeout: WAIT_TIMEOUT,
+    });
 
-    await expectNoTargetSizeViolations(page, "Athlete AI tab — panorama");
+    await expectNoTargetSizeViolations(page, "Athlete Carreras — análisis IA");
   });
 
-  test("athlete AI insights tab — historial sub-tab — every control >=48x48px, incl. the newsletter checkboxes (T091)", async ({
+  test("athlete Carreras — análisis IA + barra de boletín (selección / error) — every control >=48x48px (T091)", async ({
     page,
   }) => {
-    await gotoAthleteAiTab(page);
-    await page.getByTestId("ai-subtab-history").click();
+    await gotoAthleteCarreras(page, "analisis");
     await expect(page.getByTestId(`insight-card-${AI_TAB_INSIGHT_B.id}`)).toBeVisible({
       timeout: WAIT_TIMEOUT,
     });
@@ -1116,18 +1229,18 @@ test.describe("Feature 028 (T023) — target-size sweep (>=48x48px)", () => {
       timeout: WAIT_TIMEOUT,
     });
 
-    const historialViolations = await findTargetSizeViolations(page);
-
     // Wave 4 flagged BB4's sticky newsletter action bar
-    // (`AthleteAIAnalysisTab.tsx`) as a likely target-size violation but
-    // never confirmed it — nothing renders it on first paint, it only
-    // mounts once a coach selects at least one insight, in one of two
-    // shapes: "selection pending" (Limpiar + Enviar a boletín) or, after a
-    // failed attach, "error" (Reintentar). Both are exercised here (feature
-    // 036 Wave 5 repair) rather than left unconfirmed. The attach-insights
-    // endpoint is deliberately mocked to fail so the error shape actually
-    // renders — this only needs ONE failing request, never a real send;
-    // the full happy-path newsletter flow is T074's spec, not this one's.
+    // (`NewsletterSelectionBar.tsx`, mounted by `AnalysisView`) as a likely
+    // target-size violation but never confirmed it — nothing renders it on
+    // first paint, it only mounts once a coach selects at least one
+    // insight, in one of two shapes: "selection pending" (Limpiar + Enviar a
+    // boletín) or, after a failed attach, "error" (Reintentar). Both are
+    // exercised here (feature 036 Wave 5 repair) rather than left
+    // unconfirmed. The attach-insights endpoint is deliberately mocked to
+    // fail so the error shape actually renders — this only needs ONE failing
+    // request, never a real send; the full happy-path newsletter flow is
+    // T074's spec, not this one's. (The resting «Análisis IA» state is swept
+    // by the previous test.)
     await page.route(
       (url) =>
         isBackend(url) &&
@@ -1151,22 +1264,20 @@ test.describe("Feature 028 (T023) — target-size sweep (>=48x48px)", () => {
     });
     const errorBarViolations = await findTargetSizeViolations(page);
 
-    // All three states are collected and asserted together (rather than
-    // three separate `expectNoTargetSizeViolations` calls) so a violation
-    // in one can't prevent the others from being swept and reported in the
-    // same run — same rationale as `SessionDetailPage`'s Resumen/Asistencia
-    // split above.
+    // Both states are collected and asserted together (rather than two
+    // separate `expectNoTargetSizeViolations` calls) so a violation in one
+    // can't prevent the other from being swept and reported in the same run
+    // — same rationale as `SessionDetailPage`'s Resumen/Asistencia split
+    // above.
     const violationsByState = {
-      historial: historialViolations,
-      "historial + barra (selección)": selectionBarViolations,
-      "historial + barra (error)": errorBarViolations,
+      "análisis IA + barra (selección)": selectionBarViolations,
+      "análisis IA + barra (error)": errorBarViolations,
     };
-    const total =
-      historialViolations.length + selectionBarViolations.length + errorBarViolations.length;
+    const total = selectionBarViolations.length + errorBarViolations.length;
     if (total > 0) {
       // eslint-disable-next-line no-console
       console.log(
-        `[target-size] Athlete AI tab — historial (3 estados):\n` +
+        `[target-size] Athlete Carreras — análisis IA (2 estados de barra):\n` +
           Object.entries(violationsByState)
             .filter(([, v]) => v.length > 0)
             .map(([label, v]) => `${label}:\n${describeViolations(v)}`)
@@ -1175,45 +1286,29 @@ test.describe("Feature 028 (T023) — target-size sweep (>=48x48px)", () => {
     }
     expect(
       violationsByState,
-      `Athlete AI tab — historial: ${total} target-size violation(s) across 3 states.`,
+      `Athlete Carreras — análisis IA: ${total} target-size violation(s) across 2 bar states.`,
     ).toEqual({
-      historial: [],
-      "historial + barra (selección)": [],
-      "historial + barra (error)": [],
+      "análisis IA + barra (selección)": [],
+      "análisis IA + barra (error)": [],
     });
   });
 
-  test("athlete AI insights tab — analizar con IA sub-tab — every control >=48x48px, incl. race chips + modo explicativo (T091)", async ({
+  test("athlete Carreras — comparar (comparador en línea) — every control >=48x48px", async ({
     page,
   }) => {
-    await gotoAthleteAiTab(page);
-    await page.getByTestId("ai-subtab-launch").click();
-    await expect(page.getByTestId(`launch-event-${AI_TAB_RACE_EVENT_B_ID}`)).toBeVisible({
-      timeout: WAIT_TIMEOUT,
-    });
-    await expect(page.getByTestId("launch-explain-switch")).toBeVisible({
-      timeout: WAIT_TIMEOUT,
-    });
-
-    await expectNoTargetSizeViolations(page, "Athlete AI tab — analizar con IA");
-  });
-
-  test("athlete AI insights tab — comparador (Sheet abierto) — every control >=48x48px", async ({
-    page,
-  }) => {
-    await gotoAthleteAiTab(page);
-    await page.getByTestId("ai-subtab-distribution").click();
-    await expect(page.getByTestId("open-comparator-sheet")).toBeVisible({
-      timeout: WAIT_TIMEOUT,
-    });
-    await page.getByTestId("open-comparator-sheet").click();
-    // Diff table only renders once both sides of the default válida-A/B
-    // pair have loaded — the fullest, most control-dense state of the
-    // Sheet, which is the point of sweeping it open at all.
+    await gotoAthleteCarreras(page, "comparar");
+    await expect(page.getByTestId("compare-view")).toBeVisible({ timeout: WAIT_TIMEOUT });
+    await expect(page.getByTestId("distribution-chart")).toBeVisible({ timeout: WAIT_TIMEOUT });
+    // The comparator renders in-line (feature 045: no Sheet, no
+    // `open-comparator-sheet` button). Diff table only renders once both
+    // sides of the default válida-A/B pair have loaded — the fullest, most
+    // control-dense state of the comparator, which is the point of sweeping
+    // it at all.
+    await expect(page.getByTestId("comparator-panel")).toBeVisible({ timeout: WAIT_TIMEOUT });
     await expect(page.getByTestId("comparator-diff-table")).toBeVisible({
       timeout: WAIT_TIMEOUT,
     });
 
-    await expectNoTargetSizeViolations(page, "Athlete AI tab — comparador (Sheet abierto)");
+    await expectNoTargetSizeViolations(page, "Athlete Carreras — comparar");
   });
 });

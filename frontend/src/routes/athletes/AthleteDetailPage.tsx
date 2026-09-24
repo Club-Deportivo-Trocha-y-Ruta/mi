@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   Activity,
   AlertTriangle,
@@ -12,7 +12,6 @@ import {
   Mail,
   RefreshCw,
   Ruler,
-  Sparkles,
   TrendingUp,
   Trophy,
   Unlink,
@@ -36,7 +35,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { apiClient } from "@/api/client";
 import { cn } from "@/lib/utils";
 import { formatDateMedium } from "@/lib/datetime";
+import { skinfoldCapturePath } from "@/lib/bodyComposition/eligibility";
 import { getMeasurementStatusMeta } from "@/lib/measurementStatus";
+import { dropCarrerasParams, resolveLegacyAiTabAlias } from "@/lib/carrerasTabAlias";
 import { useAthlete } from "@/hooks/athletes/useAthlete";
 import { useAnthropometry } from "@/hooks/athletes/useAnthropometry";
 import { useGrowthSummary } from "@/hooks/athletes/useGrowthSummary";
@@ -49,17 +50,20 @@ import {
 import { useAuthStore } from "@/store/auth.store";
 import { UserRole } from "@/types/enums";
 
-// T096 (feature 036, US6): Insights IA — arrastra recharts (EvolutionChart,
-// DistributionChart) al bundle sin importar si el tab se abre o no. Mismo
-// patrón lazy-load usado en el resto de tabs pesados.
-const AthleteAIAnalysisTab = lazy(() =>
-  import("@/components/athletes/ai/AthleteAIAnalysisTab").then((m) => ({
-    default: m.AthleteAIAnalysisTab,
+// Feature 045 (T041, US1): pestaña única «Carreras» — reemplaza a «Insights
+// IA» (T096, feature 036) y a la «Carreras» de la feature 044. Arrastra
+// recharts (gráficas de progresión, distribución) al bundle sin importar si
+// la pestaña se abre o no; cada una de sus vistas es además su propio chunk
+// lazy (ver `CarrerasTab`). Mismo patrón lazy-load usado en el resto de tabs
+// pesados.
+const CarrerasTab = lazy(() =>
+  import("@/components/athletes/races/CarrerasTab").then((m) => ({
+    default: m.CarrerasTab,
   })),
 );
 
 // T042 (feature 040, US2): el tab Crecimiento arrastra `GrowthCharts`
-// (recharts) — mismo patrón lazy-load que Insights IA, así el chunk de
+// (recharts) — mismo patrón lazy-load que Carreras, así el chunk de
 // entrada deja de importar recharts de forma estática (research.md R-08).
 const GrowthTab = lazy(() =>
   import("@/components/athletes/growth/GrowthTab").then((m) => ({
@@ -68,23 +72,10 @@ const GrowthTab = lazy(() =>
 );
 
 // T038 (feature 041, US7): tab "Historial" — no es la pestaña por defecto,
-// mismo patrón lazy-load que Insights IA / Crecimiento.
+// mismo patrón lazy-load que Carreras / Crecimiento.
 const AthleteHistoryPanel = lazy(() =>
   import("@/components/athletes/AthleteHistoryPanel").then((m) => ({
     default: m.AthleteHistoryPanel,
-  })),
-);
-
-// T075 (feature 044, US6), revisado tras T077 (ux-review.md, hallazgo
-// BLOCKER): la tarjeta de progresión histórica vive en su PROPIO tab
-// "Carreras" — no dentro de "Insights IA" (esa mezcla obligaba al coach a
-// entrar a un análisis IA solo para ver la progresión histórica, algo sin
-// relación). No depende de recharts para su primer pintado (ver comentario
-// de `HistoryProgressionCard`), pero sí carga recharts por dentro — mismo
-// patrón lazy-load que el resto de este archivo.
-const HistoryProgressionCard = lazy(() =>
-  import("@/components/race/history/HistoryProgressionCard").then((m) => ({
-    default: m.HistoryProgressionCard,
   })),
 );
 
@@ -92,7 +83,6 @@ type Tab =
   | "info"
   | "anthropometry"
   | "growth"
-  | "ai_analysis"
   | "races"
   | "newsletters"
   | "activities"
@@ -102,7 +92,6 @@ const VALID_TABS: readonly Tab[] = [
   "info",
   "anthropometry",
   "growth",
-  "ai_analysis",
   "races",
   "newsletters",
   "activities",
@@ -111,11 +100,16 @@ const VALID_TABS: readonly Tab[] = [
 
 /** Tabs que un padre nunca puede ver — usado tanto para el botón (guardado
  * inline con `!isParent`) como para el fallback de deep-link por query
- * string. "races" (feature 044, T077): Fase 9/US7 lo habilita para padres
- * quitándolo de esta lista, sin tocar el resto del componente. */
-const COACH_ONLY_TABS: readonly Tab[] = ["newsletters", "history", "races"];
+ * string. "races" (feature 045, FR-010) es la pestaña única «Carreras» para
+ * coach Y familia: ya no es solo-coach (la audiencia se resuelve con
+ * `isParent` al montar `CarrerasTab`). */
+const COACH_ONLY_TABS: readonly Tab[] = ["newsletters", "history"];
 
 function parseTabParam(raw: string | null): Tab | null {
+  // Alias legado de «Insights IA» (feature 045): hoy es «Carreras». La URL se
+  // normaliza en el render (ver `resolveLegacyAiTabAlias`); esto solo evita
+  // un cuadro con la pestaña «Info» mientras el redireccionamiento aterriza.
+  if (raw === "ai_analysis" || raw === "ai-analysis") return "races";
   if (raw && (VALID_TABS as readonly string[]).includes(raw)) {
     return raw as Tab;
   }
@@ -408,24 +402,25 @@ function StravaTabPanel({ athleteId }: { athleteId: number }) {
 }
 
 // ---------------------------------------------------------------------------
-// Skeletons de suspense mientras cargan los chunks lazy (Insights IA)
+// Skeletons de suspense mientras cargan los chunks lazy (Carreras, Crecimiento)
 // ---------------------------------------------------------------------------
 
-// T096 (feature 036, US6) — fallback mientras se descarga el chunk lazy de
-// AthleteAIAnalysisTab. Sólo cubre la carga del chunk en sí (una vez, por
-// visita) — el propio tab ya tiene sus estados de carga de datos (Skeleton
-// del header, etc.) para cuando el chunk ya está montado.
-function AiTabSkeleton() {
+// Feature 045 (T041) — fallback mientras se descarga el chunk lazy de
+// CarrerasTab (antes T096/feature 036 para AthleteAIAnalysisTab y T075/
+// feature 044 para HistoryProgressionCard). Sólo cubre la carga del chunk en
+// sí (una vez, por visita) — la pestaña ya tiene su propio esqueleto por
+// vista y sus estados de carga de datos para cuando el chunk ya está montado.
+function CarrerasTabSkeleton() {
   return (
     <div
       role="status"
       aria-busy="true"
-      aria-label="Cargando análisis de IA…"
+      aria-label="Cargando carreras…"
       className="space-y-4"
     >
       <Skeleton className="h-24 w-full rounded-xl" />
       <div className="flex flex-wrap gap-2">
-        {Array.from({ length: 5 }).map((_, i) => (
+        {Array.from({ length: 3 }).map((_, i) => (
           <Skeleton key={i} className="h-9 w-24 rounded-lg" />
         ))}
       </div>
@@ -456,23 +451,10 @@ function GrowthTabSkeleton() {
   );
 }
 
-// T075 (feature 044, US6) — fallback mientras se descarga el chunk lazy de
-// HistoryProgressionCard. Solo cubre la carga del chunk en sí; la tarjeta
-// ya tiene su propio estado de carga de datos (skeleton interno) una vez
-// montada.
-function HistoryProgressionCardSkeleton() {
-  return (
-    <div
-      role="status"
-      aria-busy="true"
-      aria-label="Cargando progresión histórica…"
-      className="h-24 w-full animate-pulse rounded-xl bg-light-gray"
-    />
-  );
-}
-
 export function AthleteDetailPage() {
   const { id } = useParams();
+  // Feature 046 (T031): salidas hacia el asistente de pliegues cutáneos.
+  const navigate = useNavigate();
   const athleteId = Number(id);
   const athleteQuery = useAthlete(athleteId, Number.isFinite(athleteId));
   const anthropometryQuery = useAnthropometry(athleteId);
@@ -484,12 +466,12 @@ export function AthleteDetailPage() {
   const role = useAuthStore((s) => s.user?.role);
   const isParent = role === UserRole.parent;
 
-  // FE-2: el tab inicial puede venir del query string (?tab=ai_analysis).
-  // Permite que el combobox del tab "Insights históricos" en
-  // RaceAnalysisPage enrute directo al histórico del deportista.
+  // FE-2: el tab inicial puede venir del query string (?tab=races).
   // Si el rol es parent y la URL pide un tab solo-coach → fallback silencioso a "info".
-  // "races" (feature 044, US6/T077) es solo-coach por ahora — Fase 9 (US7)
-  // lo habilita para padres quitándolo de esta lista, sin tocar nada más.
+  // Feature 045 (T041): «Carreras» (?tab=races[&view=…][&insight=<id>]) es la
+  // pestaña única para coach y familia. El alias legado `?tab=ai_analysis`
+  // (y `ai-analysis`) se traduce más abajo, ANTES de pintar contenido, a
+  // `?tab=races&view=analisis[&insight=<id>]`.
   const [searchParams, setSearchParams] = useSearchParams();
   const rawTabFromUrl = parseTabParam(searchParams.get("tab"));
   const tabFromUrl =
@@ -504,6 +486,8 @@ export function AthleteDetailPage() {
   // Mantener el URL en sync con la pestaña activa para que recargar la
   // página preserve el contexto del deportista + tab elegido.
   const updateTab = (tab: Tab) => {
+    // Volver a tocar la pestaña activa no debe reiniciar su vista (`view`).
+    if (tab === activeTab) return;
     setActiveTab(tab);
     const next = new URLSearchParams(searchParams);
     if (tab === "info") {
@@ -511,6 +495,8 @@ export function AthleteDetailPage() {
     } else {
       next.set("tab", tab);
     }
+    // `view` e `insight` son de «Carreras»: no deben viajar a otra pestaña.
+    dropCarrerasParams(next);
     setSearchParams(next, { replace: true });
   };
 
@@ -553,6 +539,14 @@ export function AthleteDetailPage() {
       if (reportSentTimerRef.current) clearTimeout(reportSentTimerRef.current);
     };
   }, []);
+
+  // Feature 045 (T041): alias legado `?tab=ai_analysis` → Carreras › Análisis
+  // IA. Se resuelve ANTES de pintar contenido para que `CarrerasTab` nunca
+  // lea la URL sin normalizar (sin destello de «Progresión»).
+  const canonicalCarrerasParams = resolveLegacyAiTabAlias(searchParams);
+  if (canonicalCarrerasParams) {
+    return <Navigate to={{ search: `?${canonicalCarrerasParams}` }} replace />;
+  }
 
   if (athleteQuery.isLoading) {
     return (
@@ -678,33 +672,18 @@ export function AthleteDetailPage() {
             Crecimiento
           </button>
         )}
+        {/* Feature 045 (T041, FR-010) — pestaña ÚNICA «Carreras»: reemplaza
+            a «Insights IA» y a la «Carreras» de la feature 044. Progresión,
+            Análisis IA y Comparar son vistas dentro de ella (`?view=`). */}
         <button
           type="button"
-          className={tabClasses("ai_analysis")}
-          onClick={() => updateTab("ai_analysis")}
-          data-testid="athlete-tab-ai-analysis"
+          className={tabClasses("races")}
+          onClick={() => updateTab("races")}
+          data-testid="athlete-tab-races"
         >
-          <Sparkles size={14} />
-          Insights IA
+          <Trophy size={14} />
+          Carreras
         </button>
-
-        {/* T077 (feature 044, US6) — tab propio para la progresión
-            histórica, justo después de "Insights IA": el hallazgo BLOCKER
-            de la revisión UX fue que mezclarla dentro de Insights IA
-            obligaba al coach a entrar a un análisis IA para ver algo sin
-            relación. Solo-coach por ahora (`COACH_ONLY_TABS`); Fase 9/US7
-            la habilita para padres quitando "races" de esa lista. */}
-        {!isParent && (
-          <button
-            type="button"
-            className={tabClasses("races")}
-            onClick={() => updateTab("races")}
-            data-testid="athlete-tab-races"
-          >
-            <Trophy size={14} />
-            Carreras
-          </button>
-        )}
 
         {!isParent && (
           <button
@@ -875,6 +854,9 @@ export function AthleteDetailPage() {
                 athleteSex={athlete.sex}
                 athleteBirthDate={athlete.birth_date}
                 onSuccess={() => setShowForm(false)}
+                onAddSkinfolds={(recordId) =>
+                  navigate(skinfoldCapturePath(athlete.id, recordId))
+                }
               />
             </div>
           )}
@@ -885,37 +867,29 @@ export function AthleteDetailPage() {
               isLoading={anthropometryQuery.isLoading}
               athleteId={athleteId}
               mode="coach"
+              onSkinfoldsAction={(record) =>
+                navigate(skinfoldCapturePath(athleteId, record.id))
+              }
             />
           </div>
         </div>
       )}
 
-      {/* Tab content — Insights IA */}
-      {activeTab === "ai_analysis" && (
-        // T096 (feature 036, US6): lazy-load — recharts (EvolutionChart,
-        // DistributionChart) ya no entra al bundle si este tab nunca se
-        // abre. T010 (feature 036, US3): key={athlete.id} fuerza un
-        // remount limpio al cambiar de atleta. Sin esta key,
-        // AthleteAIAnalysisTab es la misma instancia de React entre dos
-        // atletas — selección de insight, run activo y estado HITL de uno
-        // se filtran al otro.
-        <Suspense fallback={<AiTabSkeleton />}>
-          <AthleteAIAnalysisTab
+      {/* Tab content — Carreras (feature 045, T041). Reemplaza a los
+          contenidos «Insights IA» y «Carreras» anteriores. Lazy: recharts
+          solo entra al bundle si esta pestaña se abre. key={athlete.id}
+          fuerza un remount limpio al cambiar de atleta (T010, feature 036,
+          US3): sin ella, la selección de análisis, el run activo y el
+          estado HITL de un atleta se filtran al siguiente al navegar sin
+          desmontar la ruta. `view`/`insight` los sincroniza la propia
+          pestaña con la URL. */}
+      {activeTab === "races" && (
+        <Suspense fallback={<CarrerasTabSkeleton />}>
+          <CarrerasTab
             key={athlete.id}
             athlete={athlete}
-            mode={isParent ? "parent" : "coach"}
+            audience={isParent ? "family" : "coach"}
           />
-        </Suspense>
-      )}
-
-      {/* Tab content — Carreras (progresión histórica entre temporadas).
-          T077 (feature 044, US6): tab propio, ya no mezclado dentro de
-          Insights IA (hallazgo BLOCKER de la revisión UX). Solo-coach por
-          ahora — `audience="coach"` fijo, Fase 9/US7 la reutiliza para
-          padres cambiando solo esta prop + la guarda `!isParent`. */}
-      {activeTab === "races" && !isParent && (
-        <Suspense fallback={<HistoryProgressionCardSkeleton />}>
-          <HistoryProgressionCard key={athlete.id} athleteId={athleteId} audience="coach" />
         </Suspense>
       )}
 
@@ -948,7 +922,7 @@ export function AthleteDetailPage() {
       {activeTab === "growth" && records.length > 0 && (
         // T042 (feature 040, US2): key={athlete.id} fuerza un remount
         // limpio al cambiar de atleta (mismo criterio que
-        // AthleteAIAnalysisTab, ver comentario de su Suspense más abajo).
+        // CarrerasTab, ver comentario de su Suspense más arriba).
         <Suspense fallback={<GrowthTabSkeleton />}>
           <GrowthTab
             key={athlete.id}

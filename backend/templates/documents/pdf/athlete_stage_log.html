@@ -27,6 +27,11 @@
                          que charts_annex — generate_stage_log_pdf() envía
                          None cuando has_race_this_month es False.
     percentile_annex  — dict percentile_curves, o None (acompaña anthro_annex).
+    body_composition_annex — dict {family_label, family_sentence,
+                         notice_text} (feature 046) o None. Copy fijo, sin
+                         cifras; ya acotado al mes de la toma contada de
+                         pliegues por newsletter_builder — nunca aparece en
+                         otro mes.
     photos_render     — no usado acá (StageLog.PhotoView no trae media_id);
                          las fotos se renderizan directo desde
                          stage_log.photos[].thumbnail_url.
@@ -492,6 +497,26 @@
 </div>
 {% endif %}
 
+{#
+  COMPOSICIÓN CORPORAL (feature 046) — copy fijo, sin cifras. Nunca lleva
+  salto de página propio: en el caso normal comparte la página del anexo de
+  crecimiento de arriba (el set de pliegues cuelga de un registro
+  antropométrico del mismo mes); si ese mes no tiene anexo de crecimiento,
+  esta sección corta simplemente continúa donde termine el cuerpo. Ausente
+  por completo cuando ``body_composition_annex`` es ``None`` (no hubo toma
+  contada de pliegues este mes).
+#}
+{% if body_composition_annex %}
+<div class="sl-section" style="break-inside: avoid; margin-top: 10pt;">
+  <h2 style="font-size: 11pt;">Composición corporal</h2>
+  <div style="background: #fafafa; border: 0.5pt solid #d1d5db; padding: 10pt; border-radius: 4pt;">
+    <p style="margin: 0; font-weight: bold; font-size: 9.5pt;">{{ body_composition_annex.family_label }}</p>
+    <p style="margin: 6pt 0 0 0; font-size: 9pt;">{{ body_composition_annex.family_sentence }}</p>
+    <p style="margin: 8pt 0 0 0; font-size: 8pt; color: #6b7280; font-style: italic;">{{ body_composition_annex.notice_text }}</p>
+  </div>
+</div>
+{% endif %}
+
 <!-- ============================================================
      PÁGINA 4 — TEMPORADA DE COMPETENCIAS (condicional, independiente
      del anexo de crecimiento)
@@ -513,11 +538,17 @@
   este bloque, re-descargar un boletín viejo pierde su página de temporada
   en silencio. Con ``cups`` presente (snapshot nuevo) este bloque no
   aplica — las claves planas ya no se leen en ese caso.
+
+  Feature 045 (FR-022): la serie de brecha es ``median_gap_pcts`` (brecha vs.
+  mediana). La antigua ``gap_pcts`` — gap al ganador — NO se lee en ningún
+  camino: un snapshot persistido antes de la 045 solo trae esa, y en ese caso
+  la gráfica de brecha queda en "Sin datos" en vez de mostrar el gap al
+  ganador a la familia.
 #}
 {% set legacy_positions = (charts_annex.get('positions') if charts_annex else none) or [] %}
-{% set legacy_gap_pcts = (charts_annex.get('gap_pcts') if charts_annex else none) or [] %}
+{% set legacy_median_gap_pcts = (charts_annex.get('median_gap_pcts') if charts_annex else none) or [] %}
 {% set legacy_points = (charts_annex.get('points_accumulated') if charts_annex else none) or [] %}
-{% set has_legacy_season_data = (not season_cups) and (legacy_positions or legacy_gap_pcts or legacy_points) %}
+{% set has_legacy_season_data = (not season_cups) and (legacy_positions or legacy_median_gap_pcts or legacy_points) %}
 {% if season_cups or season_championships or has_legacy_season_data %}
 <div style="margin-top: 14pt; margin-bottom: 10pt;">
   {% for cup in season_cups %}
@@ -529,8 +560,8 @@
         <p class="caption">Posición menor = mejor rendimiento</p>
       </div>
       <div style="display: table-cell; width: 50%; vertical-align: top; padding-left: 4pt;">
-        {{ gap_pct(cup.get('gap_pcts'), width=175, height=112, low_confidence=cup.get('low_confidence')) }}
-        <p class="caption">Gap: cuánto tardó de más que el mejor tiempo, en % de ese tiempo</p>
+        {{ gap_pct(cup.get('median_gap_pcts'), width=175, height=112, low_confidence=cup.get('low_confidence')) }}
+        <p class="caption">Brecha: cuánto se aleja su tiempo del típico (mediana) de su categoría, en % de ese tiempo. Negativa = más rápido</p>
       </div>
       {# "Puntos acumulados" desactivada — ver nota del import arriba.
       <div style="display: table-cell; width: 33.34%; vertical-align: top; padding-left: 4pt;">
@@ -551,8 +582,8 @@
         <p class="caption">Posición menor = mejor rendimiento</p>
       </div>
       <div style="display: table-cell; width: 50%; vertical-align: top; padding-left: 4pt;">
-        {{ gap_pct(legacy_gap_pcts, width=175, height=112, low_confidence=charts_annex.get('low_confidence')) }}
-        <p class="caption">Gap: cuánto tardó de más que el mejor tiempo, en % de ese tiempo</p>
+        {{ gap_pct(legacy_median_gap_pcts, width=175, height=112, low_confidence=charts_annex.get('low_confidence')) }}
+        <p class="caption">Brecha: cuánto se aleja su tiempo del típico (mediana) de su categoría, en % de ese tiempo. Negativa = más rápido</p>
       </div>
       {# "Puntos acumulados" desactivada — ver nota del import arriba.
       <div style="display: table-cell; width: 33.34%; vertical-align: top; padding-left: 4pt;">
@@ -576,9 +607,9 @@
     {{ championship_card(championship) }}
     {% endfor %}
     {#
-      Glosario en lenguaje de familia. "Gap al P1" y "percentil" son los dos
-      términos que una familia no tiene por qué conocer y que hasta ahora
-      aparecían como columnas de la tarjeta sin explicación.
+      Glosario en lenguaje de familia. "Brecha vs. mediana" y "percentil" son
+      los dos términos que una familia no tiene por qué conocer y que hasta
+      ahora aparecían como columnas de la tarjeta sin explicación.
 
       Va dentro de este pie, y no en un bloque propio de la sección de
       temporada, por presupuesto vertical: el pie solo se dibuja cuando hay
@@ -590,7 +621,7 @@
       Texto descriptivo, nunca evaluativo: explica cómo leer el número, sin
       calificar el desempeño.
     #}
-    <p style="font-size: 7.5pt; color: #6b7280; font-style: italic; margin-top: 4pt; line-height: 1.4;">Un campeonato reúne un pelotón distinto al de la copa: se lee por separado y no se compara con las válidas. <strong>Gap al P1:</strong> cuánto tardó de más que el mejor tiempo de su categoría, en porcentaje de ese tiempo — en una carrera de 40 minutos, 1,5&nbsp;% son unos 36 segundos. <strong>Percentil:</strong> de sus rivales de categoría, qué porcentaje terminó por detrás. El primer puesto marca 100 y el último 0: un P2 entre 5 marca 75, porque dejó atrás a 3 de los otros 4.</p>
+    <p style="font-size: 7.5pt; color: #6b7280; font-style: italic; margin-top: 4pt; line-height: 1.4;">Un campeonato reúne una parrilla distinta a la de la copa: se lee por separado y no se compara con las válidas. <strong>Brecha vs. mediana:</strong> cuánto se aleja su tiempo del tiempo típico (la mediana) de su categoría, en porcentaje de ese tiempo; negativa es más rápido que lo típico — en una carrera de 40 minutos, 1,5&nbsp;% son unos 36 segundos. <strong>Percentil:</strong> ubica su tiempo entre el más rápido de la categoría (100) y el más lento (0); depende de los tiempos, no del puesto.</p>
   </div>
   {% endif %}
 </div>

@@ -1,11 +1,24 @@
 <!--
 Sync Impact Report
 ==================
-Version change: 1.1.0 → 1.2.0
-Rationale: MINOR amendment. A new domain principle (V. Youth Psychological Assessment
-Safeguards) is ADDED for the Competitive Anxiety Assessment feature (CSAI-2R / SAS-2 /
-CSAI-2). It is additive and does not remove, renumber, or redefine principles I–IV; it
-is fully consistent with the existing minors-privacy and UX constraints → MINOR.
+Version change: 1.2.0 → 1.3.0
+Rationale: MINOR amendment. Guidance is materially expanded (test lanes, AI eval gates,
+AI tracing/provider constraints, secrets) and stale tooling claims are corrected. No
+principle is removed, renumbered, or redefined.
+
+Amendment 2026-09-23 (1.2.0 → 1.3.0):
+  - I. Code Quality → static gate aligned with the repo: `ruff check` + `tsc --noEmit`
+    (no ESLint/mypy config exists; adding one is a plan-level decision).
+  - II. Testing → added test lanes (offline default; opt-in `mysql`/`integration`/
+    `golden`; migrations must downgrade cleanly), blocking golden evals for AI pipelines
+    (composite ≥ 0.75), and explicit reporting of unrun lanes.
+  - Quality Gates → stack now names LangChain/LangGraph via `app/services/llm/`; new
+    Secrets gate; AI features gain pre-render scrubbing of carried-forward text; new
+    AI tracing & providers gate (redact-always, Langfuse and `claude-cli` local-only).
+  - Development Workflow → pre-merge gate acknowledges CI automates only golden evals;
+    the rest runs locally and is reported in the PR.
+  - Templates: plan/spec/tasks templates reference this file generically; no edit needed.
+  - Open (not decided here): 48 px vs 44 px minimum touch target (Principle III keeps 48).
 
 Amendment 2026-06-23 (1.1.0 → 1.2.0):
   - Added Principle V. Youth Psychological Assessment Safeguards (NON-NEGOTIABLE):
@@ -52,9 +65,10 @@ Follow-up TODOs:
 Every change MUST leave the codebase at least as readable and as well-structured as it
 found it. Concretely:
 
-- Code MUST pass the project linters and type checkers before merge (backend: `ruff` +
-  `mypy` where configured; frontend: `eslint` + `tsc --noEmit`). A failing check is a
-  blocker, never a follow-up ticket.
+- Code MUST pass the project's static gates before merge: backend `ruff check`;
+  frontend `tsc --noEmit` (via `npm run typecheck` / `npm run build`). No ESLint or
+  mypy configuration exists today — adding one is a plan-level decision, and once added
+  it joins this gate. A failing check is a blocker, never a follow-up ticket.
 - Functions and components MUST be named for what they produce, not how they do it; if
   a reader needs a comment to know what a symbol does, rename the symbol first and add
   the comment only when the *why* is non-obvious.
@@ -89,6 +103,18 @@ Tests are part of the deliverable, not an optional follow-up.
   forbidden.
 - Tests for code that handles minors' data MUST include explicit privacy invariants
   (no name leakage in responses, no PII in logs, consent gates honored).
+- **Test lanes.** The default `pytest` lane MUST stay offline (in-memory `aiosqlite`, no
+  network, no AI keys). Real-infrastructure checks live in opt-in markers: `mysql`
+  (real MySQL; database name MUST end in `_test`), `integration` (real external APIs),
+  and `golden` (AI evals). Every Alembic migration MUST upgrade and downgrade cleanly
+  under the `mysql` lane.
+- **AI quality gates.** Every AI pipeline whose output reaches a coach or a family MUST
+  be guarded by a golden eval with a committed dataset and baseline, blocking in CI at
+  a documented composite threshold (currently ≥ 0.75 for the race analyst and the
+  anthropometry analyst). Prompt or model changes MUST re-run that eval.
+- **Honest verification.** When a lane (`mysql`, `golden`, Playwright e2e) was not run,
+  the PR or completion report MUST say so explicitly; a feature MUST NOT be reported as
+  fully verified on the default lane alone.
 
 **Rationale**: This is a juvenile-athlete platform. Untested code is a privacy and
 safety risk, not just a quality risk. Regression tests for bug fixes prevent the same
@@ -211,16 +237,27 @@ non-negotiables in `CLAUDE.md`.
   audit is mandatory for any feature that reads or writes athlete-identifiable data.
 - **Stack discipline**: New features MUST use the agreed stack — FastAPI +
   SQLAlchemy 2 async + Alembic + MySQL 8.4 (backend); React 19 + Vite + shadcn/ui +
-  Tailwind + TanStack Query + Zustand + RHF + Zod (frontend). Adding a new runtime
+  Tailwind + TanStack Query + Zustand + RHF + Zod (frontend); LangChain / LangGraph
+  through the shared LLM layer (`app/services/llm/`) for AI calls. Adding a new runtime
   dependency requires written justification in the plan.
 - **Security**: Authentication uses JWT (access + refresh) via `PyJWT` + `bcrypt`.
   RBAC checks MUST live in `services/permissions.py` or equivalent and MUST be
   exercised by tests. File uploads MUST validate magic bytes (not extensions) and
   strip EXIF before storage.
+- **Secrets**: Credentials live only in gitignored `.env*` files and the deploy
+  platform's environment. Their values MUST NOT appear in code, commits, docs, logs,
+  memory files, or AI-assistant transcripts; refer to them by variable name only.
 - **AI features**: Any AI-generated content about a minor MUST run through the
   documented guardrails (forbidden-names list from DB, word limits, term redaction,
-  consent gate). `AI_LOG_PROMPTS` MUST remain `false` in production. Property tests
-  MUST assert that real names never appear in AI output.
+  consent gate). Text carried forward into a prompt from a previous AI output MUST be
+  scrubbed against the forbidden-names list *before* the prompt is rendered.
+  `AI_LOG_PROMPTS` MUST remain `false` in production. Property tests MUST assert that
+  real names never appear in AI output.
+- **AI tracing and providers**: Tracing is redact-always — no prompt, response, coach
+  note, or measurement MAY reach a tracing backend, and structural metadata is limited
+  to an explicit allow-list that excludes quasi-identifiers (sex, age, category, growth
+  phase, dates). Tracing backends and subscription-backed providers (`claude-cli`) are
+  local-only: the application MUST refuse to start in production when either is enabled.
 - **Observability**: Errors MUST be logged with correlation IDs and never with
   request/response bodies that may contain PII. Structured logs are required for
   any new long-running task or background job.
@@ -234,8 +271,10 @@ non-negotiables in `CLAUDE.md`.
   (e.g., `feat/season-panorama`). Direct commits to `main` are reserved for
   emergency fixes and MUST be followed by a retroactive PR description.
 - **Pre-merge gate**: Lint, type-check, backend `pytest`, frontend `vitest`, and
-  accessibility tests MUST all pass. A green CI is necessary but not sufficient — a
-  human reviewer MUST also confirm Principles I–V are upheld.
+  accessibility tests MUST all pass. CI currently automates only the golden evals, so
+  the rest of this gate MUST be run locally and its result stated in the PR. Passing
+  checks are necessary but not sufficient — a human reviewer MUST also confirm
+  Principles I–V are upheld.
 - **Constitution Check (in `/speckit-plan`)**: Every implementation plan MUST list
   how it satisfies each of the five principles. Violations MUST be entered in the
   Complexity Tracking table with a justification and an explicitly rejected simpler
@@ -267,4 +306,4 @@ non-negotiables in `CLAUDE.md`.
   guidance file for AI-assisted development and is informative-but-binding alongside
   this constitution.
 
-**Version**: 1.2.0 | **Ratified**: 2026-06-01 | **Last Amended**: 2026-06-23
+**Version**: 1.3.0 | **Ratified**: 2026-06-01 | **Last Amended**: 2026-09-23

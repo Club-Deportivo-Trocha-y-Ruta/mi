@@ -65,7 +65,7 @@ describe("InsightsTimeline", () => {
       ).toBeInTheDocument();
     });
     // El hint para coach pide ir a "Analizar con IA".
-    expect(screen.getByText(/lanza un análisis desde/i)).toBeInTheDocument();
+    expect(screen.getByText(/lanza el primero con «analizar con ia»/i)).toBeInTheDocument();
   });
 
   it("renderiza empty state con copy adaptado a parent", async () => {

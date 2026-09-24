@@ -1,0 +1,144 @@
+{% extends "documents/pdf/base/layout.html" %}
+
+{#
+  Instructivo de campo — toma de pliegues cutáneos (feature 046, US5, T057).
+
+  Documento estático y genérico, común a todo el club: nunca lleva datos de
+  ningún deportista (nombre, edad, valores) — por eso el único contexto
+  requerido es `sites` (validado por TemplateRegistry).
+
+  Variables requeridas (validadas por TemplateRegistry):
+    sites   list[dict] — orden fijo de `app/data/skinfold_sites.json`
+                          (`site_order`), cada elemento:
+                          { key, label, donde, como, side_tag, alt, ... }
+                          construido por `routers/body_composition.py::
+                          _build_field_guide_sites` a partir de
+                          `app/data/skinfold_sites.json` — los textos
+                          `donde`/`como`/`alt` salen de ahí, nunca se
+                          duplican aquí.
+
+  Ilustraciones: una imagen PNG cuadrada por sitio en
+  `templates/documents/pdf/diagrams/img/skinfold_<key>.png` (sin texto
+  incrustado, fondo blanco). `DocumentGenerator` pasa `base_url` = raíz de
+  `templates/`, así que la ruta relativa `documents/pdf/diagrams/img/…`
+  resuelve bajo WeasyPrint sin `file://` ni data URI. El marcador «D»
+  (lado derecho) es texto HTML superpuesto, no parte de la imagen.
+  Las seis PNG son obligatorias (`_build_field_guide_sites` siempre
+  resuelve la ruta; ya no hay respaldo vectorial).
+
+  `generated_at` lo agrega automáticamente `DocumentGenerator._enrich_context`.
+
+  Privacidad (Ley 1581 / CLAUDE.md): este documento se puede colgar en la
+  estación de medición o entregar a cualquier entrenador — el pie de página
+  lo deja explícito ("Este instructivo no contiene datos de ningún
+  deportista"), y `Cache-Control: private, max-age=86400` en la respuesta
+  (`routers/body_composition.py`) evita que un proxy compartido lo sirva a
+  otro club.
+
+  Copy en español neutro (Colombia).
+#}
+
+{% block title %}Instructivo de toma de pliegues cutáneos — Club Deportivo Trocha y Ruta{% endblock %}
+{% block header_right %}Instructivo de pliegues cutáneos{% endblock %}
+{% block doc_title %}Instructivo de toma de pliegues cutáneos{% endblock %}
+{% block generated_at %}{{ generated_at }}{% endblock %}
+{% block page_footer_note %}Instructivo genérico del club — no contiene datos de ningún deportista.{% endblock %}
+
+{% block body %}
+
+<style>
+  /* Compactación vertical propia del instructivo (feature 046, T059 ronda 2).
+     Con los espaciados por defecto de `base/layout.html` (pensados para
+     documentos de una página) el cuerpo entra en 2 páginas casi completas
+     y el pie "no contiene datos de ningún deportista" — que ya aparece en
+     cada página vía @bottom-left y en `.doc-footer` — se desbordaba a una
+     página 3 casi en blanco. Se recortan solo espacios en blanco (títulos,
+     listas, tarjetas de sitio); ningún tamaño de letra baja de 8.5pt.
+     Ámbito: esta plantilla únicamente — `layout.html` lo comparten los
+     demás PDF del proyecto. */
+  h2 { margin: 10pt 0 8pt 0; }
+  h3 { margin: 8pt 0 4pt 0; }
+  ul { margin: 0 0 8pt 0; padding-left: 14pt; }
+  li { margin-bottom: 3pt; line-height: 1.35; }
+  .obs-box { padding: 6pt 10pt; margin: 6pt 0; }
+  /* Tarjeta de sitio: ilustración cuadrada de 45 mm a la izquierda y texto
+     a la derecha. `page-break-inside: avoid` evita que una tarjeta se parta
+     entre páginas (el instructivo debe quedar en exactamente 2 páginas). */
+  .site-card { width: 100%; border-collapse: collapse; page-break-inside: avoid; margin: 0 0 3pt 0; }
+  .site-card td { vertical-align: top; padding: 0; }
+  .site-figure { width: 45mm; padding-right: 8pt !important; }
+  .figure-box { position: relative; width: 45mm; height: 45mm; border: 0.75pt solid var(--gray-300); }
+  .figure-box img { display: block; width: 45mm; height: 45mm; }
+  /* Marcador «D» (lado derecho) como texto HTML sobre la esquina de la imagen. */
+  .side-tag {
+    position: absolute; top: 2mm; right: 2mm;
+    width: 6mm; height: 6mm; line-height: 6mm; text-align: center;
+    border-radius: 3mm; background: var(--brand-charcoal); color: #ffffff;
+    font-family: 'Plus Jakarta Sans', Arial, Helvetica, sans-serif;
+    font-size: 9pt; font-weight: 700;
+  }
+  /* Con ilustraciones de 45 mm la página 2 queda casi llena: el pie del
+     documento pega más arriba para no caer en una página 3. */
+  .doc-footer { margin-top: 6pt; }
+  .site-text h3 { margin: 0 0 4pt 0; }
+  .site-text p { margin: 0 0 4pt 0; line-height: 1.35; }
+</style>
+
+<div class="obs-box">
+  <p>
+    Este instructivo es una ayuda-memoria genérica para el entrenador en la
+    estación de medición. Ningún dato del deportista se guarda ni se
+    imprime aquí: se usa junto con el asistente de captura de la aplicación.
+    La marca <strong>D</strong> en cada ilustración indica que el pliegue se
+    mide siempre del lado derecho del cuerpo.
+  </p>
+</div>
+
+<h2>Antes de empezar</h2>
+<ul>
+  <li>El atleta no acaba de entrenar (evita retención de líquido en la piel).</li>
+  <li>Piel seca, sin loción ni protector solar en las zonas de medición.</li>
+  <li>Espacio privado, fuera de la vista de otros deportistas.</li>
+  <li>Hay un segundo adulto presente durante toda la medición.</li>
+  <li>El atleta está de pie, relajado, sin tensar los músculos.</li>
+  <li>El atleta puede decidir no medirse, o saltar cualquier sitio, sin ninguna consecuencia.</li>
+</ul>
+
+<h2>Los seis sitios</h2>
+
+{% for site in sites %}
+<table class="site-card">
+  <tr>
+    <td class="site-figure">
+      <div class="figure-box">
+        <img src="{{ site.illustration }}" alt="{{ site.alt }}">
+        <span class="side-tag">{{ site.side_tag }}</span>
+      </div>
+    </td>
+    <td class="site-text">
+      <h3>{{ loop.index }}. {{ site.label }}</h3>
+      <p><strong>Dónde:</strong> {{ site.donde }}</p>
+      <p><strong>Cómo:</strong> {{ site.como }}</p>
+    </td>
+  </tr>
+</table>
+{% endfor %}
+
+<h2>Protocolo de lectura</h2>
+<div class="obs-box">
+  <ul>
+    <li>Dos lecturas por sitio, siempre del lado derecho del cuerpo.</li>
+    <li>Si las dos primeras lecturas difieren más de la tolerancia (5 % del promedio, mínimo 1,0 mm), toma una tercera lectura.</li>
+    <li>Rota entre los sitios en el orden de esta guía en vez de repetir el mismo sitio dos veces seguidas.</li>
+    <li>Pellizca el pliegue firmemente, coloca el plicómetro sobre la marca y lee a los 2 segundos de soltar la presión.</li>
+  </ul>
+</div>
+
+{# La nota "no contiene datos de ningún deportista" ya es el pie de página
+   de este documento (bloque `page_footer_note` más arriba): aparece en el
+   @bottom-left de cada página y se repite en `.doc-footer` (base/layout.html).
+   Repetirla aquí como párrafo aparte solo duplicaba el mensaje y empujaba
+   una página 3 casi en blanco (T059 ronda 2) — se retira, no se pierde
+   información. #}
+
+{% endblock %}

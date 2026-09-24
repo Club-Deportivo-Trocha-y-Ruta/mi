@@ -220,6 +220,9 @@ def _prompt_context(state: dict) -> tuple[dict[str, Any], str]:
         "growth_summary_block": context_blocks["growth_summary_block"],
         "training_load_block": context_blocks.get("training_load_block"),
         "previous_analysis_block": context_blocks.get("previous_analysis_block"),
+        # Feature 046 (contracts/ai-body-composition-leaf.md §2): solo lo usa
+        # el prompt v2; None cuando no hay set de pliegues con datos.
+        "body_composition_block": context_blocks.get("body_composition_block"),
     }
     return prompt_vars, prompt_version
 

@@ -154,6 +154,59 @@ describe("BlockCard", () => {
     expect(onRegenerateClick).toHaveBeenCalledTimes(1);
   });
 
+  // Feature 045 (T063): la tarjeta puede montarse ya en edición con un
+  // borrador pre-escrito (p. ej. «Insertar aviso de cambios»).
+  it("startEditing + initialDraft: abre el editor con el texto pre-escrito, enfocado, sin guardar nada", () => {
+    const onSave = vi.fn();
+    render(
+      <BlockCard
+        dataBlock="coach_note"
+        title="Nota del entrenador"
+        state="empty"
+        value=""
+        startEditing
+        initialDraft="Texto sugerido"
+        onSave={onSave}
+      />,
+    );
+    const textarea = screen.getByLabelText("Editar Nota del entrenador");
+    expect(textarea).toHaveValue("Texto sugerido");
+    expect(textarea).toHaveFocus();
+    expect(onSave).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("block-save-coach_note"));
+    expect(onSave).toHaveBeenCalledWith("Texto sugerido");
+  });
+
+  it("Cancelar tras un borrador pre-escrito vuelve al valor real y deja de sugerir", () => {
+    render(
+      <BlockCard
+        dataBlock="coach_note"
+        title="Nota del entrenador"
+        state="empty"
+        value=""
+        startEditing
+        initialDraft="Texto sugerido"
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+    expect(screen.queryByLabelText("Editar Nota del entrenador", { selector: "textarea" })).not.toBeInTheDocument();
+    expect(screen.getByText("Sin contenido.")).toBeInTheDocument();
+  });
+
+  it("por defecto (sin startEditing) sigue montándose en lectura y sin enfocar nada", () => {
+    render(
+      <BlockCard
+        dataBlock="coach_note"
+        title="Nota del entrenador"
+        state="ai"
+        value="Nota actual"
+      />,
+    );
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.getByText("Nota actual")).toBeInTheDocument();
+  });
+
   it("sin violaciones de accesibilidad", async () => {
     const { container } = render(
       <BlockCard

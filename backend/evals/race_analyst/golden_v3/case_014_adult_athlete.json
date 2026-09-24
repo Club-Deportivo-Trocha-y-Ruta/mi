@@ -28,12 +28,14 @@
       "series_level": "departmental",
       "is_championship": false,
       "field_size": 18,
+      "timed_finishers": 18,
       "position": 3,
       "percentile": 88,
       "race_time_ms": 5400000,
       "gap_to_p1_ms": 90000,
       "gap_pct": 1.69,
       "gap_to_p3_ms": 0,
+      "gap_to_podium_pct": 0.0,
       "category_median_time_ms": 5700000,
       "gap_to_median_pct": -5.3,
       "laps_behind": 0,
@@ -51,7 +53,7 @@
         "is_championship": false,
         "position": 5,
         "field_size": 17,
-        "percentile": 74,
+        "percentile": 59,
         "gap_pct": 3.2,
         "gap_to_p3_ms": 41000,
         "expected_position": 5,
@@ -64,7 +66,7 @@
         "is_championship": false,
         "position": 4,
         "field_size": 18,
-        "percentile": 81,
+        "percentile": 71,
         "gap_pct": 2.4,
         "gap_to_p3_ms": 22000,
         "expected_position": 4,
@@ -125,8 +127,8 @@
       ]
     },
     "memory_recent_insights": [
-      "Válida 2 · Copa Élite: subió al percentil 81 tras recuperar continuidad en la ventana previa",
-      "Válida 1 · Copa Élite: primera fecha de la temporada, percentil 74 en un pelotón de 17"
+      "Válida 2 · Copa Élite: subió al percentil 71 tras recuperar continuidad en la ventana previa",
+      "Válida 1 · Copa Élite: primera fecha de la temporada, percentil 59 en un pelotón de 17"
     ]
   },
   "expected_themes": [

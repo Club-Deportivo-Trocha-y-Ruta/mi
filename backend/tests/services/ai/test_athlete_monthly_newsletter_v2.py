@@ -27,6 +27,7 @@ import pytest
 from app.services.ai.errors import LLMSchemaError
 from app.services.ai.providers.fake import FakeLLMProvider
 from app.services.ai.prompts.registry import PromptRegistry
+from app.services.race.audience import FAMILY_EXCLUDED_METRIC_FIELDS
 from app.services.ai.use_cases.athlete_monthly_newsletter_v2 import (
     AthleteMonthlyNewsletterV2UseCase,
     StageNarrativeLLMTimeout,
@@ -62,6 +63,7 @@ def _snapshot(**overrides) -> dict:
                         "position": 4,
                         "label": "Válida III — Cali",
                         "gap_to_winner_pct": 3.2,
+                        "gap_to_median_pct": 2.4,
                         "event_date": "2026-06-14",
                         "category_label": "Prejuvenil A",
                     }
@@ -182,6 +184,201 @@ class TestBuildContextFromMetricsV2:
         assert ctx.sessions_total == 0
         assert ctx.planned_focus_groups == []
         assert ctx.next_race is None
+
+
+# ---------------------------------------------------------------------------
+# Brecha en el prompt (feature 045): «Brecha vs. mediana», nunca «al P1»
+# ---------------------------------------------------------------------------
+
+# Valor centinela: si aparece en el prompt renderizado, la brecha contra el
+# ganador se filtró al LLM.
+_WINNER_GAP_SENTINEL = 41.7
+
+
+def _race_row(**overrides) -> dict:
+    row = {
+        "position": 4,
+        "label": "Válida III — Cali",
+        "gap_to_winner_pct": _WINNER_GAP_SENTINEL,
+        "gap_to_median_pct": 2.4,
+        "event_date": "2026-06-14",
+        "category_label": "Prejuvenil A",
+    }
+    row.update(overrides)
+    return row
+
+
+def _snapshot_with_races(*rows: dict) -> dict:
+    snapshot = _snapshot()
+    snapshot["email_blocks"]["race_results"] = {"has_races": True, "results": list(rows)}
+    return snapshot
+
+
+def _render_prompt(snapshot: dict) -> str:
+    ctx = _make_ctx(snapshot=snapshot)
+    context_dict = AthleteMonthlyNewsletterV2UseCase._context_dict(
+        ctx, only_block=None, instruction=None
+    )
+    return PromptRegistry().render("athlete_monthly_newsletter_v2", context_dict)
+
+
+def _race_line(prompt: str) -> str:
+    return next(line for line in prompt.splitlines() if line.startswith("- Válida III"))
+
+
+class TestContextExcludesWinnerAndPodiumGaps:
+    """Defensa en profundidad (FR-022): el contexto del prompt no lleva las
+    claves de la brecha al ganador/podio, ni siquiera sin renderizarlas."""
+
+    @staticmethod
+    def _row_with_all_excluded_keys() -> dict:
+        row = _race_row(gap_to_median_pct=2.4)
+        row.update({key: 99 for key in FAMILY_EXCLUDED_METRIC_FIELDS})
+        return row
+
+    def test_context_race_results_lack_every_family_excluded_key(self):
+        ctx = _make_ctx(snapshot=_snapshot_with_races(self._row_with_all_excluded_keys()))
+
+        assert len(ctx.race_results) == 1
+        assert FAMILY_EXCLUDED_METRIC_FIELDS.isdisjoint(ctx.race_results[0])
+        # Explícito: winner, podio (P3) y los heredados de la 037.
+        for key in (
+            "gap_to_winner_pct", "gap_to_winner_ms", "gap_to_podium_pct",
+            "gap_to_podium_ms", "gap_pct", "gap_to_p1_ms", "gap_to_p3_ms",
+        ):
+            assert key not in ctx.race_results[0]
+
+    def test_context_keeps_median_gap_and_display_fields(self):
+        ctx = _make_ctx(snapshot=_snapshot_with_races(self._row_with_all_excluded_keys()))
+
+        row = ctx.race_results[0]
+        assert row["gap_to_median_pct"] == 2.4
+        assert row["position"] == 4
+        assert row["label"] == "Válida III — Cali"
+        assert row["event_date"] == "2026-06-14"
+
+    def test_dict_handed_to_the_registry_lacks_excluded_keys(self):
+        ctx = _make_ctx(snapshot=_snapshot_with_races(self._row_with_all_excluded_keys()))
+
+        context_dict = AthleteMonthlyNewsletterV2UseCase._context_dict(
+            ctx, only_block=None, instruction=None
+        )
+
+        assert FAMILY_EXCLUDED_METRIC_FIELDS.isdisjoint(context_dict["race_results"][0])
+
+    def test_source_snapshot_is_not_mutated(self):
+        """El snapshot persistido (que el coach/PDF sí pueden leer) conserva
+        sus claves: solo la copia del contexto se redacta."""
+        snapshot = _snapshot_with_races(self._row_with_all_excluded_keys())
+
+        _make_ctx(snapshot=snapshot)
+
+        stored = snapshot["email_blocks"]["race_results"]["results"][0]
+        assert FAMILY_EXCLUDED_METRIC_FIELDS <= stored.keys()
+
+    def test_races_count_still_drives_confidence(self):
+        ctx = _make_ctx(snapshot=_snapshot_with_races(self._row_with_all_excluded_keys()))
+
+        assert ctx.confidence in {"low", "medium", "high"}
+
+
+class TestPromptRaceGap:
+    def test_prompt_uses_median_gap_and_never_the_winner_gap(self):
+        prompt = _render_prompt(_snapshot_with_races(_race_row()))
+        line = _race_line(prompt)
+
+        assert "Brecha vs. mediana: +2.4 % vs. la mediana de su categoría" in line
+        assert "tiempo 2.4 % mayor" in line
+        assert "al P1" not in prompt
+        assert str(_WINNER_GAP_SENTINEL) not in prompt
+
+    def test_negative_median_gap_renders_sign_and_magnitude(self):
+        prompt = _render_prompt(
+            _snapshot_with_races(_race_row(gap_to_median_pct=-1.3))
+        )
+        line = _race_line(prompt)
+
+        assert "Brecha vs. mediana: -1.3 % vs. la mediana de su categoría" in line
+        assert "tiempo 1.3 % menor" in line
+        assert str(_WINNER_GAP_SENTINEL) not in prompt
+
+    def test_zero_median_gap_has_no_direction_tail(self):
+        line = _race_line(
+            _render_prompt(_snapshot_with_races(_race_row(gap_to_median_pct=0.0)))
+        )
+
+        assert "Brecha vs. mediana: +0.0 %" in line
+        assert "mayor" not in line and "menor" not in line
+
+    def test_none_median_gap_omits_the_gap_line(self):
+        prompt = _render_prompt(
+            _snapshot_with_races(_race_row(gap_to_median_pct=None))
+        )
+        line = _race_line(prompt)
+
+        assert "Brecha vs. mediana" not in line
+        assert "al P1" not in prompt
+        assert str(_WINNER_GAP_SENTINEL) not in prompt
+
+    def test_legacy_snapshot_without_median_key_renders_without_gap(self):
+        """Snapshots anteriores a la 045 no traen ``gap_to_median_pct``: con
+        ``StrictUndefined`` el template no debe reventar ni caer al P1."""
+        row = _race_row()
+        del row["gap_to_median_pct"]
+
+        prompt = _render_prompt(_snapshot_with_races(row))
+
+        assert "Brecha vs. mediana" not in _race_line(prompt)
+        assert str(_WINNER_GAP_SENTINEL) not in prompt
+
+    def test_prompt_instructs_model_never_to_cite_winner_or_podium_gaps(self):
+        prompt = _render_prompt(_snapshot_with_races(_race_row()))
+
+        assert "Nunca menciones brechas, tiempos ni posiciones del ganador" in prompt
+        assert "del líder o del podio" in prompt
+
+    @pytest.mark.asyncio
+    async def test_llm_request_carries_median_gap_not_winner_gap(self):
+        fake = FakeLLMProvider(canned_json=_happy_canned_json())
+        uc = AthleteMonthlyNewsletterV2UseCase(fake, PromptRegistry())
+        ctx = _make_ctx(snapshot=_snapshot_with_races(_race_row(gap_to_median_pct=-1.3)))
+
+        await uc.run(ctx)
+
+        sent = fake.last_request.messages[-1].content
+        assert "Brecha vs. mediana: -1.3 %" in sent
+        assert "al P1" not in sent
+        assert str(_WINNER_GAP_SENTINEL) not in sent
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("gap, cited", [(2.4, "2.4"), (-1.3, "1.3"), (-1.3, "-1.3")])
+    async def test_median_gap_cited_by_model_is_grounded(self, gap, cited):
+        """El modelo cita la cifra con o sin signo: ambas formas están en el
+        prompt renderizado, así que el guardrail de grounding no descarta el
+        bloque (una brecha negativa sin la magnitud caería a estático)."""
+        canned = _happy_canned_json()
+        canned["summit_caption"] = f"La brecha vs. la mediana fue de {cited} % en la Válida III."
+        uc = _use_case(canned)
+        ctx = _make_ctx(snapshot=_snapshot_with_races(_race_row(gap_to_median_pct=gap)))
+
+        result = await uc.run(ctx)
+
+        assert result.summit_caption is not None
+        assert not any("ungrounded_number" in v for v in result.grounding_violations)
+
+    @pytest.mark.asyncio
+    async def test_winner_gap_cited_by_model_is_ungrounded(self):
+        """Si el modelo inventara la brecha al P1 (que no está en el prompt),
+        el grounding la rechaza: red de seguridad detrás de la instrucción."""
+        canned = _happy_canned_json()
+        canned["summit_caption"] = f"Terminó a {_WINNER_GAP_SENTINEL} % del primer lugar."
+        uc = _use_case(canned)
+        ctx = _make_ctx(snapshot=_snapshot_with_races(_race_row()))
+
+        result = await uc.run(ctx)
+
+        assert result.summit_caption is None
+        assert any("ungrounded_number" in v for v in result.grounding_violations)
 
 
 # ---------------------------------------------------------------------------

@@ -45,9 +45,13 @@ test('E2E-005: registrar medición antropométrica y verificar cálculo PHV', as
   const statusText = await maturationStatus.textContent();
   expect(['Pre-PHV', 'Circa-PHV', 'Post-PHV'].some(s => statusText?.includes(s))).toBeTruthy();
 
-  // Completar fecha y guardar (labels con acento: "Fecha de evaluación", "Guardar medición")
+  // Completar fecha y guardar (labels con acento: "Fecha de evaluación", "Guardar medición").
+  // Feature 046: el botón pasa a "Guardar y terminar" cuando el atleta es
+  // elegible para pliegues cutáneos (junto a la nueva salida "Guardar y
+  // agregar pliegues") — se acepta cualquiera de los dos, esta prueba no es
+  // sobre pliegues.
   await page.getByLabel(/fecha de evaluaci[óo]n/i).fill('2026-04-14');
-  await page.getByRole('button', { name: /guardar medici[óo]n/i }).click();
+  await page.getByRole('button', { name: /guardar (medici[óo]n|y terminar)/i }).click();
 
   // Tras guardar, el historial en desktop (viewport 1280px) muestra la nueva
   // medición. El testid "anthropometry-history" es la lista mobile (md:hidden);

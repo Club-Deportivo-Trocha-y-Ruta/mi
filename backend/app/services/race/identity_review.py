@@ -41,7 +41,7 @@ import asyncio
 import hashlib
 import logging
 from collections import defaultdict
-from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from itertools import combinations
@@ -136,7 +136,32 @@ _PUBLIC_RECORD_FIELDS = (
 
 _STAGED_STATUSES = (RaceImportStatus.pending, RaceImportStatus.dry_run)
 
-RowsLoader = Callable[[RaceImport], Awaitable[Mapping[str, Sequence[Any]]]]
+#: ``valida_num`` de la aparición que aporta GENERAL. GENERAL es el acumulado
+#: de la temporada, no una válida: con un número real ``_shared_valida``
+#: trataría a la variante de GENERAL y a la atleta que corrió esa válida como
+#: dos personas distintas y apagaría justo el candidato que el candado busca.
+#: Ninguna válida real usa 0 (regulares 1..7, CD 99).
+GENERAL_VALIDA_NUM = 0
+
+
+@dataclass(frozen=True)
+class ImportRows:
+    """Filas de una carga que ``load_universe`` incorpora al universo:
+    ``results`` (RESULTADOS por código de categoría) y ``general`` (GENERAL por
+    código de categoría, si la carga lo trae).
+
+    El ingestor crea/actualiza competidores desde GENERAL en todas las
+    categorías (research R-08, nota 1 del G2), así que sus ternas también son
+    parte de lo que el coach debe poder revisar antes del commit.
+    """
+
+    results: Mapping[str, Sequence[Any]]
+    general: Mapping[str, Sequence[Any]] = field(default_factory=dict)
+
+
+#: Un ``rows_loader`` puede devolver solo RESULTADOS (``Mapping``) o
+#: ``ImportRows`` con GENERAL incluido.
+RowsLoader = Callable[[RaceImport], Awaitable[Mapping[str, Sequence[Any]] | ImportRows]]
 
 
 # ---------------------------------------------------------------------------
@@ -326,11 +351,55 @@ class ReversalOutcome:
 # ---------------------------------------------------------------------------
 
 
+#: Separador de las partes de una clave de registro (terna + discriminador).
+#: Es un carácter de control: ningún valor normalizado lo contiene.
+_KEY_SEP = "\x1f"
+
+
 def record_key(triple: Triple, discriminator: str = "") -> str:
     """Clave estable de un registro: la terna, más el discriminador si el
     registro fue separado por categoría."""
     parts = [*triple, discriminator] if discriminator else list(triple)
-    return "\x1f".join(parts)
+    return _KEY_SEP.join(parts)
+
+
+def base_key(key: str) -> str:
+    """La terna de una clave de registro, sin el discriminador de categoría.
+
+    Una misma terna puede aparecer en la cola con discriminador o sin él según
+    cómo se vea el universo al recalcular (``split_by_category``); lo que
+    identifica a las filas de una carga es la terna.
+    """
+    return _KEY_SEP.join(key.split(_KEY_SEP, 3)[:3])
+
+
+def row_triple(row: Any) -> Optional[Triple]:
+    """Terna ``(nombre, club, ciudad)`` normalizada de una fila del acta, o
+    ``None`` si el nombre normaliza a vacío (la fila no entra a la cola)."""
+    triple = signature_triple(row.name, row.club, row.city)
+    return triple if triple[0] else None
+
+
+def import_record_keys(
+    rows_by_category: Mapping[str, Sequence[Any]],
+    general_by_category: Optional[Mapping[str, Sequence[Any]]] = None,
+) -> set[str]:
+    """Claves de registro (sin discriminador) de las filas de una carga:
+    RESULTADOS y, si se pasa, GENERAL (el ingestor también resuelve
+    competidores desde sus filas).
+
+    Es la misma clave que ``load_universe`` le asigna a esas filas, así que un
+    candidato calculado antes del commit sigue reconociéndose después
+    (``pending_candidates_for_import``).
+    """
+    keys: set[str] = set()
+    for group in (rows_by_category, general_by_category or {}):
+        for rows in group.values():
+            for row in rows:
+                triple = row_triple(row)
+                if triple is not None:
+                    keys.add(record_key(triple))
+    return keys
 
 
 def appearance_discriminator(ap: Appearance) -> str:
@@ -602,8 +671,18 @@ async def load_universe(db: AsyncSession, rows_loader: RowsLoader) -> Universe:
 
     ``rows_loader(import)`` devuelve ``{code: [ResultsRow, ...]}`` con las
     correcciones ya aplicadas (el router pasa su propio recargador del
-    archivo almacenado). Un import cuyo archivo falla se reporta en
-    ``imports_unreadable`` y no aporta filas.
+    archivo almacenado), o un ``ImportRows`` si además trae GENERAL. Un
+    import cuyo archivo falla se reporta en ``imports_unreadable`` y no
+    aporta filas.
+
+    GENERAL (feature 045, R-08): una terna que solo aparece en GENERAL y no
+    corresponde a ningún competidor ni a otras filas en staging es un
+    competidor que el commit CREARÍA sin que nadie lo revisara; entra al
+    universo con una sola aparición (categoría de GENERAL, válida
+    ``GENERAL_VALIDA_NUM``) para poder levantar candidatos contra los
+    atletas del club. Las ternas que ya están por RESULTADOS o por firma no
+    reciben una aparición extra: ya están representadas y una categoría
+    distinta las partiría en dos personas.
 
     Separación por categoría (decisión 2026-09-21): las apariciones de una
     misma terna se agrupan con ``split_by_category``; si forman más de un
@@ -668,6 +747,9 @@ async def load_universe(db: AsyncSession, rows_loader: RowsLoader) -> Universe:
     # Filas en staging, por terna.
     staged: dict[Triple, list[Appearance]] = defaultdict(list)
     printed: dict[Triple, _Printed] = {}
+    # Ternas que solo trae GENERAL: se fusionan a `staged` tras leer todos los
+    # imports, para no depender del orden en que aparezcan.
+    general_staged: dict[Triple, tuple[Appearance, _Printed]] = {}
     committed_shas = set(
         (
             await db.execute(
@@ -718,7 +800,7 @@ async def load_universe(db: AsyncSession, rows_loader: RowsLoader) -> Universe:
             unreadable.append(imp.id)
             continue
         try:
-            by_category = await rows_loader(imp)
+            loaded = await rows_loader(imp)
         except Exception as exc:  # noqa: BLE001 — cualquier fallo de storage/parseo
             logger.warning(
                 "race_identity_universe_import_unreadable import_id=%s err=%s",
@@ -728,12 +810,15 @@ async def load_universe(db: AsyncSession, rows_loader: RowsLoader) -> Universe:
             unreadable.append(imp.id)
             continue
         scanned += 1
+        by_category, general_rows = (
+            (loaded.results, loaded.general) if isinstance(loaded, ImportRows) else (loaded, {})
+        )
         event_key = (imp.series_id, valida_num)
         for code, parsed_rows in by_category.items():
             ap = appearance(by_code.get(code), code, event_key, season)
             for row in parsed_rows:
-                triple = signature_triple(row.name, row.club, row.city)
-                if not triple[0]:
+                triple = row_triple(row)
+                if triple is None:
                     continue
                 staged[triple].append(ap)
                 printed.setdefault(
@@ -744,6 +829,27 @@ async def load_universe(db: AsyncSession, rows_loader: RowsLoader) -> Universe:
                         (row.city or "").strip() if triple[2] else "",
                     ),
                 )
+        general_event_key = (imp.series_id, GENERAL_VALIDA_NUM)
+        for code in sorted(general_rows):
+            ap = appearance(by_code.get(code), code, general_event_key, season)
+            for row in general_rows[code]:
+                triple = row_triple(row)
+                if triple is None or triple in general_staged:
+                    continue
+                general_staged[triple] = (
+                    ap,
+                    _Printed(
+                        row.name.strip(),
+                        (row.club or "").strip() if triple[1] else "",
+                        (row.city or "").strip() if triple[2] else "",
+                    ),
+                )
+
+    for triple, (ap, shown) in general_staged.items():
+        if triple in staged or triple in sigs_by_triple:
+            continue
+        staged[triple].append(ap)
+        printed.setdefault(triple, shown)
 
     def labels_of(apps: Iterable[Appearance]) -> tuple[str, ...]:
         return tuple(
@@ -1053,6 +1159,44 @@ async def summary(db: AsyncSession) -> dict[str, int]:
     for state, n in rows.all():
         counts[IdentityCandidateState(state).value] = int(n)
     return counts
+
+
+async def pending_candidates_for_import(
+    db: AsyncSession, import_record_keys: Collection[str]
+) -> list[RaceIdentityCandidate]:
+    """Candidatos ``pending`` que frenan el commit de UNA carga (feature 045,
+    research R-08): aquellos cuyo ``left_record.key`` o ``right_record.key`` es
+    la terna de alguna fila de la carga (``import_record_keys``).
+
+    El ``OR`` cubre los dos casos que importan: un candidato que cruza esta
+    carga con otra (basta que un lado sea de esta) y uno sobre un competidor
+    nuevo de la carga (tiene clave aunque aún no tenga ``competitor_id``).
+    Un candidato que habla solo de otras cargas no la frena. Se compara la
+    terna (``base_key``), no la clave completa: el discriminador de categoría
+    de un lado puede cambiar entre recálculos y no debe abrir un hueco.
+
+    Se filtra en Python, como ``remove_out_of_scope``: la cola del club es de
+    decenas o cientos de filas y el snapshot es JSON, sin operador portable
+    entre SQLite (tests) y MySQL. Solo lee; ordenado por ``id``.
+    """
+    wanted = {base_key(k) for k in import_record_keys}
+    if not wanted:
+        return []
+    pending = (
+        await db.execute(
+            select(RaceIdentityCandidate)
+            .where(RaceIdentityCandidate.state == IdentityCandidateState.pending)
+            .order_by(RaceIdentityCandidate.id)
+        )
+    ).scalars().all()
+
+    def side_in_import(record: Optional[Mapping[str, Any]]) -> bool:
+        key = (record or {}).get("key")
+        return isinstance(key, str) and base_key(key) in wanted
+
+    return [
+        c for c in pending if side_in_import(c.left_record) or side_in_import(c.right_record)
+    ]
 
 
 def record_view(record: Mapping[str, Any]) -> dict[str, Any]:

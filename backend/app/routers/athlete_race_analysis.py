@@ -8,10 +8,15 @@ POST /runs y la persistencia con versionado de
 RBAC
 ====
 - ``GET /insights``         — admin + coach + parent (parent fuerza ``include_deprecated=false``).
+  Para filas v3 la variante de padre omite ``summary_text`` (ver «Texto libre v3»).
 - ``GET /insights/{id}``    — admin + coach + parent. Padre recibe ``404`` si la fila no es activa+aprobada.
+  Para filas v3 la variante de padre omite ``summary_text``, ``recommendations`` y
+  ``principles_cited`` de nivel superior (ver «Texto libre v3»).
 - ``GET /runs``             — admin + coach (parent ⇒ 403).
 - ``POST /runs``            — admin + coach.
-- ``GET /distribution``     — admin + coach + parent.
+- ``GET /distribution``     — admin + coach (parent ⇒ 403, feature 045: el cuerpo lista el
+  tiempo de todos los corredores de la categoría y de ahí se deriva la brecha a la
+  ganadora/podio, que la familia nunca recibe).
 - ``GET /evolution``        — admin + coach + parent. El padre recibe ``403`` si pide
   una métrica de 1.ª posición/podio y sus puntos no traen ``gap_pct`` (feature 045).
 - ``GET /history``          — admin + coach + parent. La variante de padre omite
@@ -23,12 +28,23 @@ Qué métricas ve cada rol lo decide UNA política, ``services/race/audience.py`
 (``Audience``, ``FAMILY_EXCLUDED_METRIC_FIELDS``, ``serialize_for_audience``):
 las rutas ``/evolution`` y ``/history`` no ramifican por rol, aplican la política.
 
+Texto libre v3 (feature 045, decisión del dueño 2026-09-23)
+===========================================================
+El ``summary_text`` de un insight v3 es el markdown que se genera desde
+``structured_json`` e incluye «gap a P3 …» y esperado-vs-real, que la familia
+nunca recibe; ``recommendations`` copia las ``actions``. La tarjeta de familia
+(``InsightV3Card mode="parent"``) solo lee ``headline`` + ``structured`` (ya
+redactado por ``_structured_for_response``), así que a un padre las claves
+``summary_text``/``recommendations``/``principles_cited`` de nivel superior se
+**omiten** (no van en ``null``) en las filas con ``structured_json``. Las filas
+v1/v2 no tienen tarjeta estructurada y conservan su texto.
+
 Privacidad (CLAUDE.md §Privacidad)
 ==================================
 Todos los responses pasan por schemas con ``extra="forbid"`` que NO
 contienen ``athlete_id``, ``competitor_id``, IDs de coach/usuario ni la
 PK BigInt interna de ``agent_runs``.  Los pseudónimos en
-``/distribution`` son determinísticos por temporada.
+``/distribution`` (solo coach/admin) son determinísticos por temporada.
 """
 from __future__ import annotations
 
@@ -249,6 +265,30 @@ def _maybe_metrics_snapshot(raw: Any) -> MetricsSnapshotV1 | dict[str, Any]:
     return data
 
 
+#: Claves del ``metrics_snapshot`` que un padre puede recibir. Lista PERMITIDA
+#: (default-deny), no denegada: el snapshot que persiste el pipeline
+#: (``persist_insight``) trae ``progression``, ``podium_gap``, ``podium_context``,
+#: ``season_comparative`` y ``category_stats`` con la brecha a la ganadora
+#: (``gap_to_winner_*``, ``gap_pct``) y al podio (``gap_to_p3_ms``), que la
+#: familia nunca recibe (feature 045, data-model §1 / FR-022; auditoría T065).
+#: La única clave que el cliente de familia lee es ``progression_assessment``
+#: (``InsightsTimeline``); una clave nueva del snapshot no sale a la familia
+#: hasta que alguien decida que es segura.
+_FAMILY_SNAPSHOT_KEYS = frozenset({"progression_assessment"})
+
+
+def _family_metrics_snapshot(
+    snapshot: MetricsSnapshotV1 | dict[str, Any],
+) -> dict[str, Any]:
+    """Proyección del ``metrics_snapshot`` para un padre (ver ``_FAMILY_SNAPSHOT_KEYS``)."""
+    data = (
+        snapshot.model_dump(mode="json")
+        if isinstance(snapshot, MetricsSnapshotV1)
+        else snapshot
+    )
+    return {key: value for key, value in data.items() if key in _FAMILY_SNAPSHOT_KEYS}
+
+
 _TRAINING_DOMAIN = "training"
 
 
@@ -295,6 +335,33 @@ def _structured_for_response(raw: Any, *, for_parent: bool) -> Optional[dict[str
     return structured
 
 
+#: Claves de texto libre que un padre NO recibe en una fila v3 (feature 045,
+#: decisión del dueño 2026-09-23; ver «Texto libre v3» en el docstring del
+#: módulo). ``structured.principles_cited`` (lista de títulos del marco teórico
+#: dentro de ``structured``) NO entra aquí: la tarjeta de familia lo dibuja.
+_V3_FAMILY_OMITTED_FIELDS: tuple[str, ...] = (
+    "summary_text",
+    "recommendations",
+    "principles_cited",
+)
+
+
+def _is_v3_row(row: AthleteAiInsight) -> bool:
+    """¿La fila trae ``structured_json`` (análisis v3)? Las v1/v2 lo tienen NULL."""
+    raw = getattr(row, "structured_json", None)
+    return raw is not None and bool(_ensure_json_dict(raw))
+
+
+def _strip_v3_free_text(payload: dict[str, Any], row: AthleteAiInsight) -> dict[str, Any]:
+    """Quita del payload de un padre el texto libre de una fila v3 (claves
+    **omitidas**, no ``null``). Las filas v1/v2 pasan intactas: no tienen
+    tarjeta estructurada y la UI de familia las dibuja desde ese texto."""
+    if _is_v3_row(row):
+        for field in _V3_FAMILY_OMITTED_FIELDS:
+            payload.pop(field, None)
+    return payload
+
+
 def _insight_to_detail(
     row: AthleteAiInsight,
     *,
@@ -335,10 +402,16 @@ def _insight_to_detail(
         coach_answer_text = None
         coach_answer_at = None
 
+    metrics_snapshot = _maybe_metrics_snapshot(row.metrics_snapshot_json)
+    if for_parent:
+        # Feature 045 (T065): el snapshot lleva brechas a la ganadora/podio;
+        # a la familia solo llega la proyección permitida.
+        metrics_snapshot = _family_metrics_snapshot(metrics_snapshot)
+
     return AthleteInsightDetailOut(
         **base.model_dump(),
         recommendations=_ensure_json_list(row.recommendations_json),
-        metrics_snapshot=_maybe_metrics_snapshot(row.metrics_snapshot_json),
+        metrics_snapshot=metrics_snapshot,
         principles_cited=_ensure_json_list(row.principles_cited_json),
         supersedes=supersedes,
         superseded_by=superseded_by,
@@ -381,10 +454,15 @@ async def list_insights(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     athlete: Athlete = Depends(verify_athlete_access),
-) -> AthleteInsightListResponse:
-    """Lista insights del atleta. Default: ``latest_only=True``."""
+) -> AthleteInsightListResponse | JSONResponse:
+    """Lista insights del atleta. Default: ``latest_only=True``.
+
+    Al padre, las filas v3 le llegan sin ``summary_text`` (clave omitida; la
+    lista ya trae ``headline``). Coach/admin reciben el schema completo.
+    """
+    is_parent = current_user.role == UserRole.parent
     # Privacidad: padre NO puede ver versiones deprecadas.
-    if current_user.role == UserRole.parent:
+    if is_parent:
         include_deprecated = False
 
     items, total = await list_athlete_insights(
@@ -399,12 +477,22 @@ async def list_insights(
         limit=limit,
         offset=offset,
     )
-    return AthleteInsightListResponse(
+    response = AthleteInsightListResponse(
         items=[_insight_to_out(r) for r in items],
         total=total,
         limit=limit,
         offset=offset,
     )
+    if not is_parent:
+        return response
+    # Un ``response_model`` rellenaría con ``null`` las claves ausentes, así
+    # que la variante de familia se serializa a mano y se responde directo.
+    payload = response.model_dump(mode="json", by_alias=True)
+    payload["items"] = [
+        _strip_v3_free_text(item_payload, row)
+        for item_payload, row in zip(payload["items"], items, strict=True)
+    ]
+    return JSONResponse(payload)
 
 
 # ---------------------------------------------------------------------------
@@ -421,7 +509,7 @@ async def get_insight_detail(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     athlete: Athlete = Depends(verify_athlete_access),
-) -> AthleteInsightDetailOut:
+) -> AthleteInsightDetailOut | JSONResponse:
     row = await get_athlete_insight(db, athlete_id=athlete.id, insight_id=insight_id)
     if row is None:
         raise HTTPException(
@@ -429,9 +517,10 @@ async def get_insight_detail(
             detail="Insight no encontrado",
         )
 
+    is_parent = current_user.role == UserRole.parent
     # Padre: solo ve insights activos aprobados.  404 (no 403) para no filtrar
     # existencia.
-    if current_user.role == UserRole.parent:
+    if is_parent:
         is_visible_to_parent = (
             bool(row.coach_approved)
             and row.is_active == 1
@@ -455,11 +544,18 @@ async def get_insight_detail(
         if next_row is not None:
             superseded_by_link = _link_from_row(next_row)
 
-    return _insight_to_detail(
+    detail = _insight_to_detail(
         row,
         supersedes=supersedes,
         superseded_by=superseded_by_link,
-        for_parent=current_user.role == UserRole.parent,
+        for_parent=is_parent,
+    )
+    if not is_parent:
+        return detail
+    # Variante de familia: sin el texto libre v3 (claves omitidas, no
+    # ``null``), así que se serializa a mano y se responde directo.
+    return JSONResponse(
+        _strip_v3_free_text(detail.model_dump(mode="json", by_alias=True), row)
     )
 
 
@@ -1048,20 +1144,28 @@ async def get_distribution(
     season: int = Query(..., ge=2020, le=2100),
     event_id: int = Query(..., ge=1),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(_coach_or_admin),
     athlete: Athlete = Depends(verify_athlete_access),
 ) -> DistributionResponse:
-    # display_name es dato público (fuente: PDFs federativos). Solo se expone
-    # a coach/admin; parent ve únicamente pseudónimo para no ver datos de
-    # otros menores que no son sus hijos.
-    include_display_name = current_user.role in (UserRole.coach, UserRole.admin)
+    """Distribución de tiempos de la categoría en una carrera. **Solo coach/admin.**
+
+    Feature 045 (decisión del dueño 2026-09-23, hallazgo F-2 de T065): el
+    cuerpo lista el tiempo de cada corredor de la categoría
+    (``points[].time_ms``), de donde se derivan la brecha a la ganadora y al
+    podio, que la familia nunca recibe. Antes un padre podía llamarlo (con
+    pseudónimos); ahora ``_coach_or_admin`` responde 403 antes de tocar la
+    base de datos. Ninguna pantalla de familia lo consume (solo
+    ``CompareView``, del coach).
+    """
+    # ``display_name`` es dato público (fuente: PDFs federativos) y el
+    # endpoint ya es solo de coach/admin, así que siempre se expone.
     try:
         return await build_distribution(
             db,
             athlete_id=athlete.id,
             season=season,
             event_id=event_id,
-            include_display_name=include_display_name,
+            include_display_name=True,
         )
     except AthleteDidNotParticipate:
         raise HTTPException(

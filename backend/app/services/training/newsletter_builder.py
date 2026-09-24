@@ -18,8 +18,9 @@ from __future__ import annotations
 
 import calendar
 import logging
+from collections import defaultdict
 from datetime import date, timedelta
-from typing import Any
+from typing import Any, Sequence
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -280,6 +281,13 @@ async def build_newsletter_metrics(
     next_focus_groups_block = await _build_next_focus_groups_block(db, athlete, month_end)
 
     # -----------------------------------------------------------------------
+    # Bloque 12 (pdf_only, feature 046): composición corporal por pliegues.
+    # PDF-only por diseño (nunca email_blocks, nunca el contexto de la IA —
+    # ver la exclusión explícita en athlete_monthly_newsletter_v2.py).
+    # -----------------------------------------------------------------------
+    body_composition_block = await _build_body_composition_block(db, athlete_id, year, month)
+
+    # -----------------------------------------------------------------------
     # Ensamble final
     # -----------------------------------------------------------------------
     email_blocks: dict[str, Any] = {
@@ -323,6 +331,12 @@ async def build_newsletter_metrics(
     # Inyectar curvas de percentiles solo si hay al menos un indicador con datos
     if percentile_curves_block is not None:
         pdf_only_blocks["percentile_curves"] = percentile_curves_block
+
+    # Feature 046: solo aparece en el mes de la toma contada de pliegues
+    # (contracts/body-composition-reading.md §NEWSLETTER_NOTICE); ausente en
+    # cualquier otro mes.
+    if body_composition_block is not None:
+        pdf_only_blocks["body_composition"] = body_composition_block
 
     return {
         "email_blocks": email_blocks,
@@ -568,6 +582,45 @@ async def _build_technical_block(
     }
 
 
+def _own_median_gaps(
+    results: Sequence[Any],
+    categories: Sequence[Any],
+    competitor_ids: set[int],
+) -> dict[tuple[int, str], float | None]:
+    """«Brecha vs. mediana» del atleta en cada carrera: ``{(event_id, category_code): valor}``.
+
+    Feature 045 (FR-020/FR-021): el valor sale del motor único
+    (``field_metrics.compute_category_metrics``), nunca de un cálculo propio
+    del boletín. Pura y O(n) sobre ``results`` ya cargado: agrupa una sola vez
+    por (evento, categoría) y llama al motor una vez por grupo donde corre el
+    atleta — sin una consulta por fila. ``None`` cuando el motor no publica el
+    valor (parrilla con tiempo por debajo de ``MIN_FIELD``, DNF/DNS/DSQ,
+    ``MINUS_LAPS``).
+
+    La clave usa ``category_code`` porque es lo que trae
+    ``analytics.athlete_progression`` (no expone ``category_id``).
+    """
+    from app.services.race.field_metrics import compute_category_metrics
+
+    code_by_category_id = {category.id: category.code for category in categories}
+    rows_by_group: dict[tuple[int, int], list[Any]] = defaultdict(list)
+    for result in results:
+        rows_by_group[(result.event_id, result.category_id)].append(result)
+
+    gaps: dict[tuple[int, str], float | None] = {}
+    for (event_id, category_id), rows in rows_by_group.items():
+        own_rows = [row for row in rows if row.competitor_id in competitor_ids]
+        category_code = code_by_category_id.get(category_id)
+        if not own_rows or category_code is None:
+            continue
+        metrics_by_result_id = compute_category_metrics(rows, event_id, category_id)
+        for row in own_rows:
+            metric_set = metrics_by_result_id.get(row.id)
+            if metric_set is not None:
+                gaps.setdefault((event_id, category_code), metric_set["gap_to_median_pct"])
+    return gaps
+
+
 async def _build_race_block(
     db: AsyncSession,
     athlete_id: int,
@@ -659,6 +712,23 @@ async def _build_race_block(
             db, category_codes | season_category_codes
         )
 
+        # Feature 045 (T060/T061, FR-020/FR-022): «Brecha vs. mediana» del
+        # motor único de métricas, para cada carrera del atleta. Es la brecha
+        # que ve la familia en la bitácora (sublabel del waypoint, leyenda de
+        # la cima, gráfica de temporada y tarjeta de campeonato) en lugar del
+        # gap al ganador. Se carga una sola vez y se reutiliza abajo en el
+        # bloque de campeonatos.
+        from app.services.race.queries import (
+            load_categories as _fm_load_categories,
+            load_results as _fm_load_results,
+        )
+
+        fm_results = await _fm_load_results(db)
+        fm_categories = await _fm_load_categories(db)
+        median_gap_by_race = _own_median_gaps(
+            fm_results, fm_categories, {c.id for c in competitors}
+        )
+
         results_serialized = []
         for _, row in month_results.iterrows():
             _valida_num = int(row["valida_num"]) if row["valida_num"] is not None and str(row["valida_num"]) != "<NA>" else None
@@ -679,6 +749,7 @@ async def _build_race_block(
                 "points_awarded": int(row["points_awarded"]) if row["points_awarded"] is not None and str(row["points_awarded"]) != "<NA>" else 0,
                 "gap_to_winner_ms": int(row["gap_to_winner_ms"]) if row["gap_to_winner_ms"] is not None and str(row["gap_to_winner_ms"]) != "<NA>" else None,
                 "gap_to_winner_pct": float(row["gap_to_winner_pct"]) if row["gap_to_winner_pct"] is not None and str(row["gap_to_winner_pct"]) not in ("nan", "None") else None,
+                "gap_to_median_pct": median_gap_by_race.get((_row_int(row, "event_id"), _category_code)),
             })
 
         # Historial completo serializado (para gráficos SVG). 039: agrega
@@ -705,6 +776,7 @@ async def _build_race_block(
                     "position": pos,
                     "points_awarded": pts,
                     "gap_to_winner_pct": gap_pct,
+                    "gap_to_median_pct": median_gap_by_race.get((event_id, category_code)),
                     "series_kind": series_kind,
                     "series_level": series_level,
                     "location": location,
@@ -727,7 +799,8 @@ async def _build_race_block(
         split = split_progression(all_results)
         _cup_history_keys = (
             "event_id", "valida_num", "event_date", "position", "points_awarded",
-            "gap_to_winner_pct", "series_kind", "series_level", "location", "label",
+            "gap_to_winner_pct", "gap_to_median_pct", "series_kind", "series_level",
+            "location", "label",
         )
         cups = [
             {
@@ -757,17 +830,15 @@ async def _build_race_block(
             from app.models.race_series import RaceSeriesKind, RaceSeriesLevel
             from app.services.race.field_metrics import compute_field_metrics
             from app.services.race.queries import (
-                load_categories as _fm_load_categories,
                 load_events as _fm_load_events,
-                load_results as _fm_load_results,
                 load_series as _fm_load_series,
             )
             from app.services.race.race_labels import build_race_label
 
-            fm_results = await _fm_load_results(db)
+            # ``fm_results``/``fm_categories`` ya se cargaron arriba para la
+            # brecha vs. mediana por carrera — se reutilizan, no se repiten.
             fm_events = await _fm_load_events(db)
             fm_series = await _fm_load_series(db)
-            fm_categories = await _fm_load_categories(db)
 
             history_by_event_id = {row["event_id"]: row for row in all_results}
             # Dedupe por event_id (D8): dos RaceCompetitor del mismo atleta
@@ -812,6 +883,7 @@ async def _build_race_block(
                         "position": fm.get("position"),
                         "field_size": fm.get("field_size"),
                         "gap_pct": fm.get("gap_pct"),
+                        "gap_to_median_pct": fm.get("gap_to_median_pct"),
                         "percentile": fm.get("percentile"),
                     })
 
@@ -1270,6 +1342,63 @@ _MATURATION_PEDAGOGY: dict[str, str] = {
 }
 
 
+async def _build_body_composition_block(
+    db: AsyncSession,
+    athlete_id: int,
+    year: int,
+    month: int,
+) -> dict[str, Any] | None:
+    """Bloque «Composición corporal» de la Bitácora de etapa (feature 046, T077).
+
+    PDF-only por diseño (nunca ``email_blocks``, nunca el contexto de la
+    narrativa IA — ``athlete_monthly_newsletter_v2.py`` la excluye de forma
+    explícita antes de construir su contexto). Solo aparece en el mes de la
+    ``evaluation_date`` de un set **contado** (≥ 1 sitio no declinado) de
+    pliegues cutáneos; ``None`` en cualquier otro mes, incluido el mes cuya
+    única toma fue declinada por completo (no cuenta como "contada").
+
+    Reusa ``load_reading`` (``services/body_composition.py``, T080) solo
+    para derivar ``family_band`` — el copy familiar sale exclusivamente de
+    ``FAMILY_COPY``/``NEWSLETTER_NOTICE`` (nunca cifras, nunca el
+    ``band_reason_code`` del entrenador). Las entradas son las mismas que en
+    ``GET .../body-composition`` (hallazgos F2 y F6 de
+    ``specs/046-body-composition-skinfolds/privacy-audit.md``).
+    """
+    from app.models.athlete import Athlete
+    from app.services.body_composition import FAMILY_COPY, NEWSLETTER_NOTICE, load_reading
+
+    athlete_result = await db.execute(
+        select(Athlete).where(Athlete.id == athlete_id, Athlete.deleted_at.is_(None))
+    )
+    athlete = athlete_result.scalar_one_or_none()
+    if athlete is None or athlete.birth_date is None:
+        return None
+
+    month_start = date(year, month, 1)
+    month_end = date(year, month, calendar.monthrange(year, month)[1])
+
+    # Cargador compartido (T080, hallazgos F2/F6 de la auditoría de
+    # privacidad): mismas entradas que ``GET .../body-composition``, la
+    # tarjeta del resumen de crecimiento y la hoja de IA — velocidad de talla
+    # y la del ciclo anterior contra el registro inmediato anterior (sin ella
+    # una ganancia puberal esperada se leería «En observación»), referencia
+    # FUPRECOL y conteo de sets. ``until`` = fin de mes: la lectura es la del
+    # momento de la toma, nunca con mediciones posteriores; ``since`` = inicio
+    # de mes: sin set contado en el mes no hay bloque (un mes cuya única toma
+    # fue declinada por completo tampoco lo tiene).
+    loaded = await load_reading(db, athlete, until=month_end, since=month_start)
+    reading = loaded.reading
+    if reading is None:
+        return None
+
+    copy = FAMILY_COPY[reading.family_band]
+    return {
+        "family_label": copy["family_label"],
+        "family_sentence": copy["family_sentence"],
+        "notice_text": NEWSLETTER_NOTICE,
+    }
+
+
 async def _build_anthropometry_block(
     db: AsyncSession,
     athlete_id: int,
@@ -1441,6 +1570,14 @@ def _build_charts_context(race_block: dict[str, Any]) -> dict[str, Any]:
 
     Los gráficos se renderizan en el template PDF a partir de estos datos.
 
+    Feature 045 (US4, FR-020/FR-022): la serie de brecha es
+    ``median_gap_pcts`` — la «Brecha vs. mediana» del motor único de métricas
+    (``gap_to_median_pct`` de cada fila, ya calculada en ``_build_race_block``)
+    — y sustituye a la antigua ``gap_pcts`` (gap al ganador, que la familia no
+    debe ver). Una fila sin ``gap_to_median_pct`` (snapshot anterior a la 045
+    o parrilla bajo el mínimo del motor) queda con ``y = None``: nunca se cae
+    al gap contra el ganador.
+
     Feature 039 (grupos de comparación): cuando ``race_block`` trae la clave
     ``cups`` (aunque sea una lista vacía — lo que emite la versión actual de
     ``_build_race_block``), las tres curvas se agrupan por copa en
@@ -1467,7 +1604,7 @@ def _build_charts_context(race_block: dict[str, Any]) -> dict[str, Any]:
     for cup in cups_block:
         history = cup.get("history") or []
         positions: list[dict[str, Any]] = []
-        gap_pcts: list[dict[str, Any]] = []
+        median_gap_pcts: list[dict[str, Any]] = []
         points_acc: list[dict[str, Any]] = []
         acc = 0
         # Mismo criterio que la curva legacy: eje X ordinal (1..N) dentro de
@@ -1476,14 +1613,14 @@ def _build_charts_context(race_block: dict[str, Any]) -> dict[str, Any]:
         for idx, row in enumerate(history, start=1):
             v = row.get("valida_num")
             pos = row.get("position")
-            gap = row.get("gap_to_winner_pct")
+            gap = row.get("gap_to_median_pct")
             pts = row.get("points_awarded", 0) or 0
             label = row.get("label") or _race_short_label(
                 row.get("series_kind"), row.get("series_level"), v
             )
             acc += pts
             positions.append({"x": idx, "label": label, "y": pos})
-            gap_pcts.append({"x": idx, "label": label, "y": gap})
+            median_gap_pcts.append({"x": idx, "label": label, "y": gap})
             points_acc.append({"x": idx, "label": label, "y": acc})
 
         n_samples = len([p for p in positions if p["y"] is not None])
@@ -1493,7 +1630,7 @@ def _build_charts_context(race_block: dict[str, Any]) -> dict[str, Any]:
             "n_samples": n_samples,
             "low_confidence": n_samples < 5,
             "positions": positions,
-            "gap_pcts": gap_pcts,
+            "median_gap_pcts": median_gap_pcts,
             "points_accumulated": points_acc,
         })
 
@@ -1523,13 +1660,13 @@ def _build_charts_context_legacy(race_block: dict[str, Any]) -> dict[str, Any]:
         return {
             "has_data": False,
             "positions": [],
-            "gap_pcts": [],
+            "median_gap_pcts": [],
             "points_accumulated": [],
             "has_championship": has_championship,
         }
 
     positions = []
-    gap_pcts = []
+    median_gap_pcts = []
     points_acc = []
     acc = 0
     # El eje X usa un índice ordinal cronológico (1..N) — NO el valida_num —
@@ -1540,14 +1677,14 @@ def _build_charts_context_legacy(race_block: dict[str, Any]) -> dict[str, Any]:
     for idx, row in enumerate(history, start=1):
         v = row.get("valida_num")
         pos = row.get("position")
-        gap = row.get("gap_to_winner_pct")
+        gap = row.get("gap_to_median_pct")
         pts = row.get("points_awarded", 0) or 0
         label = row.get("label") or _race_short_label(
             row.get("series_kind"), row.get("series_level"), v
         )
         acc += pts
         positions.append({"x": idx, "label": label, "y": pos})
-        gap_pcts.append({"x": idx, "label": label, "y": gap})
+        median_gap_pcts.append({"x": idx, "label": label, "y": gap})
         points_acc.append({"x": idx, "label": label, "y": acc})
 
     n_samples = len([p for p in positions if p["y"] is not None])
@@ -1557,7 +1694,7 @@ def _build_charts_context_legacy(race_block: dict[str, Any]) -> dict[str, Any]:
         "n_samples": n_samples,
         "low_confidence": n_samples < 5,
         "positions": positions,
-        "gap_pcts": gap_pcts,
+        "median_gap_pcts": median_gap_pcts,
         "points_accumulated": points_acc,
         "has_championship": has_championship,
     }

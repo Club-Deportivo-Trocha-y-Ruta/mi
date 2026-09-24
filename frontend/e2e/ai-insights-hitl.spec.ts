@@ -262,17 +262,23 @@ async function mockInsightsList(
   );
 }
 
+/** Feature 045 (T064): el antiguo tab «Insights IA» (`?tab=ai_analysis`) es
+ * ahora la vista «Análisis IA» de la pestaña única «Carreras». Se navega a la
+ * dirección canónica; el alias legado lo cubre `ai-insights-coach.spec.ts`. */
 async function gotoAiTab(page: Page): Promise<void> {
-  await page.goto(`/athletes/${ATHLETE_ID}?tab=ai_analysis`);
-  await expect(page.getByTestId("athlete-ai-analysis-tab")).toBeVisible({
+  await page.goto(`/athletes/${ATHLETE_ID}?tab=races&view=analisis`);
+  await expect(page.getByTestId("carreras-tab")).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(page.getByTestId("analysis-view")).toBeVisible({
     timeout: 15_000,
   });
 }
 
 /** Lanza un análisis real desde el formulario (T096b "Revisión paso a paso"
- * + 1 carrera seleccionada) — nunca un atajo sintético que se salte la UI. */
+ * + 1 carrera seleccionada) — nunca un atajo sintético que se salte la UI.
+ * El lanzador vive al final de «Análisis IA» (ya no hay sub-tab «Analizar»). */
 async function launchAnalysis(page: Page): Promise<void> {
-  await page.getByTestId("ai-subtab-launch").click();
   await expect(page.getByTestId("launch-analysis-form")).toBeVisible();
   await page.getByTestId("launch-explain-switch").check();
   await expect(page.getByTestId(`launch-event-${RACE_EVENT_ID}`)).toBeVisible({
@@ -295,6 +301,7 @@ test.describe("Feature 036 — HITL: Rechazar y Editar (T073)", () => {
     const DRAFT_MARKDOWN =
       "Borrador del agente para revisión (E2E): mejoró el tiempo en el tramo técnico.";
     const PRE_EXISTING_ID = 8801;
+    const FAMILY_GAP_SNIPPET = "terminó a un 8 % del primer lugar";
 
     const insightItems: InsightFixture[] = [existingInsight(PRE_EXISTING_ID)];
     let decisionBody: Record<string, unknown> | null = null;
@@ -350,7 +357,14 @@ test.describe("Feature 036 — HITL: Rechazar y Editar (T073)", () => {
                   ts: now,
                   type: "hitl_request",
                   node: "hitl_gate_review",
-                  payload: { step_id: STEP_ID, draft_markdown: DRAFT_MARKDOWN },
+                  payload: {
+                    step_id: STEP_ID,
+                    draft_markdown: DRAFT_MARKDOWN,
+                    // Feature 045 (FR-022): fragmentos del borrador que
+                    // mencionan la brecha con el primer lugar/podio — la
+                    // tarjeta avisa al coach que la familia lo verá.
+                    family_gap_mentions: [FAMILY_GAP_SNIPPET],
+                  },
                 },
               ],
               last_seq: 1,
@@ -403,13 +417,28 @@ test.describe("Feature 036 — HITL: Rechazar y Editar (T073)", () => {
     await gotoAiTab(page);
     await launchAnalysis(page);
 
-    // El lanzamiento cambia a Histórico y monta el timeline en vivo.
+    // El lanzamiento monta el timeline en vivo en el bloque «Pendiente» de la
+    // misma vista «Análisis IA» (arriba del Panorama y del histórico).
+    await expect(page.getByTestId("analysis-pending")).toBeVisible({
+      timeout: 10_000,
+    });
     await expect(page.getByTestId("analysis-run-timeline")).toBeVisible({
       timeout: 10_000,
     });
     const hitlCard = page.getByTestId("hitl-approval-card");
     await expect(hitlCard).toBeVisible({ timeout: 10_000 });
     await expect(hitlCard).toContainText(/mejoró el tiempo en el tramo técnico/i);
+    // Feature 045: nota de aprobación (no se envía correo) y aviso de brecha
+    // con el primer lugar/podio, visible solo para el coach que aprueba.
+    await expect(page.getByTestId("hitl-approve-no-email-note")).toContainText(
+      "No se envía correo",
+    );
+    const gapWarning = page.getByTestId("hitl-family-gap-warning");
+    await expect(gapWarning).toBeVisible();
+    await expect(gapWarning).toContainText("la familia lo verá");
+    await expect(page.getByTestId("hitl-family-gap-snippets")).toContainText(
+      FAMILY_GAP_SNIPPET,
+    );
 
     // Decisión real: Rechazar, con motivo — no solo el click, todo el input.
     await page

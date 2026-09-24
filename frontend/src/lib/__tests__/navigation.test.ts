@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { currentSeason } from "@/lib/datetime";
 import {
   NAV_AREAS,
   NAV_GROUPS,
@@ -252,14 +253,14 @@ describe("isAreaActive", () => {
     expect(isAreaActive(findArea("gobierno"), "/club/historial")).toBe(true);
   });
 
-  it("/competitions/insights/season/2026 activa el área competitions", () => {
+  it("/competitions/season/2026 activa el área competitions", () => {
     expect(
-      isAreaActive(findArea("competitions"), "/competitions/insights/season/2026"),
+      isAreaActive(findArea("competitions"), "/competitions/season/2026"),
     ).toBe(true);
   });
 
   it("solo un área queda activa para una ruta dada (sin solapes)", () => {
-    const pathname = "/competitions/insights/season/2026";
+    const pathname = "/competitions/season/2026";
     const activeAreas = NAV_AREAS.filter((area) =>
       isAreaActive(area, pathname),
     );
@@ -267,30 +268,105 @@ describe("isAreaActive", () => {
   });
 });
 
-// Regression — SidebarNav sub-item exclusivity within the "competitions" area,
-// whose items nest path-wise ("Válidas" /competitions is a literal prefix of
-// "Sin enlazar" /competitions/unlinked and "Panorama de temporada"
-// /competitions/insights/season/:year). A naive NavLink prefix match would
-// mark more than one sibling active at once.
-describe("resolveActiveItemId", () => {
-  it("resuelve 'Panorama de temporada' (no 'Válidas') en la ruta anidada", () => {
-    const items = findArea("competitions").items;
-    expect(
-      resolveActiveItemId(items, "/competitions/insights/season/2026"),
-    ).toBe("competitions.seasonInsights");
+// Feature 045 (US6, T047) — el área «Competencias» tiene tres ítems y ninguna
+// «Válidas»: la lista, «Temporada» y «Cargas e identidades».
+describe("área Competencias (feature 045, US6)", () => {
+  const competitions = () => findArea("competitions");
+  const resolvedTo = (id: string) => {
+    const item = competitions().items.find((i) => i.id === id);
+    if (!item) throw new Error(`Ítem no encontrado: ${id}`);
+    return typeof item.to === "function" ? item.to() : item.to;
+  };
+
+  it("el área se llama «Competencias»", () => {
+    expect(competitions().label).toBe("Competencias");
   });
 
-  it("resuelve 'Sin enlazar' (no 'Válidas') en /competitions/unlinked", () => {
+  it("los ítems, en orden, son «Competencias», «Temporada» y «Cargas e identidades»", () => {
+    expect(competitions().items.map((i) => i.label)).toEqual([
+      "Competencias",
+      "Temporada",
+      "Cargas e identidades",
+    ]);
+  });
+
+  it("«Válidas», «Sin enlazar» y «Panorama de temporada» ya no son ítems del menú", () => {
+    const labels = competitions().items.map((i) => i.label);
+    expect(labels).not.toContain("Válidas");
+    expect(labels).not.toContain("Sin enlazar");
+    expect(labels).not.toContain("Panorama de temporada");
+  });
+
+  it("los ítems apuntan a /competitions, /competitions/season/:añoVigente y /competitions/imports", () => {
+    expect(resolvedTo("competitions.list")).toBe("/competitions");
+    expect(resolvedTo("competitions.season")).toBe(
+      `/competitions/season/${currentSeason()}`,
+    );
+    expect(resolvedTo("competitions.imports")).toBe("/competitions/imports");
+  });
+
+  it.each(ROLES)("%s ve los tres ítems", (role) => {
+    const visible = competitions().items.filter((i) => i.roles.includes(role));
+    expect(visible).toHaveLength(3);
+  });
+
+  it.each(ROLES)(
+    "el clic en la etiqueta del área (%s) resuelve a la lista /competitions",
+    (role) => {
+      expect(resolveAreaDefaultTo(competitions(), role)).toBe("/competitions");
+    },
+  );
+
+  it("sigue con ranura en la barra inferior para coach y admin", () => {
+    expect(competitions().bottomBarSlot).toEqual({ coach: true, admin: true });
+  });
+});
+
+// Regression — SidebarNav sub-item exclusivity within the "competitions" area,
+// whose items nest path-wise ("Competencias" /competitions is a literal prefix
+// of "Cargas e identidades" /competitions/imports and "Temporada"
+// /competitions/season/:year). A naive NavLink prefix match would mark more
+// than one sibling active at once.
+describe("resolveActiveItemId", () => {
+  it("resuelve 'Temporada' (no 'Competencias') en la ruta anidada de la temporada vigente", () => {
     const items = findArea("competitions").items;
-    expect(resolveActiveItemId(items, "/competitions/unlinked")).toBe(
-      "competitions.unlinked",
+    expect(
+      resolveActiveItemId(items, `/competitions/season/${currentSeason()}`),
+    ).toBe("competitions.season");
+  });
+
+  it("'Temporada' sigue activa en cualquier otro año (matchPath), no cae a 'Competencias'", () => {
+    const items = findArea("competitions").items;
+    expect(resolveActiveItemId(items, "/competitions/season/2024")).toBe(
+      "competitions.season",
+    );
+    expect(resolveActiveItemId(items, "/competitions/season/2099")).toBe(
+      "competitions.season",
     );
   });
 
-  it("resuelve 'Válidas' para el detalle de una válida (/competitions/2)", () => {
+  it("resuelve 'Cargas e identidades' (no 'Competencias') en /competitions/imports", () => {
+    const items = findArea("competitions").items;
+    expect(resolveActiveItemId(items, "/competitions/imports")).toBe(
+      "competitions.imports",
+    );
+  });
+
+  it("resuelve 'Competencias' para el detalle de una competencia (/competitions/2)", () => {
     const items = findArea("competitions").items;
     expect(resolveActiveItemId(items, "/competitions/2")).toBe(
-      "competitions.valid",
+      "competitions.list",
+    );
+  });
+
+  it("resuelve 'Competencias' en /competitions y en el wizard /competitions/import", () => {
+    const items = findArea("competitions").items;
+    expect(resolveActiveItemId(items, "/competitions")).toBe(
+      "competitions.list",
+    );
+    // `/competitions/import` (singular, wizard) NO es `/competitions/imports`.
+    expect(resolveActiveItemId(items, "/competitions/import")).toBe(
+      "competitions.list",
     );
   });
 
@@ -299,17 +375,23 @@ describe("resolveActiveItemId", () => {
     for (const pathname of [
       "/competitions",
       "/competitions/2",
-      "/competitions/unlinked",
-      "/competitions/insights/season/2026",
+      "/competitions/imports",
+      "/competitions/season/2026",
+      "/competitions/season/2025",
     ]) {
-      const matches = items.filter((item) => {
-        const to = typeof item.to === "function" ? item.to() : item.to;
-        return to === pathname || pathname.startsWith(`${to}/`);
-      });
-      // Multiple raw prefix matches are expected (that's the whole bug this
-      // guards against) — resolveActiveItemId must still pick exactly one.
-      expect(matches.length).toBeGreaterThanOrEqual(1);
+      // Varios prefijos crudos pueden coincidir (justo el bug que esto
+      // protege) — resolveActiveItemId debe elegir exactamente uno.
       expect(resolveActiveItemId(items, pathname)).toBeDefined();
+    }
+  });
+
+  it("isAreaActive sigue activando 'competitions' en las rutas nuevas", () => {
+    for (const pathname of [
+      "/competitions",
+      "/competitions/imports",
+      "/competitions/season/2026",
+    ]) {
+      expect(isAreaActive(findArea("competitions"), pathname)).toBe(true);
     }
   });
 });

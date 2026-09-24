@@ -3,7 +3,19 @@
  *
  * Cubre los acceptance criteria de spec 016: seleccionar un campeonato
  * en el picker de Distribución NO produce un error 500; el campeonato
- * aparece como punto DISTINTO en la gráfica de Evolución.
+ * aparece como punto DISTINTO al de la copa.
+ *
+ * Feature 045 (T064) — dónde vive ahora cada cosa en la pestaña única
+ * «Carreras» (`?tab=races&view=…`):
+ *   - Distribución → «Comparar» (`view=comparar`, solo coach). El picker
+ *     `distribution-valida-select` no cambió.
+ *   - Evolución → «Progresión» (`view=progresion`). `EvolutionChart` ya no se
+ *     monta en ninguna vista; la progresión pide `series_kind=all`, dibuja las
+ *     COPAS en una línea (`history-chart`) y muestra cada CAMPEONATO en su
+ *     propia tarjeta de lectura (`championship-reading-card`, un campeonato es
+ *     otro pelotón: no hay tendencia que graficar). Copa y campeonato son
+ *     grupos de comparación distintos (`progression-group-select`), así que
+ *     E2E-016-003 verifica esa separación en vez de la leyenda del eje.
  *
  * Stack real (no mocks):
  *   - Backend FastAPI en http://localhost:8000 (migración b1c2d3e4f5a6 aplicada).
@@ -22,7 +34,8 @@
  *     el campeonato en el picker NO produce role="alert" con fallo.
  *   - Antes del fix: la gráfica de Evolución colapsaba copa y campeonato
  *     en el mismo punto porque ambos tienen sequence_number=1.
- *     El assert E2E-016-003 verifica dos labels distintos.
+ *     El assert E2E-016-003 verifica que copa y campeonato son grupos
+ *     distintos (antes: dos labels distintos en la leyenda del eje).
  *
  * Privacidad: NUNCA se hardcodean nombres ni DOB de menores.
  * Los asserts son estructurales: data-testid, roles, texto de UI, conteos.
@@ -40,7 +53,7 @@ import { test, expect, type Page } from "@playwright/test";
 // ---------------------------------------------------------------------------
 
 const COACH = { email: "entrenador@trochyruta.com", password: "Coach2026!" };
-const BACKEND = "http://localhost:8000";
+const BACKEND = process.env.E2E_API_BASE_URL ?? "http://localhost:8000";
 
 // Texto del picker que identifica la opción "Temporada (todas)"
 const SEASON_AGGREGATE_LABEL = "Temporada (todas)";
@@ -218,16 +231,13 @@ test.describe("spec 016 — Distribución: seleccionar campeonato no falla", () 
       return;
     }
 
-    // Navegar al perfil del atleta, tab Análisis IA
-    await page.goto(`/athletes/${athleteId}?tab=ai_analysis`);
+    // Navegar al perfil del atleta, «Carreras › Comparar» (distribución)
+    await page.goto(`/athletes/${athleteId}?tab=races&view=comparar`);
 
-    // El tab AI carga
-    await expect(page.getByTestId("athlete-ai-analysis-tab")).toBeVisible({
+    // La vista carga
+    await expect(page.getByTestId("compare-view")).toBeVisible({
       timeout: COLD_START_TIMEOUT,
     });
-
-    // Navegar al sub-tab Distribución
-    await page.getByTestId("ai-subtab-distribution").click();
 
     // Esperar que el picker de carrera esté disponible (data-testid=distribution-valida-select
     // aparece solo cuando racesQuery.isLoading=false)
@@ -259,8 +269,12 @@ test.describe("spec 016 — Distribución: seleccionar campeonato no falla", () 
     await page.waitForTimeout(3000);
 
     // ASSERT PRINCIPAL — sin error de carga
-    // El componente muestra role="alert" solo si query.isError=true
-    const alerts = page.locator('[role="alert"]');
+    // El componente muestra role="alert" solo si query.isError=true. Se acota
+    // al contenedor de la distribución: «Comparar» monta también el comparador
+    // (con sus propios estados) en la misma página.
+    const alerts = page
+      .getByTestId("distribution-chart")
+      .locator('[role="alert"]');
     const alertCount = await alerts.count();
 
     if (alertCount > 0) {
@@ -309,15 +323,12 @@ test.describe("spec 016 — Distribución: estado Temporada (todas) es informati
 
     const { athleteId } = result;
 
-    // Navegar al perfil del atleta, tab Análisis IA
-    await page.goto(`/athletes/${athleteId}?tab=ai_analysis`);
+    // Navegar al perfil del atleta, «Carreras › Comparar» (distribución)
+    await page.goto(`/athletes/${athleteId}?tab=races&view=comparar`);
 
-    await expect(page.getByTestId("athlete-ai-analysis-tab")).toBeVisible({
+    await expect(page.getByTestId("compare-view")).toBeVisible({
       timeout: COLD_START_TIMEOUT,
     });
-
-    // Navegar al sub-tab Distribución
-    await page.getByTestId("ai-subtab-distribution").click();
 
     // Esperar que el picker esté disponible
     await expect(page.getByTestId("distribution-valida-select")).toBeVisible({
@@ -351,7 +362,9 @@ test.describe("spec 016 — Distribución: estado Temporada (todas) es informati
 
     // ASSERT: Sin error ni spinner de distribución activo
     // role="alert" con contenido de error NO debe existir
-    const errorAlerts = page.locator('[role="alert"]');
+    const errorAlerts = page
+      .getByTestId("distribution-chart")
+      .locator('[role="alert"]');
     const alertCount = await errorAlerts.count();
     expect(
       alertCount,
@@ -366,13 +379,16 @@ test.describe("spec 016 — Distribución: estado Temporada (todas) es informati
 });
 
 // ---------------------------------------------------------------------------
-// E2E-016-003: Gráfica de Evolución — el campeonato aparece como punto
-// DISTINTO a la Válida I (mismo sequence_number=1 pero distinto event_id).
-// Dos labels distintos deben estar en el DOM.
+// E2E-016-003: Progresión — el campeonato es un grupo DISTINTO a la copa
+// (mismo sequence_number=1 pero distinto event_id / distinta serie).
+//
+// Regresión original: la gráfica de Evolución colapsaba copa y campeonato en
+// el mismo punto. En la 045 la separación es por diseño: las copas van a la
+// línea (`history-chart`) y cada campeonato a su propia tarjeta de lectura.
 // ---------------------------------------------------------------------------
 
-test.describe("spec 016 — Evolución: campeonato es punto distinto a Válida I", () => {
-  test("E2E-016-003: la gráfica de Evolución tiene al menos dos labels distintos cuando hay copa y campeonato en la temporada", async ({
+test.describe("spec 016 — Progresión: campeonato es un grupo distinto a la copa", () => {
+  test("E2E-016-003: «Progresión» separa la copa (línea) del campeonato (tarjeta) cuando la temporada tiene ambos", async ({
     page,
   }) => {
     await loginAsCoach(page);
@@ -406,103 +422,61 @@ test.describe("spec 016 — Evolución: campeonato es punto distinto a Válida I
       return;
     }
 
-    // Navegar al perfil del atleta, tab Análisis IA
-    await page.goto(`/athletes/${athleteId}?tab=ai_analysis`);
+    // Navegar al perfil del atleta, «Carreras › Progresión»
+    await page.goto(`/athletes/${athleteId}?tab=races&view=progresion`);
 
-    await expect(page.getByTestId("athlete-ai-analysis-tab")).toBeVisible({
-      timeout: COLD_START_TIMEOUT,
-    });
+    const view = page.getByTestId("progression-view");
+    await expect(view).toBeVisible({ timeout: COLD_START_TIMEOUT });
 
-    // Navegar al sub-tab Evolución
-    await page.getByTestId("ai-subtab-evolution").click();
+    // Esperar que el skeleton de carga desaparezca
+    await expect(
+      view.locator('[aria-label="Cargando progresión histórica"]'),
+    ).toHaveCount(0, { timeout: NAV_TIMEOUT });
 
-    // El chart de evolución carga
-    await expect(page.getByTestId("evolution-chart")).toBeVisible({
+    // ASSERT: sin error de carga de la progresión
+    await expect(view.getByRole("alert")).toHaveCount(0);
+
+    // ASSERT PRINCIPAL 1 — copa y campeonato son grupos de comparación
+    // distintos: el filtro «Competencia» lista «Todas las competencias» más al
+    // menos dos series (la copa y el campeonato).
+    const groupSelect = page.getByTestId("progression-group-select");
+    await expect(groupSelect).toBeVisible({ timeout: NAV_TIMEOUT });
+    const groupLabels = await groupSelect.locator("option").allTextContents();
+    expect(
+      groupLabels.length,
+      `El filtro de competencia debe ofrecer «Todas» + copa + campeonato. Opciones: ${groupLabels.join(", ")}`,
+    ).toBeGreaterThanOrEqual(3);
+    // El backend nombra la serie del campeonato «Campeonato …» / «Cto. …».
+    const hasChampionshipGroup = groupLabels.some((t) =>
+      /campeonato|cto\./i.test(t),
+    );
+    expect(
+      hasChampionshipGroup,
+      `Debe existir un grupo de campeonato. Opciones: ${groupLabels.join(", ")}`,
+    ).toBe(true);
+    // Opciones únicas: copa y campeonato no se colapsan en una sola.
+    expect(new Set(groupLabels).size).toBe(groupLabels.length);
+
+    // ASSERT PRINCIPAL 2 — el campeonato NO se dibuja como punto de la línea:
+    // tiene su propia tarjeta de lectura, y la copa sí alimenta la gráfica.
+    const championships = page.getByTestId("progression-championships");
+    await expect(championships).toBeVisible({ timeout: NAV_TIMEOUT });
+    await expect(
+      championships.getByTestId("championship-reading-card").first(),
+    ).toBeVisible();
+    await expect(page.getByTestId("history-chart")).toBeVisible({
       timeout: NAV_TIMEOUT,
     });
 
-    // Esperar que el spinner desaparezca
-    await expect(
-      page.locator('[aria-label="Cargando evolución"]'),
-    ).toHaveCount(0, { timeout: NAV_TIMEOUT });
-
-    // ASSERT: sin error de carga de evolución
-    await expect(
-      page.locator('[role="alert"]'),
-    ).toHaveCount(0, { timeout: NAV_TIMEOUT });
-
-    // ASSERT PRINCIPAL — la leyenda accesible expone los labels en el DOM.
-    // EvolutionChart.tsx renderiza un <ol aria-label="Etiquetas del eje de evolución">
-    // con un <li> por cada punto del chartData. El campeonato tiene series_kind="championship"
-    // y su li tiene clase "font-medium text-amber-700".
-    const legendList = page.getByRole("list", {
-      name: /etiquetas del eje de evolución/i,
-    });
-    await expect(legendList).toBeVisible({ timeout: NAV_TIMEOUT });
-
-    const legendItems = legendList.getByRole("listitem");
-    const count = await legendItems.count();
-
-    // Debe haber al menos 2 puntos (Válida I de copa + campeonato)
-    expect(
-      count,
-      "La leyenda de evolución debe tener al menos 2 puntos (copa + campeonato)",
-    ).toBeGreaterThanOrEqual(2);
-
-    // Todos los textos de la leyenda
-    const labelTexts = await legendItems.allTextContents();
-
-    // El campeonato debe estar presente con su label "Cto. Dep." / "CD" / variante
-    // El backend genera labels como "Cto. Dep. — Ginebra" para championships.
-    const hasChampionshipLabel = labelTexts.some(
-      (t) =>
-        t.toLowerCase().includes("cto.") ||
-        t.toLowerCase().includes("campeonato") ||
-        t.toLowerCase().includes(" cd"),
+    // ASSERT DE FILTRO — elegir solo el campeonato oculta la línea de copas
+    // (no hay puntos de copa que graficar) y deja su tarjeta.
+    const championshipOption = groupLabels.findIndex((t) =>
+      /campeonato|cto\./i.test(t),
     );
-    expect(
-      hasChampionshipLabel,
-      `La leyenda debe contener un label del campeonato. Labels encontrados: ${labelTexts.join(", ")}`,
-    ).toBe(true);
-
-    // ASSERT DE DISTINCIÓN — los labels deben ser únicos (no colapsados).
-    // La regresión colapsaba copa y campeonato en el mismo punto porque ambos
-    // tenían sequence_number=1; el fix usa event_id como key en chartData.
-    const uniqueLabels = new Set(labelTexts);
-    expect(
-      uniqueLabels.size,
-      `Los labels del eje deben ser únicos. Labels: ${labelTexts.join(", ")}`,
-    ).toBe(count);
-
-    // ASSERT DE ORDEN — el campeonato debe aparecer en fecha posterior a Válida I.
-    // El seed tiene Válida I en enero y el Campeonato en junio.
-    // Verificamos que el campeonato NO es el primer punto de la leyenda
-    // cuando hay una copa antes.
-    const firstCupInRaces = raceItems
-      .filter((r) => r.series_kind === "cup")
-      .sort(
-        (a, b) =>
-          new Date(a.event_date).getTime() - new Date(b.event_date).getTime(),
-      )[0];
-    const championshipInRaces = raceItems.find(
-      (r) => r.series_kind === "championship",
-    )!;
-
-    const cupBeforeChampionship =
-      new Date(firstCupInRaces.event_date).getTime() <
-      new Date(championshipInRaces.event_date).getTime();
-
-    if (cupBeforeChampionship) {
-      // El primer item de la leyenda NO debe ser el campeonato
-      const firstLabelText = labelTexts[0] ?? "";
-      const firstLabelIsChampionship =
-        firstLabelText.toLowerCase().includes("cto.") ||
-        firstLabelText.toLowerCase().includes("campeonato");
-
-      expect(
-        firstLabelIsChampionship,
-        `El primer punto de la leyenda no debería ser el campeonato cuando la Válida I ocurrió antes (${firstCupInRaces.event_date} < ${championshipInRaces.event_date}). Primer label: "${firstLabelText}"`,
-      ).toBe(false);
-    }
+    await groupSelect.selectOption({ index: championshipOption });
+    await expect(page.getByTestId("history-chart")).toHaveCount(0);
+    await expect(
+      page.getByTestId("progression-championships").getByTestId("championship-reading-card").first(),
+    ).toBeVisible();
   });
 });

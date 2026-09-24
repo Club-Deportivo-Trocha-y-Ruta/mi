@@ -256,6 +256,80 @@ const LEGACY_BMI_FAMILY: Record<GrowthBand, NutritionalStatus> = {
   high: "obesidad",
 };
 
+// ---------------------------------------------------------------------------
+// Composición corporal por pliegues (feature 046) — sibling de
+// `getBandVocabulary`, vocabulario propio (no es un `NutritionalStatus`).
+//
+// Fuente: `contracts/body-composition-reading.md` §3c–§4. `band` (coach) es
+// `verde | ambar | rojo`; `family_band` (la única banda que ve una familia,
+// nunca `rojo`) es `verde | ambar`.
+// ---------------------------------------------------------------------------
+
+/** Banda del coach para composición corporal (nunca se muestra tal cual a familias). */
+export type BodyCompositionCoachBand = "verde" | "ambar" | "rojo";
+
+/** Proyección familiar — nunca `rojo` (contract §3c: rojo → ambar; ámbar de referencia → verde). */
+export type BodyCompositionFamilyBand = "verde" | "ambar";
+
+/** Tono `StatusBadge` por banda del coach. */
+export const BODY_COMPOSITION_BAND_TONE: Record<BodyCompositionCoachBand, BandTone> = {
+  verde: "success",
+  ambar: "warning",
+  rojo: "danger",
+};
+
+/**
+ * Etiqueta corta para el coach por `band` (§3/§4 — texto de la fila rojo
+ * viene de la nota "comunicado en persona, en ninguna superficie familiar";
+ * ámbar reutiliza el texto de escalamiento, verde es el estado neutro).
+ */
+export const BODY_COMPOSITION_COACH_LABELS: Record<BodyCompositionCoachBand, string> = {
+  verde: "Sin alertas",
+  ambar: "En observación",
+  rojo: "Requiere acompañamiento profesional",
+};
+
+export interface BodyCompositionFamilyVocabularyEntry {
+  familyLabel: string;
+  familySentence: string;
+  tone: BandTone;
+}
+
+/**
+ * Vocabulario familiar por `family_band` — §4 "Family". Sólo `verde`/`ambar`:
+ * no existe fila `rojo` (un rojo de coach se proyecta como ámbar antes de
+ * llegar aquí, ver `contracts/body-composition-reading.md` §3c).
+ */
+export const BODY_COMPOSITION_FAMILY_VOCABULARY: Record<
+  BodyCompositionFamilyBand,
+  BodyCompositionFamilyVocabularyEntry
+> = {
+  verde: {
+    familyLabel: "En su curva esperada",
+    familySentence:
+      "La composición corporal de tu hijo/a se mantiene dentro de lo esperado para su etapa de desarrollo. Sigue acompañando el proceso: esto va de la mano de un crecimiento saludable.",
+    tone: "success",
+  },
+  ambar: {
+    familyLabel: "En observación",
+    familySentence:
+      "Notamos un cambio que vale la pena conversar. El entrenador se pondrá en contacto contigo para revisarlo juntos; no es una alarma, es una oportunidad de acompañar mejor a tu hijo/a.",
+    tone: "warning",
+  },
+};
+
+/** Tono `StatusBadge` para la banda del coach de composición corporal. */
+export function getBodyCompositionBandTone(band: BodyCompositionCoachBand): BandTone {
+  return BODY_COMPOSITION_BAND_TONE[band];
+}
+
+/** Vocabulario familiar (label + sentence + tono) por `family_band`. */
+export function getBodyCompositionFamilyVocabulary(
+  familyBand: BodyCompositionFamilyBand,
+): BodyCompositionFamilyVocabularyEntry {
+  return BODY_COMPOSITION_FAMILY_VOCABULARY[familyBand];
+}
+
 function isNutritionalStatus(value: string): value is NutritionalStatus {
   return Object.prototype.hasOwnProperty.call(BAND_VOCABULARY, value);
 }

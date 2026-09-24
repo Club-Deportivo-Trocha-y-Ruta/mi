@@ -3,8 +3,9 @@
  * (Task #9 + Sprint 2 BB1/BB2/BB4).
  *
  * Cubre:
- *  - AthleteAIAnalysisTab en mode=coach
- *  - AthleteAIAnalysisTab en mode=parent
+ *  - AnalysisView (vista «Análisis IA» de Carreras) en audience=coach y family
+ *    (feature 045, T042: antes AthleteAIAnalysisTab; el Sheet del Comparador
+ *    pasó a `CompareView`)
  *  - SeasonSummaryButton en estado enabled y disabled
  *  - PanoramaView coach/parent (Sprint 1)
  *  - HeroLastInsightCard coach/parent (Sprint 1)
@@ -86,11 +87,8 @@ vi.mock("recharts", () => ({
   YAxis: () => <div data-testid="recharts-y" />,
   Tooltip: () => <div data-testid="recharts-tooltip" />,
 }));
-vi.mock("@/components/athletes/ai/ComparatorPanel", () => ({
-  ComparatorPanel: () => <div>compare</div>,
-}));
-vi.mock("@/components/athletes/ai/DistributionChart", () => ({
-  DistributionChart: () => <div>distribution</div>,
+vi.mock("@/components/athletes/ai/AthleteAnalystChatPanel", () => ({
+  AthleteAnalystChatPanel: () => <div>chat</div>,
 }));
 vi.mock("@/components/athletes/ai/LaunchAnalysisForm", () => ({
   LaunchAnalysisForm: () => <div>launch</div>,
@@ -102,7 +100,7 @@ vi.mock("@/components/ai/AnalysisRunTimeline", () => ({
 import { mswServer } from "@/test/setup";
 import { multiGroupEvolutionHandler } from "@/test/msw/athleteRaceAnalysisHandlers";
 import { renderWithProviders } from "@/test/helpers/renderWithProviders";
-import { AthleteAIAnalysisTab } from "@/components/athletes/ai/AthleteAIAnalysisTab";
+import { AnalysisView } from "@/components/athletes/races/AnalysisView";
 import { PanoramaView } from "@/components/athletes/ai/PanoramaView";
 import { HeroLastInsightCard } from "@/components/athletes/ai/HeroLastInsightCard";
 import { MiniSparkline } from "@/components/athletes/ai/MiniSparkline";
@@ -130,23 +128,23 @@ describe("a11y — race-analysis v2 layout", () => {
     vi.clearAllMocks();
   });
 
-  it("AthleteAIAnalysisTab mode=coach sin violaciones a11y", async () => {
+  it("AnalysisView audience=coach sin violaciones a11y", async () => {
     const { container } = renderWithProviders(
-      <AthleteAIAnalysisTab athlete={athlete} mode="coach" />,
+      <AnalysisView athlete={athlete} audience="coach" />,
     );
     await waitFor(() => {
-      expect(container.querySelector('[data-testid="athlete-ai-analysis-tab"]')).toBeTruthy();
+      expect(container.querySelector('[data-testid="analysis-view"]')).toBeTruthy();
     });
     const results = await axe(container);
     expect(results).toHaveNoViolations();
   });
 
-  it("AthleteAIAnalysisTab mode=parent sin violaciones a11y", async () => {
+  it("AnalysisView audience=family sin violaciones a11y", async () => {
     const { container } = renderWithProviders(
-      <AthleteAIAnalysisTab athlete={athlete} mode="parent" />,
+      <AnalysisView athlete={athlete} audience="family" />,
     );
     await waitFor(() => {
-      expect(container.querySelector('[data-testid="athlete-ai-analysis-tab"]')).toBeTruthy();
+      expect(container.querySelector('[data-testid="analysis-view"]')).toBeTruthy();
     });
     const results = await axe(container);
     expect(results).toHaveNoViolations();
@@ -240,47 +238,22 @@ describe("a11y — race-analysis v2 layout", () => {
   // Sprint 2 — multi-select action bar + MiniSparkline + Sheet abierto
   // ------------------------------------------------------------------
 
-  it("AthleteAIAnalysisTab coach con action bar visible (BB4) sin violaciones a11y", async () => {
+  it("AnalysisView coach con action bar visible (BB4) sin violaciones a11y", async () => {
     const user = userEvent.setup();
     const { container } = renderWithProviders(
-      <AthleteAIAnalysisTab athlete={athlete} mode="coach" />,
+      <AnalysisView athlete={athlete} audience="coach" />,
     );
     await waitFor(() => {
       expect(
-        container.querySelector('[data-testid="athlete-ai-analysis-tab"]'),
+        container.querySelector('[data-testid="analysis-view"]'),
       ).toBeTruthy();
     });
-    await user.click(screen.getByTestId("ai-subtab-history"));
     await waitFor(() => {
       expect(screen.getByTestId("a11y-toggle-101")).toBeInTheDocument();
     });
     await user.click(screen.getByTestId("a11y-toggle-101"));
     await waitFor(() => {
       expect(screen.getByTestId("newsletter-action-bar")).toBeInTheDocument();
-    });
-    const results = await axe(container);
-    expect(results).toHaveNoViolations();
-  });
-
-  it("AthleteAIAnalysisTab coach con Sheet del Comparador abierto (BB3) sin violaciones a11y", async () => {
-    const user = userEvent.setup();
-    const { container } = renderWithProviders(
-      <AthleteAIAnalysisTab athlete={athlete} mode="coach" />,
-    );
-    await waitFor(() => {
-      expect(
-        container.querySelector('[data-testid="athlete-ai-analysis-tab"]'),
-      ).toBeTruthy();
-    });
-    await user.click(screen.getByTestId("ai-subtab-distribution"));
-    await waitFor(() => {
-      expect(screen.getByTestId("open-comparator-sheet")).toBeInTheDocument();
-    });
-    await user.click(screen.getByTestId("open-comparator-sheet"));
-    await waitFor(() => {
-      expect(
-        screen.getByText(/comparador de progreso/i),
-      ).toBeInTheDocument();
     });
     const results = await axe(container);
     expect(results).toHaveNoViolations();

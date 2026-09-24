@@ -54,7 +54,13 @@ from tests.helpers.audit_tables import AUDIT_TABLES
 
 pytestmark = pytest.mark.asyncio
 
-_TABLES = ("athletes", "anthropometric_records", "parent_athlete", *AUDIT_TABLES)
+_TABLES = (
+    "athletes",
+    "anthropometric_records",
+    "skinfold_measurements",
+    "parent_athlete",
+    *AUDIT_TABLES,
+)
 
 _TODAY = date.today()
 _BIRTH_DATE = date(2013, 1, 1)  # atleta ficticio, ~13 años — no es un dato real

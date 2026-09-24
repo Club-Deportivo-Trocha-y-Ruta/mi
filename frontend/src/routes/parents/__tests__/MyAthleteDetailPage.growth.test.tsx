@@ -63,9 +63,6 @@ vi.mock("@/components/athletes/AnthropometryHistory", () => ({
 vi.mock("@/components/ai/PHVExplanationCard", () => ({
   PHVExplanationCard: () => <div data-testid="phv-explanation-card">PHVExplanationCard</div>,
 }));
-vi.mock("@/components/athletes/ai/AthleteAIAnalysisTab", () => ({
-  AthleteAIAnalysisTab: () => <div data-testid="mock-ai-analysis-tab" />,
-}));
 // GrowthCurveSection (T052 reemplazó a `GrowthCharts`): capturamos el orden
 // del array `records` que la página le entrega. La página ya no deriva
 // `phvAgeMonths` — eso vive dentro de `GrowthCurveSection` y lo cubre

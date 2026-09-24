@@ -64,6 +64,26 @@ export interface RunEvent {
   payload: Record<string, unknown>;
 }
 
+/**
+ * Claves conocidas del `payload` del evento `hitl_request` (el borrador a
+ * aprobar). `RunEvent.payload` sigue siendo `Record<string, unknown>` porque
+ * el contenido depende de `type`; esta interfaz documenta las de `hitl_request`
+ * y las lee `lib/hitlEvents.ts`.
+ */
+export interface HitlRequestPayload {
+  step_id?: string;
+  draft_markdown?: string;
+  /** `InsightV3 | null` — el backend lo omite en runs v2. */
+  structured_draft?: Record<string, unknown> | null;
+  /**
+   * Feature 045 (FR-022), sólo coach/admin: hasta 3 fragmentos (≤80
+   * caracteres) del texto visible para la familia que mencionan al líder, la
+   * ganadora, P1/P3, el primer o tercer lugar o el podio. Siempre presente en
+   * este evento (`[]` si no hay menciones) y en ningún otro tipo de evento.
+   */
+  family_gap_mentions?: string[];
+}
+
 export interface RunStatusResponse {
   run_id: string;
   state: RunState;

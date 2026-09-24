@@ -132,6 +132,70 @@ class TestStaticSummitCaption:
         assert "racha" in caption.lower() or "esfuerzo" in caption.lower()
 
 
+def _race_summit() -> Summit:
+    return Summit(
+        kind=SummitKind.RACE,
+        title="P2 en la Válida 3",
+        detail="Prejuvenil A",
+        caption=None,
+        date=date(2026, 6, 12),
+    )
+
+
+def _race_blocks(**result_fields) -> dict:
+    """``race_results`` con un gap al ganador centinela (77,7) que la leyenda
+    familiar nunca debe citar (feature 045, FR-022)."""
+    return {
+        "race_results": {
+            "has_races": True,
+            "results": [
+                {
+                    "label": "Válida 3",
+                    "event_date": "2026-06-12",
+                    "position": 2,
+                    "gap_to_winner_pct": 77.7,
+                    **result_fields,
+                }
+            ],
+        }
+    }
+
+
+class TestStaticSummitCaptionMedianGap:
+    """Feature 045 (US4): la leyenda de la cima que lee la familia habla de la
+    brecha contra la mediana de la categoría, nunca del primer lugar."""
+
+    def test_slower_than_median_quotes_median_gap_with_comma_decimal(self):
+        caption = static_summit_caption(_race_summit(), _race_blocks(gap_to_median_pct=4.1), "su hija")
+        assert "4,1 %" in caption
+        assert "mayor que la mediana" in caption
+        assert len(caption.split()) <= 25
+
+    def test_faster_than_median_uses_absolute_value_and_menor(self):
+        caption = static_summit_caption(_race_summit(), _race_blocks(gap_to_median_pct=-3.2), "su hijo")
+        assert "3,2 %" in caption
+        assert "-3,2" not in caption
+        assert "menor que la mediana" in caption
+
+    def test_never_mentions_winner_or_first_place(self):
+        for median in (4.1, -3.2, None):
+            caption = static_summit_caption(
+                _race_summit(), _race_blocks(gap_to_median_pct=median), "su hija"
+            )
+            assert "77" not in caption
+            assert "primer lugar" not in caption.lower()
+            assert "P1" not in caption
+
+    def test_without_median_falls_back_to_generic_sentence(self):
+        for blocks in (_race_blocks(gap_to_median_pct=None), _race_blocks()):
+            caption = static_summit_caption(_race_summit(), blocks, "su hija")
+            assert caption == "Su hija vivió una experiencia de competencia que suma a su proceso."
+
+    def test_zero_median_gap_falls_back_to_generic_sentence(self):
+        caption = static_summit_caption(_race_summit(), _race_blocks(gap_to_median_pct=0.0), "su hija")
+        assert "vivió una experiencia de competencia" in caption
+
+
 class TestStaticNextSegment:
     def test_with_focus_groups_and_next_race(self):
         segment = NextSegment(

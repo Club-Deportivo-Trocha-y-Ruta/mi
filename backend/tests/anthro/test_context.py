@@ -192,6 +192,18 @@ _EXPECTED_ALLOWED_KEYS = frozenset(
         "summary_line",
         "confidence_level",
         "weeks_since",
+        # body_composition (feature 046, contracts/ai-body-composition-leaf.md
+        # §1) — deliberate widening, not an accidental one.
+        "sets_count",
+        "weeks_since_prev_set",
+        "sum_change_code",
+        "growth_explanation_code",
+        "ffm_trend_code",
+        "band",
+        "band_reason_code",
+        "family_band",
+        "reference_context_code",
+        "sites_declined_count",
     }
 )
 

@@ -10,7 +10,7 @@ Backing `GET /api/dashboard/coach-summary` (full contract: `contracts/coach-summ
 CoachSummary
 ├── generated_at: datetime (UTC)             — when this snapshot was computed; not cached server-side
 ├── consents_pending: int | null             — count of club athletes with no current-policy, non-withdrawn consent
-├── insights_stale: int | null                — count of club athletes whose active insight's run is stale
+├── insights_stale: int | null                — count of stale analyses (runs) backing an active insight of a club athlete (since feature 045; 031 counted athletes)
 └── weekly_load: WeeklyLoadBand[] | null      — one entry per age band with ≥1 athlete in the club roster
 ```
 

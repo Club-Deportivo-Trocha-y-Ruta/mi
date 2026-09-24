@@ -20,6 +20,11 @@
  *    §1 y `contracts/ui-course.md` §5. Estos tests dependen de campos que
  *    T037 aún no agrega a `ResultsTable.tsx` / `raceResults.types.ts`.
  *
+ *  - Métricas por fila (feature 045, US2): «Parrilla» en el encabezado de la
+ *    categoría; «Percentil» y «Brecha vs. mediana» para toda audiencia;
+ *    «Brecha vs. 1.ª posición» y «Brecha vs. podio» solo en coach — la familia
+ *    no las renderiza ni aunque el payload las trajera.
+ *
  * NO se testea directamente `useRaceResults` aquí — los tests de hooks
  * viven en hooks/race/__tests__/. Este test usa MSW para los tests de tab.
  */
@@ -34,6 +39,8 @@ import { setupServer } from "msw/node";
 import { ResultsTable } from "@/components/competitions/results/ResultsTable";
 import { ResultsTab } from "@/components/competitions/tabs/ResultsTab";
 import {
+  makeCoachMetricSet,
+  makeFamilyMetricSet,
   makeRaceEventResultsResponse,
   makeFullFieldResultsResponse,
   makeRaceResultRow,
@@ -791,5 +798,208 @@ describe("ResultsTab — accesibilidad", () => {
     const { container } = renderResultsTab({ hasResults: false });
     const results = await axe(container);
     expect(results).toHaveNoViolations();
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// Métricas por fila (feature 045, US2, T058)
+// ---------------------------------------------------------------------------
+
+/**
+ * Categoría con 6 cronometrados (≥ 5): percentil y brecha vs. mediana con
+ * valor. Un corredor de nuestro club en P4, otro (rival) sin tiempo.
+ */
+function makeMetricsResponse(audience: "coach" | "family"): RaceEventResultsResponse {
+  const metricSet = audience === "coach" ? makeCoachMetricSet : makeFamilyMetricSet;
+  return makeRaceEventResultsResponse({
+    categories: [
+      {
+        category_id: 1,
+        code: "INF_M",
+        label: "Infantil Masculino",
+        rows: [
+          makeRaceResultRow({
+            competitor_id: 101,
+            position: 4,
+            metrics: metricSet({
+              field_size: 7,
+              timed_finishers: 6,
+              position: 4,
+              percentile: 73,
+              gap_to_median_pct: -3.4,
+              gap_to_winner_pct: 5.2,
+              gap_to_podium_pct: 2.1,
+            }),
+          }),
+          // Perdió vueltas: cuenta en la Parrilla pero sin percentil ni brechas.
+          makeRaceResultRow({
+            competitor_id: 102,
+            display_name: "Corredor F",
+            athlete_id: null,
+            is_our_club: false,
+            position: 7,
+            metrics: metricSet({
+              field_size: 7,
+              timed_finishers: 6,
+              position: 7,
+              percentile: null,
+              gap_to_median_pct: null,
+              gap_to_winner_pct: null,
+              gap_to_podium_pct: null,
+            }),
+          }),
+        ],
+      },
+    ],
+  });
+}
+
+function renderWithAudience(
+  data: RaceEventResultsResponse,
+  audience: "coach" | "family",
+) {
+  return render(
+    <MemoryRouter>
+      <ResultsTable data={data} audience={audience} />
+    </MemoryRouter>,
+  );
+}
+
+describe("ResultsTable — métricas por fila, variante de coach", () => {
+  it("muestra las cuatro columnas del glosario, con los valores del motor", () => {
+    renderWithAudience(makeMetricsResponse("coach"), "coach");
+
+    for (const label of [
+      "Percentil",
+      "Brecha vs. mediana",
+      "Brecha vs. 1.ª posición",
+      "Brecha vs. podio",
+    ]) {
+      expect(screen.getByRole("columnheader", { name: label })).toBeInTheDocument();
+    }
+
+    expect(screen.getByTestId("results-percentile-101")).toHaveTextContent("P73");
+    expect(screen.getByTestId("results-gap-median-101")).toHaveTextContent("-3.4 %");
+    expect(screen.getByTestId("results-gap-winner-101")).toHaveTextContent("+5.2 %");
+    expect(screen.getByTestId("results-gap-podium-101")).toHaveTextContent("+2.1 %");
+  });
+
+  it("un valor null se lee «sin dato» (nunca 0 ni un guion), también en las brechas de líder/podio", () => {
+    renderWithAudience(makeMetricsResponse("coach"), "coach");
+
+    for (const id of ["percentile", "gap-median", "gap-winner", "gap-podium"]) {
+      expect(screen.getByTestId(`results-${id}-102`)).toHaveTextContent("sin dato");
+    }
+  });
+
+  it("«Parrilla» va en el encabezado de la categoría con el tamaño del grupo, no de las filas visibles", () => {
+    renderWithAudience(makeMetricsResponse("coach"), "coach");
+
+    const note = screen.getByTestId("results-field-size-1");
+    expect(note).toHaveTextContent("Parrilla: 7");
+    // 6 cronometrados ≥ 5: sin aviso de mínimo.
+    expect(note).not.toHaveTextContent(/menos de 5/);
+  });
+
+  it("con menos de 5 cronometrados la Parrilla explica por qué no hay percentil ni brecha vs. mediana", () => {
+    // Fixture base: categorías de 3 y 2 cronometrados.
+    renderWithAudience(makeRaceEventResultsResponse(), "coach");
+
+    expect(screen.getByTestId("results-field-size-1")).toHaveTextContent(
+      "Parrilla: 3 · con menos de 5 tiempos no hay percentil ni brecha vs. mediana",
+    );
+    expect(screen.getByTestId("results-percentile-101")).toHaveTextContent("sin dato");
+    expect(screen.getByTestId("results-gap-median-101")).toHaveTextContent("sin dato");
+    // Las brechas oficiales a P1/P3 no dependen del mínimo (research R-04).
+    expect(screen.getByTestId("results-gap-podium-101")).toHaveTextContent("-3.3 %");
+  });
+
+  it("se deriva de isCoachOrAdmin cuando no se pasa audience", () => {
+    const qc = makeQueryClient();
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter>
+          <ResultsTable data={makeMetricsResponse("coach")} isCoachOrAdmin />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    expect(
+      screen.getByRole("columnheader", { name: "Brecha vs. 1.ª posición" }),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("ResultsTable — métricas por fila, variante de familia (salvaguarda)", () => {
+  it("solo muestra Parrilla, Percentil y Brecha vs. mediana", () => {
+    renderWithAudience(makeMetricsResponse("family"), "family");
+
+    expect(screen.getByRole("columnheader", { name: "Percentil" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Brecha vs. mediana" })).toBeInTheDocument();
+    expect(screen.getByTestId("results-field-size-1")).toHaveTextContent("Parrilla: 7");
+    expect(screen.getByTestId("results-percentile-101")).toHaveTextContent("P73");
+    expect(screen.getByTestId("results-gap-median-101")).toHaveTextContent("-3.4 %");
+  });
+
+  it("no hay rastro de la brecha contra el líder ni el podio en la variante de familia", () => {
+    const { container } = renderWithAudience(makeMetricsResponse("family"), "family");
+
+    expect(screen.queryByRole("columnheader", { name: /1\.ª posición/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: /podio/i })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("results-gap-winner-101")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("results-gap-podium-101")).not.toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/1\.ª posición|podio|ganador|líder/i);
+  });
+
+  it("defensa en profundidad: aunque el payload trajera las brechas de líder/podio, la familia no las renderiza", () => {
+    // Un backend con un bug de redacción NO debe filtrarse por la UI.
+    renderWithAudience(makeMetricsResponse("coach"), "family");
+
+    expect(screen.queryByRole("columnheader", { name: /1\.ª posición|podio/i })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("results-gap-winner-101")).not.toBeInTheDocument();
+    expect(screen.queryByText("+5.2 %")).not.toBeInTheDocument();
+    expect(screen.queryByText("+2.1 %")).not.toBeInTheDocument();
+  });
+
+  it("sin isCoachOrAdmin ni audience, la opción segura es la variante de familia", () => {
+    render(
+      <MemoryRouter>
+        <ResultsTable data={makeMetricsResponse("coach")} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByRole("columnheader", { name: /1\.ª posición|podio/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Percentil" })).toBeInTheDocument();
+  });
+});
+
+describe("ResultsTable — payload sin métricas (backend previo a la 045)", () => {
+  it("no agrega columnas de métricas ni la nota de Parrilla", () => {
+    const legacy = makeRaceEventResultsResponse();
+    for (const cat of legacy.categories) {
+      for (const row of cat.rows) delete row.metrics;
+    }
+    renderWithAudience(legacy, "coach");
+
+    expect(screen.queryByRole("columnheader", { name: "Percentil" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: /Brecha vs\./ })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("results-field-size-1")).not.toBeInTheDocument();
+  });
+
+  it("metrics: null (el backend no pudo calcularlas) da «sin dato», no columnas rotas", () => {
+    const data = makeMetricsResponse("coach");
+    data.categories[0].rows[0].metrics = null;
+    renderWithAudience(data, "coach");
+
+    expect(screen.getByTestId("results-percentile-101")).toHaveTextContent("sin dato");
+    expect(screen.getByTestId("results-gap-winner-101")).toHaveTextContent("sin dato");
+  });
+});
+
+describe("ResultsTable — métricas, accesibilidad", () => {
+  it.each(["coach", "family"] as const)("sin violaciones jest-axe (%s)", async (audience) => {
+    const { container } = renderWithAudience(makeMetricsResponse(audience), audience);
+    expect(await axe(container)).toHaveNoViolations();
   });
 });

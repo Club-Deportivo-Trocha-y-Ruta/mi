@@ -9,9 +9,9 @@ Cubre ``contracts/newsletter-context.md`` § Template behavior:
     - el encabezado ``"Evolución en la {copa} {año}"`` por cada copa
       (D2/D13 — nunca "Copa Valle" hardcodeado; el nombre viene del fixture),
     - una sección "Campeonatos",
-    - las cuatro etiquetas de la tarjeta de campeonato (Posición / Pelotón /
-      Gap al P1 / Percentil),
-    - la nota D13 ("Un campeonato reúne un pelotón distinto...").
+    - las cuatro etiquetas de la tarjeta de campeonato (Posición / Parrilla /
+      Brecha vs. mediana / Percentil — glosario 045),
+    - la nota D13 ("Un campeonato reúne una parrilla distinta...").
 - (b) Un snapshot VIEJO (sin ``cups``/``championships`` — solo
   ``progression_history`` y las claves planas heredadas ``positions`` /
   ``gap_pcts`` / ``points_accumulated``) debe renderizar SIN error y SIN la
@@ -32,6 +32,8 @@ que ``tests/fixtures/race_groups.py`` (Copa Valle de Ciclomontañismo 2026,
 Cto. Departamental en Ginebra, Cto. Nacional en Pereira).
 """
 from __future__ import annotations
+
+import re
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
@@ -70,7 +72,7 @@ def _base_context(*, charts_annex: dict, race_results: dict) -> dict:
     oleada 2, donde el bloque había quedado anidado dentro del anexo de
     crecimiento)."""
     return {
-        "athlete_first_name": "Camila",
+        "athlete_first_name": "Ciclista",
         "athlete_last_name": "Ficticia Salazar",
         "club_name": "Club Ficticio de Prueba",
         "month_label": "Agosto 2026",
@@ -109,7 +111,10 @@ def _new_shape_context() -> dict:
                 "n_samples": 5,
                 "low_confidence": False,
                 "positions": [{"x": i, "label": f"V{i}", "y": i} for i in range(1, 6)],
-                "gap_pcts": [{"x": i, "label": f"V{i}", "y": float(i)} for i in range(1, 6)],
+                "median_gap_pcts": [
+                    {"x": i, "label": f"V{i}", "y": y}
+                    for i, y in enumerate([-1.3, 0.8, 2.4, -0.5, 1.1], start=1)
+                ],
                 "points_accumulated": [
                     {"x": i, "label": f"V{i}", "y": i * 30} for i in range(1, 6)
                 ],
@@ -155,6 +160,7 @@ def _new_shape_context() -> dict:
                 "position": 4,
                 "field_size": 4,
                 "gap_pct": 5.6,
+                "gap_to_median_pct": 1.0,
                 "percentile": 75.0,
             },
             {
@@ -169,6 +175,7 @@ def _new_shape_context() -> dict:
                 "position": 11,
                 "field_size": 34,
                 "gap_pct": 35.6,
+                "gap_to_median_pct": -2.5,
                 "percentile": 69.7,
             },
         ],
@@ -242,12 +249,145 @@ class TestStageLogPdfComparisonGroups:
 
     def test_championship_card_tile_labels_present(self):
         html = _env().get_template(_TEMPLATE).render(**_new_shape_context())
-        for label in ("Posición", "Pelotón", "Gap al P1", "Percentil"):
+        for label in ("Posición", "Parrilla", "Brecha vs. mediana", "Percentil"):
             assert label in html, f"Etiqueta de tarjeta '{label}' ausente del PDF"
 
     def test_championship_note_sentence_present(self):
         html = _env().get_template(_TEMPLATE).render(**_new_shape_context())
-        assert "Un campeonato reúne un pelotón distinto" in html
+        assert "Un campeonato reúne una parrilla distinta" in html
+
+
+class TestStageLogPdfMedianGapNotWinnerGap:
+    """Feature 045 (US4, FR-020/FR-022): la familia lee la «Brecha vs.
+    mediana»; ningún rótulo ni valor del gap al ganador llega al PDF."""
+
+    def test_no_winner_gap_label_anywhere(self):
+        html = _env().get_template(_TEMPLATE).render(**_new_shape_context())
+        for retired in ("Gap al P1", "P1=0", "Pelotón", "al primer lugar"):
+            assert retired not in html, f"Rótulo retirado '{retired}' sigue en el PDF"
+
+    def test_championship_card_shows_median_gap_not_winner_gap(self):
+        html = _env().get_template(_TEMPLATE).render(**_new_shape_context())
+        assert "+1,0 %" in html
+        assert "-2,5 %" in html
+        # Centinelas: el gap al ganador de las tarjetas (gap_pct) no se pinta.
+        assert "+5,6" not in html
+        assert "+35,6" not in html
+
+    def test_championship_card_without_median_shows_sin_dato_not_winner_gap(self):
+        """Snapshot generado antes de la 045 (o parrilla bajo el mínimo): la
+        tarjeta trae ``gap_pct`` pero no ``gap_to_median_pct`` → «sin dato»."""
+        ctx = _new_shape_context()
+        for championship in ctx["race_results"]["championships"]:
+            championship.pop("gap_to_median_pct")
+        html = _env().get_template(_TEMPLATE).render(**ctx)
+        assert "+5,6" not in html
+        assert "+35,6" not in html
+        assert "sin dato" in html
+
+
+_CARD_MACRO = (
+    '{% from "documents/pdf/charts/championship_card.html.jinja" '
+    "import championship_card %}{{ championship_card(reading) }}"
+)
+
+
+def _render_card(reading: dict) -> str:
+    return _env().from_string(_CARD_MACRO).render(reading=reading)
+
+
+def _tile_values(html: str) -> dict[str, str]:
+    """Texto de cada una de las cuatro celdas, indexado por su rótulo."""
+    tiles = re.findall(
+        r'<p style="margin: 0; font-size: 8pt; color: #6b7280;">([^<]+)</p>\s*'
+        r'<p style="[^"]*">([^<]*)</p>',
+        html,
+    )
+    return {label: value.strip() for label, value in tiles}
+
+
+class TestChampionshipCardSinDato:
+    """Feature 045 (FR-020, US2/AC3): una estadística sin valor se rotula
+    «sin dato», nunca con un guion suelto — la familia lee este PDF."""
+
+    def test_all_four_empty_tiles_read_sin_dato(self):
+        html = _render_card(
+            {
+                "label": "Campeonato Departamental",
+                "finished": True,
+                "position": None,
+                "field_size": None,
+                "gap_to_median_pct": None,
+                "percentile": None,
+            }
+        )
+        assert _tile_values(html) == {
+            "Posición": "sin dato",
+            "Parrilla": "sin dato",
+            "Brecha vs. mediana": "sin dato",
+            "Percentil": "sin dato",
+        }
+        assert html.count("sin dato") == 4
+        # Ninguna celda cae a un guion suelto (el «—» del encabezado no aplica:
+        # aquí no hay lugar ni fecha).
+        assert "—" not in html
+
+    def test_missing_keys_of_a_pre_045_snapshot_read_sin_dato(self):
+        html = _render_card({"label": "Campeonato Nacional", "finished": True})
+        assert html.count("sin dato") == 4
+        assert "—" not in html
+
+    def test_percentile_under_min_field_reads_sin_dato(self):
+        """Parrilla de 3: el percentil no informa → «sin dato», el resto se ve."""
+        html = _render_card(
+            {
+                "label": "Campeonato Departamental",
+                "finished": True,
+                "position": 3,
+                "field_size": 3,
+                "category_label": "Prejuvenil A Femenino",
+                "gap_to_median_pct": 1.6,
+                "percentile": 0.0,
+            }
+        )
+        tiles = _tile_values(html)
+        assert tiles["Percentil"] == "sin dato"
+        assert tiles["Posición"] == "P3"
+        assert tiles["Parrilla"] == "3 en Prejuvenil A Femenino"
+        assert tiles["Brecha vs. mediana"] == "+1,6 %"
+
+    def test_filled_tiles_do_not_read_sin_dato(self):
+        html = _render_card(
+            {
+                "label": "Campeonato Departamental",
+                "finished": True,
+                "position": 4,
+                "field_size": 20,
+                "gap_to_median_pct": 1.6,
+                "percentile": 84.2,
+            }
+        )
+        assert "sin dato" not in html
+        assert _tile_values(html)["Percentil"] == "84"
+
+    def test_dnf_card_keeps_its_note_instead_of_empty_tiles(self):
+        html = _render_card({"label": "Campeonato Departamental", "finished": False})
+        assert "No completó la prueba." in html
+        assert "sin dato" not in html
+
+    def test_cup_panel_titled_and_plots_median_gap(self):
+        html = _env().get_template(_TEMPLATE).render(**_new_shape_context())
+        assert "Brecha vs. mediana (%)" in html
+        # Valores firmados de la serie de la copa (negativo = más rápido).
+        assert "-1,3%" in html
+        assert "2,4%" in html
+
+    def test_glossary_defines_median_gap_and_time_based_percentile(self):
+        html = _env().get_template(_TEMPLATE).render(**_new_shape_context())
+        assert "<strong>Brecha vs. mediana:</strong>" in html
+        assert "<strong>Percentil:</strong>" in html
+        # El percentil ya no se explica por puestos ("un P2 entre 5 marca 75").
+        assert "un P2 entre 5" not in html
 
 
 _CUP_LABEL_2 = "Liga Departamental 2026"
@@ -270,7 +410,7 @@ def _two_cups_shape_context() -> dict:
                 "n_samples": 3,
                 "low_confidence": True,
                 "positions": [{"x": i, "label": f"V{i}", "y": i} for i in range(1, 4)],
-                "gap_pcts": [{"x": i, "label": f"V{i}", "y": float(i)} for i in range(1, 4)],
+                "median_gap_pcts": [{"x": i, "label": f"V{i}", "y": float(i)} for i in range(1, 4)],
                 "points_accumulated": [
                     {"x": i, "label": f"V{i}", "y": i * 36} for i in range(1, 4)
                 ],
@@ -281,7 +421,7 @@ def _two_cups_shape_context() -> dict:
                 "n_samples": 5,
                 "low_confidence": False,
                 "positions": [{"x": i, "label": f"V{i}", "y": i} for i in range(1, 6)],
-                "gap_pcts": [{"x": i, "label": f"V{i}", "y": float(i)} for i in range(1, 6)],
+                "median_gap_pcts": [{"x": i, "label": f"V{i}", "y": float(i)} for i in range(1, 6)],
                 "points_accumulated": [
                     {"x": i, "label": f"V{i}", "y": i * 36} for i in range(1, 6)
                 ],
@@ -340,6 +480,18 @@ class TestStageLogPdfBackCompatOldSnapshot:
         html = _env().get_template(_TEMPLATE).render(**_old_shape_context())
         assert "Evolución en la temporada" in html
         assert "Campeonatos" not in html
+
+    def test_persisted_winner_gap_series_is_never_drawn(self):
+        """Feature 045: un snapshot persistido antes de la 045 solo trae la
+        serie ``gap_pcts`` (gap al ganador). El template ya no la lee: se
+        vuelve a descargar el PDF y el valor centinela no aparece."""
+        ctx = _old_shape_context()
+        ctx["charts_annex"]["gap_pcts"] = [
+            {"x": i, "label": f"V{i}", "y": 41.3} for i in range(1, 4)
+        ]
+        html = _env().get_template(_TEMPLATE).render(**ctx)
+        assert "41,3" not in html
+        assert "Gap al P1" not in html
 
 
 class TestStageLogPdfSeasonSectionIsIndependentOfAnthro:

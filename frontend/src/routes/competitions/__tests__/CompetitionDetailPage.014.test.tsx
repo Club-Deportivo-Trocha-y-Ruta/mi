@@ -1,10 +1,11 @@
 /**
  * T022 — spec 014 Cup vs Championship
- * CompetitionDetailPage — badges V{n} vs CD; standings tab oculto para campeonato (US4).
+ * CompetitionDetailPage — badges V{n} vs «Campeonato»; standings tab oculto para campeonato (US4).
  *
  * Cubre:
  *  - US4: una copa muestra badge "V{n}" (mediante sequence_number) — no "CD".
- *  - US4: un campeonato muestra badge "CD" (mediante is_championship=true) — no número.
+ *  - US4: un campeonato muestra badge «Campeonato» (mediante is_championship=true) — no número.
+ *    Feature 045 (FR-003): el código crudo "CD" ya no se muestra.
  *  - US4: el tab "Clasificación" (standings) está PRESENTE para eventos de copa.
  *  - US4: el tab "Clasificación" está AUSENTE para campeonatos.
  *  - US4: si URL ?tab=standings en un campeonato, cae al tab Info (no queda roto).
@@ -165,7 +166,7 @@ describe("CompetitionDetailPage spec-014 — US4: badge copa V{n}", () => {
 });
 
 describe("CompetitionDetailPage spec-014 — US4: badge campeonato CD", () => {
-  it("un campeonato muestra el badge 'CD' (data-testid=badge-championship)", async () => {
+  it("un campeonato muestra el badge «Campeonato» (data-testid=badge-championship)", async () => {
     mswServer.use(
       http.get("*/api/race-analysis/race-events/9", () =>
         HttpResponse.json(
@@ -187,10 +188,11 @@ describe("CompetitionDetailPage spec-014 — US4: badge campeonato CD", () => {
 
     await screen.findByRole("heading", { level: 1 });
 
-    // El badge de campeonato (CD) debe estar presente.
+    // El badge de campeonato debe estar presente y con el código explicado.
     const badge = await screen.findByTestId("badge-championship");
     expect(badge).toBeInTheDocument();
-    expect(badge).toHaveTextContent(/CD/i);
+    expect(badge).toHaveTextContent("Campeonato");
+    expect(badge).not.toHaveTextContent(/\bCD\b/);
   });
 
   it("un campeonato NO muestra el tab 'Clasificación' en la barra de tabs", async () => {
@@ -247,8 +249,10 @@ describe("CompetitionDetailPage spec-014 — US4: badge campeonato CD", () => {
     // Tabs que deben existir incluso para campeonatos.
     expect(screen.getByRole("tab", { name: "Información" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Resultados" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Condiciones" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Insights IA" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("tab", { name: "Circuito y condiciones" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Análisis IA" })).toBeInTheDocument();
   });
 
   it("URL ?tab=standings en un campeonato activa el tab Info (fallback, no rompe la UI)", async () => {

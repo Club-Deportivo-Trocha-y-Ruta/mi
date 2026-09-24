@@ -57,6 +57,12 @@ class DocumentTemplate(str, Enum):
     SESSION_INSTRUCTIVO = "session_instructivo"
     # Bitácora de etapa — boletín mensual en PDF (feature 038).
     ATHLETE_STAGE_LOG = "athlete_stage_log"
+    # Nota de remisión de composición corporal (feature 046, T044/T045).
+    # Iniciales únicamente, sin %/mm, sin nombre de profesional/institución.
+    BODY_COMPOSITION_REFERRAL_NOTE = "body_composition_referral_note"
+    # Instructivo estático de toma de pliegues cutáneos (feature 046, T057).
+    # Genérico: nunca contiene datos de ningún deportista.
+    BODY_COMPOSITION_FIELD_GUIDE = "body_composition_field_guide"
 
 
 class DocumentFormat(str, Enum):

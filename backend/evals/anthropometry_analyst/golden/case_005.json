@@ -35,7 +35,7 @@
     }
   },
   "expected_themes": ["margen de meses", "edad fuera del rango típico", "estimación con incertidumbre"],
-  "forbidden_terms": ["15.4 años", "edad exacta", "mes exacto de PHV", "percentil", "z-score"],
+  "forbidden_terms": ["15.4 años", "edad exacta", "mes exacto de PHV", "percentil", "z-score", "%", "mm"],
   "max_words": 180,
   "min_confidence_level": null,
   "max_confidence_level": "medium",

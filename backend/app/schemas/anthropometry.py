@@ -1,9 +1,11 @@
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Any
 
 from pydantic import BaseModel, field_validator
 
 from app.models.anthropometry import MaturationStatus
+from app.schemas.body_composition import SkinfoldSetOut
 
 
 class AnthropometryCreate(BaseModel):
@@ -76,5 +78,21 @@ class AnthropometryOut(BaseModel):
     # Objeto compuesto (se construye desde el router; no proviene del ORM directamente)
     growth_percentiles: GrowthPercentiles | None = None
     morphology: MorphologyMetrics | None = None
+    # Feature 046 — None for parents (projection nulls it like `notes`/`morphology`).
+    skinfolds: SkinfoldSetOut | None = None
 
     model_config = {"from_attributes": True}
+
+    @field_validator("skinfolds", mode="before")
+    @classmethod
+    def _skip_orm_skinfolds(cls, v: Any) -> Any:
+        """``model_validate(record, from_attributes=True)`` would otherwise try
+        to coerce `record.skinfolds` (the flat-column ORM relationship) into
+        the nested `SkinfoldSetOut` shape and fail — same reason
+        `growth_percentiles`/`morphology` are never read straight off the ORM.
+        The router always sets this field explicitly afterwards via
+        `routers/body_composition.py::skinfold_set_out`.
+        """
+        if v is None or isinstance(v, SkinfoldSetOut) or isinstance(v, dict):
+            return v
+        return None

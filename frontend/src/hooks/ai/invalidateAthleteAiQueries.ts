@@ -49,6 +49,11 @@ const ATHLETE_SCOPED_AI_QUERY_BASES: readonly string[] = [
 const GLOBAL_AI_QUERY_BASES: readonly string[] = [
   "club-insights-by-race",
   "season-panorama",
+  // Feature 045 (US5): la lista «Temporada › análisis por aprobar /
+  // desactualizados». Un run que termina, se aprueba o se re-lanza cambia su
+  // pertenencia. (Claves de `usePendingAnalyses`; no se importa para evitar
+  // un ciclo hooks/ai ↔ hooks/race.)
+  "race-pending-analyses",
 ];
 
 /**
@@ -72,6 +77,9 @@ export function invalidateAthleteAiQueries(
       if (!Array.isArray(key) || typeof key[0] !== "string") return false;
       const [base, id] = key;
       if (GLOBAL_AI_QUERY_BASES.includes(base)) return true;
+      // Conteos del Home (`useCoachSummary`, misma especificación que la
+      // lista pendiente): `["dashboard", "coach-summary"]`.
+      if (base === "dashboard" && key[1] === "coach-summary") return true;
       if (!ATHLETE_SCOPED_AI_QUERY_BASES.includes(base)) return false;
       return athleteId === undefined || id === athleteId;
     },

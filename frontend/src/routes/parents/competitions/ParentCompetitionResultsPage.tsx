@@ -414,7 +414,9 @@ function ResultsSection({
 
   return (
     <Suspense fallback={<TableSkeleton label="Cargando tabla de resultados" />}>
-      <ResultsTable data={data} hideClubFilter />
+      {/* Variante de familia (feature 045): Parrilla, Percentil y Brecha vs.
+          mediana — nunca la brecha contra el líder ni el podio. */}
+      <ResultsTable data={data} hideClubFilter audience="family" />
     </Suspense>
   );
 }

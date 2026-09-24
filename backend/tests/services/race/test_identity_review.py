@@ -943,3 +943,272 @@ async def test_rebuild_removes_out_of_scope_pending_but_keeps_decided(db):
 
     again = await ir.rebuild(db, rows_loader=loader)
     assert again.removed == 0 and again.pending == 2
+
+
+# ---------------------------------------------------------------------------
+# Candado por carga (feature 045, US3, T022 — research R-08)
+# ---------------------------------------------------------------------------
+
+
+def test_import_record_keys_are_bare_triple_keys_and_skip_nameless_rows():
+    keys = ir.import_record_keys(
+        {
+            "INF_A_F": [row("Ana Prueba Uno"), row("Ána Pruéba Uno"), row("   ")],
+            "INF_B_F": [row("Bruno Ficticio Tres", club=CLUB_B, city=CITY_B)],
+        }
+    )
+    assert keys == {
+        ir.record_key(signature_triple("Ana Prueba Uno", CLUB_A, CITY_A)),
+        ir.record_key(signature_triple("Bruno Ficticio Tres", CLUB_B, CITY_B)),
+    }
+
+
+def test_import_record_keys_of_no_rows_is_empty():
+    assert ir.import_record_keys({}) == set()
+    assert ir.import_record_keys({"INF_A_F": []}) == set()
+
+
+def test_base_key_drops_the_category_discriminator_only():
+    plain = ir.record_key(signature_triple("Ana Prueba Uno", CLUB_A, CITY_A))
+    split = ir.record_key(signature_triple("Ana Prueba Uno", CLUB_A, CITY_A), "F:2015-2016")
+    assert ir.base_key(split) == plain
+    assert ir.base_key(plain) == plain
+    empty_club_and_city = ir.record_key(signature_triple("Ana Prueba Uno", "", ""))
+    assert ir.base_key(empty_club_and_city) == empty_club_and_city
+
+
+@pytest.mark.asyncio
+async def test_import_record_keys_are_the_keys_of_the_queue_universe(db):
+    """La clave con que el candado reconoce las filas de una carga es la
+    misma que ``load_universe`` le da a sus registros — así un candidato
+    calculado ANTES del commit sigue reconociéndose (R-08, punto (a))."""
+    imp, loader, staged_rows = await _us4_universe(db)
+    universe_keys = {r.key for r in (await ir.load_universe(db, loader)).records}
+    assert ir.import_record_keys(staged_rows) <= universe_keys
+
+
+@pytest.mark.asyncio
+async def test_pending_for_import_matches_either_side_and_only_pending(db):
+    mine = rec("Ana Prueba Uno")
+    left_hit = await _seed_candidate(db, mine, rec("Bruno Ficticio Tres"), IdentityCandidateState.pending)
+    right_hit = await _seed_candidate(db, rec("Carla Ejemplo"), mine, IdentityCandidateState.pending)
+    await _seed_candidate(
+        db, rec("Bruno Ficticio Tres"), rec("Carla Ejemplo"), IdentityCandidateState.pending
+    )  # habla de otra carga
+    await _seed_candidate(
+        db, mine, rec("Dario Muestra Uno"), IdentityCandidateState.same_person, decided=True
+    )  # ya decidido
+    await _seed_candidate(
+        db, mine, rec("Elena Muestra Dos"), IdentityCandidateState.different_people, decided=True
+    )
+    await db.commit()
+
+    found = await ir.pending_candidates_for_import(db, {mine.key})
+
+    assert [c.id for c in found] == sorted([left_hit.id, right_hit.id])
+
+
+@pytest.mark.asyncio
+async def test_pending_for_import_with_no_keys_finds_nothing(db):
+    await _seed_candidate(
+        db, rec("Ana Prueba Uno"), rec("Bruno Ficticio Tres"), IdentityCandidateState.pending
+    )
+    await db.commit()
+    assert await ir.pending_candidates_for_import(db, set()) == []
+
+
+@pytest.mark.asyncio
+async def test_pending_for_import_includes_a_decision_reversed_to_pending(db):
+    """Una reversión devuelve el par a la cola con sus sellos ``decided_*``:
+    sigue siendo una pregunta sin responder para la carga."""
+    mine = rec("Ana Prueba Uno")
+    cand = await _seed_candidate(
+        db, mine, rec("Bruno Ficticio Tres"), IdentityCandidateState.pending, decided=True
+    )
+    await db.commit()
+    assert [c.id for c in await ir.pending_candidates_for_import(db, {mine.key})] == [cand.id]
+
+
+@pytest.mark.asyncio
+async def test_pending_for_import_matches_a_side_split_by_category(db):
+    """El registro de la cola pudo separarse por categoría (clave con
+    discriminador) por cómo se ve el universo en ese momento; la carga sigue
+    siendo la misma terna y debe frenarse igual."""
+    mine = rec("Ana Prueba Uno")
+    split = ir.IdentityRecord(
+        **{**mine.__dict__, "key": ir.record_key(mine.triple, "F:2015-2016"), "discriminator": "F:2015-2016"}
+    )
+    cand = await _seed_candidate(db, split, rec("Bruno Ficticio Tres"), IdentityCandidateState.pending)
+    await db.commit()
+    assert [c.id for c in await ir.pending_candidates_for_import(db, {mine.key})] == [cand.id]
+
+
+@pytest.mark.asyncio
+async def test_pending_for_import_ignores_snapshots_without_a_key(db):
+    db.add(
+        RaceIdentityCandidate(
+            kind=IdentityCandidateKind.same_person_suspect,
+            pair_hash="k" * 64,
+            left_record={"name_printed": "Ana Prueba Uno"},
+            right_record={},
+            score=95,
+            signals=[],
+            state=IdentityCandidateState.pending,
+            linked_athlete_involved=False,
+        )
+    )
+    await db.commit()
+    assert await ir.pending_candidates_for_import(db, {rec("Ana Prueba Uno").key}) == []
+
+
+# ---------------------------------------------------------------------------
+# GENERAL en el candado y en el universo (feature 045 — R-08, nota 1 del G2)
+#
+# El ingestor crea/actualiza competidores desde las filas de GENERAL en TODAS
+# las categorías, así que el candado de una carga y el universo de la cola
+# deben verlas (antes eran invisibles para ambos).
+# ---------------------------------------------------------------------------
+
+
+def _key_of(name: str, club: str = CLUB_A, city: str = CITY_A) -> str:
+    return ir.record_key(signature_triple(name, club, city))
+
+
+def loader_with_general(by_import: dict[int, "ir.ImportRows"]):
+    """``rows_loader`` de prueba que devuelve RESULTADOS + GENERAL."""
+
+    async def _load(imp):
+        return by_import[imp.id]
+
+    return _load
+
+
+async def _club_athlete_and_staged_import(db):
+    """"Ana Prueba Uno", atleta del club confirmada en 2026, y un import en
+    staging de 2025 (válida 3)."""
+    await ingest(db, 2026, 1, {"INF_A_F": [row("Ana Prueba Uno", club=CLUB_A, city=CITY_A)]})
+    (await db.execute(select(RaceCompetitor))).scalars().one().athlete_id = 4242
+    imp = await stage_import(db, 2025, 3, sha="g" * 64)
+    await db.commit()
+    return imp
+
+
+def test_import_record_keys_include_general_rows_of_any_category():
+    keys = ir.import_record_keys(
+        {"INF_A_F": [row("Ana Prueba Uno")]},
+        general_by_category={
+            "INF_B_F": [row("Bruno Ficticio Tres", club=CLUB_B, city=CITY_B), row("   ")],
+        },
+    )
+    assert keys == {
+        _key_of("Ana Prueba Uno"),
+        _key_of("Bruno Ficticio Tres", CLUB_B, CITY_B),
+    }
+
+
+def test_import_record_keys_without_general_are_unchanged():
+    rows = {"INF_A_F": [row("Ana Prueba Uno")]}
+    assert ir.import_record_keys(rows, general_by_category=None) == ir.import_record_keys(rows)
+    assert ir.import_record_keys(rows, general_by_category={}) == ir.import_record_keys(rows)
+
+
+@pytest.mark.asyncio
+async def test_general_only_row_enters_the_universe_and_raises_a_candidate(db):
+    imp = await _club_athlete_and_staged_import(db)
+    loader = loader_with_general(
+        {
+            imp.id: ir.ImportRows(
+                results={"INF_A_F": [row("Bruno Ficticio Tres", bib="12")]},
+                general={"INF_A_F": [row("Ana Prueba Uno Dos")]},
+            )
+        }
+    )
+
+    universe = await ir.load_universe(db, loader)
+    general_only = next(r for r in universe.records if r.key == _key_of("Ana Prueba Uno Dos"))
+    assert general_only.competitor_id is None  # aún no existe: el commit lo crearía
+
+    result = await ir.rebuild(db, rows_loader=loader)
+    assert result.pending == 1
+    cand = await _candidate_by_kind(db, IdentityCandidateKind.same_person_suspect)
+    assert _key_of("Ana Prueba Uno Dos") in {cand.left_record["key"], cand.right_record["key"]}
+
+
+@pytest.mark.asyncio
+async def test_general_row_of_a_triple_already_in_the_results_adds_nothing(db):
+    """La terna ya está en el universo por RESULTADOS (aunque GENERAL la liste
+    en dos categorías): no se duplica la aparición."""
+    imp = await _club_athlete_and_staged_import(db)
+    results = {"INF_A_F": [row("Ana Prueba Uno Dos", bib="11")]}
+    plain = await ir.load_universe(db, loader_with_general({imp.id: ir.ImportRows(results=results)}))
+    with_general = await ir.load_universe(
+        db,
+        loader_with_general(
+            {
+                imp.id: ir.ImportRows(
+                    results=results,
+                    general={
+                        "INF_A_F": [row("Ana Prueba Uno Dos")],
+                        "INF_B_F": [row("Ana Prueba Uno Dos")],
+                    },
+                )
+            }
+        ),
+    )
+    key = _key_of("Ana Prueba Uno Dos")
+    assert [r for r in with_general.records if r.key == key] == [
+        r for r in plain.records if r.key == key
+    ]
+
+
+@pytest.mark.asyncio
+async def test_general_row_of_an_existing_competitor_adds_no_appearance(db):
+    """Un competidor ya existente está en el universo por su firma; una fila
+    de GENERAL con su terna exacta no le suma una aparición de otra
+    categoría (evita partirlo en dos personas)."""
+    imp = await _club_athlete_and_staged_import(db)
+    results = {"INF_A_F": [row("Bruno Ficticio Tres", bib="12")]}
+    plain = await ir.load_universe(db, loader_with_general({imp.id: ir.ImportRows(results=results)}))
+    with_general = await ir.load_universe(
+        db,
+        loader_with_general(
+            {imp.id: ir.ImportRows(results=results, general={"INF_B_F": [row("Ana Prueba Uno")]})}
+        ),
+    )
+    key = _key_of("Ana Prueba Uno")
+    assert [r for r in with_general.records if r.key == key] == [
+        r for r in plain.records if r.key == key
+    ]
+
+
+@pytest.mark.asyncio
+async def test_general_appearance_is_never_a_valida_shared_with_the_results(db):
+    """GENERAL es el acumulado de la temporada, no una válida: que la atleta
+    corra ESTA válida en la misma categoría no prueba que la variante de
+    GENERAL sea otra persona. Con la válida real, ``same_valida_same_category``
+    apagaría el candidato y el gate no vería el casi-duplicado."""
+    imp = await _club_athlete_and_staged_import(db)
+    loader = loader_with_general(
+        {
+            imp.id: ir.ImportRows(
+                results={"INF_A_F": [row("Ana Prueba Uno", bib="11")]},
+                general={"INF_A_F": [row("Ana Prueba Uno Dos")]},
+            )
+        }
+    )
+
+    result = await ir.rebuild(db, rows_loader=loader)
+
+    assert result.pending == 1
+    cand = await _candidate_by_kind(db, IdentityCandidateKind.same_person_suspect)
+    assert _key_of("Ana Prueba Uno Dos") in {cand.left_record["key"], cand.right_record["key"]}
+
+
+@pytest.mark.asyncio
+async def test_a_plain_mapping_loader_still_works(db):
+    """``RowsLoader`` conserva su contrato: un ``dict`` de RESULTADOS sigue
+    siendo válido (sin GENERAL)."""
+    imp = await _club_athlete_and_staged_import(db)
+    loader = loader_for({imp.id: {"INF_A_F": [row("Ana Prueba Uno Dos", bib="11")]}})
+    result = await ir.rebuild(db, rows_loader=loader)
+    assert result.pending == 1

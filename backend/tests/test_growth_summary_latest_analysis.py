@@ -62,6 +62,8 @@ pytestmark = pytest.mark.asyncio
 _TABLES = (
     "athletes",
     "anthropometric_records",
+    "skinfold_measurements",
+    "growth_reference_lms",
     "parent_athlete",
     "parental_consents",
     "athlete_ai_explanations",
@@ -668,3 +670,112 @@ async def test_no_extra_query_per_measurement(
     # SELECTs — the AI-analysis lookup (and every other query on this path)
     # is bounded by `.limit(...)`, never by `records_count`.
     assert many_count == few_count, (few_count, many_count)
+
+
+# ---------------------------------------------------------------------------
+# 7. Feature 046 (US2 gate, T041): the body-composition block adds at most
+#    ONE query to the growth summary, and it does not scale with set count.
+# ---------------------------------------------------------------------------
+
+
+async def _seed_skinfold_set(
+    session: AsyncSession,
+    *,
+    record_id: int,
+    athlete_id: int,
+    declined: bool = False,
+    sum4: str = "30.0",
+) -> None:
+    from app.models.skinfold_measurement import SkinfoldMeasurement
+
+    value = None if declined else Decimal("7.5")
+    row = SkinfoldMeasurement(
+        anthropometric_record_id=record_id,
+        athlete_id=athlete_id,
+        triceps_mm=value,
+        biceps_mm=value,
+        subscapular_mm=value,
+        medial_calf_mm=value,
+        iliac_crest_mm=value,
+        supraspinale_mm=value,
+        triceps_declined=declined,
+        biceps_declined=declined,
+        subscapular_declined=declined,
+        medial_calf_declined=declined,
+        iliac_crest_declined=declined,
+        supraspinale_declined=declined,
+        sum4_mm=None if declined else Decimal(sum4),
+        sum6_mm=None if declined else Decimal("45.0"),
+        measured_by=1,
+        created_at=_GEN_AT,
+    )
+    session.add(row)
+    await session.flush()
+
+
+async def test_body_composition_adds_at_most_one_query(
+    session: AsyncSession, engine: AsyncEngine
+) -> None:
+    """SC-008 extended to feature 046 (T041, re-checked by T080).
+
+    Since T080 the growth summary loads every record WITH its skinfold set in
+    ONE SELECT (`body_composition.load_athlete_records`, LEFT JOIN +
+    `contains_eager`) that replaces the pre-046 `LIMIT 2` records query, and
+    the shared `load_reading` adds only the FUPRECOL reference lookup (one
+    SELECT for both sites). So: an athlete without skinfolds costs exactly
+    the pre-046 path; with a counted set the summary costs at most ONE SELECT
+    more; and 1 set vs 3 sets (one fully declined) costs the same."""
+    one = await seed_athlete(session, athlete_id=412)
+    await seed_record(
+        session, record_id=40, athlete_id=one.id, evaluation_date=_TODAY - timedelta(days=10)
+    )
+    await _seed_skinfold_set(session, record_id=40, athlete_id=one.id)
+
+    three = await seed_athlete(session, athlete_id=413)
+    base_date = _TODAY - timedelta(days=400)
+    for i in range(3):
+        await seed_record(
+            session,
+            record_id=50 + i,
+            athlete_id=three.id,
+            evaluation_date=base_date + timedelta(days=120 * i),
+        )
+        await _seed_skinfold_set(
+            session,
+            record_id=50 + i,
+            athlete_id=three.id,
+            declined=(i == 2),
+            sum4=str(30 + i),
+        )
+
+    # Same record history, no skinfold sets: the pre-046 cost.
+    none = await seed_athlete(session, athlete_id=414)
+    for i in range(3):
+        await seed_record(
+            session,
+            record_id=60 + i,
+            athlete_id=none.id,
+            evaluation_date=base_date + timedelta(days=120 * i),
+        )
+    await session.commit()
+    # Empty identity map so relationship loaders really hit the DB (otherwise
+    # a many-to-one `selectinload` is served from memory and a regression to
+    # two SELECTs would go unnoticed).
+    session.expunge_all()
+
+    async def _count(athlete_id: int, club_id: int) -> tuple[int, dict]:
+        async with make_client(session, user=coach_user(club_id=club_id)) as client:
+            async with count_selects(engine) as counter:
+                resp = await client.get(_URL.format(athlete_id=athlete_id))
+        assert resp.status_code == 200, resp.text
+        return counter[0], resp.json()
+
+    one_count, one_body = await _count(one.id, one.club_id)
+    three_count, three_body = await _count(three.id, three.club_id)
+    baseline_count, baseline_body = await _count(none.id, none.club_id)
+    assert one_body["body_composition"]["has_data"] is True
+    assert three_body["body_composition"]["has_data"] is True
+    assert three_body["body_composition"]["latest_attempt_declined"] is not None
+    assert baseline_body["body_composition"]["has_data"] is False
+    assert one_count == three_count, (one_count, three_count)
+    assert three_count - baseline_count <= 1, (baseline_count, three_count)

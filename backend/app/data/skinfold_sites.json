@@ -1,0 +1,79 @@
+{
+  "_source": "Valores copiados de frontend/src/lib/bodyComposition/siteDiagrams.ts (feature 046 T056). Fuente única de textos: el instructivo en PDF usa donde/como/alt de aquí; sus ilustraciones son las PNG en templates/documents/pdf/diagrams/img/ (sin respaldo vectorial). No dupliques estos valores a mano; si el protocolo cambia, actualiza siteDiagrams.ts y este archivo juntos.",
+  "site_order": [
+    "triceps",
+    "biceps",
+    "subscapular",
+    "medial_calf",
+    "iliac_crest",
+    "supraspinale"
+  ],
+  "silhouette_viewbox": {
+    "arm": "0 0 100 160",
+    "back": "0 0 120 140",
+    "leg": "0 0 100 160",
+    "hip": "0 0 140 100"
+  },
+  "sites": {
+    "triceps": {
+      "silhouette": "arm",
+      "landmark": { "x": 60, "y": 78 },
+      "fold_orientation": "vertical",
+      "caliper": { "x": 60, "y": 90, "angle": 0 },
+      "side_tag": "D",
+      "donde": "Cara posterior del brazo derecho, a la mitad entre el hombro (acromion) y el codo (olécranon), con el brazo relajado al costado.",
+      "como": "Pellizca el pliegue firmemente 1 cm por fuera de la marca; coloca el plicómetro sobre la marca y lee a los 2 segundos de soltar la presión.",
+      "alt": "Diagrama del pliegue de tríceps: brazo derecho visto por detrás, marca a la mitad entre el hombro y el codo, pliegue vertical."
+    },
+    "biceps": {
+      "silhouette": "arm",
+      "landmark": { "x": 40, "y": 78 },
+      "fold_orientation": "vertical",
+      "caliper": { "x": 40, "y": 90, "angle": 0 },
+      "side_tag": "D",
+      "donde": "Cara anterior del brazo derecho, a la misma altura que la marca del tríceps, con el brazo relajado al costado.",
+      "como": "Pellizca el pliegue firmemente 1 cm por fuera de la marca; coloca el plicómetro sobre la marca y lee a los 2 segundos de soltar la presión.",
+      "alt": "Diagrama del pliegue de bíceps: brazo derecho visto por delante, marca a la altura del tríceps, pliegue vertical."
+    },
+    "subscapular": {
+      "silhouette": "back",
+      "landmark": { "x": 78, "y": 55 },
+      "fold_orientation": "oblique_down_lateral",
+      "caliper": { "x": 85, "y": 63, "angle": 45 },
+      "side_tag": "D",
+      "donde": "Justo debajo del ángulo inferior del omóplato derecho, ubicado por palpación con el brazo relajado.",
+      "como": "Pellizca el pliegue en diagonal hacia abajo y hacia afuera (~45°), 1 cm por fuera de la marca; lee a los 2 segundos.",
+      "alt": "Diagrama del pliegue subescapular: espalda derecha, marca bajo el ángulo del omóplato, pliegue diagonal hacia afuera."
+    },
+    "medial_calf": {
+      "silhouette": "leg",
+      "landmark": { "x": 55, "y": 100 },
+      "fold_orientation": "vertical",
+      "caliper": { "x": 55, "y": 112, "angle": 0 },
+      "side_tag": "D",
+      "donde": "Borde medial de la pantorrilla derecha, en el punto de mayor perímetro, con la rodilla flexionada 90° y la pantorrilla relajada.",
+      "como": "Pellizca el pliegue firmemente 1 cm por fuera de la marca; coloca el plicómetro sobre la marca y lee a los 2 segundos de soltar la presión.",
+      "alt": "Diagrama del pliegue de pantorrilla medial: pierna derecha, marca en el punto de mayor perímetro, pliegue vertical."
+    },
+    "iliac_crest": {
+      "silhouette": "hip",
+      "landmark": { "x": 118, "y": 48 },
+      "fold_orientation": "horizontal",
+      "caliper": { "x": 129, "y": 51, "angle": 80 },
+      "side_tag": "D",
+      "donde": "Sobre el punto más lateral de la cresta ilíaca derecha (iliocristale), en la línea media de la axila.",
+      "como": "Pellizca el pliegue casi horizontal, con una leve inclinación hacia abajo, 1 cm por fuera de la marca; coloca el plicómetro sobre la marca y lee a los 2 segundos.",
+      "alt": "Diagrama del pliegue ilíaco: cadera derecha, marca lateral sobre la cresta ilíaca en la línea axilar media, pliegue casi horizontal."
+    },
+    "supraspinale": {
+      "silhouette": "hip",
+      "landmark": { "x": 75, "y": 22 },
+      "fold_orientation": "oblique_down_medial",
+      "caliper": { "x": 68, "y": 30, "angle": 135 },
+      "side_tag": "D",
+      "donde": "Sobre la línea que va desde la espina ilíaca anterosuperior derecha hasta el borde anterior de la axila, unos 5 a 7 cm por encima de esa espina.",
+      "como": "Pellizca el pliegue en diagonal, hacia abajo y hacia adentro, en dirección a la ingle, 1 cm por fuera de la marca; lee a los 2 segundos.",
+      "alt": "Diagrama del pliegue supraespinal: cadera derecha, marca más arriba y hacia el centro que la cresta ilíaca, pliegue oblicuo hacia adentro."
+    }
+  }
+}

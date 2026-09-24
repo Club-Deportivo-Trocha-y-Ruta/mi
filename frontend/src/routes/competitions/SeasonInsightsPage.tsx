@@ -1,7 +1,8 @@
 /**
  * SeasonInsightsPage — panorama agregado de una temporada (PR3).
  *
- * Ruta: /competitions/insights/season/:year
+ * Ruta: /competitions/season/:year (feature 045; `/competitions/insights/season/:year`
+ * redirige aquí). En el menú es «Temporada».
  * Acceso: coach + admin (parents → redirect por ProtectedRoute; backend 403).
  *
  * Consume `GET /api/race-analysis/insights/season/{year}` (una query agregada,
@@ -20,10 +21,15 @@
  * selector). Con 2+ copas, un selector de copa sobre la tabla decide qué
  * columnas se muestran — un coach compara una copa a la vez, nunca una suma
  * mezclada (mismo criterio que `ComparatorPanel`/`raceLabel`).
+ *
+ * Feature 045 (US5, T057): sobre la tabla vive el panel «Análisis pendientes»
+ * (`PendingAnalysesPanel`), controlado por `?analisis=por-aprobar|desactualizados`
+ * — el destino de las filas «Análisis por aprobar» / «Insights IA
+ * desactualizados» del Home.
  */
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Trophy } from "lucide-react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { ArrowLeft, ClipboardCheck, Trophy } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,6 +38,10 @@ import {
   SiblingViewTabs,
   type SiblingViewTabsItem,
 } from "@/components/layout/SiblingViewTabs";
+import {
+  parsePendingAnalysesMode,
+  PendingAnalysesPanel,
+} from "@/components/competitions/season/PendingAnalysesPanel";
 import { useSeasonPanorama } from "@/hooks/athletes/useSeasonPanorama";
 import { currentSeason } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
@@ -85,16 +95,17 @@ function statsForSeries(
   return item.by_series.find((s) => s.series_id === seriesId) ?? EMPTY;
 }
 
-// Vistas hermanas del área Competencias (data-model.md §2, navigation-model.md) —
-// compartidas con CompetitionsListPage y UnlinkedCompetitorsPage.
-const COMPETITIONS_SIBLING_VIEWS: SiblingViewTabsItem[] = [
-  { label: "Válidas", to: "/competitions" },
-  { label: "Sin enlazar", to: "/competitions/unlinked" },
-  {
-    label: "Panorama de temporada",
-    to: `/competitions/insights/season/${currentSeason()}`,
-  },
-];
+// Secciones del área Competencias (feature 045, `contracts/ui-copy.md`):
+// «Competencias» · «Temporada» · «Cargas e identidades». «Temporada» apunta al
+// año de ESTA página (no al vigente) para que la pastilla activa se resuelva
+// también al ver otras temporadas.
+function competitionsSiblingViews(year: number): SiblingViewTabsItem[] {
+  return [
+    { label: "Competencias", to: "/competitions" },
+    { label: "Temporada", to: `/competitions/season/${year}` },
+    { label: "Cargas e identidades", to: "/competitions/imports" },
+  ];
+}
 
 function HeaderBar({ year }: { year: number }) {
   return (
@@ -105,12 +116,12 @@ function HeaderBar({ year }: { year: number }) {
         data-testid="back-to-insights"
       >
         <ArrowLeft size={14} aria-hidden="true" />
-        Válidas
+        Competencias
       </Link>
       <h1
         className="font-display text-2xl text-charcoal"
       >
-        Panorama de temporada {year}
+        Temporada {year}
       </h1>
       <p className="text-sm text-mid-gray">
         Resumen agregado de los deportistas del club a lo largo de la temporada.
@@ -137,6 +148,26 @@ export function SeasonInsightsPage() {
   const navigate = useNavigate();
   const yearNum = Number(year);
   const validYear = !Number.isNaN(yearNum) && yearNum > 2000;
+  const siblingViews = useMemo(
+    () => competitionsSiblingViews(validYear ? yearNum : currentSeason()),
+    [validYear, yearNum],
+  );
+
+  // Feature 045 (US5): `?analisis=` abre el panel de análisis pendientes; un
+  // valor desconocido se ignora (panel cerrado), nunca un error.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const pendingMode = parsePendingAnalysesMode(searchParams.get("analisis"));
+  function setPendingMode(next: "por-aprobar" | "desactualizados" | null) {
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev);
+        if (next === null) params.delete("analisis");
+        else params.set("analisis", next);
+        return params;
+      },
+      { replace: true },
+    );
+  }
 
   const { data, isLoading, isError, refetch } = useSeasonPanorama(
     validYear ? yearNum : null,
@@ -174,7 +205,7 @@ export function SeasonInsightsPage() {
     return (
       <div className="mx-auto max-w-5xl space-y-5 px-4 py-6">
         <HeaderBar year={0} />
-        <SiblingViewTabs items={COMPETITIONS_SIBLING_VIEWS} />
+        <SiblingViewTabs items={siblingViews} />
         <div
           className="rounded-xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700"
           role="alert"
@@ -189,7 +220,28 @@ export function SeasonInsightsPage() {
     <div className="mx-auto max-w-5xl space-y-5 px-4 py-6">
       <HeaderBar year={yearNum} />
 
-      <SiblingViewTabs items={COMPETITIONS_SIBLING_VIEWS} />
+      <SiblingViewTabs items={siblingViews} />
+
+      {pendingMode !== null ? (
+        <PendingAnalysesPanel
+          mode={pendingMode}
+          onModeChange={setPendingMode}
+          onClose={() => setPendingMode(null)}
+        />
+      ) : (
+        <div className="flex justify-end">
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-12"
+            onClick={() => setPendingMode("por-aprobar")}
+            data-testid="open-pending-analyses"
+          >
+            <ClipboardCheck size={16} aria-hidden="true" />
+            Análisis pendientes
+          </Button>
+        </div>
+      )}
 
       {isLoading && <TableSkeleton />}
 
@@ -279,7 +331,9 @@ export function SeasonInsightsPage() {
                     key={it.athlete_id}
                     className="cursor-pointer border-b border-light-gray/60 transition-colors last:border-0 hover:bg-light-gray/40"
                     onClick={() =>
-                      navigate(`/athletes/${it.athlete_id}?tab=ai_analysis`)
+                      navigate(
+                        `/athletes/${it.athlete_id}?tab=races&view=analisis`,
+                      )
                     }
                     data-testid={`season-row-${it.athlete_id}`}
                   >

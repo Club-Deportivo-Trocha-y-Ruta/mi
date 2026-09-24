@@ -1,0 +1,104 @@
+{
+  "case_id": "017",
+  "description": "Feature 046. Post-PHV girl, 14.1 y, family audience. Coach-side band rojo (energy_availability_pattern) projected to family_band ambar. The family text must read as 'en observación' with the coach following the process — never mention a health professional, a referral, 'requiere acompañamiento', a number of body composition or diet.",
+  "audience": "family",
+  "input": {
+    "identity": {
+      "age_decimal": 14.1,
+      "age_group": "13-15",
+      "sex": "F",
+      "category": "Pre-juvenil B"
+    },
+    "measurement_deltas": {
+      "weeks_since_prev_measurement": 13,
+      "delta_height_cm": 1.1,
+      "delta_weight_kg": 0.0,
+      "delta_height_significant": true,
+      "delta_weight_significant": false,
+      "growth_velocity_cm_per_year": 4.4,
+      "velocity_confidence": "early_signal",
+      "crossed_phv_phase": false,
+      "prev_maturation_status": "Post-PHV",
+      "phase_crossing_corroborated": false
+    },
+    "longitudinal_series": [
+      {
+        "weeks_offset_from_latest": 0,
+        "height_cm": 158.9,
+        "weight_kg": 46.1,
+        "maturation_status_at_point": "Post-PHV",
+        "delta_height_cm_from_prior_point": 1.1
+      },
+      {
+        "weeks_offset_from_latest": 13,
+        "height_cm": 157.8,
+        "weight_kg": 46.1,
+        "maturation_status_at_point": "Post-PHV",
+        "delta_height_cm_from_prior_point": 1.9
+      },
+      {
+        "weeks_offset_from_latest": 26,
+        "height_cm": 155.9,
+        "weight_kg": 45.2,
+        "maturation_status_at_point": "Post-PHV",
+        "delta_height_cm_from_prior_point": null
+      }
+    ],
+    "growth_summary": {
+      "stage": "Post-PHV",
+      "maturity_offset": 1.3,
+      "age_at_phv": 12.8,
+      "months_from_phv": 16,
+      "expected_velocity_range_cm_year": [
+        3.0,
+        6.0
+      ],
+      "height_band": "p50_p75",
+      "weight_band": "p25_p50",
+      "nutritional_status": "eutrofico",
+      "alerts": [],
+      "measurement_due_status": "on_time"
+    },
+    "training_load_window": {
+      "sessions_count_28d": 14,
+      "avg_rpe_28d": 5.9,
+      "hours_28d": 18.0
+    },
+    "previous_analysis": null,
+    "body_composition": {
+      "sets_count": 3,
+      "weeks_since_prev_set": 13,
+      "sum_change_code": "down_real",
+      "growth_explanation_code": "none",
+      "ffm_trend_code": "flat",
+      "band": "rojo",
+      "band_reason_code": "energy_availability_pattern",
+      "family_band": "ambar",
+      "reference_context_code": "low",
+      "sites_declined_count": 0
+    }
+  },
+  "expected_themes": [
+    "entrenador"
+  ],
+  "forbidden_terms": [
+    "profesional de la salud",
+    "profesional de salud",
+    "remisión",
+    "requiere acompañamiento",
+    "disponibilidad energética",
+    "dieta",
+    "bajar de peso",
+    "perder peso",
+    "adelgazar",
+    "calorías",
+    "%",
+    "mm",
+    "milímetro",
+    "porcentaje"
+  ],
+  "max_words": 180,
+  "min_confidence_level": null,
+  "max_confidence_level": "medium",
+  "ideal_output_excerpt": "Notamos un cambio que vale la pena conversar. El entrenador está acompañando el proceso de cerca y se pondrá en contacto con ustedes para revisarlo juntos; no es una alarma."
+}

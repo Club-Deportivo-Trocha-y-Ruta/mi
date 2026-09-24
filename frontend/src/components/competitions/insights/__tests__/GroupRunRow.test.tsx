@@ -20,8 +20,19 @@ vi.mock("@/components/ai/AnalysisRunTimeline", () => ({
 }));
 
 vi.mock("@/components/ai/HITLApprovalCard", () => ({
-  HITLApprovalCard: ({ draftMarkdown }: { draftMarkdown: string }) => (
-    <div data-testid="hitl-card">{draftMarkdown}</div>
+  HITLApprovalCard: ({
+    draftMarkdown,
+    familyGapMentions,
+  }: {
+    draftMarkdown: string;
+    familyGapMentions?: string[];
+  }) => (
+    <div
+      data-testid="hitl-card"
+      data-gap-mentions={JSON.stringify(familyGapMentions ?? [])}
+    >
+      {draftMarkdown}
+    </div>
   ),
 }));
 
@@ -73,6 +84,34 @@ describe("GroupRunRow — tarjeta de aprobación", () => {
     render(<GroupRunRow entry={ENTRY} />);
     expect(screen.getByTestId("hitl-card")).toHaveTextContent("Borrador real");
     expect(resetEvents).not.toHaveBeenCalled();
+  });
+
+  // Feature 045 (T062): la fila de análisis grupal reusa la misma tarjeta, así
+  // que también le entrega los fragmentos del aviso de brecha con el podio.
+  it("le pasa a la tarjeta payload.family_gap_mentions del hitl_request vigente", () => {
+    mockStatus = {
+      latest: { state: "hitl_waiting" },
+      events: [
+        evt(1, "hitl_request", {
+          draft_markdown: "Borrador",
+          family_gap_mentions: ["terminó a 40 s del ganador"],
+        }),
+      ],
+    };
+    render(<GroupRunRow entry={ENTRY} />);
+    expect(screen.getByTestId("hitl-card")).toHaveAttribute(
+      "data-gap-mentions",
+      JSON.stringify(["terminó a 40 s del ganador"]),
+    );
+  });
+
+  it("sin family_gap_mentions en el payload le pasa una lista vacía (sin aviso)", () => {
+    mockStatus = {
+      latest: { state: "hitl_waiting" },
+      events: [evt(1, "hitl_request", { draft_markdown: "Borrador" })],
+    };
+    render(<GroupRunRow entry={ENTRY} />);
+    expect(screen.getByTestId("hitl-card")).toHaveAttribute("data-gap-mentions", "[]");
   });
 
   it("esperando aprobación sin hitl_request en el buffer: pide un refetch completo una vez", () => {

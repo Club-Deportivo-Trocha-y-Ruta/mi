@@ -1,18 +1,29 @@
-{# Macro SVG: gráfico de gap % al P1 por válida
+{# Macro SVG: gráfico de «Brecha vs. mediana» (%) por válida
+   (feature 045 — antes «Gap al P1»; el nombre del archivo y del macro se
+   conserva para no romper importadores).
    Inputs:
-     points — lista de {x: valida_num, y: gap_pct|null}
+     points — lista de {x: índice ordinal, y: brecha vs. mediana|null, label}
+              ``y`` es FIRMADA: negativa = más rápido que la mediana de su
+              categoría; positiva = más lento (data-model.md §1,
+              ``gap_to_median_pct``). Nunca el gap al ganador (FR-022).
      width / height / low_confidence
    Output: bloque HTML con título <p> + SVG (sin título dentro del SVG)
 
-   Dato ausente (``y`` null, ej. válida sin cronometraje): antes se filtraba
-   en silencio (``selectattr("y", "ne", none)``), así que esta gráfica
-   podía mostrar menos puntos que su pareja `line_positions` (misma lista de
-   válidas) sin ninguna señal — invitaba a leer "subió/bajó" comparando
-   puntos que en realidad no son válidas consecutivas. Ahora cada punto de
-   `points` se dibuja: los que tienen dato, como antes; los que no, como un
-   marcador hueco con etiqueta "s/d" en el centro vertical del área de
-   dibujo — nunca se inventa una altura — y la línea roja NO lo toca por
-   ningún lado (hueco visible en la polilínea en vez de un salto oculto).
+   Eje Y: de ``lo`` (arriba, más rápido) a ``hi`` (abajo, más lento), ambos
+   redondeados hacia afuera a enteros e incluyendo siempre el 0 (la mediana).
+   Un mínimo de 5 puntos porcentuales de rango evita que una diferencia de
+   décimas parezca un salto enorme. La línea punteada marca el 0 = mediana.
+
+   Dato ausente (``y`` null, ej. válida sin cronometraje o con parrilla bajo el
+   mínimo del motor): antes se filtraba en silencio (``selectattr("y", "ne",
+   none)``), así que esta gráfica podía mostrar menos puntos que su pareja
+   `line_positions` (misma lista de válidas) sin ninguna señal — invitaba a
+   leer "subió/bajó" comparando puntos que en realidad no son válidas
+   consecutivas. Ahora cada punto de `points` se dibuja: los que tienen dato,
+   como antes; los que no, como un marcador hueco con etiqueta "s/d" en el
+   centro vertical del área de dibujo — nunca se inventa una altura — y la
+   línea NO lo toca por ningún lado (hueco visible en la polilínea en vez de
+   un salto oculto).
 #}
 {% macro gap_pct(points, width=420, height=160, low_confidence=false) %}
 {%- set all_points = points or [] -%}
@@ -23,23 +34,26 @@
 {%- set pad_bottom = 30 -%}
 {%- set chart_w = width - pad_left - pad_right -%}
 {%- set chart_h = height - pad_top - pad_bottom -%}
-<p style="margin: 0 0 3pt 0; font-size: 9pt; font-weight: 700; color: #374151;">Gap al P1 (%)</p>
+<p style="margin: 0 0 3pt 0; font-size: 9pt; font-weight: 700; color: #374151;">Brecha vs. mediana (%)</p>
 {%- if low_confidence -%}
 <p style="margin: 0 0 3pt 0; font-size: 7.5pt; color: #92400e; background: #fef3c7; display: inline-block; padding: 1pt 5pt; border-radius: 3pt;">Confianza baja</p>
 {%- endif -%}
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {{ width }} {{ height }}" width="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Gap al P1 por válida (%)">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {{ width }} {{ height }}" width="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Brecha vs. mediana por válida (%)">
   <rect x="0" y="0" width="{{ width }}" height="{{ height }}" fill="#f9f9f9" rx="4"/>
   <rect x="{{ pad_left }}" y="{{ pad_top }}" width="{{ chart_w }}" height="{{ chart_h }}" fill="white" stroke="#e0e0e0"/>
   {%- if valid_points | length > 0 -%}
-    {%- set max_y = valid_points | map(attribute="y") | max -%}
-    {%- set max_y = [max_y, 5] | max -%}
+    {%- set ys = (valid_points | map(attribute="y") | list) + [0] -%}
+    {%- set lo = ys | min | round(0, "floor") -%}
+    {%- set hi = [ys | max | round(0, "ceil"), lo + 5] | max -%}
+    {%- set y_range = hi - lo -%}
     {%- set min_x = all_points | map(attribute="x") | min -%}
     {%- set max_x = all_points | map(attribute="x") | max -%}
     {%- set x_range = [(max_x - min_x), 1] | max -%}
     {%- set mid_cy = pad_top + (chart_h / 2) -%}
-    <!-- Línea 0% (P1) — etiqueta al extremo derecho sobre la línea, sin overlap con datos -->
-    <line x1="{{ pad_left }}" y1="{{ pad_top }}" x2="{{ pad_left + chart_w }}" y2="{{ pad_top }}" stroke="#22c55e" stroke-dasharray="3,2" stroke-width="1" opacity="0.6"/>
-    <text x="{{ pad_left + chart_w - 2 }}" y="{{ pad_top + 8 }}" font-size="7" fill="#15803d" text-anchor="end">P1=0%</text>
+    {%- set zero_cy = pad_top + ((0 - lo) / y_range) * chart_h -%}
+    <!-- Línea 0 % (mediana) — etiqueta al extremo derecho sobre la línea, sin overlap con datos -->
+    <line x1="{{ pad_left }}" y1="{{ zero_cy }}" x2="{{ pad_left + chart_w }}" y2="{{ zero_cy }}" stroke="#22c55e" stroke-dasharray="3,2" stroke-width="1" opacity="0.6"/>
+    <text x="{{ pad_left + chart_w - 2 }}" y="{{ zero_cy - 2 }}" font-size="7" fill="#15803d" text-anchor="end">mediana</text>
     {%- set prev_cx = namespace(val=none) -%}
     {%- set prev_cy = namespace(val=none) -%}
     {%- for pt in all_points -%}
@@ -52,19 +66,20 @@
         {%- set prev_cx.val = none -%}
         {%- set prev_cy.val = none -%}
       {%- else -%}
-        {%- set cy = pad_top + (pt.y / max_y) * chart_h -%}
+        {%- set cy = pad_top + ((pt.y - lo) / y_range) * chart_h -%}
         {%- if prev_cx.val is not none -%}
-          <line x1="{{ prev_cx.val }}" y1="{{ prev_cy.val }}" x2="{{ cx }}" y2="{{ cy }}" stroke="#dc2626" stroke-width="2"/>
+          <line x1="{{ prev_cx.val }}" y1="{{ prev_cy.val }}" x2="{{ cx }}" y2="{{ cy }}" stroke="#2563eb" stroke-width="2"/>
         {%- endif -%}
-        <circle cx="{{ cx }}" cy="{{ cy }}" r="4" fill="#dc2626"/>
-        <text x="{{ cx }}" y="{{ [pad_top - 2, cy - 5] | max }}" text-anchor="middle" font-size="8" fill="#991b1b">{{ pt.y | num_es(1) }}%</text>
+        <circle cx="{{ cx }}" cy="{{ cy }}" r="4" fill="#2563eb"/>
+        <text x="{{ cx }}" y="{{ [pad_top - 2, cy - 5] | max }}" text-anchor="middle" font-size="8" fill="#1e40af">{{ pt.y | num_es(1) }}%</text>
         <text x="{{ cx }}" y="{{ pad_top + chart_h + 12 }}" text-anchor="middle" font-size="8" fill="#555">{{ pt.label or ('V' ~ pt.x) }}</text>
         {%- set prev_cx.val = cx -%}
         {%- set prev_cy.val = cy -%}
       {%- endif -%}
     {%- endfor -%}
-    <!-- Etiqueta Y -->
-    <text x="{{ pad_left - 3 }}" y="{{ pad_top + chart_h }}" text-anchor="end" font-size="8" fill="#666">{{ "%.0f"|format(max_y) }}%</text>
+    <!-- Etiquetas Y: extremo superior (más rápido) e inferior (más lento) del eje -->
+    <text x="{{ pad_left - 3 }}" y="{{ pad_top + 8 }}" text-anchor="end" font-size="8" fill="#666">{{ "%.0f"|format(lo) }}%</text>
+    <text x="{{ pad_left - 3 }}" y="{{ pad_top + chart_h }}" text-anchor="end" font-size="8" fill="#666">{{ "%.0f"|format(hi) }}%</text>
   {%- else -%}
     <text x="{{ width / 2 }}" y="{{ height / 2 }}" text-anchor="middle" font-size="11" fill="#999">Sin datos</text>
   {%- endif -%}

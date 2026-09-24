@@ -79,7 +79,7 @@ export function HeroLastInsightCard({
         <p className="text-sm font-medium text-charcoal">
           {mode === "parent"
             ? "Cuando se aprueben análisis de tu hijo/a, aparecerán aquí."
-            : "Aún no hay análisis aprobados. Lanza el primero desde la pestaña 'Analizar con IA'."}
+            : "Aún no hay análisis aprobados. Lanza el primero con «Analizar con IA», más abajo en esta vista."}
         </p>
       </div>
     );
@@ -94,11 +94,15 @@ export function HeroLastInsightCard({
   // mostrar la primera acción sin una llamada extra al detalle (ver
   // open_issues del reporte de T301).
   const isV2 = insight.prompt_version === PROMPT_VERSION_V2;
+  // Feature 045: para un padre el servidor omite `summary_text` en las filas
+  // v3 (trae «gap a P3»); ahí manda el `headline`. Coach y filas v1/v2 lo
+  // siguen recibiendo.
+  const summaryText = insight.summary_text ?? "";
   const displayText = insight.headline
     ? insight.headline
     : isV2
-      ? extractSection(insight.summary_text, "Qué pasó") || insight.summary_text
-      : insight.summary_text;
+      ? extractSection(summaryText, "Qué pasó") || summaryText
+      : summaryText;
   // Fallback (US4, feature 036): igual que en InsightsTimeline.tsx — una
   // fila persistida por el camino de FALLA de `deterministic_fallback` no
   // es un análisis real y nunca debe ofrecerse para el boletín, ni siquiera

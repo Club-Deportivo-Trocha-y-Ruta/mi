@@ -10,7 +10,17 @@
  * `summit`, `observations`, `analyst-reading`, `effort-profile`,
  * `next-segment`, `family-compass`, `badges`, `photos`, `coach-note`
  * (kebab-case — ver `components/newsletter/StageLogView.tsx`).
+ *
+ * Feature 045 (T063): sobre la «Nota del entrenador» se ofrece «Insertar aviso
+ * de cambios» (ver `changeNotice.ts`). Un clic abre el editor de esa nota con
+ * el aviso ya escrito; el coach lo edita y lo guarda — nada se persiste ni se
+ * envía hasta que pulsa «Guardar». La oferta sólo aparece mientras la nota
+ * está vacía (no pisa lo que el coach escribió) y hasta que el coach la
+ * descarta (se recuerda por coach en localStorage).
  */
+import { useState } from "react";
+import { Megaphone } from "lucide-react";
+
 import { BlockCard } from "@/components/newsletter/studio/BlockCard";
 import {
   parseAnalystReading,
@@ -20,6 +30,11 @@ import {
   serializeFamilyCompass,
   serializeObservations,
 } from "@/components/newsletter/studio/blockSerializers";
+import {
+  CHANGE_NOTICE_TEXT,
+  useChangeNoticeOffer,
+} from "@/components/newsletter/studio/changeNotice";
+import { useAuthStore } from "@/store/auth.store";
 import type {
   HideableBlock,
   RegenerableBlock,
@@ -74,6 +89,15 @@ export function BlockPanel({
   onScrollToBlock,
 }: BlockPanelProps) {
   const isHidden = (block: HideableBlock) => hiddenBlocks.includes(block);
+
+  // Oferta «Insertar aviso de cambios» (feature 045, T063).
+  const userId = useAuthStore((s) => s.user?.id);
+  const { canOffer, dismissed, dismiss } = useChangeNoticeOffer(userId);
+  // Cada clic vuelve a sembrar el editor: la tarjeta se remonta con otra `key`.
+  const [noticeSeed, setNoticeSeed] = useState(0);
+  const noteIsEmpty = !stageLog.coach_note?.trim();
+  const showNoticeOffer =
+    canOffer && !dismissed && noteIsEmpty && !isHidden("coach_note");
 
   return (
     <div className="space-y-3" data-testid="block-panel">
@@ -165,7 +189,50 @@ export function BlockPanel({
         onCardClick={() => onScrollToBlock(BLOCK_DATA_ANCHORS.family_compass)}
       />
 
+      {showNoticeOffer && (
+        <section
+          aria-labelledby="change-notice-title"
+          className="rounded-card bg-surface-raised px-4 py-3 shadow-card ring-1 ring-hairline"
+          data-testid="change-notice-offer"
+        >
+          <h3
+            id="change-notice-title"
+            className="flex items-center gap-2 text-sm font-semibold text-charcoal"
+          >
+            <Megaphone size={14} aria-hidden="true" />
+            Aviso de cambios en los resultados
+          </h3>
+          <p className="mt-1 text-xs text-mid-gray">
+            Cambiamos cómo se calculan y se muestran las cifras de las
+            competencias. Puedes avisarle a la familia en la nota del
+            entrenador: revisas y editas el texto antes de guardarlo, y no se
+            envía nada automáticamente.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setNoticeSeed((n) => n + 1)}
+              className="inline-flex min-h-12 items-center gap-1.5 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-surface transition-opacity hover:opacity-90"
+              data-testid="change-notice-insert"
+            >
+              Insertar aviso de cambios
+            </button>
+            <button
+              type="button"
+              onClick={dismiss}
+              className="inline-flex min-h-12 items-center rounded-lg px-4 py-2 text-sm font-medium text-charcoal shadow-ring transition-opacity hover:opacity-70"
+              data-testid="change-notice-dismiss"
+            >
+              No mostrar más
+            </button>
+          </div>
+        </section>
+      )}
+
       <BlockCard
+        key={`coach-note-${noticeSeed}`}
+        startEditing={noticeSeed > 0}
+        initialDraft={noticeSeed > 0 ? CHANGE_NOTICE_TEXT : undefined}
         dataBlock={BLOCK_DATA_ANCHORS.coach_note}
         title="Nota del entrenador"
         state={stageLog.block_states.coach_note ?? "empty"}

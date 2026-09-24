@@ -23,7 +23,7 @@ from __future__ import annotations
 import enum
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -522,7 +522,7 @@ class ImportListItem(BaseModel):
 
     id: int
     kind: str  # 'resultados' | 'general' | 'both'
-    status: str  # 'pending' | 'committed' | 'failed' | 'dry_run'
+    status: str  # 'pending' | 'committed' | 'failed' | 'dry_run' | 'discarded'
     created_at: datetime
     event_id: Optional[int] = None
     original_filename: Optional[str] = None
@@ -541,6 +541,37 @@ class ImportListItem(BaseModel):
     season: Optional[int] = None
     valida_num: Optional[int] = None
     series_name: Optional[str] = None
+
+
+class ImportDetailRead(BaseModel):
+    """``GET /imports/{import_id}`` y respuesta de ``POST …/discard`` (feature
+    045, contracts/api.md, research R-09): lo justo para que el wizard retome
+    una carga desde ``?import=<id>`` (``pending`` → revisión, ``dry_run`` →
+    confirmación).
+
+    ``parse_meta`` es una proyección de ``parse_meta_json``, no el JSON crudo:
+    sin las rutas internas de storage (``*_storage_path``, ``parse_uuid``,
+    ``results_ext``) ni las correcciones manuales (``corrections``), cuyas filas
+    llevan nombre, club y ciudad de un menor. ``None`` en una carga ya
+    confirmada por completo (el meta se limpia al terminar).
+
+    ``parent_committed_at`` es el mismo dato que ``ImportParseResponse``: cuándo
+    se confirmó la versión previa de la misma ``(serie, válida)``, para el aviso
+    de revisión del wizard retomado. Solo una carga en staging (``pending`` /
+    ``dry_run``) que ya tiene una válida confirmada; ``None`` en cualquier otro
+    caso (primera carga de la válida o carga en otro estado).
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    status: str  # 'pending' | 'dry_run' | 'committed' | 'failed' | 'discarded'
+    source_filename: Optional[str] = None
+    parse_meta: Optional[dict[str, Any]] = None
+    created_at: datetime
+    event_id: Optional[int] = None
+    season: Optional[int] = None
+    parent_committed_at: Optional[datetime] = None
 
 
 class ImportListResponse(BaseModel):

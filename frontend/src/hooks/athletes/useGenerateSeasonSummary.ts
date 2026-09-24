@@ -13,16 +13,19 @@
  * En onSuccess invalida todas las queries "athlete-*" del atleta para que
  * el header y el histórico de InsightsTimeline reflejen el run recién
  * lanzado (aparece en `useAthleteRuns`).
+ *
+ * `season` (opcional) fija la temporada a resumir; sin él el backend usa el
+ * año actual. Lo usa «Re-ejecutar» en «Temporada › pendientes» (feature 045).
  */
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { generateSeasonSummary } from "@/api/athleteRaceAnalysis";
 
-export function useGenerateSeasonSummary(athleteId: number) {
+export function useGenerateSeasonSummary(athleteId: number, season?: number) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: () => generateSeasonSummary(athleteId),
+    mutationFn: () => generateSeasonSummary(athleteId, season),
     onSuccess: () => {
       void queryClient.invalidateQueries({
         predicate: (q) => {

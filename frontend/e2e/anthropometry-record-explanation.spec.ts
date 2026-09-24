@@ -85,7 +85,15 @@ test.describe("Análisis particular IA por medición", () => {
       await page.getByLabel(/talla de pie/i).fill("155.0");
       await page.getByLabel(/talla sentado/i).fill("73.0");
       await page.getByLabel(/fecha de evaluaci[óo]n/i).fill("2026-04-14");
-      await page.getByRole("button", { name: /guardar medici[óo]n/i }).click();
+      // Feature 046: el botón se llama "Guardar medición" sólo cuando el
+      // atleta no es elegible para pliegues cutáneos (< 9 años, intervalo
+      // bloqueado, etc.); si es elegible pasa a "Guardar y terminar" (junto
+      // a la nueva salida "Guardar y agregar pliegues"). Se acepta
+      // cualquiera de los dos — esta prueba no es sobre pliegues, sólo
+      // necesita sembrar una medición.
+      await page
+        .getByRole("button", { name: /guardar (medici[óo]n|y terminar)/i })
+        .click();
     }
 
     await openFirstMeasurementDetail(page);

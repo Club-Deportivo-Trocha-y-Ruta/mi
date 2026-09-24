@@ -2,12 +2,25 @@
  * HistoryChart — línea de progresión entre válidas/temporadas de un atleta
  * (feature 044, US6, `contracts/ui-history.md` §1).
  *
- * Una sola métrica — brecha a la mediana — nunca dos ejes Y. El eje se
- * invierte (arriba = más rápido, cero = "Mediana de su categoría").
- * Velocidad media se retiró de esta vista el 2026-09-22 (decisión del
- * propietario: "no es un dato relevante" en una comparación cruza-temporada;
- * sigue disponible por válida en el tab Circuito y en `EvolutionChart`,
- * feature 043) — ya no hay toggle de métrica.
+ * Una sola métrica a la vez — nunca dos ejes Y. Por defecto la brecha a la
+ * mediana (`gap_to_median_pct`); el eje se invierte cuando menor es mejor
+ * (arriba = mejor, cero = "Mediana de su categoría"). Velocidad media se
+ * retiró de esta vista el 2026-09-22 (decisión del propietario: "no es un
+ * dato relevante" en una comparación cruza-temporada; sigue disponible por
+ * válida en el tab Circuito, feature 043).
+ *
+ * Feature 045 (T036): la prop `metric` elige qué graficar —
+ * `gap_to_median_pct` | `percentile` | `position` | `gap_to_winner_pct` |
+ * `gap_to_podium_pct` (ver `historyMetrics.ts`). `audience="family"` limita
+ * a mediana, percentil y posición: una métrica de líder/podio pedida por la
+ * familia cae en la mediana (defensa en profundidad — el backend tampoco
+ * envía esas claves a una familia). El selector de métrica vive en la vista
+ * («Progresión»), no aquí.
+ *
+ * Feature 045 (T075, FR-017): cada punto —incluidos los marcadores huecos de
+ * no-finalista— es un enlace a su competencia (coach → detalle interno,
+ * familia → vista de resultados de solo lectura), con área de toque de 48 px
+ * y accesible por teclado. Requiere un `Router` en el árbol.
  *
  * La línea nunca implica continuidad donde no la hay:
  *   - Un cambio de categoría (`category_changed`) corta la línea por
@@ -30,6 +43,8 @@
  * filas fantasma.
  */
 import { useMemo } from "react";
+import type { ReactNode } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import {
   CartesianGrid,
   ComposedChart,
@@ -43,11 +58,18 @@ import {
 import type { DotItemDotProps } from "recharts";
 
 import { cn } from "@/lib/utils";
+import { raceEventHref } from "@/lib/raceEventHref";
+import { formatFieldSize, formatRaceDateShort } from "@/lib/raceHistoryFormat";
 import {
-  formatFieldSize,
-  formatGapPct,
-  formatRaceDateShort,
-} from "@/lib/raceHistoryFormat";
+  DEFAULT_HISTORY_METRIC,
+  HISTORY_METRICS,
+  resolveHistoryMetric,
+} from "@/components/race/history/historyMetrics";
+import type {
+  HistoryAudience,
+  HistoryMetric,
+  HistoryMetricConfig,
+} from "@/components/race/history/historyMetrics";
 import {
   NON_FINISHER_STATUSES,
   RACE_HISTORY_STATUS_LABELS,
@@ -59,6 +81,10 @@ import type {
 
 export interface HistoryChartProps {
   points: RaceHistoryPoint[];
+  /** Métrica graficada — default: brecha vs. mediana. */
+  metric?: HistoryMetric;
+  /** Limita las métricas: la familia no ve líder/podio. Default "coach". */
+  audience?: HistoryAudience;
   className?: string;
 }
 
@@ -78,8 +104,7 @@ interface ChartRow {
   previousCategoryLabel: string | null;
   status: RaceHistoryResultStatus | null;
   fieldSize: number | null;
-  gapMedianPct: number | null;
-  /** Valor graficado — brecha a la mediana. */
+  /** Valor graficado — el de la métrica activa (`null` = sin dato). */
   value: number | null;
 }
 
@@ -108,7 +133,7 @@ function hasTimeGap(prev: ChartRow, curr: ChartRow): boolean {
   return false;
 }
 
-function toRow(p: RaceHistoryPoint): ChartRow {
+function toRow(p: RaceHistoryPoint, config: HistoryMetricConfig): ChartRow {
   return {
     eventId: p.event_id,
     x: parseDateMs(p.event_date),
@@ -120,8 +145,7 @@ function toRow(p: RaceHistoryPoint): ChartRow {
     previousCategoryLabel: p.previous_category_label,
     status: p.status,
     fieldSize: p.field_size,
-    gapMedianPct: p.gap_to_median_pct,
-    value: p.gap_to_median_pct,
+    value: config.select(p),
   };
 }
 
@@ -138,7 +162,6 @@ function phantomBetween(a: ChartRow, b: ChartRow): ChartRow {
     previousCategoryLabel: null,
     status: null,
     fieldSize: null,
-    gapMedianPct: null,
     value: null,
   };
 }
@@ -150,7 +173,10 @@ interface BuiltChartData {
   nonFinisherRows: ChartRow[];
 }
 
-function buildChartData(points: RaceHistoryPoint[]): BuiltChartData {
+function buildChartData(
+  points: RaceHistoryPoint[],
+  config: HistoryMetricConfig,
+): BuiltChartData {
   const sorted = [...points].sort((a, b) =>
     a.event_date.localeCompare(b.event_date),
   );
@@ -162,7 +188,7 @@ function buildChartData(points: RaceHistoryPoint[]): BuiltChartData {
 
   let prev: ChartRow | null = null;
   for (const p of sorted) {
-    const row = toRow(p);
+    const row = toRow(p, config);
 
     if (prev) {
       if (row.categoryChanged) {
@@ -197,18 +223,30 @@ function buildChartData(points: RaceHistoryPoint[]): BuiltChartData {
  *
  * Se calcula un dominio a partir SOLO de los valores reales (finalistas con
  * dato), con un margen del 15 %; los no-finalistas se plotean en el borde
- * inferior de ESE dominio — una franja separada, nunca en 0. El dominio
- * siempre incluye 0 (si no, la línea de mediana quedaría fuera de vista
- * para un atleta siempre por encima/debajo de ella).
+ * inferior de ESE dominio — una franja separada, nunca en 0. Para las
+ * brechas firmadas (con línea de referencia en 0) el dominio siempre incluye
+ * 0 (si no, la línea de referencia quedaría fuera de vista para un atleta
+ * siempre por encima/debajo de ella). Percentil usa un dominio fijo 0–100 y
+ * posición un eje de enteros ≥ 1.
  */
-function buildYDomain(realValues: number[]): [number, number] {
-  const values = [...realValues, 0];
-  if (values.length === 0) return [-1, 1];
+function buildYDomain(
+  realValues: number[],
+  config: HistoryMetricConfig,
+): [number, number] {
+  if (config.fixedDomain) return config.fixedDomain;
+
+  const values =
+    config.referenceLabel !== null ? [...realValues, 0] : [...realValues];
+  if (values.length === 0) return config.integerAxis ? [1, 5] : [-1, 1];
 
   const min = Math.min(...values);
   const max = Math.max(...values);
   const span = max - min;
   const pad = span > 0 ? span * 0.15 : Math.max(Math.abs(min) * 0.15, 1);
+  if (config.integerAxis) {
+    // Posición: enteros, nunca por debajo de la 1.ª.
+    return [Math.max(1, Math.floor(min - pad)), Math.ceil(max + pad)];
+  }
   // Redondeo a 2 decimales: sin él, `min - pad` arrastra el ruido binario del
   // punto flotante (una brecha de +2.1 % daba marcas como "99999995 %" en el
   // eje, reportado por el coach en producción).
@@ -262,36 +300,116 @@ function buildXTicks(rows: ChartRow[], count: number = X_TICK_COUNT): number[] {
 // Dots
 // ---------------------------------------------------------------------------
 
-function renderDot(props: DotItemDotProps) {
-  const { cx, cy, index, payload } = props;
-  const row = payload as ChartRow;
-  if (cx === undefined || cy === undefined || row?.value == null) return null;
+/** Radio del área de toque de cada punto: 24 px → 48 × 48 px efectivos
+ * (FR-063), aunque la marca visible sea de 4–5 px. */
+const DOT_HIT_RADIUS = 24;
+
+/**
+ * Punto enlazado a su competencia (feature 045, FR-017 / US1-AC4). Es un
+ * `<a>` SVG de react-router (foco y clic nativos) con un círculo transparente
+ * de 48 px como área de toque y un aro visible al recibir foco de teclado.
+ *
+ * Enter se maneja de forma explícita (con `preventDefault`, para no navegar
+ * dos veces): la activación por teclado de un `<a>` dentro de un `<svg>` no
+ * es uniforme entre navegadores y no se puede confiar en ella.
+ */
+function DotLink({
+  href,
+  label,
+  cx,
+  cy,
+  children,
+}: {
+  href: string;
+  label: string;
+  cx: number;
+  cy: number;
+  children: ReactNode;
+}) {
+  const navigate = useNavigate();
   return (
-    <circle
-      key={`history-dot-${index}`}
-      cx={cx}
-      cy={cy}
-      r={4}
-      fill="var(--color-primary)"
-    />
+    <Link
+      to={href}
+      aria-label={label}
+      className="group cursor-pointer outline-none"
+      data-testid="history-chart-dot-link"
+      onKeyDown={(event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        navigate(href);
+      }}
+    >
+      <circle
+        cx={cx}
+        cy={cy}
+        r={DOT_HIT_RADIUS}
+        fill="transparent"
+        strokeWidth={2}
+        className="stroke-transparent group-focus-visible:stroke-primary"
+      />
+      {children}
+    </Link>
   );
 }
 
-function renderHollowDot(props: DotItemDotProps) {
-  const { cx, cy, index } = props;
-  if (cx === undefined || cy === undefined) return null;
-  return (
-    <circle
-      key={`history-hollow-dot-${index}`}
-      cx={cx}
-      cy={cy}
-      r={5}
-      fill="var(--color-surface)"
-      stroke="var(--color-primary)"
-      strokeWidth={2}
-      data-testid="history-chart-non-finisher-marker"
-    />
-  );
+function dotLabel(row: ChartRow): string {
+  return `Ver competencia: ${row.label}`;
+}
+
+function makeRenderDot(audience: HistoryAudience) {
+  return function renderDot(props: DotItemDotProps) {
+    const { cx, cy, index, payload } = props;
+    const row = payload as ChartRow;
+    if (cx === undefined || cy === undefined || row?.value == null) return null;
+    const mark = <circle cx={cx} cy={cy} r={4} fill="var(--color-primary)" />;
+    if (row.eventId == null) {
+      return <g key={`history-dot-${index}`}>{mark}</g>;
+    }
+    return (
+      <DotLink
+        key={`history-dot-${index}`}
+        href={raceEventHref(audience, row.eventId)}
+        label={dotLabel(row)}
+        cx={cx}
+        cy={cy}
+      >
+        {mark}
+      </DotLink>
+    );
+  };
+}
+
+function makeRenderHollowDot(audience: HistoryAudience) {
+  return function renderHollowDot(props: DotItemDotProps) {
+    const { cx, cy, index, payload } = props;
+    const row = payload as ChartRow;
+    if (cx === undefined || cy === undefined) return null;
+    const mark = (
+      <circle
+        cx={cx}
+        cy={cy}
+        r={5}
+        fill="var(--color-surface)"
+        stroke="var(--color-primary)"
+        strokeWidth={2}
+        data-testid="history-chart-non-finisher-marker"
+      />
+    );
+    if (row?.eventId == null) {
+      return <g key={`history-hollow-dot-${index}`}>{mark}</g>;
+    }
+    return (
+      <DotLink
+        key={`history-hollow-dot-${index}`}
+        href={raceEventHref(audience, row.eventId)}
+        label={dotLabel(row)}
+        cx={cx}
+        cy={cy}
+      >
+        {mark}
+      </DotLink>
+    );
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -303,8 +421,10 @@ interface TooltipLikeProps {
   payload?: Array<{ payload?: unknown }>;
 }
 
-function HistoryTooltip(props: TooltipLikeProps) {
-  const { active, payload } = props;
+function HistoryTooltip(
+  props: TooltipLikeProps & { config: HistoryMetricConfig },
+) {
+  const { active, payload, config } = props;
   if (!active || !payload || payload.length === 0) return null;
 
   // Dedupe por event_id — un mismo punto puede aparecer en más de una
@@ -338,7 +458,7 @@ function HistoryTooltip(props: TooltipLikeProps) {
         </p>
       )}
       {!isNonFinisher && (
-        <p className="mt-1 text-charcoal">{formatGapPct(row.gapMedianPct)}</p>
+        <p className="mt-1 text-charcoal">{config.format(row.value)}</p>
       )}
       <p className="text-mid-gray">Parrilla: {formatFieldSize(row.fieldSize)}</p>
     </div>
@@ -349,9 +469,18 @@ function HistoryTooltip(props: TooltipLikeProps) {
 // Component
 // ---------------------------------------------------------------------------
 
-export function HistoryChart({ points, className }: HistoryChartProps) {
+export function HistoryChart({
+  points,
+  metric = DEFAULT_HISTORY_METRIC,
+  audience = "coach",
+  className,
+}: HistoryChartProps) {
+  // La familia nunca grafica líder/podio, aunque se le pida (ver docstring).
+  const effectiveMetric = resolveHistoryMetric(metric, audience);
+  const config = HISTORY_METRICS[effectiveMetric];
+
   const { rows, dashedPairs, categoryChangeMarkers, nonFinisherRows } =
-    useMemo(() => buildChartData(points), [points]);
+    useMemo(() => buildChartData(points, config), [points, config]);
 
   // MAJOR 1 (T077 ux-review.md) — el dominio se calcula SOLO con los
   // valores reales (finalistas con dato); los no-finalistas se plotean en
@@ -360,8 +489,8 @@ export function HistoryChart({ points, className }: HistoryChartProps) {
     const realValues = rows
       .filter((r) => !r.isPhantom && r.value != null)
       .map((r) => r.value as number);
-    return buildYDomain(realValues);
-  }, [rows]);
+    return buildYDomain(realValues, config);
+  }, [rows, config]);
 
   const nonFinisherPlotRows = useMemo(
     () => nonFinisherRows.map((r) => ({ ...r, value: yDomain[0] })),
@@ -372,10 +501,21 @@ export function HistoryChart({ points, className }: HistoryChartProps) {
   // marcar mitad de la serie con datos multi-temporada).
   const xTicks = useMemo(() => buildXTicks(rows), [rows]);
 
+  // Los puntos enlazan a la competencia según el rol (FR-017).
+  const renderDot = useMemo(() => makeRenderDot(audience), [audience]);
+  const renderHollowDot = useMemo(
+    () => makeRenderHollowDot(audience),
+    [audience],
+  );
+
   return (
-    <div className={cn("space-y-3", className)} data-testid="history-chart">
+    <div
+      className={cn("space-y-3", className)}
+      data-testid="history-chart"
+      data-metric={effectiveMetric}
+    >
       <p className="text-[11px] text-mid-gray" data-testid="history-chart-axis-hint">
-        Más rápido que la mediana ↑ · Más lento ↓
+        {config.axisHint}
       </p>
 
       <ResponsiveContainer width="100%" height={280}>
@@ -393,29 +533,35 @@ export function HistoryChart({ points, className }: HistoryChartProps) {
             )}
           />
           <YAxis
-            reversed
+            reversed={config.lowerIsBetter}
             domain={yDomain}
+            allowDecimals={!config.integerAxis}
             tick={{ fontSize: 12, fill: "var(--color-mid-gray)" }}
-            tickFormatter={(v: number) => `${Math.round(v * 10) / 10} %`}
+            tickFormatter={config.formatTick}
             width={70}
           />
           <Tooltip
             content={(tooltipProps: unknown) => (
-              <HistoryTooltip {...(tooltipProps as TooltipLikeProps)} />
+              <HistoryTooltip
+                {...(tooltipProps as TooltipLikeProps)}
+                config={config}
+              />
             )}
           />
 
-          <ReferenceLine
-            y={0}
-            stroke="var(--color-mid-gray)"
-            strokeDasharray="4 4"
-            label={{
-              value: "Mediana de su categoría",
-              position: "insideTopLeft",
-              fontSize: 11,
-              fill: "var(--color-mid-gray)",
-            }}
-          />
+          {config.referenceLabel !== null && (
+            <ReferenceLine
+              y={0}
+              stroke="var(--color-mid-gray)"
+              strokeDasharray="4 4"
+              label={{
+                value: config.referenceLabel,
+                position: "insideTopLeft",
+                fontSize: 11,
+                fill: "var(--color-mid-gray)",
+              }}
+            />
+          )}
 
           {categoryChangeMarkers.map((m) => (
             <ReferenceLine
@@ -439,7 +585,9 @@ export function HistoryChart({ points, className }: HistoryChartProps) {
             stroke="var(--color-primary)"
             strokeWidth={2}
             dot={renderDot}
-            activeDot={{ r: 6 }}
+            // `pointerEvents: "none"`: el aro del punto activo se dibuja ENCIMA del
+            // enlace mientras hay hover; sin esto se comería el clic.
+            activeDot={{ r: 6, pointerEvents: "none" }}
             connectNulls={false}
             isAnimationActive={false}
             legendType="none"

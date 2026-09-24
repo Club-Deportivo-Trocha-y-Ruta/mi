@@ -24,6 +24,12 @@ export function useCreateAnthropometry(athleteId: number) {
       void queryClient.invalidateQueries({
         queryKey: ["athlete", athleteId],
       });
+      // Feature 046 (T030): el resumen de crecimiento incluye el bloque de
+      // composición corporal (banda, Σ4/Σ6, próxima fecha) — una nueva
+      // medición antropométrica también puede cambiar `next_due_date`.
+      void queryClient.invalidateQueries({
+        queryKey: ["growth-summary", athleteId],
+      });
       // Caché de explicación PHV se identifica por la última medición:
       // una nueva medición invalida la caché para que el coach vea el
       // botón "Generar" otra vez.

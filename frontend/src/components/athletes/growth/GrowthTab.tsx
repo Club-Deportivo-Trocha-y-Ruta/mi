@@ -13,8 +13,8 @@
  *
  *   GrowthAlerts → GrowthStatusRow → NextMeasurementCard → TrainingReadiness
  *   → GrowthCurveSection → MaturationTimeline → MorphologyCard →
- *   PHVExplanationCard → LatestAnalysisLine → AnthropometryHistory
- *   (compacto) → ResearchReferences.
+ *   BodyCompositionCard (T040, feature 046) → PHVExplanationCard →
+ *   LatestAnalysisLine → AnthropometryHistory (compacto) → ResearchReferences.
  *
  * `NutritionalClassification` deja de usarse en modo coach: sus dos
  * clasificaciones (talla/IMC) ahora las muestra `GrowthStatusRow` con datos
@@ -57,11 +57,15 @@
  * `contracts/growth-tab-ui.md` (filas "Status row / next measurement" y
  * "Family cards"). Un error en `growth-summary` no tumba el resto del tab.
  */
+import { lazy, Suspense, useState } from "react";
 import { TrendingUp } from "lucide-react";
 import type { UseQueryResult } from "@tanstack/react-query";
 
 import { PHVExplanationCard } from "@/components/ai/PHVExplanationCard";
 import { AnthropometryHistory } from "@/components/athletes/AnthropometryHistory";
+import { BodyCompositionDetailDialog } from "@/components/athletes/body-composition/BodyCompositionDetailDialog";
+import { FamilyBodyCompositionCard } from "@/components/athletes/body-composition/FamilyBodyCompositionCard";
+import { FamilySkinfoldNotice } from "@/components/athletes/body-composition/FamilySkinfoldNotice";
 import { FamilyBandCards } from "@/components/athletes/growth/FamilyBandCards";
 import { FamilyStageCard } from "@/components/athletes/growth/FamilyStageCard";
 import { GrowthAlerts } from "@/components/athletes/growth/GrowthAlerts";
@@ -79,10 +83,21 @@ import { StatCard } from "@/components/shared/StatCard";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAnthropometry } from "@/hooks/athletes/useAnthropometry";
+import { useBodyComposition } from "@/hooks/athletes/useBodyComposition";
 import { useGrowthSummary } from "@/hooks/athletes/useGrowthSummary";
 import type { AnthropometricRecord } from "@/types/anthropometry.types";
 import type { AthleteDetailOut } from "@/types/athlete.types";
 import type { GrowthSummary } from "@/types/growth.types";
+
+// Feature 046 (T040, US2): `BodyCompositionCard` es coach-only y trae su
+// propio `Sparkline` por sitio — mismo patrón lazy-load que `GrowthCurveSection`
+// (research.md R-08) para no sumar peso al chunk de entrada del tab cuando el
+// atleta aún no tiene pliegues registrados.
+const BodyCompositionCard = lazy(() =>
+  import("@/components/athletes/body-composition/BodyCompositionCard").then((m) => ({
+    default: m.BodyCompositionCard,
+  })),
+);
 
 export interface GrowthTabProps {
   athlete: AthleteDetailOut;
@@ -194,6 +209,8 @@ function CoachGrowthTab({
   onRecordMeasurement,
 }: ModeProps) {
   const summaryQuery = useGrowthSummary(athlete.id);
+  const bodyCompositionQuery = useBodyComposition(athlete.id);
+  const [isBodyCompositionDetailOpen, setIsBodyCompositionDetailOpen] = useState(false);
 
   return (
     <div className="space-y-5">
@@ -220,6 +237,18 @@ function CoachGrowthTab({
       />
 
       <MorphologyCard latestRecord={latestRecord} />
+
+      <Suspense fallback={null}>
+        <BodyCompositionCard
+          query={bodyCompositionQuery}
+          onViewDetail={() => setIsBodyCompositionDetailOpen(true)}
+        />
+      </Suspense>
+      <BodyCompositionDetailDialog
+        open={isBodyCompositionDetailOpen}
+        onOpenChange={setIsBodyCompositionDetailOpen}
+        data={bodyCompositionQuery.data}
+      />
 
       <PHVExplanationCard
         athleteId={athlete.id}
@@ -274,11 +303,12 @@ function FamilyCardsSkeleton() {
 interface FamilyCardsSectionProps {
   summaryQuery: UseQueryResult<GrowthSummary, Error>;
   sex: AthleteDetailOut["sex"];
+  athleteAgeDecimal: number | null;
 }
 
 /** `FamilyStageCard` → `FamilyBandCards`, gobernadas por `useGrowthSummary`
  *  (fila "Family cards" de la tabla de estados de `contracts/growth-tab-ui.md`). */
-function FamilyCardsSection({ summaryQuery, sex }: FamilyCardsSectionProps) {
+function FamilyCardsSection({ summaryQuery, sex, athleteAgeDecimal }: FamilyCardsSectionProps) {
   if (summaryQuery.isLoading) {
     return <FamilyCardsSkeleton />;
   }
@@ -307,7 +337,9 @@ function FamilyCardsSection({ summaryQuery, sex }: FamilyCardsSectionProps) {
         latestEvaluationDate={summary.latest_evaluation_date}
         sex={sex}
       />
-      <FamilyBandCards latest={summary.latest} />
+            <FamilyBandCards latest={summary.latest} />
+      <FamilyBodyCompositionCard summary={summary.body_composition ?? null} />
+      <FamilySkinfoldNotice athleteAgeDecimal={athleteAgeDecimal} />
     </>
   );
 }
@@ -324,7 +356,7 @@ function ParentGrowthTab({ athlete, records, anthropometryQuery }: ModeProps) {
 
   return (
     <div className="space-y-5">
-      <FamilyCardsSection summaryQuery={summaryQuery} sex={athlete.sex} />
+      <FamilyCardsSection summaryQuery={summaryQuery} sex={athlete.sex} athleteAgeDecimal={athlete.age_decimal} />
 
       <div className="rounded-card bg-surface-raised p-5 shadow-card ring-1 ring-hairline">
         <GrowthCurveSection athlete={athlete} records={records} mode="parent" />

@@ -663,7 +663,7 @@ describe("DashboardPage — accesibilidad WCAG 2.1 AA en los 5 estados de la pá
 
     // Increment B completamente no disponible (fallo genérico, NO cold
     // start): WeeklyLoadMeter y las filas "Consentimientos pendientes" /
-    // "Insights IA desactualizados" deben omitirse en silencio (FR-004/005),
+    // "Análisis desactualizados" deben omitirse en silencio (FR-004/005),
     // nunca con tono de error.
     mockUseCoachSummary.mockReturnValue({
       isLoading: false,
@@ -686,7 +686,7 @@ describe("DashboardPage — accesibilidad WCAG 2.1 AA en los 5 estados de la pá
     await screen.findByText("Resultados por importar");
     expect(screen.queryByText("Carga semanal")).not.toBeInTheDocument();
     expect(screen.queryByText("Consentimientos pendientes")).not.toBeInTheDocument();
-    expect(screen.queryByText("Insights IA desactualizados")).not.toBeInTheDocument();
+    expect(screen.queryByText("Análisis desactualizados")).not.toBeInTheDocument();
     expect(screen.queryAllByRole("alert")).toHaveLength(0);
 
     const results = await axe(container);

@@ -564,6 +564,306 @@ async def test_get_insight_detail_parent_never_sees_podium_gap(
     assert "0:03:12" not in resp.text
 
 
+# Cifras de prueba del snapshot (auditoría T065). Son las claves reales que
+# persiste ``persist_insight`` con la brecha a la ganadora / al podio.
+_SNAPSHOT_WITH_LEADER_GAPS = {
+    "aggregate": {"is_first_in_season": True, "season_validas_count": 1},
+    "progression": [{"gap_to_winner_pct": 4.21, "gap_to_winner_ms": 91_234}],
+    "podium_gap": [{"gap_pct": 4.21, "gap_to_p3_ms": 30_987}],
+    "podium_context": {"podium_time_ms": 3_601_777},
+    "season_comparative": [{"gap_to_winner_ms": 91_234, "gap_pct": 4.21}],
+    "category_stats": {"time_min_ms": 3_510_543, "time_mean_ms": 3_700_001},
+    "progression_assessment": "improving",
+}
+_LEADER_GAP_MARKERS = ("4.21", "91234", "30987", "3601777", "3510543", "3700001")
+
+
+@pytest.mark.asyncio
+async def test_get_insight_detail_parent_snapshot_has_no_leader_or_podium_gap(
+    seeded_factory, client_factory
+):
+    """Auditoría T065 (feature 045): el ``metrics_snapshot`` que persiste el
+    pipeline trae ``gap_to_winner_*``, ``gap_pct``, ``gap_to_p3_ms`` y los
+    tiempos del pelotón. A un padre solo le llega ``progression_assessment``
+    (lo único que lee el cliente de familia); el coach conserva el snapshot
+    completo. Sin esto la familia podía leer la brecha a la ganadora en el
+    payload aunque la UI no la dibujara."""
+    async with seeded_factory() as s:
+        insight = await create_insight(
+            s,
+            athlete_id=144,
+            valida_num=3,
+            coach_approved=True,
+            is_active=1,
+            metrics_snapshot_json=_SNAPSHOT_WITH_LEADER_GAPS,
+        )
+        await s.commit()
+        insight_id = insight.id
+
+    coach = _make_user(10, UserRole.coach, club_id=1)
+    async with client_factory(user=coach) as ac:
+        coach_resp = await ac.get(
+            f"/api/athletes/144/race-analysis/insights/{insight_id}",
+            headers={"Authorization": "Bearer fake"},
+        )
+    assert coach_resp.status_code == 200
+    coach_snapshot = coach_resp.json()["metrics_snapshot"]
+    assert coach_snapshot["progression"][0]["gap_to_winner_pct"] == 4.21
+    assert coach_snapshot["podium_gap"][0]["gap_to_p3_ms"] == 30_987
+
+    parent = _make_user(20, UserRole.parent, club_id=None)
+    async with client_factory(user=parent) as ac:
+        parent_resp = await ac.get(
+            f"/api/athletes/144/race-analysis/insights/{insight_id}",
+            headers={"Authorization": "Bearer fake"},
+        )
+    assert parent_resp.status_code == 200
+    body = parent_resp.json()
+    assert body["metrics_snapshot"] == {"progression_assessment": "improving"}
+    for marker in _LEADER_GAP_MARKERS:
+        assert marker not in parent_resp.text, marker
+    # Lo derivado del snapshot que SÍ es de familia no cambia.
+    assert body["is_first_in_season"] is True
+    assert body["season_validas_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_get_insight_detail_parent_typed_snapshot_keeps_only_allowed_keys(
+    seeded_factory, client_factory
+):
+    """Un snapshot que sí valida como ``MetricsSnapshotV1`` (con
+    ``podium_gap_ms`` y ``category_time_min_ms``) también se proyecta: la
+    familia no recibe la clave ni como ``null`` ni con valor."""
+    typed = {
+        "schema_version": 1,
+        "event_id": 1,
+        "season": 2026,
+        "valida_num": 3,
+        "event_date": "2026-05-17",
+        "status": "finished",
+        "race_time_ms": 3_600_000,
+        "position": 7,
+        "podium_gap_ms": 91_234,
+        "category_id": 1,
+        "category_code": "PJ",
+        "category_size": 12,
+        "category_time_min_ms": 3_510_543,
+        "progression_assessment": "stable",
+    }
+    async with seeded_factory() as s:
+        insight = await create_insight(
+            s,
+            athlete_id=144,
+            valida_num=3,
+            coach_approved=True,
+            is_active=1,
+            metrics_snapshot_json=typed,
+        )
+        await s.commit()
+        insight_id = insight.id
+
+    parent = _make_user(20, UserRole.parent, club_id=None)
+    async with client_factory(user=parent) as ac:
+        resp = await ac.get(
+            f"/api/athletes/144/race-analysis/insights/{insight_id}",
+            headers={"Authorization": "Bearer fake"},
+        )
+    assert resp.status_code == 200
+    assert resp.json()["metrics_snapshot"] == {"progression_assessment": "stable"}
+    for marker in ("91234", "3510543", "podium_gap_ms", "category_time_min_ms"):
+        assert marker not in resp.text, marker
+
+
+# Insight v3 de prueba (feature 045, decisión del dueño 2026-09-23): el
+# ``summary_text`` de una fila v3 es el markdown que se *genera* desde
+# ``structured_json`` e incluye «gap a P3 …» y esperado-vs-real, justo lo que
+# ``_structured_for_response`` le quita a la familia. Lo mismo vale para
+# ``recommendations`` (copia de ``actions``) y ``principles_cited`` de nivel
+# superior. La tarjeta de familia lee solo ``structured`` + ``headline``.
+_V3_STRUCTURED = {
+    "schema_version": "v3",
+    "headline": "Titular v3 de prueba",
+    "field_reading": {
+        "percentile": 58.3,
+        "expected_position": 5,
+        "actual_position": 7,
+        "delta_vs_expected": -2,
+        "gap_to_p3_hhmmss": "0:03:12",
+        "series_label": "Válida 3 · Copa Valle",
+        "summary": "Lectura de prueba.",
+    },
+    "trend": "stable",
+    "observations": [
+        {
+            "claim": "Observación de prueba.",
+            "evidence": ["percentil 58"],
+            "domain": "race",
+            "confidence": "medium",
+        }
+    ],
+    "actions": [
+        {
+            "text": "Acción v3 de prueba.",
+            "category": "technique",
+            "priority": "med",
+            "horizon": "next_week",
+        }
+    ],
+    "watch_signals": [],
+    "coach_question": "¿Cómo vamos con la carga?",
+    "data_gaps": [],
+    "principles_cited": ["3. Principio de prueba"],
+}
+_V3_SUMMARY_TEXT = "## Lectura\nSummary v3 · gap a P3 0:03:12 · esperado 5 vs real 7"
+_V3_RECOMMENDATIONS = [{"text": "Recomendación v3 de prueba", "category": "technique"}]
+_V3_PRINCIPLES = [{"title": "Principio v3 de nivel superior"}]
+_V3_FREE_TEXT_MARKERS = (
+    "gap a P3 0:03:12",
+    "Summary v3",
+    "Recomendación v3 de prueba",
+    "Principio v3 de nivel superior",
+)
+
+
+async def _seed_v3_insight(seeded_factory, *, valida_num: int = 3) -> int:
+    async with seeded_factory() as s:
+        insight = await create_insight(
+            s,
+            athlete_id=144,
+            valida_num=valida_num,
+            coach_approved=True,
+            is_active=1,
+            prompt_version="race_analyst_v3",
+            summary_text=_V3_SUMMARY_TEXT,
+            recommendations_json=_V3_RECOMMENDATIONS,
+            principles_cited_json=_V3_PRINCIPLES,
+            structured_json=_V3_STRUCTURED,
+        )
+        await s.commit()
+        return insight.id
+
+
+@pytest.mark.asyncio
+async def test_get_insight_detail_v3_parent_omits_free_text_coach_keeps_it(
+    seeded_factory, client_factory
+):
+    """Decisión del dueño 2026-09-23 (T065 «known decision 1»): para una fila
+    v3 el padre NO recibe ``summary_text``, ``recommendations`` ni
+    ``principles_cited`` de nivel superior — las claves se omiten, no van en
+    ``null``. Sí recibe ``structured`` (ya redactado) con su
+    ``principles_cited`` y el ``headline``, que es lo que dibuja
+    ``InsightV3Card mode="parent"``. Coach/admin ven todo."""
+    insight_id = await _seed_v3_insight(seeded_factory)
+
+    coach = _make_user(10, UserRole.coach, club_id=1)
+    async with client_factory(user=coach) as ac:
+        coach_resp = await ac.get(
+            f"/api/athletes/144/race-analysis/insights/{insight_id}",
+            headers={"Authorization": "Bearer fake"},
+        )
+    assert coach_resp.status_code == 200
+    coach_body = coach_resp.json()
+    assert coach_body["summary_text"] == _V3_SUMMARY_TEXT
+    assert coach_body["recommendations"] == _V3_RECOMMENDATIONS
+    assert coach_body["principles_cited"] == _V3_PRINCIPLES
+
+    parent = _make_user(20, UserRole.parent, club_id=None)
+    async with client_factory(user=parent) as ac:
+        parent_resp = await ac.get(
+            f"/api/athletes/144/race-analysis/insights/{insight_id}",
+            headers={"Authorization": "Bearer fake"},
+        )
+    assert parent_resp.status_code == 200
+    body = parent_resp.json()
+    for key in ("summary_text", "recommendations", "principles_cited"):
+        assert key not in body, key
+    for marker in _V3_FREE_TEXT_MARKERS:
+        assert marker not in parent_resp.text, marker
+    # Lo que la tarjeta de familia sí lee sigue llegando.
+    assert body["headline"] == "Titular v3 de prueba"
+    assert body["structured"]["headline"] == "Titular v3 de prueba"
+    assert body["structured"]["principles_cited"] == ["3. Principio de prueba"]
+    assert body["structured"]["actions"][0]["text"] == "Acción v3 de prueba."
+    assert "gap_to_p3_hhmmss" not in body["structured"]["field_reading"]
+
+
+@pytest.mark.asyncio
+async def test_get_insight_detail_pre_v3_parent_keeps_free_text(
+    seeded_factory, client_factory
+):
+    """Alcance de la decisión: solo las filas v3 (con ``structured_json``).
+    Un insight v1/v2 no tiene tarjeta estructurada; la UI de familia lo
+    dibuja desde ``summary_text``/``recommendations``, así que esas claves se
+    conservan."""
+    async with seeded_factory() as s:
+        insight = await create_insight(
+            s,
+            athlete_id=144,
+            valida_num=4,
+            coach_approved=True,
+            is_active=1,
+            prompt_version="race_analyst_v2",
+            summary_text="Resumen v2 de prueba",
+            recommendations_json=[{"text": "Recomendación v2 de prueba"}],
+        )
+        await s.commit()
+        insight_id = insight.id
+
+    parent = _make_user(20, UserRole.parent, club_id=None)
+    async with client_factory(user=parent) as ac:
+        resp = await ac.get(
+            f"/api/athletes/144/race-analysis/insights/{insight_id}",
+            headers={"Authorization": "Bearer fake"},
+        )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["summary_text"] == "Resumen v2 de prueba"
+    assert body["recommendations"] == [{"text": "Recomendación v2 de prueba"}]
+    assert "principles_cited" in body
+
+
+@pytest.mark.asyncio
+async def test_get_insights_list_v3_parent_omits_summary_text_coach_keeps_it(
+    seeded_factory, client_factory
+):
+    """Listado: la fila v3 va sin ``summary_text`` para el padre (la lista
+    trae ``headline``); la fila pre-v3 lo conserva; el coach lo ve en ambas."""
+    v3_id = await _seed_v3_insight(seeded_factory)
+
+    coach = _make_user(10, UserRole.coach, club_id=1)
+    async with client_factory(user=coach) as ac:
+        coach_resp = await ac.get(
+            "/api/athletes/144/race-analysis/insights",
+            headers={"Authorization": "Bearer fake"},
+        )
+    assert coach_resp.status_code == 200
+    coach_items = {i["id"]: i for i in coach_resp.json()["items"]}
+    assert coach_items[v3_id]["summary_text"] == _V3_SUMMARY_TEXT
+    assert all("summary_text" in item for item in coach_items.values())
+
+    parent = _make_user(20, UserRole.parent, club_id=None)
+    async with client_factory(user=parent) as ac:
+        parent_resp = await ac.get(
+            "/api/athletes/144/race-analysis/insights",
+            headers={"Authorization": "Bearer fake"},
+        )
+    assert parent_resp.status_code == 200
+    body = parent_resp.json()
+    parent_items = {i["id"]: i for i in body["items"]}
+    assert set(parent_items) == set(coach_items)
+    assert "summary_text" not in parent_items[v3_id]
+    assert parent_items[v3_id]["headline"] == "Titular v3 de prueba"
+    assert "Summary v3" not in parent_resp.text
+    assert "gap a P3" not in parent_resp.text
+    # La fila pre-v3 (sembrada por el fixture) conserva su texto.
+    pre_v3 = [i for i_id, i in parent_items.items() if i_id != v3_id]
+    assert pre_v3 and all(i["summary_text"] for i in pre_v3)
+    # El envoltorio de paginación no cambia.
+    assert body["total"] == len(parent_items)
+    assert body["limit"] == 20
+    assert body["offset"] == 0
+
+
 @pytest.mark.asyncio
 async def test_get_insight_detail_as_parent_other_child_returns_403(client_factory):
     """Wave 5 (feature 036, US7 acceptance scenario 3): la única de las 8
@@ -1689,8 +1989,11 @@ async def test_get_distribution_coach_receives_display_name(client_factory):
 
 
 @pytest.mark.asyncio
-async def test_get_distribution_parent_receives_display_name_none(client_factory):
-    """Parent recibe display_name=None (pseudónimo únicamente)."""
+async def test_get_distribution_parent_own_child_returns_403(client_factory):
+    """Feature 045 (decisión del dueño 2026-09-23): ``/distribution`` es solo
+    de coach/admin. Incluso el padre del propio atleta recibe 403: el cuerpo
+    lista el tiempo de cada corredor de la categoría, de donde se deriva la
+    brecha a la ganadora y al podio (hallazgo F-2 de la auditoría T065)."""
     parent = _make_user(20, UserRole.parent, club_id=None)
     async with client_factory(user=parent) as ac:
         resp = await ac.get(
@@ -1698,12 +2001,9 @@ async def test_get_distribution_parent_receives_display_name_none(client_factory
             params={"season": 2026, "event_id": 1},
             headers={"Authorization": "Bearer fake"},
         )
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["sample_size"] == 5
-    for pt in body["points"]:
-        assert pt["pseudonym"].startswith("C")
-        assert pt["display_name"] is None
+    assert resp.status_code == 403
+    assert "time_ms" not in resp.text
+    assert "points" not in resp.json()
 
 
 @pytest.mark.asyncio

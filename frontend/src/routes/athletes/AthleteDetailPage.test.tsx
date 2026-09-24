@@ -1,7 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
+import {
+  MemoryRouter,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+  useSearchParams,
+} from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect } from "react";
 
@@ -106,57 +113,60 @@ vi.mock("@/components/training/AthleteNewslettersTabPanel", () => ({
   ),
 }));
 
-// T010 (feature 036, US3) — espía de montajes de AthleteAIAnalysisTab.
-// `vi.hoisted` porque el factory de `vi.mock` se hoistea por encima de
-// cualquier `const` normal del archivo. El efecto con deps=[] sólo
-// corre una vez POR INSTANCIA de React — si AthleteDetailPage no
-// remonta el tab al cambiar de atleta (bug pre-T010), la instancia
-// sigue viva y el efecto no vuelve a dispararse con el id nuevo.
-const { mockAiTabMounts } = vi.hoisted(() => ({
-  mockAiTabMounts: [] as number[],
+// Feature 045 (T034): la pestaña única «Carreras» (`CarrerasTab`) reemplaza a
+// `AthleteAIAnalysisTab` y a `HistoryProgressionCard`. Su comportamiento
+// interno (vistas, chunks lazy, peticiones) está cubierto en
+// `components/athletes/races/__tests__/CarrerasTab.test.tsx` (T033) — acá
+// solo se verifica el WIRING de la página: la clave de pestaña, los alias de
+// URL, la audiencia y que `view`/`insight` lleguen intactos a la pestaña.
+//
+// Espía de montajes (T010, feature 036, US3): `vi.hoisted` porque el factory
+// de `vi.mock` se hoistea por encima de cualquier `const` normal del archivo.
+// El efecto con deps=[] sólo corre una vez POR INSTANCIA de React — si
+// AthleteDetailPage no remonta la pestaña al cambiar de atleta (bug
+// pre-T010), la instancia sigue viva y el efecto no vuelve a dispararse con
+// el id nuevo.
+const { mockCarrerasMounts } = vi.hoisted(() => ({
+  mockCarrerasMounts: [] as number[],
 }));
 
-vi.mock("@/components/athletes/ai/AthleteAIAnalysisTab", () => {
-  // `MountSpy` se define UNA sola vez (cuerpo del factory, no del
-  // render) para que su identidad de función sea estable entre
-  // renders — si se redefiniera dentro de AthleteAIAnalysisTab, React
-  // la trataría como un tipo nuevo en cada render y el efecto de
-  // montaje dispararía siempre, sin importar si hubo remount real.
+vi.mock("@/components/athletes/races/CarrerasTab", () => {
+  // `MountSpy` se define UNA sola vez (cuerpo del factory, no del render)
+  // para que su identidad de función sea estable entre renders — si se
+  // redefiniera dentro de la sonda, React la trataría como un tipo nuevo en
+  // cada render y el efecto de montaje dispararía siempre, sin importar si
+  // hubo remount real.
   function MountSpy({ athleteId }: { athleteId: number }) {
     useEffect(() => {
-      mockAiTabMounts.push(athleteId);
+      mockCarrerasMounts.push(athleteId);
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
     return null;
   }
-  return {
-    AthleteAIAnalysisTab: ({ athlete }: { athlete: { id: number } }) => (
-      <div data-testid="mock-ai-analysis-tab">
-        <MountSpy athleteId={athlete.id} />
-        ai-tab-{athlete.id}
-      </div>
-    ),
-  };
-});
-
-// T077 (feature 044, US6) — igual que AthleteAIAnalysisTab arriba: se
-// mockea porque su comportamiento interno ya está cubierto exhaustivamente
-// en `components/race/history/__tests__/HistoryProgressionCard.test.tsx`.
-// Este archivo solo verifica el WIRING del tab (botón, ?tab=races, oculto
-// para AthleteAIAnalysisTab en su lugar anterior).
-vi.mock("@/components/race/history/HistoryProgressionCard", () => ({
-  HistoryProgressionCard: ({
-    athleteId,
+  function CarrerasTabProbe({
+    athlete,
     audience,
   }: {
-    athleteId: number;
-    audience?: string;
-  }) => (
-    <div data-testid="mock-history-progression-card" data-audience={audience}>
-      history-progression-{athleteId}
-    </div>
-  ),
-}));
+    athlete: { id: number };
+    audience: string;
+  }) {
+    // Igual que la pestaña real: lee `view`/`insight` de la URL.
+    const [params] = useSearchParams();
+    return (
+      <div
+        data-testid="mock-carreras-tab"
+        data-audience={audience}
+        data-athlete-id={athlete.id}
+        data-view={params.get("view") ?? ""}
+        data-insight={params.get("insight") ?? ""}
+      >
+        <MountSpy athleteId={athlete.id} />
+        carreras-{athlete.id}
+      </div>
+    );
+  }
+  return { CarrerasTab: CarrerasTabProbe };
+});
 
 // ---------------------------------------------------------------------------
 // Imports de producción (después de mocks)
@@ -240,7 +250,18 @@ const recordB = makeRecord(2, { evaluation_date: "2026-01-15", standing_height_c
 // Helpers de render
 // ---------------------------------------------------------------------------
 
-function renderPage(athleteId = "1") {
+/** Expone `location.search` para verificar la sincronización con la URL. */
+function LocationProbe() {
+  const location = useLocation();
+  return <div data-testid="location-search">{location.search}</div>;
+}
+
+/** `?a=1&b=2` del probe → `URLSearchParams` (el orden de claves no importa). */
+function currentSearchParams(): URLSearchParams {
+  return new URLSearchParams(screen.getByTestId("location-search").textContent ?? "");
+}
+
+function renderPage(athleteId = "1", search = "") {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -248,8 +269,9 @@ function renderPage(athleteId = "1") {
     },
   });
   return render(
-    <MemoryRouter initialEntries={[`/athletes/${athleteId}`]}>
+    <MemoryRouter initialEntries={[`/athletes/${athleteId}${search}`]}>
       <QueryClientProvider client={queryClient}>
+        <LocationProbe />
         <Routes>
           <Route path="/athletes/:id" element={<AthleteDetailPage />} />
         </Routes>
@@ -281,6 +303,7 @@ async function openGrowthTab() {
 describe("AthleteDetailPage — refactor Opción C", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockCarrerasMounts.length = 0;
     // Default: API retorna atleta con datos y sin registros antropométricos
     vi.mocked(athletesApi.getAthlete).mockResolvedValue(mockAthlete);
     vi.mocked(athletesApi.getAnthropometry).mockResolvedValue([]);
@@ -603,65 +626,105 @@ describe("AthleteDetailPage — refactor Opción C", () => {
   });
 
   // -------------------------------------------------------------------------
-  // 7. Tab Carreras (progresión histórica, feature 044, T077)
+  // 7. Pestaña única «Carreras» (feature 045, US1, T034 / T041)
   // -------------------------------------------------------------------------
 
-  describe("Tab Carreras", () => {
+  describe("Pestaña Carreras (045)", () => {
     beforeEach(() => {
       vi.mocked(athletesApi.getAthlete).mockResolvedValue(mockAthlete);
       vi.mocked(athletesApi.getAnthropometry).mockResolvedValue([]);
     });
 
-    it("coach ve el tab Carreras en la barra de tabs", async () => {
+    it("hay UNA sola pestaña «Carreras» y ninguna «Insights IA» (FR-010)", async () => {
       renderPage();
       await screen.findByTestId("athlete-info-card");
-      expect(screen.getByTestId("athlete-tab-races")).toBeInTheDocument();
+      expect(screen.getAllByRole("button", { name: /^Carreras$/i })).toHaveLength(1);
+      expect(screen.getByTestId("athlete-tab-races")).toHaveTextContent(/^Carreras$/);
+      expect(screen.queryByRole("button", { name: /Insights IA/i })).not.toBeInTheDocument();
+      expect(screen.queryByTestId("athlete-tab-ai-analysis")).not.toBeInTheDocument();
     });
 
-    it("navegar al tab Carreras renderiza HistoryProgressionCard con audience=coach", async () => {
+    it("no monta CarrerasTab hasta que se abre la pestaña (lazy)", async () => {
+      renderPage();
+      await screen.findByTestId("athlete-info-card");
+      expect(screen.queryByTestId("mock-carreras-tab")).not.toBeInTheDocument();
+    });
+
+    it("navegar a Carreras monta CarrerasTab con audience=coach y pone ?tab=races", async () => {
       renderPage();
       await act(async () => {
         await userEvent.click(await screen.findByTestId("athlete-tab-races"));
       });
-      const card = await screen.findByTestId("mock-history-progression-card");
-      expect(card).toBeInTheDocument();
-      expect(card).toHaveAttribute("data-audience", "coach");
+      const tab = await screen.findByTestId("mock-carreras-tab");
+      expect(tab).toHaveAttribute("data-audience", "coach");
+      expect(tab).toHaveAttribute("data-athlete-id", "1");
+      expect(currentSearchParams().get("tab")).toBe("races");
+      // La página NO elige la vista: la abre la pestaña (por defecto Progresión).
+      expect(currentSearchParams().has("view")).toBe(false);
     });
 
-    it("?tab=races abre directo el tab Carreras (deep-link)", async () => {
-      const queryClient = new QueryClient({
-        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-      });
-      render(
-        <MemoryRouter initialEntries={["/athletes/1?tab=races"]}>
-          <QueryClientProvider client={queryClient}>
-            <Routes>
-              <Route path="/athletes/:id" element={<AthleteDetailPage />} />
-            </Routes>
-          </QueryClientProvider>
-        </MemoryRouter>,
-      );
-      expect(await screen.findByTestId("mock-history-progression-card")).toBeInTheDocument();
+    it("?tab=races abre directo Carreras (deep-link) y respeta view", async () => {
+      renderPage("1", "?tab=races&view=comparar");
+      const tab = await screen.findByTestId("mock-carreras-tab");
+      expect(tab).toHaveAttribute("data-view", "comparar");
+      expect(currentSearchParams().get("tab")).toBe("races");
+      expect(currentSearchParams().get("view")).toBe("comparar");
     });
 
-    it("el tab Insights IA ya NO mezcla la tarjeta de progresión histórica (T077 BLOCKER)", async () => {
-      renderPage();
+    it("alias: ?tab=ai_analysis → ?tab=races&view=analisis", async () => {
+      renderPage("1", "?tab=ai_analysis");
+      const tab = await screen.findByTestId("mock-carreras-tab");
+      expect(tab).toHaveAttribute("data-view", "analisis");
+      const params = currentSearchParams();
+      expect(params.get("tab")).toBe("races");
+      expect(params.get("view")).toBe("analisis");
+      expect(params.has("insight")).toBe(false);
+    });
+
+    it("alias: ?tab=ai_analysis&insight=7 conserva insight y expande ese análisis", async () => {
+      renderPage("1", "?tab=ai_analysis&insight=7");
+      const tab = await screen.findByTestId("mock-carreras-tab");
+      // La pestaña recibe la URL ya normalizada: view=analisis + insight=7.
+      expect(tab).toHaveAttribute("data-view", "analisis");
+      expect(tab).toHaveAttribute("data-insight", "7");
+      const params = currentSearchParams();
+      expect(params.get("tab")).toBe("races");
+      expect(params.get("view")).toBe("analisis");
+      expect(params.get("insight")).toBe("7");
+    });
+
+    it("la pestaña nunca ve la URL sin normalizar (sin destello de Progresión al usar el alias)", async () => {
+      renderPage("1", "?tab=ai_analysis&insight=7");
+      await screen.findByTestId("mock-carreras-tab");
+      // La única instancia de CarrerasTab que se montó ya leyó view=analisis.
+      expect(mockCarrerasMounts).toEqual([1]);
+    });
+
+    it("alias con guion (?tab=ai-analysis, el de la vista familiar) también se normaliza", async () => {
+      renderPage("1", "?tab=ai-analysis&insight=9");
+      const tab = await screen.findByTestId("mock-carreras-tab");
+      expect(tab).toHaveAttribute("data-view", "analisis");
+      expect(tab).toHaveAttribute("data-insight", "9");
+      expect(currentSearchParams().get("tab")).toBe("races");
+    });
+
+    it("salir de Carreras suelta view e insight de la URL", async () => {
+      renderPage("1", "?tab=races&view=analisis&insight=7");
+      await screen.findByTestId("mock-carreras-tab");
+
       await act(async () => {
-        await userEvent.click(await screen.findByTestId("athlete-tab-ai-analysis"));
+        await userEvent.click(screen.getByRole("button", { name: /Info general/i }));
       });
-      expect(screen.getByTestId("mock-ai-analysis-tab")).toBeInTheDocument();
-      expect(
-        screen.queryByTestId("mock-history-progression-card"),
-      ).not.toBeInTheDocument();
+
+      expect(screen.queryByTestId("mock-carreras-tab")).not.toBeInTheDocument();
+      expect(screen.getByTestId("location-search").textContent).toBe("");
     });
 
-    it("tab Carreras activo no renderiza AthleteAIAnalysisTab", async () => {
-      renderPage();
-      await act(async () => {
-        await userEvent.click(await screen.findByTestId("athlete-tab-races"));
-      });
-      await screen.findByTestId("mock-history-progression-card");
+    it("ya no existe ninguna vista Insights IA por separado (?tab=races no mezcla la tarjeta anterior)", async () => {
+      renderPage("1", "?tab=races");
+      await screen.findByTestId("mock-carreras-tab");
       expect(screen.queryByTestId("mock-ai-analysis-tab")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("mock-history-progression-card")).not.toBeInTheDocument();
     });
   });
 
@@ -819,8 +882,8 @@ describe("MyAthleteDetailPage — vista padres (coach es AthleteDetailPage)", ()
 });
 
 // ---------------------------------------------------------------------------
-// T010 (feature 036, US3) — key={athlete.id} en el mount de
-// AthleteAIAnalysisTab. A diferencia de las suites de arriba, aquí SÍ nos
+// T010 (feature 036, US3) — key={athlete.id} en el mount de la pestaña
+// Carreras (feature 045: antes AthleteAIAnalysisTab). A diferencia de las suites de arriba, aquí SÍ nos
 // importa que AthleteDetailPage sea la MISMA instancia de React entre dos
 // atletas (como ocurre al navegar de un perfil a otro sin desmontar la
 // ruta) — por eso el helper navega con `useNavigate`, no con un nuevo
@@ -836,8 +899,8 @@ function renderPageWithNavigation(initialAthleteId: string) {
   });
   // Precalentar la cache de AMBOS atletas: AthleteDetailPage.tsx:567 hace
   // un early-return mientras `athleteQuery.isLoading`, lo que por sí solo
-  // desmonta y remonta todo el árbol de contenido (incluido
-  // AthleteAIAnalysisTab) durante el fetch — un remount por loading-state
+  // desmonta y remonta todo el árbol de contenido (incluida
+  // CarrerasTab) durante el fetch — un remount por loading-state
   // que no tiene nada que ver con T010. Sin datos ya en cache para el
   // atleta 502, la prueba "detectaría" un remount por la razón
   // equivocada. Con la cache tibia, la única causa posible de remount al
@@ -852,7 +915,7 @@ function renderPageWithNavigation(initialAthleteId: string) {
         <button
           type="button"
           data-testid="test-navigate"
-          onClick={() => navigate("/athletes/502?tab=ai_analysis")}
+          onClick={() => navigate("/athletes/502?tab=races")}
         >
           ir a otro atleta
         </button>
@@ -865,7 +928,7 @@ function renderPageWithNavigation(initialAthleteId: string) {
 
   return render(
     <MemoryRouter
-      initialEntries={[`/athletes/${initialAthleteId}?tab=ai_analysis`]}
+      initialEntries={[`/athletes/${initialAthleteId}?tab=races`]}
     >
       <QueryClientProvider client={queryClient}>
         <Harness />
@@ -874,10 +937,10 @@ function renderPageWithNavigation(initialAthleteId: string) {
   );
 }
 
-describe("AthleteDetailPage — T010 key={athlete.id} en AthleteAIAnalysisTab", () => {
+describe("AthleteDetailPage — T010 key={athlete.id} en CarrerasTab", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockAiTabMounts.length = 0;
+    mockCarrerasMounts.length = 0;
     vi.mocked(athletesApi.getAthlete).mockImplementation((id: number) =>
       Promise.resolve({ ...mockAthlete, id }),
     );
@@ -886,24 +949,24 @@ describe("AthleteDetailPage — T010 key={athlete.id} en AthleteAIAnalysisTab", 
 
   it(
     "al navegar de un atleta a otro sin desmontar la página, " +
-      "AthleteAIAnalysisTab se remonta (una instancia nueva por atleta), " +
+      "CarrerasTab se remonta (una instancia nueva por atleta), " +
       "no reutiliza la instancia del atleta anterior",
     async () => {
       renderPageWithNavigation("501");
 
-      await screen.findByText("ai-tab-501");
-      expect(mockAiTabMounts).toEqual([501]);
+      await screen.findByText("carreras-501");
+      expect(mockCarrerasMounts).toEqual([501]);
 
       await act(async () => {
         await userEvent.click(screen.getByTestId("test-navigate"));
       });
 
-      await screen.findByText("ai-tab-502");
+      await screen.findByText("carreras-502");
       // Sin key={athlete.id} (bug pre-T010), AthleteDetailPage sigue
-      // siendo la misma instancia y AthleteAIAnalysisTab también — el
+      // siendo la misma instancia y CarrerasTab también — el
       // efecto de montaje (deps=[]) del atleta 502 nunca se dispara
       // porque nunca hay un remount real.
-      expect(mockAiTabMounts).toEqual([501, 502]);
+      expect(mockCarrerasMounts).toEqual([501, 502]);
     },
   );
 });

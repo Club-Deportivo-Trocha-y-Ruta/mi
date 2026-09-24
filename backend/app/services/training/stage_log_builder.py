@@ -177,15 +177,32 @@ def _athlete_reference(athlete_sex: str | None) -> str:
     return "su hijo/a"
 
 
-def _race_position_gap_sublabel(result: Mapping[str, Any]) -> str | None:
-    """Sublabel de un waypoint de carrera: SOLO el propio gap del atleta
-    (data-model.md: ``sublabel`` documenta "own gap only")."""
-    position = result.get("position")
-    gap_pct = result.get("gap_to_winner_pct")
-    if position == 1 or gap_pct is None:
+#: Etiqueta del glosario 045 (``contracts/ui-copy.md``) — única forma en que
+#: la bitácora nombra la brecha de una carrera.
+_MEDIAN_GAP_LABEL = "Brecha vs. mediana"
+
+
+def _median_gap_text(result: Mapping[str, Any]) -> str | None:
+    """«Brecha vs. mediana: +4,1 %» de una fila de ``race_results``, o ``None``.
+
+    Sirve al sublabel del waypoint de carrera y al detalle de la cima
+    (data-model.md: ``sublabel`` documenta "own gap only"). También aplica al
+    P1: su brecha contra la mediana no es cero, a diferencia de la que tenía
+    contra sí mismo.
+
+    Feature 045 (FR-020/FR-022): la bitácora llega a la familia, que nunca ve
+    la brecha contra el ganador ni contra el podio. El valor viene del motor
+    único de métricas (``field_metrics``), ya resuelto cuando se construyó el
+    snapshot (``newsletter_builder._build_race_block``) — este módulo sigue
+    sin hacer I/O. ``None`` (parrilla bajo el mínimo del motor) o clave
+    ausente (snapshot persistido antes de la 045) → sin texto: jamás se cae
+    al gap contra el ganador, que ya no se lee aquí.
+    """
+    gap_pct = result.get("gap_to_median_pct")
+    if gap_pct is None:
         return None
     try:
-        return f"{format_number_es(gap_pct, 1, sign=True)} % al P1"
+        return f"{_MEDIAN_GAP_LABEL}: {format_number_es(gap_pct, 1, sign=True)} %"
     except (TypeError, ValueError):
         return None
 
@@ -251,7 +268,7 @@ def trail_waypoints(
                 kind=WaypointKind.RACE,
                 date=event_date,
                 label=display_label,
-                sublabel=_race_position_gap_sublabel(result),
+                sublabel=_median_gap_text(result),
                 icon="map-pin",
             )
         )
@@ -423,10 +440,7 @@ def summit(snapshot: dict[str, Any]) -> Summit | None:
         position = best["position"]
         label = best.get("label") or "la carrera"
         title = f"P{position} en la {label}"
-        gap_pct = best.get("gap_to_winner_pct")
-        detail_parts = [best.get("category_label")]
-        if position != 1 and gap_pct is not None:
-            detail_parts.append(f"{format_number_es(gap_pct, 1, sign=True)} % al P1")
+        detail_parts = [best.get("category_label"), _median_gap_text(best)]
         detail = " · ".join(p for p in detail_parts if p) or None
         return Summit(
             kind=SummitKind.RACE,
@@ -498,6 +512,39 @@ def next_segment(snapshot: dict[str, Any]) -> NextSegment | None:
         return None
 
     return NextSegment(focus_groups=focus_group_names, next_race=next_race, text=None)
+
+
+def body_composition_annex(snapshot: dict[str, Any]) -> dict[str, Any] | None:
+    """The feature-046 «Composición corporal» PDF annex, or ``None``.
+
+    Pulled through this module for the same reason as the other PDF-only
+    annexes (``anthropometry``, ``charts_context``, ``percentile_curves``):
+    it is fixed copy for the family, never part of the ``StageLog``
+    narrative object built below. Already scoped to the newsletter's own
+    month by ``newsletter_builder._build_body_composition_block`` (``None``
+    in every month but that of the counted skinfold set), so no extra date
+    filtering happens here.
+
+    Defense in depth (T069 privacy audit, finding F4): the persisted block is
+    re-mapped onto the fixed family copy — only a label that is one of the
+    two ``FAMILY_COPY`` labels (verde / ámbar) is accepted, and the sentence
+    and notice always come from code, never from the snapshot. A tampered or
+    unexpected snapshot (e.g. a coach-only rojo label) yields ``None``, so no
+    rojo wording or number can ever reach the family PDF through this path.
+    """
+    from app.services.body_composition import FAMILY_COPY, NEWSLETTER_NOTICE
+
+    block = (snapshot.get("pdf_only_blocks") or {}).get("body_composition")
+    if not isinstance(block, dict):
+        return None
+    for copy in FAMILY_COPY.values():
+        if block.get("family_label") == copy["family_label"]:
+            return {
+                "family_label": copy["family_label"],
+                "family_sentence": copy["family_sentence"],
+                "notice_text": NEWSLETTER_NOTICE,
+            }
+    return None
 
 
 # ---------------------------------------------------------------------------

@@ -27,12 +27,14 @@
       "series_level": "departmental",
       "is_championship": false,
       "field_size": 13,
+      "timed_finishers": 13,
       "position": 9,
-      "percentile": 33.3,
+      "percentile": 29,
       "race_time_ms": 2244000,
       "gap_to_p1_ms": 204000,
       "gap_pct": 10.0,
       "gap_to_p3_ms": 126000,
+      "gap_to_podium_pct": 5.9,
       "category_median_time_ms": 2196000,
       "gap_to_median_pct": 2.19,
       "laps_behind": 0,
@@ -50,7 +52,7 @@
         "is_championship": false,
         "position": 4,
         "field_size": 13,
-        "percentile": 75,
+        "percentile": 74,
         "gap_pct": 4.12,
         "gap_to_p3_ms": 26000,
         "expected_position": 5,
@@ -63,7 +65,7 @@
         "is_championship": false,
         "position": 5,
         "field_size": 13,
-        "percentile": 66.7,
+        "percentile": 64,
         "gap_pct": 6.34,
         "gap_to_p3_ms": 58000,
         "expected_position": 5,
@@ -76,7 +78,7 @@
         "is_championship": false,
         "position": 7,
         "field_size": 13,
-        "percentile": 50,
+        "percentile": 44,
         "gap_pct": 8.45,
         "gap_to_p3_ms": 92000,
         "expected_position": 6,
@@ -89,7 +91,7 @@
         "is_championship": false,
         "position": 9,
         "field_size": 13,
-        "percentile": 33.3,
+        "percentile": 29,
         "gap_pct": 10.0,
         "gap_to_p3_ms": 126000,
         "expected_position": 6,
@@ -167,8 +169,8 @@
       ]
     },
     "memory_recent_insights": [
-      "Válida 3 · Copa: percentil 50 con asistencia alta y coordinación irregular",
-      "Válida 2 · Copa: percentil 66.7 sin cambios de carga"
+      "Válida 3 · Copa: percentil 44 con asistencia alta y coordinación irregular",
+      "Válida 2 · Copa: percentil 64 sin cambios de carga"
     ]
   },
   "expected_themes": [
@@ -200,7 +202,7 @@
     "schema_version": "v3",
     "headline": "La caída de percentil coincide con el pico de crecimiento (9.1 cm/año, Circa-PHV) y no con una baja de compromiso: la asistencia se mantuvo en 91.7%.",
     "field_reading": {
-      "percentile": 33.3,
+      "percentile": 29,
       "expected_position": 6,
       "actual_position": 9,
       "delta_vs_expected": -3,
@@ -213,7 +215,7 @@
       {
         "claim": "La pérdida es sostenida y proporcional al avance del estirón, no un mal día puntual.",
         "evidence": [
-          "percentil 75, 66.7, 50 y 33.3 en las cuatro válidas",
+          "percentil 74, 64, 44 y 29 en las cuatro válidas",
           "offset de maduración -0.2 años"
         ],
         "domain": "maturation",

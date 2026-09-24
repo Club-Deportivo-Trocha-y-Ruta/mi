@@ -18,7 +18,7 @@
     "previous_analysis": null
   },
   "expected_themes": ["primera medición", "línea base", "sin comparación todavía"],
-  "forbidden_terms": ["percentil", "z-score", "diagnóstico", "comparado con la medición anterior"],
+  "forbidden_terms": ["percentil", "z-score", "diagnóstico", "comparado con la medición anterior", "%", "mm"],
   "max_words": 180,
   "min_confidence_level": null,
   "max_confidence_level": "medium",

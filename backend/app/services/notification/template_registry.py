@@ -447,6 +447,42 @@ DOCUMENT_TEMPLATES: dict[str, DocumentTemplateSpec] = {
             "PDF viaja a la familia, igual que el email."
         ),
     ),
+    DocumentTemplate.BODY_COMPOSITION_REFERRAL_NOTE: DocumentTemplateSpec(
+        template_id=DocumentTemplate.BODY_COMPOSITION_REFERRAL_NOTE,
+        format=DocumentFormat.PDF,
+        template_path="documents/pdf/body_composition_referral_note.html",
+        required_context_keys=frozenset(
+            {
+                "athlete_initials",
+                "age_band",
+                "sex_label",
+                "observed_pattern",
+                "legs_missing_note",
+                "weekly_hours_label",
+            }
+        ),
+        description=(
+            "Nota de remisión genérica de composición corporal (feature 046, "
+            "contracts/skinfolds-api.md §6). Solo iniciales, nunca el nombre "
+            "completo del deportista; nunca un porcentaje ni un valor en mm; "
+            "nunca el nombre de un profesional o institución (nota genérica, "
+            "decisión C6 del owner)."
+        ),
+    ),
+    DocumentTemplate.BODY_COMPOSITION_FIELD_GUIDE: DocumentTemplateSpec(
+        template_id=DocumentTemplate.BODY_COMPOSITION_FIELD_GUIDE,
+        format=DocumentFormat.PDF,
+        template_path="documents/pdf/skinfold_field_guide.html",
+        required_context_keys=frozenset({"sites"}),
+        description=(
+            "Instructivo estático de toma de pliegues cutáneos (feature 046, "
+            "US5, contracts/skinfolds-api.md §7). Contenido genérico, común a "
+            "todo el club: seis siluetas con marca anatómica y protocolo de "
+            "lectura. `sites` es la lista ordenada de "
+            "`app/data/skinfold_sites.json` con la etiqueta en español ya "
+            "resuelta — este documento no incluye datos de ningún deportista."
+        ),
+    ),
     DocumentTemplate.TRAINING_MONTHLY_TECHNICAL_REPORT: DocumentTemplateSpec(
         template_id=DocumentTemplate.TRAINING_MONTHLY_TECHNICAL_REPORT,
         format=DocumentFormat.PDF,

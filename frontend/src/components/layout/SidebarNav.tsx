@@ -22,6 +22,7 @@ import {
   resolveActiveItemId,
   resolveAreaDefaultTo,
   type NavArea,
+  type NavItem,
   type NavRole,
 } from "@/lib/navigation";
 
@@ -100,14 +101,50 @@ function ActiveBar({ className }: { className?: string }) {
   );
 }
 
-/** Conteo de pendientes del área, si su fuente resolvió con algo que mostrar. */
+/**
+ * Conteo de pendientes del área, si su fuente resolvió con algo que mostrar.
+ *
+ * «Competencias» suma sus dos fuentes — resultados por importar
+ * (`competitions`) y «Cargas e identidades» (`competitions.imports`, feature
+ * 045) — para que una identidad o carga pendiente se vea desde cualquier otra
+ * sección (área plegada o riel), donde el sub-ítem no está en el DOM. Una sola
+ * fuente disponible cuenta sola; ninguna → sin insignia.
+ */
 function badgeForArea(
   areaId: string,
   badges: NavBadgeCounts,
 ): number | undefined {
-  if (areaId === "competitions") return badges.competitions;
+  if (areaId === "competitions") {
+    const sources = [badges.competitions, badges["competitions.imports"]];
+    const available = sources.filter((n): n is number => typeof n === "number");
+    return available.length === 0
+      ? undefined
+      : available.reduce((total, n) => total + n, 0);
+  }
   if (areaId === "families") return badges.families;
   return undefined;
+}
+
+/**
+ * Conteo de pendientes de un sub-ítem (feature 045): la clave es el
+ * `NavItem.id`. Hoy sólo «Cargas e identidades» (`competitions.imports` =
+ * decisiones de identidad + cargas en curso). El área «Competencias» también
+ * lo incluye en su total (ver `badgeForArea`); el sub-ítem sigue mostrando su
+ * conteo propio, sin sumar el de resultados por importar.
+ */
+function badgeForItem(
+  itemId: string,
+  badges: NavBadgeCounts,
+): number | undefined {
+  if (itemId === "competitions.imports") return badges["competitions.imports"];
+  return undefined;
+}
+
+/** Nombre accesible del sub-ítem con insignia: «Cargas e identidades · 3 pendientes». */
+function itemLabelWithBadge(item: NavItem, badge: number | undefined): string {
+  return badge === undefined
+    ? item.label
+    : `${item.label} · ${badge} pendientes`;
 }
 
 /**
@@ -412,11 +449,19 @@ export function SidebarNav({
                           const to =
                             typeof item.to === "function" ? item.to() : item.to;
                           const itemActive = item.id === activeItemId;
+                          const itemBadge = badgeForItem(item.id, badges);
                           return (
                             <Link
                               key={item.id}
                               to={to}
                               onClick={onNavigate}
+                              // El conteo va al nombre accesible (la píldora es
+                              // decorativa), igual que en la fila del área.
+                              aria-label={
+                                itemBadge === undefined
+                                  ? undefined
+                                  : itemLabelWithBadge(item, itemBadge)
+                              }
                               aria-current={itemActive ? "page" : undefined}
                               className={cn(
                                 subItemBase,
@@ -424,7 +469,16 @@ export function SidebarNav({
                                 itemActive ? subItemActive : subItemInactive,
                               )}
                             >
-                              {item.label}
+                              <span className="min-w-0 flex-1">{item.label}</span>
+                              {itemBadge !== undefined && (
+                                <span
+                                  aria-hidden="true"
+                                  className="ml-2 flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-light-gray px-1.5 text-[11px] font-semibold text-text-secondary"
+                                  data-testid={`nav-item-badge-${item.id}`}
+                                >
+                                  {itemBadge}
+                                </span>
+                              )}
                             </Link>
                           );
                         });

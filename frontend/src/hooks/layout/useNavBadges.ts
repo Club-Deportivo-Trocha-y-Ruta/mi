@@ -10,6 +10,14 @@
  *     por importar), idéntico al filtro de la fila "Resultados por importar".
  *   - Familias    → `useNewsletterStatusSummary(año, mes)` del mes en curso,
  *     contando ítems con `status !== "sent"` (boletines pendientes).
+ *   - «Cargas e identidades» (feature 045, ítem `competitions.imports` de
+ *     `navigation.ts`) → `useCoachSummary()` (misma queryKey que `PendingInbox`
+ *     → sin petición adicional): `identity_decisions_pending +
+ *     imports_in_progress + unlinked_competitors_pending` — los tres tipos de
+ *     ítem que reúne el buzón (decisiones, cargas y competidores sin enlazar,
+ *     FR-033). Un sumando `null`/ausente (agregado no disponible, o backend
+ *     previo a ese campo) no cuenta; si ninguno está disponible no hay
+ *     insignia.
  *
  * Sobre `staleTime: 5 * 60_000`: `useRaceEventsList` ya lo fija explícitamente
  * y el `QueryClient` de la app (App.tsx) usa ese mismo default de 5 min para
@@ -23,15 +31,32 @@
  */
 import { useMemo } from "react";
 
+import { useCoachSummary } from "@/hooks/dashboard/useCoachSummary";
 import { useRaceEventsList } from "@/hooks/race/useRaceEvents";
 import { useNewsletterStatusSummary } from "@/hooks/training/useNewsletterStatusSummary";
 import { CLUB_TIMEZONE, currentSeason, diffDaysFromToday } from "@/lib/datetime";
 import { getVisibleAreas, type NavRole } from "@/lib/navigation";
 
-/** Conteos por `NavArea.id`. Una clave ausente = área sin insignia. */
+/**
+ * Conteos por `NavArea.id` (`competitions`, `families`) y, desde la feature
+ * 045, por `NavItem.id` cuando la insignia va en un sub-ítem del área
+ * (`competitions.imports` = «Cargas e identidades»). Una clave ausente =
+ * sin insignia.
+ */
 export interface NavBadgeCounts {
   competitions?: number;
   families?: number;
+  "competitions.imports"?: number;
+}
+
+/**
+ * Suma los conteos disponibles: `null`/`undefined` (agregado caído o backend
+ * previo a la 045) se omiten en vez de tratarse como cero. Devuelve
+ * `undefined` cuando ninguno está disponible.
+ */
+function sumAvailable(...counts: Array<number | null | undefined>): number | undefined {
+  const available = counts.filter((count): count is number => typeof count === "number");
+  return available.length === 0 ? undefined : available.reduce((a, b) => a + b, 0);
 }
 
 /** "Hoy" en `CLUB_TIMEZONE` — mismo cálculo que `PendingInbox`. */
@@ -64,6 +89,13 @@ export function useNavBadges(role: NavRole): NavBadgeCounts {
   const raceQuery = useRaceEventsList({ season: currentSeason() });
   const { year, month } = useCurrentYearMonth();
   const newslettersQuery = useNewsletterStatusSummary(year, month);
+  // Feature 045 — misma queryKey que `PendingInbox`: reutiliza el cache.
+  const coachSummaryQuery = useCoachSummary();
+
+  const identityPending = coachSummaryQuery.data?.identity_decisions_pending;
+  const importsInProgress = coachSummaryQuery.data?.imports_in_progress;
+  const unlinkedPending = coachSummaryQuery.data?.unlinked_competitors_pending;
+  const coachSummaryReady = coachSummaryQuery.isSuccess;
 
   const raceItems = raceQuery.data?.items;
   const newsletterItems = newslettersQuery.data?.items;
@@ -82,6 +114,13 @@ export function useNavBadges(role: NavRole): NavBadgeCounts {
       if (badge !== undefined) badges.competitions = badge;
     }
 
+    if (visibleAreaIds.has("competitions") && coachSummaryReady) {
+      const badge = toBadge(
+        sumAvailable(identityPending, importsInProgress, unlinkedPending) ?? 0,
+      );
+      if (badge !== undefined) badges["competitions.imports"] = badge;
+    }
+
     if (visibleAreaIds.has("families") && newslettersReady) {
       const pendingNewsletters = (newsletterItems ?? []).filter(
         (item) => item.status !== "sent",
@@ -92,10 +131,14 @@ export function useNavBadges(role: NavRole): NavBadgeCounts {
 
     return badges;
   }, [
+    coachSummaryReady,
+    identityPending,
+    importsInProgress,
     newsletterItems,
     newslettersReady,
     raceItems,
     raceReady,
+    unlinkedPending,
     visibleAreaIds,
   ]);
 }

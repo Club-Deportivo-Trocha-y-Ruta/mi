@@ -5,8 +5,10 @@ Implementa la lógica de "análisis desactualizado" (stale) sobre ``agent_runs``
 - :func:`mark_run_stale` — marca un run individual como stale (idempotente).
 - :func:`invalidate_runs_for_event` — marca stale todos los runs cuyos insights
   pertenecen a un ``race_event`` (usado tras una re-ingesta que cambió los
-  resultados). Además marca como ``outdated`` los boletines mensuales ya
-  enviados que dependían de esos insights (D3) — SIN reenviar.
+  resultados) y, desde la feature 045 (T074), también los resúmenes de
+  temporada activos de esa temporada para los atletas con resultados en el
+  evento. Además marca como ``outdated`` los boletines mensuales ya enviados
+  que dependían de esos insights (D3) — SIN reenviar.
 
 Decisiones honradas:
 - D5: el re-trigger es SIEMPRE manual (endpoint dedicado). Este servicio NO
@@ -21,12 +23,15 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agent_run import AgentRun
 from app.models.athlete_ai_insight import AthleteAiInsight
 from app.models.athlete_newsletter import AthleteMonthlyNewsletter, NewsletterStatus
+from app.models.race_event import RaceEvent
+from app.models.race_result import RaceResult
+from app.models.race_series import RaceSeries
 
 logger = logging.getLogger(__name__)
 
@@ -68,19 +73,66 @@ async def mark_run_fresh(db: AsyncSession, run_db_id: int) -> bool:
     return True
 
 
+async def _season_summary_run_ids(db: AsyncSession, event_id: int) -> set[int]:
+    """Runs de los resúmenes de temporada que dependen de los resultados del evento.
+
+    Un resumen de temporada se guarda con ``event_id=NULL`` (``valida_num=0`` /
+    ``use_case="season_summary*"``, misma regla que
+    ``pending_analyses._kind_from_insight``), así que el filtro por evento no
+    lo alcanza. Afectados = resúmenes **activos** de la temporada del evento
+    (``RaceSeries.season_year``) de los atletas con algún resultado en él,
+    incluidos los que la revisión dio de baja (soft-delete): a esos también
+    les cambió la temporada.
+    """
+    season = (
+        await db.execute(
+            select(RaceSeries.season_year)
+            .join(RaceEvent, RaceEvent.series_id == RaceSeries.id)
+            .where(RaceEvent.id == event_id)
+        )
+    ).scalar_one_or_none()
+    if season is None:
+        return set()
+
+    affected_athletes = (
+        select(RaceResult.athlete_id)
+        .where(RaceResult.event_id == event_id, RaceResult.athlete_id.is_not(None))
+        .distinct()
+    )
+    result = await db.execute(
+        select(AthleteAiInsight.agent_run_id)
+        .where(
+            AthleteAiInsight.athlete_id.in_(affected_athletes),
+            AthleteAiInsight.season == int(season),
+            AthleteAiInsight.is_active == 1,
+            AthleteAiInsight.agent_run_id.is_not(None),
+            or_(
+                AthleteAiInsight.valida_num == 0,
+                AthleteAiInsight.use_case.startswith("season_summary", autoescape=True),
+            ),
+        )
+        .distinct()
+    )
+    return {int(r) for r in result.scalars().all() if r is not None}
+
+
 async def invalidate_runs_for_event(
     db: AsyncSession,
     event_id: int,
     *,
     when: datetime | None = None,
 ) -> dict[str, int]:
-    """Marca stale todos los runs con insights del evento + boletines outdated.
+    """Marca stale los runs con insights del evento + boletines outdated.
 
     Usado tras una re-ingesta que detectó cambios (SHA256 distinto) sobre el
     mismo ``race_event``. NO re-ejecuta nada (D5) ni reenvía boletines (D3).
+    También marca los resúmenes de temporada activos afectados (feature 045,
+    T074), con el mismo ``stale_since`` que los runs por válida, para que
+    ``pending-analyses?state=stale`` los liste y ``dismiss-stale`` los limpie.
 
     Returns:
-        Dict con conteos: ``{"runs_marked": N, "newsletters_outdated": M}``.
+        Dict con conteos: ``{"runs_marked": N, "season_summaries_marked": S,
+        "newsletters_outdated": M}``. ``runs_marked`` incluye a ``S``.
     """
     ts = when or _utcnow()
 
@@ -94,9 +146,12 @@ async def invalidate_runs_for_event(
         .distinct()
     )
     run_ids = {int(r) for r in run_ids_q.scalars().all() if r is not None}
+    # 1b. Resúmenes de temporada (event_id=NULL) de los atletas del evento.
+    season_run_ids = await _season_summary_run_ids(db, event_id) - run_ids
 
     runs_marked = 0
-    for rid in run_ids:
+    season_summaries_marked = 0
+    for rid in sorted(run_ids | season_run_ids):
         run = await db.get(AgentRun, rid)
         if run is None:
             continue
@@ -104,6 +159,8 @@ async def invalidate_runs_for_event(
             run.stale_since = ts
             run.updated_at = ts
             runs_marked += 1
+            if rid in season_run_ids:
+                season_summaries_marked += 1
 
     # 2. Boletines mensuales ya enviados que referencian insights del evento.
     #    Marcamos outdated (D3) — el dispatcher NO reenvía outdated.
@@ -136,13 +193,16 @@ async def invalidate_runs_for_event(
     await db.flush()
 
     logger.info(
-        "race_runs_invalidated event_id=%s runs_marked=%d newsletters_outdated=%d",
+        "race_runs_invalidated event_id=%s runs_marked=%d "
+        "season_summaries_marked=%d newsletters_outdated=%d",
         event_id,
         runs_marked,
+        season_summaries_marked,
         newsletters_outdated,
     )
     return {
         "runs_marked": runs_marked,
+        "season_summaries_marked": season_summaries_marked,
         "newsletters_outdated": newsletters_outdated,
     }
 

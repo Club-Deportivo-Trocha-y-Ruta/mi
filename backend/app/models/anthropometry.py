@@ -22,6 +22,7 @@ from app.models.mixins import ActorTimestampMixin
 
 if TYPE_CHECKING:
     from app.models.athlete import Athlete
+    from app.models.skinfold_measurement import SkinfoldMeasurement
     from app.models.user import User
 
 
@@ -101,4 +102,11 @@ class AnthropometricRecord(ActorTimestampMixin, Base):
     evaluator: Mapped[User] = relationship(
         "User",
         foreign_keys="[AnthropometricRecord.evaluated_by]",
+    )
+    # Set de pliegues cutáneos 1:1 (feature 046); None = sin pliegues.
+    skinfolds: Mapped[SkinfoldMeasurement | None] = relationship(
+        "SkinfoldMeasurement",
+        back_populates="record",
+        uselist=False,
+        cascade="all, delete-orphan",
     )

@@ -92,3 +92,75 @@ describe("InsightsTimeline — v3 (structured)", () => {
     expect(screen.queryByTestId("coach-answer-form")).not.toBeInTheDocument();
   });
 });
+
+/**
+ * Feature 045 (decisión del dueño 2026-09-23): para un padre el servidor
+ * OMITE `summary_text` (lista y detalle) y `recommendations` /
+ * `principles_cited` de nivel superior (detalle) en las filas v3 — el
+ * markdown trae «gap a P3» y esperado-vs-real. Estos payloads replican esa
+ * forma (claves ausentes, no `null`): la UI de familia debe seguir
+ * funcionando con `headline` + `structured`.
+ */
+describe("InsightsTimeline — v3 con payload de familia (texto libre omitido)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function familyListHandler() {
+    return http.get("*/api/athletes/:athleteId/race-analysis/insights", () => {
+      const { summary_text: _omitted, ...item } = mockInsightV3();
+      void _omitted;
+      return HttpResponse.json({ items: [item], total: 1, limit: 50, offset: 0 });
+    });
+  }
+
+  function familyDetailHandler() {
+    return http.get(
+      "*/api/athletes/:athleteId/race-analysis/insights/:insightId",
+      ({ params }) => {
+        const {
+          summary_text: _summary,
+          recommendations: _recommendations,
+          principles_cited: _principles,
+          ...detail
+        } = mockInsightV3Detail({ id: Number(params.insightId) });
+        void _summary;
+        void _recommendations;
+        void _principles;
+        return HttpResponse.json(detail);
+      },
+    );
+  }
+
+  it("la lista muestra el headline aunque no venga summary_text", async () => {
+    mswServer.use(familyListHandler());
+    renderWithProviders(<InsightsTimeline athleteId={ATHLETE_ID} mode="parent" />);
+
+    const insight = mockInsightV3();
+    await waitFor(() => {
+      expect(
+        screen.getByTestId(`insight-card-${insight.id}`),
+      ).toHaveTextContent(insight.headline!);
+    });
+  });
+
+  it("el detalle renderiza la tarjeta v3 sin recommendations ni principles_cited de nivel superior", async () => {
+    mswServer.use(familyListHandler(), familyDetailHandler());
+    const user = userEvent.setup();
+    renderWithProviders(<InsightsTimeline athleteId={ATHLETE_ID} mode="parent" />);
+
+    const insight = mockInsightV3();
+    await user.click(await screen.findByTestId(`insight-card-${insight.id}`));
+
+    expect(await screen.findByTestId("insight-v3-card")).toBeInTheDocument();
+    // Los principios de la tarjeta salen de `structured.principles_cited`.
+    expect(screen.getByTestId("insight-v3-principles-trigger")).toHaveTextContent(
+      "Principios citados (2)",
+    );
+    // Sin la lista de nivel superior no se dibuja «Recomendaciones» (las
+    // acciones ya están en la tarjeta) y nada revienta.
+    expect(
+      screen.queryByRole("region", { name: "Recomendaciones" }),
+    ).not.toBeInTheDocument();
+  });
+});

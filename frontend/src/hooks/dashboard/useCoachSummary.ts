@@ -1,9 +1,11 @@
 /**
  * useCoachSummary — agregado de mission-control del coach (feature 031).
  *
- * Alimenta el medidor de carga semanal y las filas "Consentimientos
- * pendientes" / "Insights IA desactualizados" del inbox de pendientes en
- * `DashboardPage`.
+ * Alimenta el medidor de carga semanal, las filas del inbox de pendientes en
+ * `DashboardPage` ("Consentimientos pendientes", "Insights IA
+ * desactualizados" y, desde la feature 045, "Identidades por decidir" /
+ * "Análisis por aprobar") y la insignia de «Cargas e identidades» del menú
+ * (`useNavBadges`, misma queryKey → sin petición adicional).
  *
  * Endpoint: GET /api/dashboard/coach-summary
  *

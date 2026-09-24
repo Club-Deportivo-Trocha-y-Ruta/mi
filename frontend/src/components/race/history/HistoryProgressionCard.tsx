@@ -51,7 +51,7 @@ export interface HistoryProgressionCardProps {
 
 const CAVEATS_NOTE_ID = "history-caveats-note-anchor";
 
-function summarizeResult(p: RaceHistoryPoint): string {
+export function summarizeResult(p: RaceHistoryPoint): string {
   if (NON_FINISHER_STATUSES.has(p.status)) {
     return RACE_HISTORY_STATUS_LABELS[p.status];
   }
@@ -70,7 +70,7 @@ function categoryChangeTagLabel(kind: RaceHistoryPoint["category_change_kind"]):
   return kind === "promotion" ? "Subió de categoría" : "Cambió de categoría";
 }
 
-function CategoryChangesList({
+export function CategoryChangesList({
   points,
   audience,
 }: {

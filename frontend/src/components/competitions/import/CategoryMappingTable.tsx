@@ -239,7 +239,7 @@ export function CategoryMappingTable({
                     {MAPPING_KIND_LABELS[category.mapping_kind]}
                   </td>
                   <td className="px-3 py-2 tabular-nums text-charcoal">
-                    {category.rows.length}
+                    {category.row_count ?? category.rows.length}
                   </td>
                   <td className="px-3 py-2">
                     <div className="space-y-1.5">

@@ -16,9 +16,11 @@ from app.dependencies import (
 from app.models.athlete import Athlete
 from app.models.anthropometry import AnthropometricRecord
 from app.models.club import Club, ClubMember, ClubRole
+from app.models.skinfold_measurement import SkinfoldMeasurement
 from app.models.training_session import AttendanceStatus, SessionAttendance, TrainingSession
 from app.models.user import User, UserRole
 from app.models.athlete import ParentAthlete
+from app.routers.body_composition import skinfold_set_out
 from app.schemas.athlete import (
     AthleteArchiveIn,
     AthleteCreate,
@@ -314,9 +316,19 @@ async def get_athlete(
         return out_parent
 
     # Coach / Admin: vista completa con selectinload para eager loading
+    # Feature 046: también precarga `skinfolds` (+ su propio back-ref `record`,
+    # necesario en `skinfold_set_out` para `evaluation_date`) — sin esto,
+    # `AnthropometryOut.model_validate` dispara un lazy-load fuera de contexto
+    # async (`MissingGreenlet`) en cuanto el registro más reciente tiene una
+    # medición de pliegues, igual que se resolvió en
+    # `routers/anthropometry.py::list_anthropometry`.
     result = await db.execute(
         select(Athlete)
-        .options(selectinload(Athlete.anthropometric_records))
+        .options(
+            selectinload(Athlete.anthropometric_records)
+            .selectinload(AnthropometricRecord.skinfolds)
+            .selectinload(SkinfoldMeasurement.record)
+        )
         .where(Athlete.id == athlete.id)
     )
     athlete_full = result.scalar_one()
@@ -327,6 +339,9 @@ async def get_athlete(
             athlete_full.anthropometric_records, key=lambda r: r.evaluation_date
         )
         latest = AnthropometryOut.model_validate(latest_orm)
+        latest.skinfolds = (
+            skinfold_set_out(latest_orm.skinfolds) if latest_orm.skinfolds is not None else None
+        )
 
     out = AthleteDetailOut.model_validate(athlete_full)
     out.age_decimal = compute_age_decimal(athlete_full.birth_date)

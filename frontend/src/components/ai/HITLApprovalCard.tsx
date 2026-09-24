@@ -5,6 +5,8 @@
  * `hitl_required`. Renderiza:
  *  - Draft markdown del analyst.
  *  - Feedback del critic (si presente).
+ *  - Aviso de brecha con el primer lugar/podio (si `familyGapMentions` trae
+ *    fragmentos; feature 045, T062) — informativo, no bloquea la decisión.
  *  - 4 acciones: Aprobar / Editar / Rechazar / Descartar análisis.
  *
  * Editar abre un dialog con textarea + preview side-by-side.
@@ -22,7 +24,15 @@
  * `useApproveStep`.
  */
 import { useState } from "react";
-import { AlertCircle, Check, Loader2, Pencil, Trash2, X } from "lucide-react";
+import {
+  AlertCircle,
+  Check,
+  Loader2,
+  Pencil,
+  Trash2,
+  TriangleAlert,
+  X,
+} from "lucide-react";
 
 import {
   Dialog,
@@ -64,6 +74,14 @@ interface HITLApprovalCardProps {
   criticFeedback?: CriticIssueLike[];
   /** Citas del marco teórico usadas. */
   principlesCited?: string[];
+  /**
+   * Feature 045 (T062, FR-022): fragmentos del texto que verá la familia que
+   * mencionan la brecha con el primer lugar o el podio
+   * (`payload.family_gap_mentions` del evento `hitl_request`; sólo coach).
+   * Vacío/ausente → sin aviso. El aviso es informativo: Aprobar y Rechazar
+   * siguen disponibles — la decisión sigue siendo del coach (research R-06).
+   */
+  familyGapMentions?: string[];
   /** Callback opcional tras decision submitted. */
   onSubmitted?: (decision: HITLDecisionRequest["decision"]) => void;
   /** Callback opcional tras descartar el análisis (run → `cancelled`). */
@@ -78,6 +96,7 @@ export function HITLApprovalCard({
   structuredDraft = null,
   criticFeedback = [],
   principlesCited = [],
+  familyGapMentions = [],
   onSubmitted,
   onCancelled,
   className,
@@ -204,7 +223,7 @@ export function HITLApprovalCard({
           data-testid="hitl-critic-feedback"
         >
           <summary className="cursor-pointer text-sm font-medium text-charcoal">
-            Crítico LLM dice ({criticFeedback.length})
+            Revisión automática ({criticFeedback.length})
           </summary>
           <ul className="mt-2 space-y-2 text-sm text-charcoal">
             {criticFeedback.map((issue, i) => (
@@ -224,6 +243,40 @@ export function HITLApprovalCard({
             ))}
           </ul>
         </details>
+      )}
+
+      {familyGapMentions.length > 0 && (
+        <div
+          role="note"
+          className="flex items-start gap-2 rounded-lg bg-surface-raised p-3 ring-1 ring-amber-300"
+          data-testid="hitl-family-gap-warning"
+        >
+          <TriangleAlert
+            size={18}
+            className="mt-0.5 shrink-0 text-amber-700"
+            aria-hidden="true"
+          />
+          <div className="min-w-0 space-y-2">
+            <p className="text-sm text-charcoal">
+              Este análisis menciona la brecha con el primer lugar o el podio, y
+              la familia lo verá. Puedes aprobarlo igual o pedir una revisión.
+            </p>
+            <ul
+              aria-label="Fragmentos que mencionan la brecha"
+              className="space-y-1"
+              data-testid="hitl-family-gap-snippets"
+            >
+              {familyGapMentions.map((snippet, i) => (
+                <li
+                  key={`${i}-${snippet}`}
+                  className="border-l-2 border-amber-300 pl-3 text-xs text-mid-gray"
+                >
+                  «{snippet}»
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
       )}
 
       {errorMsg && (
@@ -260,7 +313,7 @@ export function HITLApprovalCard({
           onClick={() => setEditOpen(true)}
           disabled={busy}
           data-testid="hitl-edit-button"
-          className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+          className="inline-flex min-h-12 items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
         >
           <Pencil size={16} aria-hidden="true" />
           Editar
@@ -270,7 +323,7 @@ export function HITLApprovalCard({
           onClick={handleReject}
           disabled={busy}
           data-testid="hitl-reject-button"
-          className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+          className="inline-flex min-h-12 items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
         >
           <X size={16} aria-hidden="true" />
           Rechazar
@@ -367,7 +420,7 @@ export function HITLApprovalCard({
             <button
               type="button"
               onClick={() => setEditOpen(false)}
-              className="rounded-lg border border-light-gray px-4 py-2 text-sm font-medium text-charcoal hover:bg-light-gray/40"
+              className="min-h-12 rounded-lg border border-light-gray px-4 py-2 text-sm font-medium text-charcoal hover:bg-light-gray/40"
             >
               Cancelar
             </button>
@@ -376,7 +429,7 @@ export function HITLApprovalCard({
               onClick={handleSaveEdit}
               disabled={submitting || editedMarkdown.trim().length === 0}
               data-testid="hitl-edit-save-button"
-              className="inline-flex items-center gap-1.5 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-surface transition-opacity hover:opacity-90 disabled:opacity-50"
+              className="min-h-12 inline-flex items-center gap-1.5 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-surface transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               {submitting && (
                 <Loader2 size={14} className="animate-spin" aria-hidden="true" />

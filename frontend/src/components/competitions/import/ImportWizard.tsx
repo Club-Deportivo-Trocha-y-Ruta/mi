@@ -12,13 +12,16 @@
  *
  * Diseño:
  *   - State local con useReducer-ish (varios useState por simplicidad).
- *   - No persiste en Zustand; navegar fuera reinicia (DT-5 del workflow).
+ *   - No persiste en Zustand. Feature 045 (US3): la carga vive en el servidor
+ *     (`race_imports`); el wizard escribe `?import=<id>` al parsear y, si llega
+ *     con ese parámetro, retoma en el paso 2 sin volver a subir el archivo.
+ *     Salir a resolver identidades ya no pierde la carga.
  *   - Stepper visual = breadcrumbs simples con `aria-current`.
  */
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   AlertCircle,
   ArrowLeft,
@@ -29,6 +32,7 @@ import {
   Pencil,
   RefreshCw,
   Sparkles,
+  Trash2,
 } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -38,6 +42,12 @@ import { z } from "zod";
 import { AthleteCombobox } from "@/components/ai/AthleteCombobox";
 import { CategoryMappingTable } from "@/components/competitions/import/CategoryMappingTable";
 import { RaceUploadZone } from "@/components/competitions/import/RaceUploadZone";
+import { parseResultFromDetail } from "@/components/competitions/import/resumeFromDetail";
+import { DiscardImportDialog } from "@/components/competitions/imports/DiscardImportDialog";
+import {
+  ResumeLoadingNotice,
+  ResumeStatusNotice,
+} from "@/components/competitions/imports/ResumeStatusNotice";
 import { RaceConditionsCard } from "@/components/race/RaceConditionsCard";
 import { Stepper } from "@/components/shared/Stepper";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -45,10 +55,12 @@ import {
   useImportCommit,
   useImportDryRun,
   useImportParse,
+  useRaceImport,
 } from "@/hooks/ai/useRaceImports";
 import { useImportPrefill } from "@/hooks/race/useImportPrefill";
 import { useRevisionReasons } from "@/hooks/race/useRevisionReasons";
 import { formatDateTime } from "@/lib/datetime";
+import { getIdentityPendingInfo, identityGateMessage } from "@/lib/identityGate";
 import type {
   ImportCommitResponse,
   ImportDryRunResponse,
@@ -228,11 +240,12 @@ function getErrMsg(err: unknown, fallback: string): string {
     };
     const detail = e.response?.data?.detail;
     // Feature 044 (US4/US5) — `race_imports.py::commit_import` responde con
-    // `detail: {code, message, ...}` para el candado de identidad
-    // (`identity_review_pending`, 409) y el timeout de recálculo
-    // (`identity_rebuild_timeout`, 503). Ese `message` ya viene en español
-    // y es más específico que los status codes genéricos de abajo, así que
-    // se prioriza sobre ellos.
+    // `detail: {code, message, ...}` para el timeout de recálculo de
+    // identidad (`identity_rebuild_timeout`, 503) y otros bloqueos. Ese
+    // `message` ya viene en español y es más específico que los status codes
+    // genéricos de abajo, así que se prioriza sobre ellos. (El candado de
+    // identidad por carga, 409 `identity_pending`, tiene cuerpo plano y lo
+    // resuelve `CommitErrorMessage` antes de llegar aquí — feature 045.)
     if (
       detail &&
       typeof detail === "object" &&
@@ -268,27 +281,13 @@ function getErrMsg(err: unknown, fallback: string): string {
 }
 
 /**
- * Objeto `detail` estructurado de un error axios, cuando existe — usado
- * para decisiones de UI más allá del texto del mensaje (código, contadores).
- */
-function getErrDetail(err: unknown): Record<string, unknown> | undefined {
-  if (typeof err === "object" && err !== null) {
-    const e = err as { response?: { data?: { detail?: unknown } } };
-    const detail = e.response?.data?.detail;
-    if (detail && typeof detail === "object" && !Array.isArray(detail)) {
-      return detail as Record<string, unknown>;
-    }
-  }
-  return undefined;
-}
-
-/**
- * Banner de error del commit — feature 044 (US4). Dos casos especiales:
+ * Banner de error del commit. Casos especiales:
  *
- *  - `identity_review_pending` (409): candado de identidad. El backend
- *    manda `detail.pending` (cuántos candidatos faltan) — se arma el
- *    mensaje en el frontend para incluir ese número explícito, y se agrega
- *    un link directo a `/competitions/identity-review`.
+ *  - `409 identity_pending` (feature 045, cuerpo PLANO): esta carga tiene
+ *    decisiones de identidad por resolver. Se muestra el copy de
+ *    `contracts/ui-copy.md` con el conteo de ESTA carga y un enlace a
+ *    `review_path` (que conserva `import=<id>`). La carga NO se pierde: el
+ *    servidor la guarda y se retoma desde «Cargas e identidades».
  *  - `identity_rebuild_timeout` (503): el recálculo tardó demasiado antes
  *    del commit. Se usa el mensaje del backend tal cual — ya invita a
  *    reintentar ("Intenta de nuevo en unos minutos.").
@@ -303,36 +302,24 @@ function CommitErrorMessage({
   error: unknown;
   fallback: string;
 }) {
-  const detail = getErrDetail(error);
-  const code = typeof detail?.code === "string" ? detail.code : undefined;
-
-  let message: string;
-  if (code === "identity_review_pending") {
-    const pending = typeof detail?.pending === "number" ? detail.pending : null;
-    message =
-      pending != null
-        ? `Hay ${pending} posible${pending === 1 ? "" : "s"} coincidencia${
-            pending === 1 ? "" : "s"
-          } de identidad por revisar antes de confirmar la carga.`
-        : getErrMsg(error, fallback);
-  } else {
-    message = getErrMsg(error, fallback);
-  }
-
-  return (
-    <>
-      <span>{message}</span>
-      {code === "identity_review_pending" && (
+  const identity = getIdentityPendingInfo(error);
+  if (identity) {
+    return (
+      <>
+        <span data-testid="wizard-identity-gate-message">
+          {identityGateMessage(identity.pending)}
+        </span>
         <Link
-          to="/competitions/identity-review"
-          className="mt-1 block font-medium underline underline-offset-2"
+          to={identity.reviewPath}
+          className="mt-1 block min-h-11 py-2 font-medium underline underline-offset-2"
           data-testid="wizard-identity-review-link"
         >
-          Ir a la revisión de identidad
+          Ir a las decisiones de identidad
         </Link>
-      )}
-    </>
-  );
+      </>
+    );
+  }
+  return <span>{getErrMsg(error, fallback)}</span>;
 }
 
 // ---------------------------------------------------------------------------
@@ -373,7 +360,7 @@ interface ImportWizardProps {
    * Feature 015 — cuando se provee, el wizard corre en modo "prefill desde
    * competencia": carga el evento + su serie, precarga y BLOQUEA los campos
    * de identidad, deriva `series_kind` (no editable), oculta "Válida #" en
-   * campeonatos y bloquea con un escape hatch "Editar metadata" si la
+   * campeonatos y bloquea con un escape hatch "Editar datos" si la
    * serie/tipo no se puede determinar (FR-009). Sin él, el wizard se comporta
    * exactamente como hoy (standalone) — FR-007.
    */
@@ -432,7 +419,7 @@ function PrefillLockedSummary({
           data-testid="prefill-edit-metadata"
         >
           <Pencil size={12} aria-hidden="true" />
-          Editar metadata
+          Editar datos
         </Link>
       </div>
       <dl className="grid gap-3 sm:grid-cols-2">
@@ -506,7 +493,7 @@ function PrefillBlockedState({
         data-testid="prefill-blocked-edit-metadata"
       >
         <Pencil size={12} aria-hidden="true" />
-        Editar metadata
+        Editar datos
       </Link>
     </div>
   );
@@ -571,6 +558,68 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
   const [parseResult, setParseResult] = useState<ImportParseResponse | null>(
     null,
   );
+  // Feature 045 (US3) — retomar una carga persistida desde `?import=<id>`.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const resumeImportId = searchParams.get("import");
+  // Id que el coach ya descartó / reinició: no se vuelve a consultar aunque
+  // el parámetro tarde un render en desaparecer de la URL.
+  const [dismissedImportId, setDismissedImportId] = useState<string | null>(
+    null,
+  );
+  const [resumed, setResumed] = useState<{
+    filename: string | null;
+    status: "pending" | "dry_run";
+  } | null>(null);
+  const [discardOpen, setDiscardOpen] = useState(false);
+  const hydratedIdRef = useRef<string | null>(null);
+  // Solo se consulta mientras NO haya parse en memoria (tras parsear, la URL
+  // gana el `import` y esa query quedaría redundante).
+  const activeResumeId =
+    parseResult || !resumeImportId || resumeImportId === dismissedImportId
+      ? null
+      : resumeImportId;
+  const resumeQuery = useRaceImport(activeResumeId);
+  const resumeDetail = resumeQuery.data;
+  const resumeIsResumable =
+    !!resumeDetail &&
+    (resumeDetail.status === "pending" || resumeDetail.status === "dry_run") &&
+    resumeDetail.parse_meta != null;
+  const showResumeLoading =
+    activeResumeId != null &&
+    (resumeQuery.isPending || (resumeIsResumable && !parseResult));
+  const showResumeNotice =
+    activeResumeId != null &&
+    !showResumeLoading &&
+    (resumeQuery.isError || (!!resumeDetail && !resumeIsResumable));
+
+  /** Escribe/borra `?import=<id>` sin apilar historial. */
+  function setImportParam(id: string | null) {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (id) next.set("import", id);
+        else next.delete("import");
+        return next;
+      },
+      { replace: true },
+    );
+  }
+
+  // Hidrata el wizard desde el detalle: `pending` → revisión, `dry_run` →
+  // confirmación. Ambos viven en el paso 2 (el dry-run se recalcula solo).
+  useEffect(() => {
+    if (!resumeDetail || parseResult) return;
+    if (!resumeIsResumable) return;
+    if (hydratedIdRef.current === String(resumeDetail.id)) return;
+    hydratedIdRef.current = String(resumeDetail.id);
+    setParseResult(parseResultFromDetail(resumeDetail));
+    setResumed({
+      filename: resumeDetail.source_filename,
+      status: resumeDetail.status === "dry_run" ? "dry_run" : "pending",
+    });
+    setStep(2);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resumeDetail, resumeIsResumable, parseResult]);
   const [resultadosPdf, setResultadosPdf] = useState<File | null>(null);
   const [generalPdf, setGeneralPdf] = useState<File | null>(null);
   // Resoluciones por competitor_normalized_name. Clave AUSENTE = pendiente.
@@ -755,6 +804,9 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
       });
       setParseResult(result);
       setStep(2);
+      // La carga ya vive en el servidor: si el coach sale a resolver
+      // identidades, `?import=<id>` la retoma sin volver a subir el archivo.
+      setImportParam(result.parse_id);
     } catch (err) {
       setStep1Error(getErrMsg(err, "No se pudo procesar el archivo."));
     }
@@ -850,6 +902,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
               : {}),
           },
         });
+        setImportParam(null);
         setStep(3);
         onCompleted?.(result);
       } catch {
@@ -879,15 +932,21 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
         parseId: parseResult.parse_id,
         body: { resolved_matches },
       });
+      setImportParam(null);
       setStep(3);
       onCompleted?.(result);
     } catch {
       // El error se muestra en el render (step queda en 2 con commitMutation.isError).
+      // La carga NO se pierde: sigue en el servidor y en `?import=<id>`.
       setStep(3);
     }
   };
 
   const reset = () => {
+    setDismissedImportId(resumeImportId ?? parseResult?.parse_id ?? null);
+    setImportParam(null);
+    setResumed(null);
+    hydratedIdRef.current = null;
     setStep(1);
     setParseResult(null);
     setResultadosPdf(null);
@@ -921,8 +980,23 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
         {STEPS[step - 1].label}
       </h2>
 
+      {/* Feature 045 (US3) — retomando una carga desde `?import=<id>`. */}
+      {step === 1 && showResumeLoading && <ResumeLoadingNotice />}
+      {step === 1 && showResumeNotice && (
+        <ResumeStatusNotice
+          detail={resumeDetail}
+          isError={resumeQuery.isError}
+          onStartNew={reset}
+        />
+      )}
+
       {/* Feature 015 — estados no-ready del prefill reemplazan el paso 1. */}
-      {step === 1 && isPrefilled && prefill && prefill.status !== "ready" && (
+      {step === 1 &&
+        !showResumeLoading &&
+        !showResumeNotice &&
+        isPrefilled &&
+        prefill &&
+        prefill.status !== "ready" && (
         <div data-testid="import-wizard-step1-prefill">
           {prefill.status === "loading" && <PrefillLoadingState />}
           {prefill.status === "blocked" && (
@@ -937,7 +1011,10 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
         </div>
       )}
 
-      {step === 1 && (!isPrefilled || prefill?.status === "ready") && (
+      {step === 1 &&
+        !showResumeLoading &&
+        !showResumeNotice &&
+        (!isPrefilled || prefill?.status === "ready") && (
         <form
           onSubmit={handleSubmit(submitStep1)}
           className="space-y-4"
@@ -1395,6 +1472,21 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
 
       {step === 2 && (
         <div className="space-y-4" data-testid="import-wizard-step2">
+          {resumed && (
+            <div
+              role="status"
+              className="rounded-lg bg-light-gray/40 px-3 py-2 text-sm text-charcoal"
+              data-testid="wizard-resumed-notice"
+            >
+              Retomaste tu carga
+              {resumed.filename ? ` «${resumed.filename}»` : ""}. El archivo
+              sigue guardado.{" "}
+              {resumed.status === "dry_run"
+                ? "Ya se validó: confirma para cargarla."
+                : "Revisa las coincidencias y confirma."}
+            </div>
+          )}
+
           {dryRunMutation.isPending && (
             <div
               className="space-y-2"
@@ -1807,6 +1899,22 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
               )}
             </>
           )}
+
+          {/* Feature 045 (US3) — salida explícita: la carga vive en el
+              servidor, así que descartarla pide confirmación. */}
+          {parseResult && (
+            <div className="border-t border-light-gray pt-3">
+              <button
+                type="button"
+                onClick={() => setDiscardOpen(true)}
+                data-testid="wizard-discard"
+                className="inline-flex min-h-12 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-red-700 hover:bg-red-50"
+              >
+                <Trash2 size={14} aria-hidden="true" />
+                Descartar esta carga
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -1974,6 +2082,16 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
             </div>
           )}
         </div>
+      )}
+
+      {parseResult && (
+        <DiscardImportDialog
+          open={discardOpen}
+          onOpenChange={setDiscardOpen}
+          importId={parseResult.parse_id}
+          filename={resumed?.filename ?? resultadosPdf?.name ?? null}
+          onDiscarded={reset}
+        />
       )}
     </section>
   );

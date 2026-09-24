@@ -13,10 +13,20 @@
  *   Row 1, Tile 1 — "Próxima sesión"              -> /training/sessions/{id}
  *   Row 1, Tile 2 — "Próxima carrera Copa Valle"   -> /competitions/{id}
  *   Row 2 — Resultados por importar                -> /competitions?filter=needs-results
+ *   Row 2 — Identidades por decidir (045)           -> /competitions/imports?seccion=identidades
  *   Row 2 — Actividades sin enlazar                 -> /activities?linked=false
  *   Row 2 — Boletines pendientes del mes            -> /training/athlete-newsletters
  *   Row 2 — Consentimientos pendientes              -> /athletes
- *   Row 2 — Insights IA desactualizados             -> /competitions/insights/season/{year}
+ *   Row 2 — Análisis por aprobar (045)              -> /competitions/season/{year}?analisis=por-aprobar
+ *   Row 2 — Análisis desactualizados             -> /competitions/season/{year}?analisis=desactualizados
+ *
+ * Feature 045 (T064): las dos filas nuevas y el repunte de «Insights IA
+ * desactualizados» salen de `GET /api/dashboard/coach-summary`
+ * (`identity_decisions_pending`, `analyses_awaiting_approval`,
+ * `insights_stale`); la antigua ruta `/competitions/insights/season/{year}`
+ * ahora solo redirige a `/competitions/season/{year}` (el destino canónico
+ * de «Temporada»), y `?analisis=` abre el panel «Análisis pendientes» con
+ * exactamente los ítems contados (SC-005).
  *
  * Auth + backend mocking mirror `coach-navigation.spec.ts` / `target-size.
  * spec.ts`: the persisted Zustand `auth-session` shape is written directly
@@ -211,6 +221,11 @@ const COACH_SUMMARY = {
   generated_at: "2026-07-01T00:00:00Z",
   consents_pending: 2,
   insights_stale: 4,
+  // Feature 045 (US5): conteos de las dos filas nuevas del inbox y del
+  // sub-ítem «Cargas e identidades» del menú (identidades + cargas en curso).
+  identity_decisions_pending: 3,
+  imports_in_progress: 1,
+  analyses_awaiting_approval: 2,
   // Tile omitted entirely when null (contracts/home-tiles.md) — the meter
   // isn't part of this task's link-through flows.
   weekly_load: null,
@@ -234,8 +249,9 @@ const SEASON_PANORAMA = {
 // ---- Route registration -------------------------------------------------
 
 /**
- * Everything `/dashboard` needs for both hero tiles + all five pending-inbox
- * rows to resolve to a real, clickable state.
+ * Everything `/dashboard` needs for both hero tiles + all seven pending-inbox
+ * rows (five from 031 plus the two from 045) to resolve to a real, clickable
+ * state.
  */
 async function mockDashboardLanding(page: Page): Promise<void> {
   await page.route(
@@ -325,13 +341,81 @@ async function mockCompetitionDetailApi(page: Page): Promise<void> {
   );
 }
 
-/** `/competitions/insights/season/{year}` (SeasonInsightsPage). */
+/** Análisis pendientes de «Temporada» (fixtures ficticios, uno por conteo del
+ * resumen del Home — SC-005: la lista tiene exactamente los ítems contados). */
+function pendingAnalysis(n: number, state: "awaiting_approval" | "stale") {
+  return {
+    run_id: `run-e2e-${state}-${n}`,
+    insight_id: state === "stale" ? 8000 + n : null,
+    athlete_id: 700 + n,
+    athlete_ref: `Atleta Ficticio ${n}`,
+    event_id: 9000 + n,
+    event_label: `Copa Valle ${n}`,
+    season: CURRENT_SEASON,
+    state,
+    updated_at: "2026-07-01T10:00:00Z",
+  };
+}
+
+const PENDING_STALE = Array.from({ length: COACH_SUMMARY.insights_stale }, (_, i) =>
+  pendingAnalysis(i + 1, "stale"),
+);
+const PENDING_AWAITING = Array.from(
+  { length: COACH_SUMMARY.analyses_awaiting_approval },
+  (_, i) => pendingAnalysis(i + 1, "awaiting_approval"),
+);
+
+/** `/competitions/season/{year}` (SeasonInsightsPage + panel «Análisis
+ * pendientes», feature 045). El endpoint de la tabla no cambió de URL; el
+ * panel suma `GET /pending-analyses?state=` y `GET /api/ai/status` (aviso de
+ * presupuesto en «Desactualizados»). */
 async function mockSeasonInsightsApi(page: Page): Promise<void> {
   await page.route(
     (url) =>
       isBackend(url) &&
       url.pathname === `/api/race-analysis/insights/season/${CURRENT_SEASON}`,
     jsonRoute(SEASON_PANORAMA),
+  );
+  await page.route(
+    (url) => isBackend(url) && url.pathname === "/api/race-analysis/pending-analyses",
+    (route) => {
+      const state = new URL(route.request().url()).searchParams.get("state");
+      return route.fulfill({
+        status: 200,
+        json: state === "stale" ? PENDING_STALE : PENDING_AWAITING,
+      });
+    },
+  );
+  await page.route(
+    (url) => isBackend(url) && url.pathname === "/api/ai/status",
+    jsonRoute({
+      budget_status: "ok",
+      budget_remaining_pct: 80,
+      concurrency_available: true,
+      est_wait_seconds: 0,
+    }),
+  );
+}
+
+/** `/competitions/imports` («Cargas e identidades», feature 045): el resumen
+ * de identidades y el historial de cargas alimentan las insignias de las
+ * pestañas; la lista de candidatos, la sección «¿Es la misma persona?». */
+async function mockImportsAreaApi(page: Page): Promise<void> {
+  await page.route(
+    (url) => isBackend(url) && url.pathname === "/api/race-identity/summary",
+    jsonRoute({
+      pending: COACH_SUMMARY.identity_decisions_pending,
+      same_person: 0,
+      different_people: 0,
+    }),
+  );
+  await page.route(
+    (url) => isBackend(url) && url.pathname === "/api/race-identity/candidates",
+    jsonRoute({ items: [], total: 0, page: 1, page_size: 20 }),
+  );
+  await page.route(
+    (url) => isBackend(url) && url.pathname === "/api/race-analysis/imports/",
+    jsonRoute({ items: [], total: 0 }),
   );
 }
 
@@ -462,25 +546,98 @@ test.describe("Feature 031 (T058) — coach home: link-through flows", () => {
     });
   });
 
-  test("Row 2 'Insights IA desactualizados' links to /competitions/insights/season/{year}", async ({
+  test("Row 2 'Identidades por decidir' links to /competitions/imports?seccion=identidades", async ({
+    page,
+  }) => {
+    await mockImportsAreaApi(page);
+    await gotoDashboard(page);
+
+    const row = page.getByRole("link", { name: /Identidades por decidir/ });
+    await expect(row).toBeVisible({ timeout: WAIT_TIMEOUT });
+    await expect(row).toContainText(String(COACH_SUMMARY.identity_decisions_pending));
+
+    await row.click();
+    await page.waitForURL(
+      (url) =>
+        url.pathname === "/competitions/imports" &&
+        url.searchParams.get("seccion") === "identidades",
+      { timeout: WAIT_TIMEOUT },
+    );
+
+    // «Cargas e identidades» abre en la sección «¿Es la misma persona?».
+    await expect(page.getByRole("heading", { name: "Cargas e identidades" })).toBeVisible({
+      timeout: WAIT_TIMEOUT,
+    });
+    await expect(page.getByTestId("seccion-identidades")).toHaveAttribute(
+      "data-state",
+      "active",
+      { timeout: WAIT_TIMEOUT },
+    );
+  });
+
+  test("Row 2 'Análisis por aprobar' links to /competitions/season/{year}?analisis=por-aprobar", async ({
     page,
   }) => {
     await mockSeasonInsightsApi(page);
     await gotoDashboard(page);
 
-    const row = page.getByRole("link", { name: /Insights IA desactualizados/ });
+    const row = page.getByRole("link", { name: /Análisis por aprobar/ });
     await expect(row).toBeVisible({ timeout: WAIT_TIMEOUT });
+    await expect(row).toContainText(String(COACH_SUMMARY.analyses_awaiting_approval));
 
     await row.click();
-    await page.waitForURL(`**/competitions/insights/season/${CURRENT_SEASON}`, {
+    await page.waitForURL(
+      (url) =>
+        url.pathname === `/competitions/season/${CURRENT_SEASON}` &&
+        url.searchParams.get("analisis") === "por-aprobar",
+      { timeout: WAIT_TIMEOUT },
+    );
+
+    await expect(
+      page.getByRole("heading", { name: `Temporada ${CURRENT_SEASON}` }),
+    ).toBeVisible({ timeout: WAIT_TIMEOUT });
+    // El panel abre en el modo del conteo y lista exactamente los ítems contados.
+    await expect(page.getByTestId("pending-analyses-panel")).toBeVisible({
       timeout: WAIT_TIMEOUT,
     });
-
-    expect(new URL(page.url()).pathname).toBe(
-      `/competitions/insights/season/${CURRENT_SEASON}`,
+    await expect(page.getByTestId("pending-mode-por-aprobar")).toHaveAttribute(
+      "aria-pressed",
+      "true",
     );
     await expect(
-      page.getByRole("heading", { name: `Panorama de temporada ${CURRENT_SEASON}` }),
+      page.locator('[data-testid^="pending-analysis-run-e2e-awaiting_approval-"]'),
+    ).toHaveCount(COACH_SUMMARY.analyses_awaiting_approval, { timeout: WAIT_TIMEOUT });
+  });
+
+  test("Row 2 'Análisis desactualizados' links to /competitions/season/{year}?analisis=desactualizados", async ({
+    page,
+  }) => {
+    await mockSeasonInsightsApi(page);
+    await gotoDashboard(page);
+
+    const row = page.getByRole("link", { name: /Análisis desactualizados/ });
+    await expect(row).toBeVisible({ timeout: WAIT_TIMEOUT });
+    await expect(row).toContainText(String(COACH_SUMMARY.insights_stale));
+
+    await row.click();
+    await page.waitForURL(
+      (url) =>
+        url.pathname === `/competitions/season/${CURRENT_SEASON}` &&
+        url.searchParams.get("analisis") === "desactualizados",
+      { timeout: WAIT_TIMEOUT },
+    );
+
+    expect(new URL(page.url()).pathname).toBe(`/competitions/season/${CURRENT_SEASON}`);
+    await expect(
+      page.getByRole("heading", { name: `Temporada ${CURRENT_SEASON}` }),
     ).toBeVisible({ timeout: WAIT_TIMEOUT });
+    await expect(page.getByTestId("pending-mode-desactualizados")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+      { timeout: WAIT_TIMEOUT },
+    );
+    await expect(
+      page.locator('[data-testid^="pending-analysis-run-e2e-stale-"]'),
+    ).toHaveCount(COACH_SUMMARY.insights_stale, { timeout: WAIT_TIMEOUT });
   });
 });

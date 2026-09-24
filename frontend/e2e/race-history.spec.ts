@@ -28,8 +28,8 @@
  * Cubre `tasks.md` T087: stage de dos archivos sintéticos (dos temporadas
  * de Copa Valle) → corregir/reconocer un hueco de completitud → decidir
  * identidad → commit → el coach ve la serie con marcador de cambio de
- * categoría en el tab "Carreras" → la vista de familia no expone ningún
- * nombre de tercero. Ver `specs/044-race-history-backfill/quickstart.md`
+ * categoría en el tab «Carreras» (vista «Progresión») → la vista de familia
+ * no expone ningún nombre de tercero. Ver `specs/044-race-history-backfill/quickstart.md`
  * §4/§6/§7 (este spec es literalmente el `npm run test:e2e -- race-history.spec.ts`
  * que ahí se documenta) y `contracts/identity-review-api.md` /
  * `contracts/historical-load.md` / `contracts/ui-history.md`.
@@ -38,9 +38,20 @@
  * (`wizard-step2-confirm`) intenta comprometer la válida directamente
  * (nada que decidir para la primera válida, 2024 — navega derecho a
  * resultados); si hay candidatos de identidad pendientes (la segunda,
- * 2025), responde `409 identity_review_pending` con el link
- * `wizard-identity-review-link`, y el tablero `/competitions/history` es
+ * 2025), responde `409 identity_pending` (cuerpo PLANO desde la feature
+ * 045: `{detail, pending_for_import, review_path}`) y el wizard pinta el
+ * mensaje `wizard-identity-gate-message` + el link
+ * `wizard-identity-review-link` hacia «Cargas e identidades»; el tablero
+ * `/competitions/imports?seccion=cargas` (antes `/competitions/history`) es
  * lo que hace falta para el commit FINAL una vez decidida la identidad.
+ *
+ * Feature 045 (T064): las tres pantallas viejas (`/competitions/history`,
+ * `/competitions/identity-review`, `/competitions/unlinked`) ahora son
+ * redirecciones a `/competitions/imports?seccion=cargas|identidades|sin-enlazar`
+ * y el tab «Carreras» del atleta reúne progresión, análisis y comparador
+ * (`?tab=races&view=progresion|analisis|comparar`); el spec usa las rutas
+ * canónicas nuevas y ya no busca `history-progression-card` sino
+ * `progression-view`.
  *
  * Sintéticos: los dos PDFs se generan en tiempo de test con
  * `results_pdf_builder.py` (nunca los archivos reales de
@@ -219,7 +230,7 @@ interface StageOptions {
  * inmediato (`replace: true`) a `/competitions/{id}?tab=results` en cuanto
  * `submitCommit` resuelve, así que el estado de éxito interno del wizard
  * nunca llega a pintarse. `import-wizard-step3` sólo es observable en el
- * camino de ERROR (p. ej. `identity_review_pending`), porque ahí
+ * camino de ERROR (p. ej. `identity_pending`), porque ahí
  * `onCompleted` nunca se llama y no hay navegación. Devuelve cuál de los
  * dos pasó.
  */
@@ -311,7 +322,9 @@ async function isIdentityPendingError(page: Page): Promise<boolean> {
 // ---------------------------------------------------------------------------
 
 async function decideAllPendingCandidates(page: Page): Promise<void> {
-  await page.goto("/competitions/identity-review");
+  // Feature 045: «¿Es la misma persona?» vive en «Cargas e identidades»
+  // (`/competitions/identity-review` ahora solo redirige aquí).
+  await page.goto("/competitions/imports?seccion=identidades");
   await expect(page.getByTestId("review-progress")).toBeVisible({
     timeout: NAV_TIMEOUT,
   });
@@ -358,11 +371,12 @@ async function decideAllPendingCandidates(page: Page): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Tablero "Carga histórica" — commit final de una válida ya lista.
+// Sección «Cargas» de «Cargas e identidades» — commit final de una válida
+// ya lista (antes el tablero «Carga histórica» de `/competitions/history`).
 // ---------------------------------------------------------------------------
 
 async function commitFromBoard(page: Page, validaLabelPattern: RegExp): Promise<void> {
-  await page.goto("/competitions/history");
+  await page.goto("/competitions/imports?seccion=cargas");
   const row = page
     .locator('[data-testid^="import-row-"]')
     .filter({ hasText: validaLabelPattern });
@@ -424,6 +438,39 @@ test.describe("Feature 044 — historial Copa Valle (T087)", () => {
       expect(outcome2024).toBe("navigated");
     }
 
+    // 1b) Enlazar el "Mateo" de 2024 al atleta del club sembrado por el seed
+    //     de desarrollo ("Santiago", el mismo que usa growth-parent.spec.ts /
+    //     parents.spec.ts) ANTES de cargar 2025. La cola de identidad solo
+    //     levanta candidatos si un lado del par ya es un atleta del club
+    //     (`identity_review.in_club_scope`, decisión 2026-09-22 de la 044):
+    //     sin este enlace previo el commit de 2025 no tiene nada que revisar,
+    //     no dispara el candado por carga de la 045 y el "Mateo" de 2025
+    //     queda como otro competidor (sin serie cross-temporada).
+    const unlinked = (await apiGet(
+      page,
+      coachToken,
+      "/api/race-competitors/?unlinked=true",
+    )) as { items?: Array<{ id: number; normalized_name: string }> } | Array<{ id: number; normalized_name: string }>;
+    const competitors = Array.isArray(unlinked) ? unlinked : unlinked.items ?? [];
+    const mateo = competitors.find((c) => /mateo ejemplar/i.test(c.normalized_name));
+    expect(mateo, "competitor 'Mateo Ejemplar' sin enlazar, tras el commit de 2024").toBeTruthy();
+
+    const athletes = (await apiGet(page, coachToken, "/api/athletes")) as
+      | Array<{ id: number; first_name?: string }>
+      | { items: Array<{ id: number; first_name?: string }> };
+    const athleteList = Array.isArray(athletes) ? athletes : athletes.items;
+    const santiago = athleteList.find((a) => /santiago/i.test(a.first_name ?? ""));
+    test.skip(!santiago, "Seed sin atleta 'Santiago' (padre@trochayruta.com) — no se puede verificar el tab Carreras");
+    if (!santiago || !mateo) return;
+
+    const linkResult = await apiPost(
+      page,
+      coachToken,
+      `/api/race-competitors/${mateo.id}/link`,
+      { athlete_id: santiago.id },
+    );
+    expect(linkResult.ok, `link competitor->athlete: ${JSON.stringify(linkResult.body)}`).toBeTruthy();
+
     // 2) Válida 2025 — mismo "Mateo" con un apellido de menos, misma
     //    "Sofia" con club/ciudad distintos, y el hueco de completitud en
     //    INFANTIL B (puesto 3 ausente) que hay que reconocer antes de
@@ -444,46 +491,33 @@ test.describe("Feature 044 — historial Copa Valle (T087)", () => {
     //    qué compararse). Si por algún motivo no lo estuvo, el helper de
     //    abajo simplemente no encuentra candidatos pendientes y sigue.
     if (outcome2025 === "step3-error" && (await isIdentityPendingError(page))) {
+      // Feature 045: el bloqueo es por carga y trae el copy de
+      // `contracts/ui-copy.md` con el conteo de ESTA carga, más un enlace a
+      // `review_path` (conserva `import=<id>` para «Volver a la carga»).
+      await expect(page.getByTestId("wizard-identity-gate-message")).toContainText(
+        /decisi(ón|ones) de identidad pendientes? para esta carga/i,
+      );
+      await expect(page.getByTestId("wizard-identity-review-link")).toHaveAttribute(
+        "href",
+        /\/competitions\/imports\?seccion=identidades&import=\d+/,
+      );
       await decideAllPendingCandidates(page);
       // 4) Commit final de la segunda válida desde el tablero.
       await commitFromBoard(page, /E2E Válida 2025|Válida 4/i);
     } else {
-      expect(outcome2025).toBe("navigated");
+      // Con el "Mateo" de 2024 ya enlazado a un atleta del club (paso 1b) el
+      // candado por carga de la 045 DEBE frenar el commit de 2025: llegar aquí
+      // significa que no lo hizo.
+      throw new Error(
+        `commit de 2025 sin 409 identity_pending pese a tener un lado enlazado a un atleta del club (resultado: ${outcome2025})`,
+      );
     }
 
-    // 5) Enlazar el "Mateo" fusionado al atleta del club sembrado por el
-    //    seed de desarrollo ("Santiago", el mismo que usa
-    //    growth-parent.spec.ts / parents.spec.ts) — así el tab "Carreras"
-    //    tiene una serie cross-temporada real que mostrar.
-    const unlinked = (await apiGet(
-      page,
-      coachToken,
-      "/api/race-competitors/?unlinked=true",
-    )) as { items?: Array<{ id: number; normalized_name: string }> } | Array<{ id: number; normalized_name: string }>;
-    const competitors = Array.isArray(unlinked) ? unlinked : unlinked.items ?? [];
-    const mateo = competitors.find((c) => /mateo ejemplar/i.test(c.normalized_name));
-    expect(mateo, "competitor 'Mateo Ejemplar' sin enlazar, tras el merge de identidad").toBeTruthy();
-
-    const athletes = (await apiGet(page, coachToken, "/api/athletes")) as
-      | Array<{ id: number; first_name?: string }>
-      | { items: Array<{ id: number; first_name?: string }> };
-    const athleteList = Array.isArray(athletes) ? athletes : athletes.items;
-    const santiago = athleteList.find((a) => /santiago/i.test(a.first_name ?? ""));
-    test.skip(!santiago, "Seed sin atleta 'Santiago' (padre@trochayruta.com) — no se puede verificar el tab Carreras");
-    if (!santiago || !mateo) return;
-
-    const linkResult = await apiPost(
-      page,
-      coachToken,
-      `/api/race-competitors/${mateo.id}/link`,
-      { athlete_id: santiago.id },
-    );
-    expect(linkResult.ok, `link competitor->athlete: ${JSON.stringify(linkResult.body)}`).toBeTruthy();
-
-    // 6) Vista coach — tab "Carreras" del atleta: la tarjeta de progresión
-    //    y el marcador de cambio de categoría (INFANTIL A → INFANTIL B).
-    await page.goto(`/athletes/${santiago.id}?tab=races`);
-    await expect(page.getByTestId("history-progression-card")).toBeVisible({
+    // 6) Vista coach — tab «Carreras» del atleta (vista «Progresión», la
+    //    predeterminada desde la feature 045): la progresión histórica y el
+    //    marcador de cambio de categoría (INFANTIL A → INFANTIL B).
+    await page.goto(`/athletes/${santiago.id}?tab=races&view=progresion`);
+    await expect(page.getByTestId("progression-view")).toBeVisible({
       timeout: NAV_TIMEOUT,
     });
     await expect(page.getByTestId("history-category-changes")).toBeVisible({
@@ -512,6 +546,15 @@ test.describe("Feature 044 — historial Copa Valle (T087)", () => {
       .click();
     await expect(page).toHaveURL(/\/my-athletes\/\d+/, { timeout: NAV_TIMEOUT });
     await page.getByTestId("parent-tab-races").click();
+    // Esperar a que «Progresión» pinte antes de las aserciones de ausencia
+    // (si no, `toHaveCount(0)` pasaría trivialmente sobre un tab vacío).
+    await expect(page.getByTestId("progression-view")).toBeVisible({
+      timeout: NAV_TIMEOUT,
+    });
+    // La familia no ve «Comparar» (solo coach) ni las brechas vs. 1.ª
+    // posición / podio.
+    await expect(page.getByTestId("carreras-view-comparar")).toHaveCount(0);
+    await expect(page.getByText(/brecha vs\. 1\.ª posición|brecha vs\. podio/i)).toHaveCount(0);
     await expect(page.getByText(/sofia demostrativa/i)).toHaveCount(0);
     await expect(page.getByText(/mateo ejemplar ficticio/i)).toHaveCount(0);
   });

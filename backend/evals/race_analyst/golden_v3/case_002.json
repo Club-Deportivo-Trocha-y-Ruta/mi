@@ -27,12 +27,14 @@
       "series_level": "departmental",
       "is_championship": false,
       "field_size": 12,
+      "timed_finishers": 12,
       "position": 8,
-      "percentile": 36.4,
+      "percentile": 32,
       "race_time_ms": 2115000,
       "gap_to_p1_ms": 168000,
       "gap_pct": 8.63,
       "gap_to_p3_ms": 97000,
+      "gap_to_podium_pct": 4.8,
       "category_median_time_ms": 2072000,
       "gap_to_median_pct": 2.08,
       "laps_behind": 0,
@@ -50,7 +52,7 @@
         "is_championship": false,
         "position": 5,
         "field_size": 12,
-        "percentile": 63.6,
+        "percentile": 65,
         "gap_pct": 4.55,
         "gap_to_p3_ms": 48000,
         "expected_position": 6,
@@ -63,7 +65,7 @@
         "is_championship": false,
         "position": 6,
         "field_size": 12,
-        "percentile": 54.5,
+        "percentile": 55,
         "gap_pct": 5.27,
         "gap_to_p3_ms": 62000,
         "expected_position": 5,
@@ -76,7 +78,7 @@
         "is_championship": false,
         "position": 8,
         "field_size": 12,
-        "percentile": 36.4,
+        "percentile": 32,
         "gap_pct": 8.63,
         "gap_to_p3_ms": 97000,
         "expected_position": 5,
@@ -132,7 +134,7 @@
       {
         "generated_at": "2026-03-02",
         "valida_label": "Válida 2 · Copa Valle",
-        "headline": "Sostuvo el percentil 54.5 pese a una ventana corta de preparación",
+        "headline": "Sostuvo el percentil 55 pese a una ventana corta de preparación",
         "coach_question": "¿Hubo alguna molestia física en las semanas previas?",
         "coach_answer": "No hubo molestias; el colegio cambió el horario de la tarde",
         "coach_rating": 1
@@ -149,8 +151,8 @@
       ]
     },
     "memory_recent_insights": [
-      "Válida 2 · Copa: percentil 54.5 con asistencia estable",
-      "Válida 1 · Copa: mejor registro de la temporada en percentil 63.6"
+      "Válida 2 · Copa: percentil 55 con asistencia estable",
+      "Válida 1 · Copa: mejor registro de la temporada en percentil 65"
     ]
   },
   "expected_themes": [
@@ -182,7 +184,7 @@
     "schema_version": "v3",
     "headline": "Perdió 3 puestos respecto de la posición esperada en la ventana con menor asistencia del ciclo: 55.6% frente a un RPE que subió a 5.4.",
     "field_reading": {
-      "percentile": 36.4,
+      "percentile": 32,
       "expected_position": 5,
       "actual_position": 8,
       "delta_vs_expected": -3,
@@ -195,7 +197,7 @@
       {
         "claim": "La caída no es de ritmo puntual: es la primera vez en la temporada que termina por debajo de la mediana de la categoría.",
         "evidence": [
-          "percentil 36.4 frente a 63.6 en la primera válida",
+          "percentil 32 frente a 65 en la primera válida",
           "gap a la mediana 2.08%"
         ],
         "domain": "field",

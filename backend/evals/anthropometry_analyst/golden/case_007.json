@@ -30,7 +30,7 @@
     "previous_analysis": null
   },
   "expected_themes": ["próxima medición lo confirmará", "aún no se puede confirmar", "primera señal"],
-  "forbidden_terms": ["ya cambió de fase de forma definitiva", "cambio de fase confirmado", "percentil", "z-score"],
+  "forbidden_terms": ["ya cambió de fase de forma definitiva", "cambio de fase confirmado", "percentil", "z-score", "%", "mm"],
   "max_words": 180,
   "min_confidence_level": null,
   "max_confidence_level": "medium",

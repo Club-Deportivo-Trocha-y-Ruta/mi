@@ -21,6 +21,7 @@ import { z } from "zod";
 import { MaturationStatus } from "@/types/enums";
 import { growthSourceSchema } from "@/schemas/anthropometry.schema";
 import { criticVerdictSchema } from "@/schemas/ai.schemas";
+import { bodyCompositionSummaryOutSchema } from "@/schemas/bodyComposition.schema";
 import type { NutritionalStatus } from "@/lib/growth/bands";
 
 // ---------------------------------------------------------------------------
@@ -163,6 +164,15 @@ export const growthSummarySchema = z
      * `null` quieto cuando no aplica).
      */
     latest_ai_analysis: latestAiAnalysisSchema.nullable().optional(),
+    /**
+     * Bloque de composición corporal por pliegues (feature 046). El coach ve
+     * `BodyCompositionSummary` (con `band`/cifras); un padre ve la variante
+     * de 5 claves sin cifras (`BodyCompositionFamilySummary`) — el backend
+     * elige la variante por rol (`contracts/skinfolds-api.md` §5).
+     * `.optional()` es tolerancia defensiva del lado cliente para fixtures
+     * anteriores a esta feature; el backend siempre manda la clave.
+     */
+    body_composition: bodyCompositionSummaryOutSchema.nullable().optional(),
   })
   .strip();
 

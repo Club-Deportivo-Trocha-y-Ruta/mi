@@ -27,12 +27,14 @@
       "series_level": "national",
       "is_championship": true,
       "field_size": 34,
+      "timed_finishers": 34,
       "position": 11,
-      "percentile": 69.7,
+      "percentile": 68,
       "race_time_ms": 3336000,
       "gap_to_p1_ms": 876000,
       "gap_pct": 35.6,
       "gap_to_p3_ms": 810000,
+      "gap_to_podium_pct": 32.1,
       "category_median_time_ms": 3540000,
       "gap_to_median_pct": -5.8,
       "laps_behind": 1,
@@ -50,7 +52,7 @@
         "is_championship": false,
         "position": 4,
         "field_size": 11,
-        "percentile": 70,
+        "percentile": 66,
         "gap_pct": 8.9,
         "gap_to_p3_ms": 62000,
         "expected_position": 5,
@@ -63,7 +65,7 @@
         "is_championship": false,
         "position": 4,
         "field_size": 11,
-        "percentile": 70,
+        "percentile": 66,
         "gap_pct": 8.2,
         "gap_to_p3_ms": 55000,
         "expected_position": 4,
@@ -76,7 +78,7 @@
         "is_championship": false,
         "position": 4,
         "field_size": 12,
-        "percentile": 72.7,
+        "percentile": 68,
         "gap_pct": 7.4,
         "gap_to_p3_ms": 48000,
         "expected_position": 4,
@@ -102,7 +104,7 @@
         "is_championship": false,
         "position": 5,
         "field_size": 11,
-        "percentile": 60,
+        "percentile": 50,
         "gap_pct": 9.1,
         "gap_to_p3_ms": 74000,
         "expected_position": 4,
@@ -116,7 +118,7 @@
         "is_championship": true,
         "position": 2,
         "field_size": 18,
-        "percentile": 94.1,
+        "percentile": 93,
         "gap_pct": 2.9,
         "gap_to_p3_ms": -41000,
         "expected_position": 5,
@@ -130,7 +132,7 @@
         "is_championship": true,
         "position": 11,
         "field_size": 34,
-        "percentile": 69.7,
+        "percentile": 68,
         "gap_pct": 35.6,
         "gap_to_p3_ms": 810000,
         "expected_position": 13,
@@ -189,7 +191,7 @@
       {
         "generated_at": "2026-07-15",
         "valida_label": "Cto. Departamental",
-        "headline": "Percentil 94.1 en el pelotón departamental de 18",
+        "headline": "Percentil 93 en el pelotón departamental de 18",
         "coach_question": "¿Cómo llegó a la salida del departamental después del receso?",
         "coach_answer": "Llegó descansado, entrenó completo las dos semanas previas",
         "coach_rating": 1
@@ -206,8 +208,8 @@
       ]
     },
     "memory_recent_insights": [
-      "Cto. Departamental: percentil 94.1 en el pelotón más numeroso de la temporada hasta esa fecha",
-      "Válida 5 · Copa: percentil 60 con la asistencia más baja del ciclo"
+      "Cto. Departamental: percentil 93 en el pelotón más numeroso de la temporada hasta esa fecha",
+      "Válida 5 · Copa: percentil 50 con la asistencia más baja del ciclo"
     ]
   },
   "expected_themes": [
@@ -246,9 +248,9 @@
   "max_words": 450,
   "ideal_output": {
     "schema_version": "v3",
-    "headline": "Sostuvo el percentil 69.7 en un pelotón nacional de 34, el triple del de copa, tras la ventana de entrenamiento más constante del semestre.",
+    "headline": "Sostuvo el percentil 68 en un pelotón nacional de 34, el triple del de copa, tras la ventana de entrenamiento más constante del semestre.",
     "field_reading": {
-      "percentile": 69.7,
+      "percentile": 68,
       "expected_position": 13,
       "actual_position": 11,
       "delta_vs_expected": 2,
@@ -262,7 +264,7 @@
         "claim": "El campeonato nacional es su primera referencia en un pelotón de este tamaño: el puesto se lee dentro de esta carrera, no contra las válidas de copa.",
         "evidence": [
           "pelotón de 34",
-          "percentil 69.7",
+          "percentil 68",
           "esperada 13 frente a real 11"
         ],
         "domain": "field",

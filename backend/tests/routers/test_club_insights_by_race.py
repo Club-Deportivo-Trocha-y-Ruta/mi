@@ -455,3 +455,93 @@ async def test_summary_excerpt_max_200_chars(client_factory):
     for item in r.json()["items"]:
         if item.get("summary_excerpt") is not None:
             assert len(item["summary_excerpt"]) <= 200
+
+
+# ---------------------------------------------------------------------------
+# Feature 045 (re-auditoría 2026-09-23): el texto libre v3 no llega a la familia
+# ---------------------------------------------------------------------------
+
+_V3_HEADLINE = "Perdió ritmo en la segunda vuelta tras una semana de baja asistencia"
+_V3_SUMMARY_MD = (
+    "## Hallazgo principal\n"
+    f"{_V3_HEADLINE}\n"
+    "\n"
+    "## Lectura del pelotón\n"
+    "Copa Valle · percentil 62 · el deportista terminó en P4 frente a P6 esperada "
+    "(-2 lugares) · gap a P3 0:02:31\n"
+    "\n"
+    "## Pregunta para el coach\n"
+    "¿Hubo algún factor externo?\n"
+)
+
+
+async def _make_active_insight_v3(seeded_factory) -> None:
+    """Convierte el insight activo del atleta 144 en una fila v3 (``structured_json``
+    presente y ``summary_text`` = markdown renderizado con «gap a P3» y esperado-vs-real)."""
+    from sqlalchemy import select
+
+    from app.models.athlete_ai_insight import AthleteAiInsight
+
+    async with seeded_factory() as s:
+        row = (
+            await s.execute(select(AthleteAiInsight).where(AthleteAiInsight.athlete_id == 144))
+        ).scalar_one()
+        row.summary_text = _V3_SUMMARY_MD
+        row.structured_json = {"headline": _V3_HEADLINE}
+        await s.commit()
+
+
+@pytest.mark.asyncio
+async def test_parent_v3_summary_excerpt_never_carries_free_text_beyond_headline(
+    seeded_factory, client_factory
+):
+    """Decisión del dueño 2026-09-23: el ``summary_text`` v3 (gap a P3, esperado-vs-real)
+    no llega a un padre. El extracto de su hijo se arma solo con el ``headline``."""
+    await _make_active_insight_v3(seeded_factory)
+
+    async with await client_factory(20, UserRole.parent, "parent@test.com") as client:
+        r = await client.get("/api/races/5/club-insights")
+
+    assert r.status_code == 200
+    hijo = next(i for i in r.json()["items"] if i["athlete_id"] == 144)
+    assert hijo["summary_excerpt"] == _V3_HEADLINE
+    body = r.text
+    for forbidden in ("gap a P3", "0:02:31", "esperada", "-2 lugares", "Pregunta para el coach"):
+        assert forbidden not in body
+
+
+@pytest.mark.asyncio
+async def test_parent_v3_without_headline_gets_no_excerpt(seeded_factory, client_factory):
+    """Fila v3 cuyo ``structured_json`` no trae ``headline`` utilizable: el padre recibe
+    ``summary_excerpt`` nulo (nunca cae al ``summary_text``)."""
+    await _make_active_insight_v3(seeded_factory)
+    from sqlalchemy import select
+
+    from app.models.athlete_ai_insight import AthleteAiInsight
+
+    async with seeded_factory() as s:
+        row = (
+            await s.execute(select(AthleteAiInsight).where(AthleteAiInsight.athlete_id == 144))
+        ).scalar_one()
+        row.structured_json = {"observations": []}
+        await s.commit()
+
+    async with await client_factory(20, UserRole.parent, "parent@test.com") as client:
+        r = await client.get("/api/races/5/club-insights")
+
+    hijo = next(i for i in r.json()["items"] if i["athlete_id"] == 144)
+    assert hijo["summary_excerpt"] is None
+    assert "gap a P3" not in r.text
+
+
+@pytest.mark.asyncio
+async def test_coach_v3_summary_excerpt_keeps_rendered_markdown(seeded_factory, client_factory):
+    """El coach sigue recibiendo el extracto del markdown completo (sin cambios)."""
+    await _make_active_insight_v3(seeded_factory)
+
+    async with await client_factory(10, UserRole.coach, "coach1@test.com") as client:
+        r = await client.get("/api/races/5/club-insights?club_id=1")
+
+    item = next(i for i in r.json()["items"] if i["athlete_id"] == 144)
+    assert item["summary_excerpt"] == _V3_SUMMARY_MD[:200]
+    assert "esperada" in item["summary_excerpt"]

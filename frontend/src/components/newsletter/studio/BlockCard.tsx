@@ -46,6 +46,15 @@ export interface BlockCardProps {
   hidden?: boolean;
   isSaving?: boolean;
   maxWords?: number;
+  /**
+   * Abre la tarjeta ya en modo edición (sólo al montar). Con `initialDraft`
+   * permite ofrecer un texto pre-escrito que el coach revisa antes de
+   * guardar — p. ej. «Insertar aviso de cambios» (feature 045, T063). El
+   * padre remonta la tarjeta con otra `key` para volver a sembrarla.
+   */
+  startEditing?: boolean;
+  /** Borrador inicial del editor; por defecto, `value`. */
+  initialDraft?: string;
   onSave?: (value: string) => void;
   onRegenerateClick?: () => void;
   onHideToggle?: () => void;
@@ -64,13 +73,15 @@ export function BlockCard({
   hidden = false,
   isSaving = false,
   maxWords,
+  startEditing = false,
+  initialDraft,
   onSave,
   onRegenerateClick,
   onHideToggle,
   onCardClick,
 }: BlockCardProps) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
+  const [isEditing, setIsEditing] = useState(startEditing);
+  const [draft, setDraft] = useState(initialDraft ?? value);
 
   // Si el valor canónico cambia (respuesta del PATCH/regenerate), el draft
   // local se sincroniza — evita mostrar texto obsoleto tras guardar.
@@ -134,6 +145,10 @@ export function BlockCard({
             disabled={isSaving}
             aria-label={`Editar ${title}`}
             rows={4}
+            // Sólo cuando la edición se abrió sola (texto pre-escrito): el
+            // botón que la disparó desaparece del DOM y el foco no debe
+            // quedar en el <body>.
+            autoFocus={startEditing}
           />
           <div className="flex gap-2">
             <button

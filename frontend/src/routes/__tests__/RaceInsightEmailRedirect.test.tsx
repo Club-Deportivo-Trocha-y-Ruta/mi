@@ -6,8 +6,10 @@
  * `/athletes/:athleteId/race-analysis/insights/:insightId` nunca existió
  * en el router — sin este alias, cualquier clic en esos correos caía en
  * NotFoundPage. Cubre:
- *  - parent      → /my-athletes/:athleteId?tab=ai-analysis&insight=:id
- *  - coach/admin → /athletes/:athleteId?tab=ai_analysis&insight=:id
+ *  - parent      → /my-athletes/:athleteId?tab=races&view=analisis&insight=:id
+ *  - coach/admin → /athletes/:athleteId?tab=races&view=analisis&insight=:id
+ *    (feature 045, T043: destino final directo en la pestaña única «Carreras»,
+ *    vista «Análisis IA», sin pasar por los alias `ai_analysis`/`ai-analysis`)
  *  - otro rol (athlete) o sin rol resuelto → NotFoundPage (no hay panorama
  *    de atleta para ese caso)
  */
@@ -62,27 +64,27 @@ function renderAt(path: string) {
 }
 
 describe("RaceInsightEmailRedirect", () => {
-  it("padre: redirige a /my-athletes/:id?tab=ai-analysis&insight=:id", () => {
+  it("padre: redirige a /my-athletes/:id?tab=races&view=analisis&insight=:id", () => {
     mockRole(UserRole.parent);
     renderAt("/athletes/42/race-analysis/insights/7");
     expect(screen.getByTestId("landed")).toHaveTextContent(
-      "padre: /my-athletes/42?tab=ai-analysis&insight=7",
+      "padre: /my-athletes/42?tab=races&view=analisis&insight=7",
     );
   });
 
-  it("coach: redirige a /athletes/:id?tab=ai_analysis&insight=:id", () => {
+  it("coach: redirige a /athletes/:id?tab=races&view=analisis&insight=:id", () => {
     mockRole(UserRole.coach);
     renderAt("/athletes/42/race-analysis/insights/7");
     expect(screen.getByTestId("landed")).toHaveTextContent(
-      "coach: /athletes/42?tab=ai_analysis&insight=7",
+      "coach: /athletes/42?tab=races&view=analisis&insight=7",
     );
   });
 
-  it("admin: redirige a /athletes/:id?tab=ai_analysis&insight=:id (mismo destino que coach)", () => {
+  it("admin: redirige a /athletes/:id?tab=races&view=analisis&insight=:id (mismo destino que coach)", () => {
     mockRole(UserRole.admin);
     renderAt("/athletes/42/race-analysis/insights/7");
     expect(screen.getByTestId("landed")).toHaveTextContent(
-      "coach: /athletes/42?tab=ai_analysis&insight=7",
+      "coach: /athletes/42?tab=races&view=analisis&insight=7",
     );
   });
 

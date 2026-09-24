@@ -11,6 +11,7 @@ Cubre:
 
 from __future__ import annotations
 
+import json
 from datetime import date
 
 import pytest
@@ -55,7 +56,7 @@ def _minimal_stage_log(**overrides) -> StageLog:
                 kind=WaypointKind.RACE,
                 date=date(2026, 6, 12),
                 label="Válida 3 · P2",
-                sublabel="+4,1 % al P1",
+                sublabel="Brecha vs. mediana: +4,1 %",
                 icon="map-pin",
             ),
         ],
@@ -210,6 +211,166 @@ class TestToParentDto:
         stage_log = _minimal_stage_log()
         dto = to_parent_dto(stage_log, hidden_blocks=["not_a_real_block"])
         assert dto["photos"] != []
+
+
+# ---------------------------------------------------------------------------
+# to_parent_dto — brecha a la ganadora/podio en snapshots heredados (045)
+# ---------------------------------------------------------------------------
+
+
+def _legacy_snapshot() -> dict:
+    """``stage_log_json`` persistido ANTES de la feature 045.
+
+    El builder de entonces escribía la brecha contra la ganadora en el
+    sublabel del waypoint de carrera («+4,1 % al P1»), en el detalle de la
+    cima y en la leyenda estática de la cima («llegó a 4.1 % del primer
+    lugar»). Esas filas siguen en la base de datos: la limpieza es al leer,
+    sin escribir (decisión del dueño 2026-09-23).
+    """
+    snapshot = _minimal_stage_log().model_dump(mode="json")
+    snapshot["trail"][0]["sublabel"] = "+4,1 % al P1"
+    snapshot["summit"]["detail"] = "Copa Valle · Prejuvenil A Femenino · +4,1 % al P1"
+    snapshot["summit"]["caption"] = (
+        "Su hijo llegó a 4.1 % del primer lugar, un resultado que refleja el "
+        "trabajo de este mes."
+    )
+    snapshot["observations"] = [
+        {
+            "claim": "Logró su mejor resultado de la temporada.",
+            "evidence": "P2, a 4,1 % del primer lugar. Asistió a 12 de 14 sesiones.",
+            "block_ref": "race",
+        },
+        {
+            "claim": "Mantuvo un ritmo de entrenamiento constante.",
+            "evidence": "Asistió a 12 de 14 sesiones (86 %).",
+            "block_ref": "attendance",
+        },
+    ]
+    snapshot["next_segment"]["text"] = "Quedó a 3,2 % del podio; trabajamos la salida."
+    return snapshot
+
+
+_LEADER_GAP_MARKERS = ("al P1", "del primer lugar", "% del podio", "4,1 % al", "4.1 %")
+
+
+class TestToParentDtoLeaderGapScrub:
+    def test_race_waypoint_sublabel_with_p1_gap_is_dropped(self):
+        dto = to_parent_dto(StageLog.model_validate(_legacy_snapshot()))
+        race = dto["trail"][0]
+        assert race["sublabel"] is None
+        # El resto del waypoint no cambia.
+        assert race["label"] == "Válida 3 · P2"
+        assert race["kind"] == "race"
+
+    def test_summit_detail_keeps_category_and_drops_the_gap_part(self):
+        dto = to_parent_dto(StageLog.model_validate(_legacy_snapshot()))
+        assert dto["summit"]["detail"] == "Copa Valle · Prejuvenil A Femenino"
+
+    def test_summit_detail_that_is_only_the_gap_becomes_none(self):
+        snapshot = _legacy_snapshot()
+        snapshot["summit"]["detail"] = "+4,1 % al P1"
+        dto = to_parent_dto(StageLog.model_validate(snapshot))
+        assert dto["summit"]["detail"] is None
+
+    def test_summit_caption_with_winner_gap_is_replaced_by_the_neutral_sentence(self):
+        dto = to_parent_dto(StageLog.model_validate(_legacy_snapshot()))
+        assert dto["summit"]["caption"] == (
+            "Su hijo vivió una experiencia de competencia que suma a su proceso."
+        )
+
+    def test_observation_sentence_with_gap_is_dropped_the_rest_kept(self):
+        dto = to_parent_dto(StageLog.model_validate(_legacy_snapshot()))
+        first, second = dto["observations"]
+        assert first["evidence"] == "Asistió a 12 de 14 sesiones."
+        assert second["evidence"] == "Asistió a 12 de 14 sesiones (86 %)."
+
+    def test_observation_left_without_evidence_is_dropped(self):
+        snapshot = _legacy_snapshot()
+        snapshot["observations"][0]["evidence"] = "P2, a 4,1 % del primer lugar."
+        dto = to_parent_dto(StageLog.model_validate(snapshot))
+        assert [o["block_ref"] for o in dto["observations"]] == ["attendance"]
+
+    def test_next_segment_text_with_podium_gap_is_dropped_focus_kept(self):
+        dto = to_parent_dto(StageLog.model_validate(_legacy_snapshot()))
+        # Una sola oración con la brecha → el texto se va; el resto del
+        # bloque (focos y próxima carrera) queda intacto.
+        assert dto["next_segment"]["text"] is None
+        assert dto["next_segment"]["focus_groups"] == ["Frenado modulado"]
+        assert dto["next_segment"]["next_race"]["label"] == "Válida 4"
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "+4,1 % al P1",
+            "+4,1 % al P3",
+            "-2 % al podio",
+            "+12,5 % del ganador",
+            "+12,5 % de la ganadora",
+            "4.1 % del primer lugar",
+            "+3 % al líder",
+        ],
+    )
+    def test_all_leader_gap_phrasings_are_removed_from_sublabels(self, text):
+        snapshot = _legacy_snapshot()
+        snapshot["trail"][0]["sublabel"] = text
+        dto = to_parent_dto(StageLog.model_validate(snapshot))
+        assert dto["trail"][0]["sublabel"] is None
+
+    def test_full_dto_carries_no_leader_gap_text(self):
+        dto = to_parent_dto(StageLog.model_validate(_legacy_snapshot()))
+        raw = json.dumps(dto, ensure_ascii=False)
+        for marker in _LEADER_GAP_MARKERS:
+            assert marker not in raw, marker
+
+    def test_median_gap_copy_of_045_is_untouched(self):
+        """La etiqueta vigente («Brecha vs. mediana») y el porcentaje de
+        asistencia no son brecha a la ganadora: pasan tal cual."""
+        stage_log = _minimal_stage_log(
+            summit=Summit(
+                kind=SummitKind.RACE,
+                title="P2 en la Válida 3",
+                detail="Copa Valle · Brecha vs. mediana: +4,1 %",
+                caption="Su hijo terminó con un tiempo 4,1 % mayor que la mediana de su categoría.",
+                date=date(2026, 6, 12),
+            ),
+        )
+        dto = to_parent_dto(stage_log)
+        assert dto["trail"][0]["sublabel"] == "Brecha vs. mediana: +4,1 %"
+        assert dto["summit"]["detail"] == "Copa Valle · Brecha vs. mediana: +4,1 %"
+        assert dto["summit"]["caption"] == (
+            "Su hijo terminó con un tiempo 4,1 % mayor que la mediana de su categoría."
+        )
+        assert dto["observations"][0]["evidence"] == "Asistió a 12 de 14 sesiones (86 %)."
+
+    def test_input_stage_log_is_not_mutated(self):
+        """Sin escrituras: el modelo (y por tanto lo persistido) queda igual;
+        la limpieza es solo de la copia que se sirve a la familia."""
+        stage_log = StageLog.model_validate(_legacy_snapshot())
+        before = stage_log.model_dump(mode="json")
+        to_parent_dto(stage_log)
+        assert stage_log.model_dump(mode="json") == before
+        assert stage_log.trail[0].sublabel == "+4,1 % al P1"
+
+    def test_leader_gap_keys_are_stripped_at_any_depth(self, monkeypatch):
+        """Defensa en profundidad: ``StageLog`` (extra="forbid") no las
+        declara, pero si un dump las trajera, la política de audiencia de
+        familia las quita — claves ausentes, no ``null``."""
+        stage_log = _minimal_stage_log()
+        original = StageLog.model_dump
+
+        def dumped(self, *args, **kwargs):
+            data = original(self, *args, **kwargs)
+            data["trail"][0]["gap_to_winner_pct"] = 4.1
+            data["trail"][0]["gap_to_p3_ms"] = 1234
+            data["summit"]["gap_to_podium_pct"] = 3.2
+            data["summit"]["gap_pct"] = 4.1
+            return data
+
+        monkeypatch.setattr(StageLog, "model_dump", dumped)
+        dto = to_parent_dto(stage_log)
+        for node in (dto["trail"][0], dto["summit"]):
+            for key in ("gap_to_winner_pct", "gap_to_p3_ms", "gap_to_podium_pct", "gap_pct"):
+                assert key not in node, key
 
 
 # ---------------------------------------------------------------------------

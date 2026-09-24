@@ -186,29 +186,38 @@ describe("InfoTab — fila Prioridad", () => {
     expect(screen.getByText("Sin prioridad")).toBeInTheDocument();
   });
 
-  it("válida con priority='A' muestra el badge 'A' sin ninguna nota de correo", () => {
+  it("válida con priority='A' muestra «A · Objetivo principal» (nunca la letra suelta) sin ninguna nota de correo", () => {
     const event = makeRaceEventRead({ is_championship: false, priority: "A" });
     render(<InfoTab event={event} />);
 
-    expect(screen.getByText("A")).toBeInTheDocument();
+    expect(screen.getByText("A · Objetivo principal")).toBeInTheDocument();
+    expect(screen.queryByText("A")).not.toBeInTheDocument();
     // 2026-09-23: aprobar un insight ya nunca envía correo, sin importar
     // la prioridad — la nota se eliminó de la fila "Prioridad".
     expect(screen.queryByText(/correo/i)).not.toBeInTheDocument();
   });
 
-  it("válida con priority='B' muestra el badge 'B' sin ninguna nota de correo", () => {
+  it("válida con priority='B' muestra «B · Secundaria» sin ninguna nota de correo", () => {
     const event = makeRaceEventRead({ is_championship: false, priority: "B" });
     render(<InfoTab event={event} />);
 
-    expect(screen.getByText("B")).toBeInTheDocument();
+    expect(screen.getByText("B · Secundaria")).toBeInTheDocument();
     expect(screen.queryByText(/correo/i)).not.toBeInTheDocument();
   });
 
-  it("campeonato siempre muestra 'CD' sin ninguna nota de correo, sin importar event.priority", () => {
+  it("válida con priority='C' muestra «C · Diagnóstica»", () => {
+    const event = makeRaceEventRead({ is_championship: false, priority: "C" });
+    render(<InfoTab event={event} />);
+
+    expect(screen.getByText("C · Diagnóstica")).toBeInTheDocument();
+  });
+
+  it("campeonato siempre muestra «Campeonato» (nunca el código 'CD') sin ninguna nota de correo, sin importar event.priority", () => {
     const event = makeRaceEventRead({ is_championship: true, priority: null });
     render(<InfoTab event={event} />);
 
-    expect(screen.getByText("CD")).toBeInTheDocument();
+    expect(screen.getByText("Campeonato")).toBeInTheDocument();
+    expect(screen.queryByText("CD")).not.toBeInTheDocument();
     expect(screen.queryByText(/correo/i)).not.toBeInTheDocument();
   });
 });

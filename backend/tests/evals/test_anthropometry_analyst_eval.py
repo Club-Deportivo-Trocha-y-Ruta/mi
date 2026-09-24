@@ -79,6 +79,7 @@ import pytest
 from app.services.ai.anthro.analyst import run_analyst
 from app.services.ai.anthro.context import (
     AnalysisContext,
+    _render_body_composition_block,
     _render_growth_summary_block,
     _render_identity_block,
     _render_longitudinal_series_block,
@@ -210,6 +211,9 @@ def _build_analysis_context_and_blocks(case: dict[str, Any]) -> tuple[AnalysisCo
     growth_summary = dict(case_input["growth_summary"])
     training_load_window = case_input.get("training_load_window")
     previous_analysis = case_input.get("previous_analysis")
+    # Feature 046 (contracts/ai-body-composition-leaf.md §6): hoja cualitativa
+    # opcional — solo los casos 013–018 la traen.
+    body_composition = case_input.get("body_composition")
 
     context = AnalysisContext(
         identity=identity,
@@ -218,6 +222,7 @@ def _build_analysis_context_and_blocks(case: dict[str, Any]) -> tuple[AnalysisCo
         growth_summary=growth_summary,
         training_load_window=training_load_window,
         previous_analysis=previous_analysis,
+        body_composition=body_composition,
     )
     context_blocks = {
         "identity_block": _render_identity_block(identity),
@@ -226,6 +231,9 @@ def _build_analysis_context_and_blocks(case: dict[str, Any]) -> tuple[AnalysisCo
         "growth_summary_block": _render_growth_summary_block(growth_summary),
         "training_load_block": _render_training_load_block(training_load_window),
         "previous_analysis_block": _render_previous_analysis_block(previous_analysis),
+        "body_composition_block": _render_body_composition_block(
+            body_composition, case["audience"]
+        ),
     }
     return context, context_blocks
 
@@ -527,10 +535,12 @@ def _write_scoreboard(results: list[dict[str, Any]], avg: float, threshold: floa
 # ---------------------------------------------------------------------------
 
 
-def test_loader_finds_twelve_cases() -> None:
-    """``golden-eval-case.md`` §4: exactamente doce casos sintéticos."""
-    assert len(_ALL_CASES) == 12, (
-        f"Se esperaban 12 casos golden, encontrados {len(_ALL_CASES)} en {GOLDEN_DIR}"
+def test_loader_finds_eighteen_cases() -> None:
+    """``golden-eval-case.md`` §4: doce casos sintéticos de la feature 042 más
+    los seis de composición corporal de la feature 046 (013–018,
+    ``contracts/ai-body-composition-leaf.md`` §6)."""
+    assert len(_ALL_CASES) == 18, (
+        f"Se esperaban 18 casos golden, encontrados {len(_ALL_CASES)} en {GOLDEN_DIR}"
     )
 
 
@@ -608,6 +618,89 @@ def test_dataset_covers_the_required_scenarios() -> None:
     assert any(i.get("previous_analysis") is not None for i in inputs), (
         "falta caso con análisis estructurado previo (para el caso 011 de continuidad)"
     )
+
+
+_BODY_COMPOSITION_LEAF_KEYS = {
+    "sets_count",
+    "weeks_since_prev_set",
+    "sum_change_code",
+    "growth_explanation_code",
+    "ffm_trend_code",
+    "band",
+    "band_reason_code",
+    "family_band",
+    "reference_context_code",
+    "sites_declined_count",
+}
+
+
+def test_dataset_covers_the_body_composition_scenarios() -> None:
+    """Feature 046 (``contracts/ai-body-composition-leaf.md`` §6): los seis
+    escenarios de composición corporal, con la hoja cualitativa exacta del
+    contrato (§1) — nunca una clave numérica — y los ``%``/``mm`` prohibidos
+    en toda salida familiar.
+    """
+    by_id = dict(_ALL_CASES)
+    leaves = {cid: by_id[cid]["input"].get("body_composition") for cid in by_id}
+
+    for cid in ("013", "014", "015", "016", "017", "018"):
+        leaf = leaves[cid]
+        assert leaf is not None, f"case_{cid}: falta la hoja body_composition"
+        assert set(leaf) == _BODY_COMPOSITION_LEAF_KEYS, f"case_{cid}: claves {sorted(leaf)}"
+        assert not any(k.endswith(("_mm", "_pct", "_kg")) for k in leaf), f"case_{cid}"
+        assert leaf["family_band"] in ("verde", "ambar"), f"case_{cid}: family_band rojo"
+        assert 0 <= leaf["sites_declined_count"] <= 6
+        assert leaf["sets_count"] <= 9
+    for cid in by_id:
+        if int(cid) <= 12:
+            assert leaves[cid] is None, f"case_{cid}: los casos 042 no llevan hoja"
+
+    def _case(cid: str) -> tuple[str, dict]:
+        return by_id[cid]["audience"], leaves[cid]
+
+    audience, leaf = _case("013")
+    assert audience == "family" and leaf["band"] == "verde"
+    assert leaf["band_reason_code"] == "expected_pubertal_gain"
+    audience, leaf = _case("014")
+    assert audience == "coach" and leaf["band"] == "rojo"
+    assert leaf["band_reason_code"] == "energy_availability_pattern"
+    assert "dieta" in by_id["014"]["forbidden_terms"]
+    audience, leaf = _case("015")
+    assert audience == "family" and leaf["band"] == "ambar"
+    assert leaf["band_reason_code"] == "sum_up_unexplained"
+    audience, leaf = _case("016")
+    assert audience == "coach" and leaf["band_reason_code"] == "first_set"
+    assert leaf["sites_declined_count"] == 2
+    audience, leaf = _case("017")
+    assert audience == "family" and leaf["band"] == "rojo" and leaf["family_band"] == "ambar"
+    for term in ("profesional de la salud", "remisión", "requiere acompañamiento"):
+        assert term in by_id["017"]["forbidden_terms"]
+    audience, leaf = _case("018")
+    assert audience == "family" and leaf["band"] == "ambar" and leaf["family_band"] == "verde"
+    assert leaf["band_reason_code"] == "reference_extreme"
+    for term in ("observación", "extremo", "percentil"):
+        assert term in by_id["018"]["forbidden_terms"]
+
+    for cid, case in _ALL_CASES:
+        if case["audience"] == "family":
+            assert {"%", "mm"} <= set(case["forbidden_terms"]), (
+                f"case_{cid}: un caso familiar debe prohibir % y mm"
+            )
+
+
+def test_body_composition_family_blocks_never_carry_coach_band() -> None:
+    """Lo que ve el analista en un caso familiar nunca incluye la banda del
+    entrenador ni su motivo (contract §2) — ni una cifra de pliegues."""
+    for cid, case in _ALL_CASES:
+        if case["input"].get("body_composition") is None:
+            continue
+        _, blocks = _build_analysis_context_and_blocks(case)
+        block = blocks["body_composition_block"]
+        assert block, f"case_{cid}: bloque de composición corporal vacío"
+        assert not re.search(r"\d+(?:[.,]\d+)?\s*(?:%|mm)\b", block), f"case_{cid}"
+        if case["audience"] == "family":
+            assert "Banda del entrenador" not in block, f"case_{cid}"
+            assert "rojo" not in block.lower(), f"case_{cid}"
 
 
 def test_case_dataset_contains_no_real_athlete_data() -> None:

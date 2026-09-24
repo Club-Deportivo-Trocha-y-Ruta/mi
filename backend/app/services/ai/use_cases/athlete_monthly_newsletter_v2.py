@@ -68,6 +68,7 @@ from app.services.ai.prompts.registry import PromptRegistry
 from app.services.ai.protocols import LLMProvider, StructuredOutput
 from app.services.ai.use_cases.base import BaseUseCase
 from app.services.ai.use_cases.monthly_report import _redact_names
+from app.services.race.audience import Audience, redact_for_audience
 from app.services.race.insight_v3 import extract_numeric_tokens
 from app.services.training.stage_log import FamilyCompass, Observation
 
@@ -260,6 +261,16 @@ def build_context_from_metrics_v2(
 
     email_blocks = metrics_snapshot.get("email_blocks", {}) or {}
 
+    # Feature 046 (FR-036): "body_composition" is PDF-only (never a family
+    # email, never the AI context) — dropped here as defense in depth before
+    # anything downstream reads the snapshot, even though effort_profile()/
+    # next_segment() (below) already only read specific pdf_only_blocks keys
+    # and never this one. metrics_snapshot itself is never mutated.
+    if (metrics_snapshot.get("pdf_only_blocks") or {}).get("body_composition") is not None:
+        sanitized_pdf_only = dict(metrics_snapshot["pdf_only_blocks"])
+        sanitized_pdf_only.pop("body_composition", None)
+        metrics_snapshot = {**metrics_snapshot, "pdf_only_blocks": sanitized_pdf_only}
+
     attendance = email_blocks.get("attendance", {}) or {}
     technical = email_blocks.get("technical", {}) or {}
     race_block = email_blocks.get("race_results", {}) or {}
@@ -284,7 +295,14 @@ def build_context_from_metrics_v2(
         else None
     )
 
-    race_results = list(race_block.get("results") or [])
+    # Feature 045 (FR-022): la narrativa llega a la familia, así que el LLM
+    # nunca recibe la brecha al ganador/podio. El template ya no las lee, pero
+    # se eliminan acá también (defensa en profundidad) con la única política
+    # de audiencia (``FAMILY_EXCLUDED_METRIC_FIELDS``): quedan fuera del
+    # contexto, no en ``None``. ``gap_to_median_pct`` se conserva.
+    race_results = redact_for_audience(
+        list(race_block.get("results") or []), Audience.FAMILY
+    )
     badges = [
         {"label": badge_label_for(item.get("badge_type", ""))}
         for item in (badges_block.get("items") or [])

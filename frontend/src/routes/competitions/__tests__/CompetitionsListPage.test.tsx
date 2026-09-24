@@ -158,7 +158,9 @@ describe("CompetitionsListPage — render", () => {
     await user.click(kebab);
     expect(screen.queryByText("Ver detalle")).not.toBeInTheDocument();
     // El kebab sigue ofreciendo otras acciones.
-    expect(await screen.findByText("Editar metadata")).toBeInTheDocument();
+    expect(await screen.findByText("Editar datos")).toBeInTheDocument();
+    // Feature 045 (T050): «metadata» es jerga — el glosario dice «Editar datos».
+    expect(screen.queryByText(/metadata/i)).not.toBeInTheDocument();
   });
 });
 
@@ -173,23 +175,43 @@ describe("CompetitionsListPage — acciones secundarias del header", () => {
     expect(link).toHaveAttribute("href", "/competitions/import");
   });
 
-  it("la acción secundaria mantiene altura táctil ≥44px", async () => {
+  // Feature 045 (T052, FR-019): los botones del encabezado llegan a 48 px
+  // (`min-h-12`); el patrón previo era min-h-[44px].
+  it("las cuatro acciones del encabezado mantienen altura táctil ≥48px (min-h-12)", async () => {
     mockAuthAs("coach");
     renderWithProviders(<CompetitionsListPage />);
-    const importLink = await screen.findByRole("link", {
-      name: /Cargar resultados de una válida/i,
-    });
-    // El patrón del repo usa min-h-[44px] (clase utilitaria de altura mínima).
-    expect(importLink.className).toMatch(/min-h-\[44px\]/);
+    const links = [
+      await screen.findByRole("link", { name: /Cargar resultados de una válida/i }),
+      screen.getByRole("link", { name: /Revisar identidad de competidores/i }),
+      screen.getByRole("link", { name: /Ver el tablero de carga histórica/i }),
+      screen.getByRole("link", { name: /Nueva competencia/i }),
+    ];
+    for (const link of links) {
+      expect(link.className).toMatch(/min-h-12/);
+      expect(link.className).not.toMatch(/min-h-\[44px\]/);
+    }
+  });
+
+  it("la revisión de identidad y la carga histórica apuntan directo a «Cargas e identidades» (sin pasar por el redirect)", async () => {
+    mockAuthAs("coach");
+    renderWithProviders(<CompetitionsListPage />);
+    expect(
+      await screen.findByRole("link", {
+        name: /Revisar identidad de competidores/i,
+      }),
+    ).toHaveAttribute("href", "/competitions/imports?seccion=identidades");
+    expect(
+      screen.getByRole("link", { name: /Ver el tablero de carga histórica/i }),
+    ).toHaveAttribute("href", "/competitions/imports?seccion=cargas");
   });
 });
 
-describe("CompetitionsListPage — sibling view tabs (feature 030, US2)", () => {
-  it("renderiza las 3 pastillas Válidas | Sin enlazar | Panorama de temporada", async () => {
+describe("CompetitionsListPage — secciones del área (feature 030 US2, renombradas por 045 US6)", () => {
+  it("renderiza las 3 pastillas Competencias | Temporada | Cargas e identidades, sin «Válidas»", async () => {
     mockAuthAs("coach");
     // CompetitionsListPage is mounted at "/competitions" in the real route
     // table (App.tsx) — initialEntries matches that so SiblingViewTabs
-    // resolves "Válidas" as the active pill.
+    // resolves "Competencias" as the active pill.
     renderWithProviders(<CompetitionsListPage />, {
       initialEntries: ["/competitions"],
     });
@@ -199,32 +221,96 @@ describe("CompetitionsListPage — sibling view tabs (feature 030, US2)", () => 
     });
     expect(tablist).toBeInTheDocument();
 
-    const validasTab = screen.getByRole("tab", { name: "Válidas" });
-    const sinEnlazarTab = screen.getByRole("tab", { name: "Sin enlazar" });
-    const panoramaTab = screen.getByRole("tab", {
-      name: "Panorama de temporada",
-    });
+    const competenciasTab = screen.getByRole("tab", { name: "Competencias" });
+    const temporadaTab = screen.getByRole("tab", { name: "Temporada" });
+    const cargasTab = screen.getByRole("tab", { name: "Cargas e identidades" });
 
-    expect(validasTab).toBeInTheDocument();
-    expect(sinEnlazarTab).toBeInTheDocument();
-    expect(panoramaTab).toBeInTheDocument();
+    expect(competenciasTab).toHaveAttribute("data-state", "active");
+    expect(temporadaTab).toHaveAttribute("data-state", "inactive");
+    expect(cargasTab).toHaveAttribute("data-state", "inactive");
 
-    expect(validasTab).toHaveAttribute("data-state", "active");
-    expect(sinEnlazarTab).toHaveAttribute("data-state", "inactive");
-    expect(panoramaTab).toHaveAttribute("data-state", "inactive");
+    // Vocabulario retirado (FR-001/FR-002).
+    expect(screen.queryByRole("tab", { name: "Válidas" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Sin enlazar" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("tab", { name: "Panorama de temporada" }),
+    ).not.toBeInTheDocument();
   });
 
-  it("la pastilla 'Panorama de temporada' navega a /competitions/insights/season/${currentSeason()}", async () => {
+  it("la pastilla 'Temporada' navega a /competitions/season/${currentSeason()}", async () => {
     mockAuthAs("coach");
     renderWithProviders(<CompetitionsListPage />);
 
-    const panoramaTab = await screen.findByRole("tab", {
-      name: "Panorama de temporada",
-    });
-    expect(panoramaTab).toHaveAttribute(
+    const temporadaTab = await screen.findByRole("tab", { name: "Temporada" });
+    expect(temporadaTab).toHaveAttribute(
       "href",
-      `/competitions/insights/season/${currentSeason()}`,
+      `/competitions/season/${currentSeason()}`,
     );
+  });
+
+  it("la pastilla 'Cargas e identidades' navega a /competitions/imports", async () => {
+    mockAuthAs("coach");
+    renderWithProviders(<CompetitionsListPage />);
+
+    expect(
+      await screen.findByRole("tab", { name: "Cargas e identidades" }),
+    ).toHaveAttribute("href", "/competitions/imports");
+  });
+});
+
+describe("CompetitionsListPage — códigos de prioridad explicados (feature 045, T052 / FR-003)", () => {
+  it("un campeonato muestra «Campeonato» (nunca el código crudo «CD») en la tabla y en la tarjeta móvil", async () => {
+    mswServer.use(
+      http.get("*/api/race-analysis/race-events/", () =>
+        HttpResponse.json({
+          items: [
+            makeRaceEventListItem({
+              id: 15,
+              series_id: 9,
+              sequence_number: 1,
+              is_championship: true,
+              name: "Campeonato Departamental XCO — Ginebra",
+            }),
+            makeRaceEventListItem({
+              id: 2,
+              sequence_number: 2,
+              name: "Copa Valle XCO — Válida II",
+            }),
+          ],
+          total: 2,
+        }),
+      ),
+    );
+    mockAuthAs("coach");
+    renderWithProviders(<CompetitionsListPage />);
+
+    await waitFor(() =>
+      expect(
+        inTable().getByText("Campeonato Departamental XCO — Ginebra"),
+      ).toBeInTheDocument(),
+    );
+
+    // Tabla (desktop): la columna «#» explica el código.
+    const championshipRow = inTable()
+      .getByText("Campeonato Departamental XCO — Ginebra")
+      .closest("tr") as HTMLElement;
+    expect(within(championshipRow).getAllByText("Campeonato")).toHaveLength(1);
+    expect(within(championshipRow).queryByText("CD")).not.toBeInTheDocument();
+    // La válida de copa sigue con su número.
+    const cupRow = inTable()
+      .getByText("Copa Valle XCO — Válida II")
+      .closest("tr") as HTMLElement;
+    expect(within(cupRow).getByText("V2")).toBeInTheDocument();
+
+    // Tarjetas (mobile): el subtítulo de la tarjeta explica el código y no
+    // queda ningún «CD» suelto en toda la página.
+    expect(screen.queryByText("CD")).not.toBeInTheDocument();
+    expect(screen.queryByText(/^CD\b/)).not.toBeInTheDocument();
+    expect(
+      screen.getByText((_, node) =>
+        node?.tagName === "P" && node.textContent?.startsWith("Campeonato") === true,
+      ),
+    ).toBeInTheDocument();
   });
 });
 
@@ -263,7 +349,7 @@ describe("CompetitionsListPage — filtros", () => {
     renderWithProviders(<CompetitionsListPage />);
 
     await waitFor(() => expect(lastSeason).toBe("2026"));
-    await user.selectOptions(screen.getByLabelText("Temporada"), "2027");
+    await user.selectOptions(screen.getByLabelText("Temporada", { selector: "select" }), "2027");
     await waitFor(() => expect(lastSeason).toBe("2027"));
   });
 
@@ -380,7 +466,7 @@ describe("CompetitionsListPage — filtros en la URL (2026-09-23)", () => {
       initialEntries: ["/competitions?season=2027"],
     });
     await waitFor(() => expect(lastSeason).toBe("2027"));
-    expect(screen.getByLabelText("Temporada")).toHaveValue("2027");
+    expect(screen.getByLabelText("Temporada", { selector: "select" })).toHaveValue("2027");
   });
 
   it("cambiar la temporada actualiza ?season= en la URL", async () => {
@@ -395,7 +481,7 @@ describe("CompetitionsListPage — filtros en la URL (2026-09-23)", () => {
     await waitFor(() =>
       expect(inTable().getByText("Copa Valle XCO — Válida I")).toBeInTheDocument(),
     );
-    await user.selectOptions(screen.getByLabelText("Temporada"), "2027");
+    await user.selectOptions(screen.getByLabelText("Temporada", { selector: "select" }), "2027");
     await waitFor(() =>
       expect(screen.getByTestId("url-probe")).toHaveTextContent("season=2027"),
     );
@@ -726,7 +812,7 @@ describe("CompetitionsListPage — cleanup duplicado (feature 009)", () => {
     await user.click(
       inTable().getByRole("button", { name: /Acciones para Válida protegida 78/i }),
     );
-    await screen.findByText("Editar metadata");
+    await screen.findByText("Editar datos");
     expect(screen.queryByText(/Eliminar duplicado/i)).not.toBeInTheDocument();
   });
 
@@ -754,7 +840,7 @@ describe("CompetitionsListPage — cleanup duplicado (feature 009)", () => {
     await user.click(
       inTable().getByRole("button", { name: /Acciones para Válida parent 79/i }),
     );
-    await screen.findByText("Editar metadata");
+    await screen.findByText("Editar datos");
     expect(screen.queryByText(/Eliminar duplicado/i)).not.toBeInTheDocument();
   });
 

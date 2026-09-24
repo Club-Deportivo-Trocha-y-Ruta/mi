@@ -144,8 +144,24 @@ class Settings(BaseSettings):
     ai_critic_model: str = ""
     # Versión del prompt analyst/critic de antropometría — mismo propósito
     # de rollback que RACE_AI_PROMPT_VERSION (cambiar esto, no un deploy,
-    # para volver a un prompt anterior si uno nuevo regresiona).
-    ai_anthro_prompt_version: str = "anthropometry_analyst_v1"
+    # para volver a un prompt anterior si uno nuevo regresiona). Feature 046
+    # sube el default a v2 (sección de composición corporal); v1 sigue
+    # permitido para rollback sin deploy (AI_ANTHRO_PROMPT_VERSION=v1).
+    ai_anthro_prompt_version: str = "anthropometry_analyst_v2"
+
+    # -----------------------------------------------------------------------
+    # Body composition by skinfolds (feature 046)
+    # -----------------------------------------------------------------------
+    # Source of truth: specs/046-body-composition-skinfolds/data-model.md §4.
+    # BODY_COMP_MDC_SUM4_MM / BODY_COMP_MDC_SUM6_MM: minimal detectable change
+    #   (mm) below which a Σ4 / Σ6 change is reported as "within noise".
+    # BODY_COMP_MIN_INTERVAL_DAYS: minimum days between two counted sets
+    #   (interval rule + next-due date).
+    # BODY_COMP_MIN_AGE_YEARS: minimum age at evaluation date to capture a set.
+    body_comp_mdc_sum4_mm: float = 7.0
+    body_comp_mdc_sum6_mm: float = 10.0
+    body_comp_min_interval_days: int = 90
+    body_comp_min_age_years: int = 9
 
     # -----------------------------------------------------------------------
     # Race AI — proveedor/modelo dedicado (specs/010-competitions-ai-insights y sig.)
@@ -494,8 +510,16 @@ class Settings(BaseSettings):
     @field_validator("ai_anthro_prompt_version")
     @classmethod
     def validate_ai_anthro_prompt_version(cls, v: str, info) -> str:
-        allowed = {"anthropometry_analyst_v1"}  # crece de a una entrada por revisión de prompt publicada
+        # Crece de a una entrada por revisión de prompt publicada. Feature 046
+        # agrega v2 (hoja de composición corporal); la forma corta "v1"/"v2"
+        # se acepta y se normaliza al nombre de archivo del prompt.
+        allowed = {"anthropometry_analyst_v1", "anthropometry_analyst_v2"}
+        short_aliases = {
+            "v1": "anthropometry_analyst_v1",
+            "v2": "anthropometry_analyst_v2",
+        }
         normalized = v.lower().strip()
+        normalized = short_aliases.get(normalized, normalized)
         if normalized not in allowed:
             raise ValueError(
                 f"AI_ANTHRO_PROMPT_VERSION='{v}' inválido. Permitidos: {sorted(allowed)}."

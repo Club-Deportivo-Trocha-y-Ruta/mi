@@ -3,7 +3,14 @@
  *
  * Caso de uso MVP:
  *   Coach: "¿Mi atleta mejoró o empeoró entre la Válida X y la Válida Y de
- *   esta temporada?". Padre: vista cualitativa.
+ *   esta temporada?". Solo coach (vista «Comparar» de «Carreras», feature
+ *   045): la familia nunca llega a este panel.
+ *
+ * Feature 045 (T039) — las cifras salen del MOTOR ÚNICO del servidor: los
+ * puntos de `GET .../race-analysis/history` (`useAthleteRaceHistory`), por
+ * `event_id`. El panel ya no lee el `metrics_snapshot` del insight ni
+ * recalcula percentiles en el cliente (`lib/raceMetrics.ts`, retirado): solo
+ * calcula el delta entre los dos puntos.
  *
  * Layout (consenso UX + head-coach):
  *   ┌─ Header (título + select Temporada) ────────────────────────┐
@@ -16,11 +23,12 @@
  *
  * Privacidad:
  *   - Nunca expone nombres de rivales.
- *   - Vista parent: sin tiempos absolutos ni gaps en segundos.
+ *   - Las brechas vs. podio son de coach; este panel no se monta para la
+ *     familia (el backend tampoco les envía esas claves).
  *
- * Principio coach: NO mostramos gap al ganador ni % del ganador — viola
- * "edad biológica > cronológica" (el P1 puede ser Post-PHV mientras el
- * atleta es Pre-PHV).
+ * Principio coach: la brecha vs. la mediana es la lectura principal; la
+ * brecha vs. podio se ofrece como contexto — "edad biológica > cronológica"
+ * (el P1 puede ser Post-PHV mientras el atleta es Pre-PHV).
  *
  * Hotfix multicopa (2026-09-16, `plans/multicopa-identidad-valida.md`):
  * antes, las opciones A/B eran una lista fija "Válida I..VII + CD"
@@ -54,28 +62,15 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState, isColdStartError } from "@/components/shared/ErrorState";
 import { useAnthropometry } from "@/hooks/athletes/useAnthropometry";
-import { useAthleteInsightDetail } from "@/hooks/athletes/useAthleteInsightDetail";
 import { useAthleteInsights } from "@/hooks/athletes/useAthleteInsights";
 import { useAthleteRaces } from "@/hooks/athletes/useAthleteRaces";
+import { useAthleteRaceHistory } from "@/hooks/race/useAthleteRaceHistory";
 import { raceLabelForInsight } from "@/lib/insights";
-import {
-  computePercentile,
-  evaluateImprovementCount,
-  extractMetricsForValida,
-  formatDeltaRank,
-  formatDeltaTime,
-  formatQualitativePodiumProximity,
-  formatQualitativeRank,
-  formatRaceTime,
-  type ExtractedMetrics,
-} from "@/lib/raceMetrics";
+import { formatGapPct } from "@/lib/raceHistoryFormat";
 import { formatDayMonthShort } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
-import {
-  isMetricsSnapshotV1,
-  type AthleteInsightDetailOut,
-  type AthleteInsightOut,
-} from "@/types/athleteRaceAnalysis.types";
+import type { AthleteInsightOut } from "@/types/athleteRaceAnalysis.types";
+import type { RaceHistoryPoint } from "@/types/raceHistory.types";
 import { MaturationStatus } from "@/types/enums";
 import type { RaceEventPriority } from "@/types/raceEvents.types";
 
@@ -217,18 +212,13 @@ function pickDefaultPair(
 
 export interface ComparatorPanelProps {
   athleteId: number;
-  /** "coach" (default) muestra números absolutos; "parent" solo cualitativo. */
-  viewMode?: "coach" | "parent";
 }
 
 // ---------------------------------------------------------------------------
 // Componente principal
 // ---------------------------------------------------------------------------
 
-export function ComparatorPanel({
-  athleteId,
-  viewMode = "coach",
-}: ComparatorPanelProps) {
+export function ComparatorPanel({ athleteId }: ComparatorPanelProps) {
   const [season, setSeason] = useState<number>(getDefaultSeason());
 
   // Lista global de insights aprobados/activos de la temporada + carreras
@@ -341,7 +331,6 @@ export function ComparatorPanel({
               athleteId={athleteId}
               optionA={optionA}
               optionB={optionB}
-              viewMode={viewMode}
             />
           ) : null}
         </>
@@ -568,21 +557,28 @@ function EmptyPair({ count }: { count: number }) {
 // Cuerpo de la comparación — banners + tabla + resumen + CTA
 // ---------------------------------------------------------------------------
 
+/** Punto del historial (motor único del servidor) de un evento. */
+function findHistoryPoint(
+  points: RaceHistoryPoint[] | undefined,
+  eventId: number,
+): RaceHistoryPoint | null {
+  return points?.find((p) => p.event_id === eventId) ?? null;
+}
+
 function ComparisonBody({
   athleteId,
   optionA,
   optionB,
-  viewMode,
 }: {
   athleteId: number;
   optionA: RaceOption;
   optionB: RaceOption;
-  viewMode: "coach" | "parent";
 }) {
-  const detailA = useAthleteInsightDetail(athleteId, optionA.insight.id);
-  const detailB = useAthleteInsightDetail(athleteId, optionB.insight.id);
-  const validaA = optionA.insight.valida_num as number;
-  const validaB = optionB.insight.valida_num as number;
+  // Feature 045 (T039): una sola consulta al motor del servidor — el panel
+  // ya no pide el detalle de cada insight para leer su snapshot.
+  const historyQuery = useAthleteRaceHistory(athleteId, "all");
+  const pointA = findHistoryPoint(historyQuery.data?.points, optionA.eventId);
+  const pointB = findHistoryPoint(historyQuery.data?.points, optionB.eventId);
 
   // Banner tapering-mismatch (Wave 3, hotfix multicopa): solo cuando AMBOS
   // lados tienen `priority` real (no `null`/UNKNOWN) y difieren — nunca se
@@ -609,20 +605,25 @@ function ComparisonBody({
     });
   }, [anthropometryQuery.data]);
 
-  if (detailA.isLoading || detailB.isLoading) {
+  const rows = useMemo(() => buildRows(pointA, pointB), [pointA, pointB]);
+
+  if (historyQuery.isLoading) {
     return <Skeleton className="h-64 w-full rounded-lg" />;
   }
 
-  if (detailA.isError || detailB.isError) {
-    const detailColdStart = isColdStartError(detailA.error ?? detailB.error);
+  if (historyQuery.isError) {
+    const historyColdStart = isColdStartError(historyQuery.error);
     return (
       <ErrorState
-        message={detailColdStart ? undefined : "No se pudo cargar el detalle del análisis."}
+        message={
+          historyColdStart
+            ? undefined
+            : "No se pudieron cargar las métricas de las carreras."
+        }
         onRetry={() => {
-          void detailA.refetch();
-          void detailB.refetch();
+          void historyQuery.refetch();
         }}
-        isColdStart={detailColdStart}
+        isColdStart={historyColdStart}
       />
     );
   }
@@ -635,28 +636,17 @@ function ComparisonBody({
       {phvBannerVisible ? <PHVBanner /> : null}
 
       <DiffTable
-        validaA={validaA}
-        validaB={validaB}
         labelA={raceLabelForInsight(optionA.insight, "chip")}
         labelB={raceLabelForInsight(optionB.insight, "chip")}
-        detailA={detailA.data ?? null}
-        detailB={detailB.data ?? null}
-        viewMode={viewMode}
+        rows={rows}
+        missingData={pointA === null || pointB === null}
       />
 
       <ImprovementSummary
-        detailA={detailA.data ?? null}
-        detailB={detailB.data ?? null}
-        validaA={validaA}
-        validaB={validaB}
+        rows={rows}
+        confidence={optionB.insight.confidence}
         labelB={raceLabelForInsight(optionB.insight, "chip")}
       />
-
-      {viewMode === "parent" ? (
-        <p className="rounded-lg bg-light-gray/30 px-4 py-3 text-center text-xs italic text-mid-gray">
-          Se mide contra sí mismo, no contra el ganador.
-        </p>
-      ) : null}
 
       <button
         type="button"
@@ -725,74 +715,26 @@ interface RowSpec {
   beforeText: string;
   afterText: string;
   delta: number | null;
-  /** ``true`` ⇒ valor menor es mejor (tiempo, ranking, gap). */
+  /** ``true`` ⇒ valor menor es mejor (posición, brechas). */
   lowerIsBetter: boolean;
   /** Override para el formateo del delta visible. */
   deltaText: string;
   /** ``true`` si la fila no tiene datos para alguno de los lados. */
   unavailable?: boolean;
-  /** Label cualitativo opcional (vista parent). */
-  qualitativeLabel?: string;
 }
 
 function DiffTable({
-  validaA,
-  validaB,
   labelA,
   labelB,
-  detailA,
-  detailB,
-  viewMode,
+  rows,
+  missingData,
 }: {
-  validaA: number;
-  validaB: number;
   labelA: string;
   labelB: string;
-  detailA: AthleteInsightDetailOut | null;
-  detailB: AthleteInsightDetailOut | null;
-  viewMode: "coach" | "parent";
+  rows: RowSpec[];
+  /** ``true`` si alguna de las dos carreras no aparece en el historial. */
+  missingData: boolean;
 }) {
-  const snapA = detailA?.metrics_snapshot;
-  const snapB = detailB?.metrics_snapshot;
-
-  // Estrategia: 1) snapshot V1 plano (futuro) o 2) extracción desde
-  // progression[] del snapshot legacy real (formato actual del backend).
-  const metricsA: ExtractedMetrics | null =
-    isMetricsSnapshotV1(snapA)
-      ? {
-          race_time_ms: snapA.race_time_ms ?? null,
-          ranking_in_category: snapA.ranking_in_category ?? null,
-          podium_gap_ms: snapA.podium_gap_ms ?? null,
-          category_size: snapA.category_size ?? null,
-          category_time_min_ms: snapA.category_time_min_ms ?? null,
-          category_time_max_ms: snapA.category_time_max_ms ?? null,
-        }
-      : extractMetricsForValida(snapA, validaA);
-  const metricsB: ExtractedMetrics | null =
-    isMetricsSnapshotV1(snapB)
-      ? {
-          race_time_ms: snapB.race_time_ms ?? null,
-          ranking_in_category: snapB.ranking_in_category ?? null,
-          podium_gap_ms: snapB.podium_gap_ms ?? null,
-          category_size: snapB.category_size ?? null,
-          category_time_min_ms: snapB.category_time_min_ms ?? null,
-          category_time_max_ms: snapB.category_time_max_ms ?? null,
-        }
-      : extractMetricsForValida(snapB, validaB);
-
-  // Solo marcamos "legacy" si NO pudimos extraer ningún dato.
-  const noDataA = detailA !== null && metricsA === null;
-  const noDataB = detailB !== null && metricsB === null;
-  const anyLegacy = noDataA || noDataB;
-
-  const rows: RowSpec[] = useMemo(() => {
-    return buildRows({
-      metricsA,
-      metricsB,
-      viewMode,
-    });
-  }, [metricsA, metricsB, viewMode]);
-
   return (
     <div className="overflow-x-auto rounded-xl bg-light-gray/30 p-2">
       <table
@@ -837,7 +779,7 @@ function DiffTable({
                 {row.unavailable ? (
                   <span
                     className="text-xs text-mid-gray"
-                    aria-label="sin análisis aprobado"
+                    aria-label="sin datos para comparar"
                   >
                     —
                   </span>
@@ -847,13 +789,13 @@ function DiffTable({
               </td>
             </tr>
           ))}
-          {anyLegacy ? (
+          {missingData ? (
             <tr className="border-t border-light-gray/60">
               <td
                 colSpan={4}
                 className="px-3 py-2 text-xs italic text-mid-gray"
               >
-                Datos no comparables (snapshot legacy).
+                Alguna de las dos carreras aún no tiene resultados en el historial.
               </td>
             </tr>
           ) : null}
@@ -863,112 +805,99 @@ function DiffTable({
   );
 }
 
-interface BuildRowsInput {
-  metricsA: ExtractedMetrics | null;
-  metricsB: ExtractedMetrics | null;
-  viewMode: "coach" | "parent";
+/** Δ de posición (B − A): menor es mejor — «−3 puestos» = subió 3. */
+function formatDeltaRank(deltaRank: number | null): string {
+  if (deltaRank === null) return "—";
+  if (deltaRank === 0) return "Mantuvo";
+  const abs = Math.abs(deltaRank);
+  const noun = abs === 1 ? "puesto" : "puestos";
+  return `${deltaRank > 0 ? "+" : "−"}${abs} ${noun}`;
 }
 
-function buildRows({
-  metricsA,
-  metricsB,
-  viewMode,
-}: BuildRowsInput): RowSpec[] {
-  const rankA = metricsA?.ranking_in_category ?? null;
-  const rankB = metricsB?.ranking_in_category ?? null;
-  const sizeA = metricsA?.category_size ?? null;
-  const sizeB = metricsB?.category_size ?? null;
-  const gapA = metricsA?.podium_gap_ms ?? null;
-  const gapB = metricsB?.podium_gap_ms ?? null;
+/** Δ en puntos porcentuales (B − A), con signo explícito y 1 decimal. */
+function formatDeltaPp(delta: number | null): string {
+  if (delta === null) return "—";
+  const rounded = Math.round(delta * 10) / 10;
+  if (rounded === 0) return "0.0 pp";
+  return `${rounded > 0 ? "+" : "−"}${Math.abs(rounded).toFixed(1)} pp`;
+}
 
-  // Percentil por TIEMPO (override coach real 2026-05-25).
-  const pctA = computePercentile(
-    metricsA?.race_time_ms ?? null,
-    metricsA?.category_time_min_ms ?? null,
-    metricsA?.category_time_max_ms ?? null,
-    sizeA,
-  );
-  const pctB = computePercentile(
-    metricsB?.race_time_ms ?? null,
-    metricsB?.category_time_min_ms ?? null,
-    metricsB?.category_time_max_ms ?? null,
-    sizeB,
-  );
+/** Valor de una métrica del motor en un punto (`null` = sin dato). */
+function metricOf(
+  point: RaceHistoryPoint | null,
+  key: "position" | "percentile" | "gap_to_median_pct" | "gap_to_podium_pct",
+): number | null {
+  if (point === null || !(key in point)) return null;
+  return (point as Record<typeof key, number | null>)[key] ?? null;
+}
 
-  const deltaRank =
-    rankA !== null && rankB !== null ? rankB - rankA : null;
-  const deltaGap = gapA !== null && gapB !== null ? gapB - gapA : null;
-  // Delta percentil: B − A. Mayor es mejor (subir percentil = mejorar).
-  const deltaPct =
-    pctA !== null && pctB !== null ? pctB - pctA : null;
+function delta(a: number | null, b: number | null): number | null {
+  return a !== null && b !== null ? b - a : null;
+}
 
-  const rows: RowSpec[] = [];
+/**
+ * Filas de la tabla A → B. Todas las cifras vienen del motor del servidor
+ * (`RaceHistoryPoint`); aquí solo se restan. «Percentil» y las brechas son
+ * `null` con menos de 5 cronometrados (regla del motor) → fila «sin datos».
+ * «Brecha vs. podio» es de coach — este panel solo se monta para coach.
+ */
+function buildRows(
+  pointA: RaceHistoryPoint | null,
+  pointB: RaceHistoryPoint | null,
+): RowSpec[] {
+  const rankA = metricOf(pointA, "position");
+  const rankB = metricOf(pointB, "position");
+  const pctA = metricOf(pointA, "percentile");
+  const pctB = metricOf(pointB, "percentile");
+  const medA = metricOf(pointA, "gap_to_median_pct");
+  const medB = metricOf(pointB, "gap_to_median_pct");
+  const podA = metricOf(pointA, "gap_to_podium_pct");
+  const podB = metricOf(pointB, "gap_to_podium_pct");
 
-  // 1. Posición en categoría
-  rows.push({
-    metric: "Posición categoría",
-    beforeText: formatPosition(rankA, sizeA),
-    afterText: formatPosition(rankB, sizeB),
-    delta: deltaRank,
-    lowerIsBetter: true,
-    deltaText:
-      viewMode === "parent"
-        ? formatQualitativeRank(deltaRank)
-        : formatDeltaRank(deltaRank),
-    qualitativeLabel: formatQualitativeRank(deltaRank),
-    unavailable: rankA === null || rankB === null,
-  });
+  const deltaRank = delta(rankA, rankB);
+  const deltaPct = delta(pctA, pctB);
+  const deltaMed = delta(medA, medB);
+  const deltaPod = delta(podA, podB);
 
-  // 2. Gap al podio — métrica relativa, sí comparable entre pistas.
-  rows.push({
-    metric: "Gap al podio",
-    beforeText:
-      viewMode === "parent"
-        ? formatQualitativePodiumProximity(gapA)
-        : formatRaceTime(gapA),
-    afterText:
-      viewMode === "parent"
-        ? formatQualitativePodiumProximity(gapB)
-        : formatRaceTime(gapB),
-    delta: deltaGap,
-    lowerIsBetter: true,
-    deltaText:
-      viewMode === "parent"
-        ? gapA === null || gapB === null
-          ? "—"
-          : (gapB ?? 0) < (gapA ?? 0)
-            ? "Más cerca del podio"
-            : (gapB ?? 0) > (gapA ?? 0)
-              ? "Manteniendo distancia"
-              : "Sin cambio"
-        : formatDeltaTime(deltaGap),
-    unavailable: gapA === null || gapB === null,
-  });
-
-  // 3. Percentil de categoría — basado en TIEMPO (override coach real
-  //    2026-05-25). Solo se incluye si AMBAS válidas tienen n ≥
-  //    PERCENTILE_MIN_FIELD_SIZE (5). Visible a todos (coach + padre).
-  if (pctA !== null && pctB !== null) {
-    rows.push({
-      metric: "Percentil categoría",
-      beforeText: `${pctA}`,
-      afterText: `${pctB}`,
+  return [
+    {
+      metric: "Posición",
+      beforeText: formatPosition(rankA, pointA?.field_size),
+      afterText: formatPosition(rankB, pointB?.field_size),
+      delta: deltaRank,
+      lowerIsBetter: true,
+      deltaText: formatDeltaRank(deltaRank),
+      unavailable: deltaRank === null,
+    },
+    {
+      metric: "Brecha vs. mediana",
+      beforeText: formatGapPct(medA),
+      afterText: formatGapPct(medB),
+      delta: deltaMed,
+      lowerIsBetter: true,
+      deltaText: formatDeltaPp(deltaMed),
+      unavailable: deltaMed === null,
+    },
+    {
+      metric: "Brecha vs. podio",
+      beforeText: formatGapPct(podA),
+      afterText: formatGapPct(podB),
+      delta: deltaPod,
+      lowerIsBetter: true,
+      deltaText: formatDeltaPp(deltaPod),
+      unavailable: deltaPod === null,
+    },
+    {
+      metric: "Percentil",
+      beforeText: pctA === null ? "sin dato" : String(Math.round(pctA)),
+      afterText: pctB === null ? "sin dato" : String(Math.round(pctB)),
       delta: deltaPct,
       // Percentil: mayor = mejor (contrario al resto).
       lowerIsBetter: false,
-      deltaText:
-        deltaPct === null
-          ? "—"
-          : `${deltaPct > 0 ? "+" : ""}${deltaPct}pp`,
-      unavailable: false,
-    });
-  }
-
-  // NOTA: "Tiempo total" y "Δ vs mejor propia" eliminados (head-coach-lead
-  // 2026-05-25): las pistas Copa Valle varían en distancia y dificultad, así
-  // que tiempo absoluto induce conclusiones falsas.
-
-  return rows;
+      deltaText: formatDeltaPp(deltaPct),
+      unavailable: deltaPct === null,
+    },
+  ];
 }
 
 function formatPosition(
@@ -1026,83 +955,29 @@ function DeltaCell({ row }: { row: RowSpec }) {
 // ---------------------------------------------------------------------------
 
 function ImprovementSummary({
-  detailA,
-  detailB,
-  validaA,
-  validaB,
+  rows,
+  confidence,
   labelB,
 }: {
-  detailA: AthleteInsightDetailOut | null;
-  detailB: AthleteInsightDetailOut | null;
-  validaA: number;
-  validaB: number;
+  rows: RowSpec[];
+  confidence: string | null | undefined;
   labelB: string;
 }) {
-  const snapA = detailA?.metrics_snapshot;
-  const snapB = detailB?.metrics_snapshot;
-  const metricsA: ExtractedMetrics | null = isMetricsSnapshotV1(snapA)
-    ? {
-        race_time_ms: snapA.race_time_ms ?? null,
-        ranking_in_category: snapA.ranking_in_category ?? null,
-        podium_gap_ms: snapA.podium_gap_ms ?? null,
-        category_size: snapA.category_size ?? null,
-        category_time_min_ms: snapA.category_time_min_ms ?? null,
-        category_time_max_ms: snapA.category_time_max_ms ?? null,
-      }
-    : extractMetricsForValida(snapA, validaA);
-  const metricsB: ExtractedMetrics | null = isMetricsSnapshotV1(snapB)
-    ? {
-        race_time_ms: snapB.race_time_ms ?? null,
-        ranking_in_category: snapB.ranking_in_category ?? null,
-        podium_gap_ms: snapB.podium_gap_ms ?? null,
-        category_size: snapB.category_size ?? null,
-        category_time_min_ms: snapB.category_time_min_ms ?? null,
-        category_time_max_ms: snapB.category_time_max_ms ?? null,
-      }
-    : extractMetricsForValida(snapB, validaB);
-
-  if (!metricsA || !metricsB) return null;
-
-  const pctA = computePercentile(
-    metricsA.race_time_ms,
-    metricsA.category_time_min_ms,
-    metricsA.category_time_max_ms,
-    metricsA.category_size,
-  );
-  const pctB = computePercentile(
-    metricsB.race_time_ms,
-    metricsB.category_time_min_ms,
-    metricsB.category_time_max_ms,
-    metricsB.category_size,
-  );
-
-  const deltas = {
-    rank:
-      metricsA.ranking_in_category !== null &&
-      metricsB.ranking_in_category !== null
-        ? metricsB.ranking_in_category - metricsA.ranking_in_category
-        : null,
-    gap:
-      metricsA.podium_gap_ms !== null && metricsB.podium_gap_ms !== null
-        ? metricsB.podium_gap_ms - metricsA.podium_gap_ms
-        : null,
-    percentile: pctA !== null && pctB !== null ? pctB - pctA : null,
-  };
-
-  const { improved, total } = evaluateImprovementCount(deltas);
+  // Solo cuentan las métricas con delta numérico (ambos lados con dato).
+  const comparable = rows.filter((r) => !r.unavailable && r.delta !== null);
+  if (comparable.length === 0) return null;
+  const improved = comparable.filter((r) =>
+    r.lowerIsBetter ? (r.delta as number) < 0 : (r.delta as number) > 0,
+  ).length;
   const confidenceLabel =
-    detailB?.confidence === "high"
-      ? "Alta"
-      : detailB?.confidence === "medium"
-        ? "Media"
-        : "Baja";
+    confidence === "high" ? "Alta" : confidence === "medium" ? "Media" : "Baja";
 
   return (
     <p
       data-testid="comparator-improvement-summary"
       className="text-sm font-medium text-charcoal"
     >
-      Mejoró {improved} de {total} métricas — Confianza {confidenceLabel} ·{" "}
+      Mejoró {improved} de {comparable.length} métricas — Confianza {confidenceLabel} ·{" "}
       {labelB}
     </p>
   );

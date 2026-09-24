@@ -2423,3 +2423,434 @@ class TestCommitLocking:
         )
         assert "no está en estado pending" in r.json()["detail"], r.json()
         assert ingest_called["n"] == 0, "ingest_event was called despite failed recheck"
+
+
+# ===========================================================================
+# GET /{import_id} y POST /{import_id}/discard (feature 045, US3, T025/T026)
+# ===========================================================================
+
+_IMPORTS = "/api/race-analysis/imports"
+
+#: Claves de ``parse_meta_json`` que el GET nunca devuelve: rutas internas de
+#: storage y el identificador que las arma, y las correcciones manuales, cuyas
+#: filas llevan nombre/club/ciudad de un menor (misma sensibilidad que
+#: ``race_competitors``).
+_INTERNAL_META_KEYS = (
+    "results_storage_path",
+    "general_storage_path",
+    "parse_uuid",
+    "results_ext",
+    "corrections",
+)
+
+
+def _wizard_meta() -> dict:
+    return {
+        "header": {
+            "series_name": "Copa Valle",
+            "season": 2024,
+            "valida_num": 3,
+            "event_name": "VALIDA III PALMIRA",
+            "event_date": "2024-06-14",
+            "location": "Palmira",
+        },
+        "conditions": {"climate": None, "surface_condition": None},
+        "categories_found": ["INF_A_F"],
+        "n_rows_resultados": 3,
+        "n_rows_general": None,
+        "categories": [
+            {
+                "header_raw": "INFANTIL A",
+                "code": "INF_A_F",
+                "mapping_kind": "exact",
+                "rows": 3,
+                "completeness": {"status": "ok", "missing": [], "duplicated": []},
+            }
+        ],
+        "unreadable_rows": [],
+        "acknowledged": [],
+        "pending_categories": [],
+        # --- internas: no deben salir ---
+        "results_storage_path": "race-imports/pending/uuid-1/resultados.pdf",
+        "general_storage_path": None,
+        "parse_uuid": "uuid-1",
+        "results_ext": "pdf",
+        "corrections": [{"op": "add", "row": {"name": "Nombre Ficticio Uno"}, "by": 10}],
+    }
+
+
+async def _seed_import(
+    db_session_factory,
+    *,
+    status: RaceImportStatus = RaceImportStatus.pending,
+    sha: str = "d" * 64,
+    uploader_id: int = 10,
+    **extra: Any,
+) -> int:
+    fields: dict[str, Any] = dict(
+        filename="resultados.pdf",
+        original_filename="Resultados III.pdf",
+        sha256=sha,
+        series_id=1,
+        status=status,
+        stats_json={},
+        imported_by_user_id=uploader_id,
+        imported_at=datetime.now(timezone.utc),
+        kind=RaceImportKind.resultados,
+        parse_meta_json=_wizard_meta(),
+    )
+    fields.update(extra)
+    async with db_session_factory() as session:
+        imp = RaceImport(**fields)
+        session.add(imp)
+        await session.commit()
+        return imp.id
+
+
+async def _status_of(db_session_factory, import_id: int) -> RaceImportStatus:
+    from sqlalchemy import select
+
+    async with db_session_factory() as session:
+        return (
+            await session.execute(
+                select(RaceImport.status).where(RaceImport.id == import_id)
+            )
+        ).scalar_one()
+
+
+async def _audit_rows(db_session_factory) -> list:
+    from sqlalchemy import select
+
+    from app.models.audit_log import AuditLog
+
+    async with db_session_factory() as session:
+        return list((await session.execute(select(AuditLog))).scalars().all())
+
+
+class TestGetImportEndpoint:
+    @pytest.mark.asyncio
+    async def test_coach_gets_the_import_to_rehydrate_the_wizard(
+        self, coach_client, db_session_factory
+    ):
+        import_id = await _seed_import(db_session_factory)
+
+        r = await coach_client.get(f"{_IMPORTS}/{import_id}")
+
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert set(body) == {
+            "id", "status", "source_filename", "parse_meta", "created_at", "event_id", "season",
+            "parent_committed_at",
+        }
+        assert body["id"] == import_id
+        assert body["status"] == "pending"
+        assert body["source_filename"] == "Resultados III.pdf"
+        assert body["event_id"] is None
+        assert body["season"] == 2024  # de parse_meta.header
+        meta = body["parse_meta"]
+        assert meta["header"]["valida_num"] == 3
+        assert meta["categories"][0]["header_raw"] == "INFANTIL A"
+        assert meta["pending_categories"] == []
+
+    @pytest.mark.asyncio
+    async def test_parse_meta_omits_storage_paths_and_manual_corrections(
+        self, coach_client, db_session_factory
+    ):
+        import_id = await _seed_import(db_session_factory)
+
+        r = await coach_client.get(f"{_IMPORTS}/{import_id}")
+
+        meta = r.json()["parse_meta"]
+        for key in _INTERNAL_META_KEYS:
+            assert key not in meta, key
+        assert "Nombre Ficticio Uno" not in r.text
+
+    @pytest.mark.asyncio
+    async def test_committed_import_without_meta_resolves_season_from_its_event(
+        self, coach_client, db_session_factory
+    ):
+        from datetime import date
+
+        from app.models.race_event import RaceEvent, RaceEventStatus
+
+        async with db_session_factory() as session:
+            event = RaceEvent(
+                series_id=1, sequence_number=4, name="VALIDA IV CALI",
+                event_date=date(2026, 5, 17), location="CALI",
+                is_championship=False, status=RaceEventStatus.COMPLETED,
+                created_by_user_id=10,
+            )
+            session.add(event)
+            await session.commit()
+            event_id = event.id
+        import_id = await _seed_import(
+            db_session_factory,
+            status=RaceImportStatus.committed,
+            parse_meta_json=None,
+            event_id=event_id,
+        )
+
+        r = await coach_client.get(f"{_IMPORTS}/{import_id}")
+
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["parse_meta"] is None
+        assert body["event_id"] == event_id
+        assert body["season"] == 2026  # de race_series.season_year
+
+    @staticmethod
+    async def _seed_committed_valida(db_session_factory, committed_at: datetime) -> int:
+        """Válida III de la serie 1 ya confirmada (``event`` + import
+        ``committed``): la carga ``pending`` que la vuelve a subir es una
+        revisión. Devuelve el ``event_id``."""
+        from datetime import date
+
+        from app.models.race_event import RaceEvent, RaceEventStatus
+
+        async with db_session_factory() as session:
+            event = RaceEvent(
+                series_id=1, sequence_number=3, name="VALIDA III PALMIRA",
+                event_date=date(2024, 6, 14), location="PALMIRA",
+                is_championship=False, status=RaceEventStatus.COMPLETED,
+                created_by_user_id=10,
+            )
+            session.add(event)
+            await session.commit()
+            event_id = event.id
+        await _seed_import(
+            db_session_factory,
+            status=RaceImportStatus.committed,
+            sha="e" * 64,
+            parse_meta_json=None,
+            event_id=event_id,
+            imported_at=committed_at,
+        )
+        return event_id
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "start", [RaceImportStatus.pending, RaceImportStatus.dry_run]
+    )
+    async def test_staged_revision_reports_when_its_parent_was_committed(
+        self, coach_client, db_session_factory, start
+    ):
+        """Mismo dato que ``ImportParseResponse.parent_committed_at``: el
+        wizard retomado lo necesita para el aviso «ya fue importada el …»."""
+        await self._seed_committed_valida(db_session_factory, datetime(2024, 6, 20, 18, 42))
+        import_id = await _seed_import(db_session_factory, status=start)
+
+        r = await coach_client.get(f"{_IMPORTS}/{import_id}")
+
+        assert r.status_code == 200, r.text
+        assert r.json()["parent_committed_at"].startswith("2024-06-20T18:42")
+
+    @pytest.mark.asyncio
+    async def test_first_import_of_a_valida_has_no_parent_committed_at(
+        self, coach_client, db_session_factory
+    ):
+        import_id = await _seed_import(db_session_factory)
+
+        r = await coach_client.get(f"{_IMPORTS}/{import_id}")
+
+        assert r.status_code == 200, r.text
+        assert r.json()["parent_committed_at"] is None
+
+    @pytest.mark.asyncio
+    async def test_committed_import_is_never_its_own_parent(
+        self, coach_client, db_session_factory
+    ):
+        """Un import confirmado a medias conserva su ``header`` (US5) y su
+        evento: ``detect_revision`` lo encontraría a él mismo como «previo»."""
+        event_id = await self._seed_committed_valida(
+            db_session_factory, datetime(2024, 6, 20, 18, 42)
+        )
+        import_id = await _seed_import(
+            db_session_factory,
+            status=RaceImportStatus.committed,
+            sha="f" * 64,
+            event_id=event_id,
+        )
+
+        r = await coach_client.get(f"{_IMPORTS}/{import_id}")
+
+        assert r.status_code == 200, r.text
+        assert r.json()["parent_committed_at"] is None
+
+    @pytest.mark.asyncio
+    async def test_discard_response_carries_no_parent_committed_at(
+        self, coach_client, db_session_factory
+    ):
+        await self._seed_committed_valida(db_session_factory, datetime(2024, 6, 20, 18, 42))
+        import_id = await _seed_import(db_session_factory)
+
+        r = await coach_client.post(f"{_IMPORTS}/{import_id}/discard")
+
+        assert r.status_code == 200, r.text
+        assert r.json()["parent_committed_at"] is None
+
+    @pytest.mark.asyncio
+    async def test_admin_can_get_any_import(self, admin_client, db_session_factory):
+        import_id = await _seed_import(db_session_factory)
+        r = await admin_client.get(f"{_IMPORTS}/{import_id}")
+        assert r.status_code == 200, r.text
+
+    @pytest.mark.asyncio
+    async def test_parent_is_forbidden(self, parent_client, db_session_factory):
+        import_id = await _seed_import(db_session_factory)
+        r = await parent_client.get(f"{_IMPORTS}/{import_id}")
+        assert r.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_coach_of_another_club_gets_404_not_403(
+        self, coach_otro_club_client, db_session_factory
+    ):
+        """No filtra que la carga existe: otro club ve lo mismo que un id ajeno."""
+        await _seed_club_membership(db_session_factory, user_id=10, club_id=1)
+        import_id = await _seed_import(db_session_factory)
+
+        r = await coach_otro_club_client.get(f"{_IMPORTS}/{import_id}")
+
+        assert r.status_code == 404
+        assert "otro club" not in r.text
+
+    @pytest.mark.asyncio
+    async def test_unknown_import_is_404(self, coach_client):
+        r = await coach_client.get(f"{_IMPORTS}/9999")
+        assert r.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_static_get_routes_are_not_shadowed_by_the_id_route(self, coach_client):
+        assert (await coach_client.get(f"{_IMPORTS}/revision-reasons")).status_code == 200
+        assert (await coach_client.get(f"{_IMPORTS}/acknowledge-reasons")).status_code == 200
+
+
+class TestDiscardEndpoint:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "start", [RaceImportStatus.pending, RaceImportStatus.dry_run]
+    )
+    async def test_staged_import_becomes_discarded_and_is_audited(
+        self, coach_client, db_session_factory, start
+    ):
+        import_id = await _seed_import(db_session_factory, status=start)
+
+        r = await coach_client.post(f"{_IMPORTS}/{import_id}/discard")
+
+        assert r.status_code == 200, r.text
+        assert r.json()["id"] == import_id
+        assert r.json()["status"] == "discarded"
+        assert await _status_of(db_session_factory, import_id) == RaceImportStatus.discarded
+        (row,) = await _audit_rows(db_session_factory)
+        assert row.entity_id == import_id
+        assert row.entity_type == "race_import"
+        assert row.action.value == "update"
+        assert start.value in str(row.diff_json) and "discarded" in str(row.diff_json)
+
+    @pytest.mark.asyncio
+    async def test_committed_import_cannot_be_discarded(self, coach_client, db_session_factory):
+        import_id = await _seed_import(db_session_factory, status=RaceImportStatus.committed)
+
+        r = await coach_client.post(f"{_IMPORTS}/{import_id}/discard")
+
+        assert r.status_code == 409, r.text
+        assert r.json()["detail"]["code"] == "import_not_discardable"
+        assert await _status_of(db_session_factory, import_id) == RaceImportStatus.committed
+        assert await _audit_rows(db_session_factory) == []
+
+    @pytest.mark.asyncio
+    async def test_failed_import_cannot_be_discarded(self, coach_client, db_session_factory):
+        import_id = await _seed_import(db_session_factory, status=RaceImportStatus.failed)
+        r = await coach_client.post(f"{_IMPORTS}/{import_id}/discard")
+        assert r.status_code == 409, r.text
+        assert await _status_of(db_session_factory, import_id) == RaceImportStatus.failed
+
+    @pytest.mark.asyncio
+    async def test_discarding_twice_is_idempotent_and_audits_once(
+        self, coach_client, db_session_factory
+    ):
+        import_id = await _seed_import(db_session_factory)
+
+        first = await coach_client.post(f"{_IMPORTS}/{import_id}/discard")
+        second = await coach_client.post(f"{_IMPORTS}/{import_id}/discard")
+
+        assert first.status_code == 200 and second.status_code == 200
+        assert second.json()["status"] == "discarded"
+        assert len(await _audit_rows(db_session_factory)) == 1
+
+    @pytest.mark.asyncio
+    async def test_admin_can_discard(self, admin_client, db_session_factory):
+        import_id = await _seed_import(db_session_factory)
+        r = await admin_client.post(f"{_IMPORTS}/{import_id}/discard")
+        assert r.status_code == 200, r.text
+
+    @pytest.mark.asyncio
+    async def test_parent_is_forbidden(self, parent_client, db_session_factory):
+        import_id = await _seed_import(db_session_factory)
+
+        r = await parent_client.post(f"{_IMPORTS}/{import_id}/discard")
+
+        assert r.status_code == 403
+        assert await _status_of(db_session_factory, import_id) == RaceImportStatus.pending
+
+    @pytest.mark.asyncio
+    async def test_coach_of_another_club_gets_404_and_nothing_changes(
+        self, coach_otro_club_client, db_session_factory
+    ):
+        await _seed_club_membership(db_session_factory, user_id=10, club_id=1)
+        import_id = await _seed_import(db_session_factory)
+
+        r = await coach_otro_club_client.post(f"{_IMPORTS}/{import_id}/discard")
+
+        assert r.status_code == 404
+        assert await _status_of(db_session_factory, import_id) == RaceImportStatus.pending
+
+    @pytest.mark.asyncio
+    async def test_unknown_import_is_404(self, coach_client):
+        r = await coach_client.post(f"{_IMPORTS}/9999/discard")
+        assert r.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_the_same_file_can_be_uploaded_again_after_discarding_it(
+        self, coach_client, stub_parsers
+    ):
+        """``discarded`` no cuenta como staging: subir el mismo PDF crea una
+        carga nueva en vez de devolver la abandonada (FR-027 solo reusa
+        ``pending``/``dry_run``)."""
+        files = {"resultados_pdf": _pdf_file(b"content")}
+        first = await coach_client.post(f"{_IMPORTS}/parse", data=_parse_form(), files=files)
+        assert first.status_code == 200, first.text
+        first_id = first.json()["parse_id"]
+
+        assert (await coach_client.post(f"{_IMPORTS}/{first_id}/discard")).status_code == 200
+        again = await coach_client.post(f"{_IMPORTS}/parse", data=_parse_form(), files=files)
+
+        assert again.status_code == 200, again.text
+        assert again.json()["parse_id"] != first_id
+
+
+class TestListHidesDiscardedByDefault:
+    @pytest.mark.asyncio
+    async def test_default_listing_excludes_discarded(self, coach_client, db_session_factory):
+        await _seed_import(db_session_factory, sha="1" * 64)
+        await _seed_import(db_session_factory, sha="2" * 64, status=RaceImportStatus.discarded)
+        await _seed_import(db_session_factory, sha="3" * 64, status=RaceImportStatus.committed)
+
+        r = await coach_client.get(f"{_IMPORTS}/")
+
+        assert r.status_code == 200
+        body = r.json()
+        assert body["total"] == 2
+        assert sorted(i["status"] for i in body["items"]) == ["committed", "pending"]
+
+    @pytest.mark.asyncio
+    async def test_discarded_are_still_reachable_with_an_explicit_status_filter(
+        self, coach_client, db_session_factory
+    ):
+        await _seed_import(db_session_factory, sha="1" * 64)
+        await _seed_import(db_session_factory, sha="2" * 64, status=RaceImportStatus.discarded)
+
+        r = await coach_client.get(f"{_IMPORTS}/?status=discarded")
+
+        assert r.status_code == 200
+        assert [i["status"] for i in r.json()["items"]] == ["discarded"]
+        assert r.json()["total"] == 1

@@ -16,6 +16,12 @@
  *  - `matchedSeries.short_name` se pasa a InfoTab como `seriesShortName` →
  *    la fila "Serie" muestra el nombre corto, no el completo.
  *
+ * Y (feature 045, US6 / T049-T050):
+ *  - Pestañas: Información · Resultados · Clasificación (solo copas) ·
+ *    «Circuito y condiciones» (`?tab=circuito`) · «Análisis IA».
+ *  - `?tab=conditions` es alias de `?tab=circuito` y la URL se reescribe.
+ *  - Acción del encabezado: «Editar datos» (ya no «Editar metadata»).
+ *
  * Mockeamos InsightsTab para evitar la cascada de Suspense lazy + las
  * queries de useClubInsightsByRace (no son objeto de estos tests).
  */
@@ -24,7 +30,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { axe } from "jest-axe";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter, Routes, Route } from "react-router-dom";
+import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
 import { http, HttpResponse } from "msw";
 
 // Mock de auth.store — alternable entre coach y admin.
@@ -74,6 +80,17 @@ function mockAuthAs(role: "admin" | "coach") {
   );
 }
 
+/** Expone la URL actual para asertar reescrituras de `?tab=` (alias). */
+function LocationProbe() {
+  const location = useLocation();
+  return (
+    <div data-testid="location-probe" hidden>
+      {location.pathname}
+      {location.search}
+    </div>
+  );
+}
+
 function renderDetail(
   id: string | number = 1,
   search = "",
@@ -90,6 +107,7 @@ function renderDetail(
         <Routes>
           <Route path="/competitions/:id" element={<CompetitionDetailPage />} />
         </Routes>
+        <LocationProbe />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -286,6 +304,35 @@ describe("CompetitionDetailPage — delete admin", () => {
       }),
     );
   });
+
+  // Feature 045 (T083, FR-002): el copy del diálogo sigue el tipo de evento.
+  it("un campeonato dice «Eliminar campeonato» y «El campeonato se eliminará…», nunca «válida»", async () => {
+    mswServer.use(
+      http.get("*/api/race-analysis/race-events/9", () =>
+        HttpResponse.json(
+          makeRaceEventRead({
+            id: 9,
+            is_championship: true,
+            name: "Campeonato Departamental XCO",
+          }),
+        ),
+      ),
+    );
+    mockAuthAs("admin");
+    const user = userEvent.setup();
+    renderDetail(9);
+    await screen.findByRole("heading", { level: 1 });
+
+    await user.click(screen.getByTestId("btn-delete"));
+    const dialog = await screen.findByRole("alertdialog", {
+      name: /Eliminar campeonato/i,
+    });
+    expect(dialog).toHaveTextContent(/El campeonato se eliminará/i);
+    expect(dialog).not.toHaveTextContent(/válida/i);
+    expect(
+      screen.getByRole("button", { name: "Eliminar campeonato" }),
+    ).toBeInTheDocument();
+  });
 });
 
 describe("CompetitionDetailPage — a11y", () => {
@@ -298,15 +345,15 @@ describe("CompetitionDetailPage — a11y", () => {
   });
 });
 
-describe("CompetitionDetailPage — tab Circuito (feature 043, T029)", () => {
-  it("?tab=circuito renderiza el panel CourseTab; 0 violaciones jest-axe", async () => {
+describe("CompetitionDetailPage — tab «Circuito y condiciones» (feature 043 T029 + 045 T049)", () => {
+  it("?tab=circuito renderiza CourseTab y las condiciones juntos; 0 violaciones jest-axe", async () => {
     mockAuthAs("coach");
     const { container } = renderDetail(1, "?tab=circuito");
     await waitFor(() =>
       expect(screen.getByRole("heading", { level: 1 })).toBeInTheDocument(),
     );
 
-    const trigger = screen.getByRole("tab", { name: "Circuito" });
+    const trigger = screen.getByRole("tab", { name: "Circuito y condiciones" });
     expect(trigger).toHaveAttribute("data-state", "active");
 
     // Fixture feliz por defecto (`raceCourseHandlers`, registrado global).
@@ -314,24 +361,112 @@ describe("CompetitionDetailPage — tab Circuito (feature 043, T029)", () => {
     expect(
       await screen.findByTestId("course-variants-card"),
     ).toBeInTheDocument();
+    // Las condiciones ya no son otra pestaña: viven en el mismo panel.
+    expect(screen.getByTestId("mock-conditions-tab")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Circuito" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Condiciones" }),
+    ).toBeInTheDocument();
 
     const results = await axe(container);
     expect(results).toHaveNoViolations();
   }, 15_000);
-});
 
-describe("CompetitionDetailPage — Insights tab label (T054, lock-in regression)", () => {
-  // contracts/ai-identity.md §1 rename table: this label is already correct
-  // ("Insights IA" — the noun standard, ~line 110) and MUST NOT drift, e.g.
-  // back to a stale "Análisis IA"/"Análisis con IA" variant, as a side effect
-  // of unrelated future edits to this file.
-  it("el último tab se llama 'Insights IA', no una variante antigua", async () => {
+  it("?tab=conditions es alias de ?tab=circuito: activa «Circuito y condiciones» y reescribe la URL conservando el resto", async () => {
+    mockAuthAs("coach");
+    renderDetail(1, "?tab=conditions&foo=bar");
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { level: 1 })).toBeInTheDocument(),
+    );
+
+    const trigger = screen.getByRole("tab", { name: "Circuito y condiciones" });
+    expect(trigger).toHaveAttribute("data-state", "active");
+    expect(screen.getByTestId("mock-conditions-tab")).toBeInTheDocument();
+
+    await waitFor(() => {
+      const url = screen.getByTestId("location-probe").textContent ?? "";
+      expect(url).toContain("tab=circuito");
+      expect(url).toContain("foo=bar");
+      expect(url).not.toContain("conditions");
+    });
+  }, 15_000);
+
+  it("ya no hay pestañas sueltas «Condiciones» ni «Circuito»", async () => {
     mockAuthAs("coach");
     renderDetail(1);
-    const trigger = await screen.findByRole("tab", { name: "Insights IA" });
+    await screen.findByRole("tab", { name: "Circuito y condiciones" });
+    expect(
+      screen.queryByRole("tab", { name: "Condiciones" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("tab", { name: "Circuito" }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe("CompetitionDetailPage — pestañas del detalle (feature 045, US6)", () => {
+  it("una copa muestra Información · Resultados · Clasificación · Circuito y condiciones · Análisis IA, en ese orden", async () => {
+    mockAuthAs("coach");
+    renderDetail(1);
+    await screen.findByRole("tab", { name: "Información" });
+    expect(
+      screen.getAllByRole("tab").map((tab) => tab.textContent),
+    ).toEqual([
+      "Información",
+      "Resultados",
+      "Clasificación",
+      "Circuito y condiciones",
+      "Análisis IA",
+    ]);
+  });
+
+  it("un campeonato omite «Clasificación» y conserva el resto", async () => {
+    mswServer.use(
+      http.get("*/api/race-analysis/race-events/9", () =>
+        HttpResponse.json(
+          makeRaceEventRead({ id: 9, is_championship: true }),
+        ),
+      ),
+    );
+    mockAuthAs("coach");
+    renderDetail(9);
+    await screen.findByRole("tab", { name: "Información" });
+    expect(
+      screen.getAllByRole("tab").map((tab) => tab.textContent),
+    ).toEqual([
+      "Información",
+      "Resultados",
+      "Circuito y condiciones",
+      "Análisis IA",
+    ]);
+  });
+
+  it("la acción del encabezado se llama «Editar datos» (no «Editar metadata»)", async () => {
+    mockAuthAs("coach");
+    renderDetail(1);
+    const edit = await screen.findByTestId("btn-edit");
+    expect(edit).toHaveTextContent("Editar datos");
+    expect(edit).toHaveAttribute("href", "/competitions/1/edit");
+    expect(screen.queryByText(/metadata/i)).not.toBeInTheDocument();
+  });
+});
+
+describe("CompetitionDetailPage — Análisis IA tab label (T054 lock-in, updated by feature 045)", () => {
+  // Cambio deliberado (feature 045, US6 + glosario de contracts/ui-copy.md):
+  // el lock-in de la feature 033 fijaba «Insights IA» como sustantivo de este
+  // tab. 045 retira «Insights IA» como nombre de pestaña en todo el producto
+  // y el último tab del detalle pasa a «Análisis IA» (mismo nombre que la
+  // vista de «Carreras» del atleta). Este test sigue siendo el candado: no
+  // debe volver a «Insights IA» ni derivar a «Análisis con IA».
+  it("el último tab se llama 'Análisis IA', no «Insights IA» ni «Análisis con IA»", async () => {
+    mockAuthAs("coach");
+    renderDetail(1);
+    const trigger = await screen.findByRole("tab", { name: "Análisis IA" });
     expect(trigger).toBeInTheDocument();
     expect(
-      screen.queryByRole("tab", { name: "Análisis IA" }),
+      screen.queryByRole("tab", { name: "Insights IA" }),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("tab", { name: "Análisis con IA" }),

@@ -16,6 +16,14 @@
  *     directamente si no hay insight previo. Requiere `season` y `validaNum`
  *     para construir el body del run.
  *
+ * Métricas por fila (feature 045, US2): «Percentil» y «Brecha vs. mediana»
+ *   para toda audiencia; «Brecha vs. 1.ª posición» y «Brecha vs. podio» SOLO
+ *   en la variante de coach. «Parrilla» va en el encabezado de cada categoría
+ *   (es del grupo, no de la fila). Los valores vienen tal cual del motor del
+ *   backend (`row.metrics`) — aquí nunca se recalcula nada. La variante de
+ *   familia ni siquiera renderiza las columnas de líder/podio (el backend
+ *   tampoco las envía).
+ *
  * Accesibilidad:
  *   - <table> semántico con <caption> y scope en <th>.
  *   - Las filas del club tienen aria-label que indica pertenencia al club.
@@ -26,6 +34,8 @@
  *   - `season?: number` — año de la temporada (necesario para lanzar análisis).
  *   - `validaNum?: number` — número de válida (sequence_number del evento).
  *   - `isCoachOrAdmin?: boolean` — muestra el botón "Analizar con IA".
+ *   - `audience?: "coach" | "family"` — variante de métricas; por defecto
+ *     `coach` si `isCoachOrAdmin`, `family` en otro caso (la opción segura).
  */
 import { useMemo, useState } from "react";
 import { ChevronUp, ChevronDown, ChevronsUpDown, MessageSquarePlus, MessageSquare } from "lucide-react";
@@ -49,8 +59,15 @@ import {
 import { cn } from "@/lib/utils";
 import { AnalyzeAthleteButton } from "@/components/competitions/insights/AnalyzeAthleteButton";
 import { EditResultNoteDialog } from "@/components/race/EditResultNoteDialog";
+import {
+  formatFieldSize,
+  formatGapPct,
+  formatPercentile,
+  SIN_DATO,
+} from "@/lib/raceHistoryFormat";
 import { RACE_HISTORY_STATUS_LABELS } from "@/types/raceHistory.types";
 import type {
+  MetricSet,
   RaceEventResultsResponse,
   RaceResultCategory,
   RaceResultRow,
@@ -115,6 +132,37 @@ function formatCourseHeaderSuffix(cat: RaceResultCategory): string {
   const lapDistance = lapDistanceRow?.lap_distance_km ?? "—";
   const elevation = elevationRow?.elevation_gain_m ?? "sin dato";
   return `· ${cat.laps} vueltas · ${cat.variant_label} · ${lapDistance} km · ${elevation} m D+`;
+}
+
+/**
+ * Feature 045 — brecha contra el líder/podio de una fila. Solo existe en la
+ * variante de coach del payload (las claves están AUSENTES para familia, no
+ * `null`): ausente o `null` → «sin dato».
+ */
+function leaderGapPct(
+  metrics: MetricSet | null | undefined,
+  key: "gap_to_winner_pct" | "gap_to_podium_pct",
+): number | null {
+  if (!metrics || !(key in metrics)) return null;
+  return (metrics as Record<typeof key, number | null>)[key] ?? null;
+}
+
+/** «Parrilla» de una categoría: el tamaño del grupo, igual en todas sus filas. */
+function categoryFieldMetrics(
+  cat: RaceResultCategory,
+): { fieldSize: number; timedFinishers: number } | null {
+  const metrics = cat.rows.find((r) => r.metrics)?.metrics;
+  return metrics
+    ? { fieldSize: metrics.field_size, timedFinishers: metrics.timed_finishers }
+    : null;
+}
+
+/** Mínimo de cronometrados para percentil y brecha a la mediana (motor: `MIN_FIELD`). */
+const MIN_TIMED_FINISHERS = 5;
+
+/** Celda de métrica: el valor formateado o «sin dato» en gris (nunca 0 ni «—»). */
+function MetricValue({ text }: { text: string }) {
+  return text === SIN_DATO ? <span className="text-mid-gray">{text}</span> : <>{text}</>;
 }
 
 // ---------------------------------------------------------------------------
@@ -252,6 +300,12 @@ export interface ResultsTableProps {
    * la invalidación optimista apunte a la query key exacta.
    */
   activeFilters?: RaceResultsFilters;
+  /**
+   * Feature 045 — variante de métricas por fila. `coach` agrega «Brecha vs.
+   * 1.ª posición» y «Brecha vs. podio»; `family` nunca las renderiza.
+   * Por defecto se deriva de `isCoachOrAdmin` (sin rol de coach → familia).
+   */
+  audience?: "coach" | "family";
 }
 
 // ---------------------------------------------------------------------------
@@ -266,8 +320,18 @@ export function ResultsTable({
   isCoachOrAdmin = false,
   insightFreshnessMap,
   activeFilters = {},
+  audience,
 }: ResultsTableProps) {
   const categories = data.categories;
+
+  // Feature 045 — columnas de métricas. Solo si el backend envió `metrics`
+  // en alguna fila (un backend previo a la 045 no las trae: sin columnas
+  // antes que una columna entera de «sin dato»).
+  const showMetricColumns = useMemo(
+    () => categories.some((c) => c.rows.some((r) => r.metrics !== undefined)),
+    [categories],
+  );
+  const showLeaderGaps = (audience ?? (isCoachOrAdmin ? "coach" : "family")) === "coach";
 
   // Whether the "Analizar con IA" button should be shown per row.
   // Requires coach/admin role, plus season + validaNum to build the run body.
@@ -423,10 +487,18 @@ export function ResultsTable({
                     </span>
                   )}
                 </h3>
-                <span className="text-xs text-mid-gray">
-                  {cat.rows.length}{" "}
-                  {cat.rows.length === 1 ? "corredor" : "corredores"}
-                </span>
+                <div className="flex flex-col items-end gap-0.5 text-xs text-mid-gray">
+                  <span>
+                    {cat.rows.length}{" "}
+                    {cat.rows.length === 1 ? "corredor" : "corredores"}
+                  </span>
+                  {showMetricColumns && (
+                    <FieldSizeNote
+                      categoryId={cat.category_id}
+                      field={categoryFieldMetrics(cat)}
+                    />
+                  )}
+                </div>
               </div>
 
               {/* F-05: overflow-hidden recortaba la columna Puntos en
@@ -469,6 +541,28 @@ export function ResultsTable({
                         </TableHead>
                       </>
                     )}
+                    {/* Métricas por fila (feature 045). Percentil y mediana para
+                        toda audiencia; líder/podio solo coach. */}
+                    {showMetricColumns && (
+                      <>
+                        <TableHead className="whitespace-nowrap text-right">
+                          Percentil
+                        </TableHead>
+                        <TableHead className="whitespace-nowrap text-right">
+                          Brecha vs. mediana
+                        </TableHead>
+                        {showLeaderGaps && (
+                          <>
+                            <TableHead className="hidden md:table-cell whitespace-nowrap text-right">
+                              Brecha vs. 1.ª posición
+                            </TableHead>
+                            <TableHead className="hidden md:table-cell whitespace-nowrap text-right">
+                              Brecha vs. podio
+                            </TableHead>
+                          </>
+                        )}
+                      </>
+                    )}
                     <TableHead className="hidden md:table-cell text-right">
                       Puntos
                     </TableHead>
@@ -499,6 +593,8 @@ export function ResultsTable({
                       raceEventId={data.race_event_id}
                       activeFilters={activeFilters}
                       showCourseColumns={showCourseColumns}
+                      showMetricColumns={showMetricColumns}
+                      showLeaderGaps={showLeaderGaps}
                     />
                   ))}
                 </TableBody>
@@ -508,6 +604,34 @@ export function ResultsTable({
           ))}
     </div>
     </TooltipProvider>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// FieldSizeNote — «Parrilla» en el encabezado de cada categoría (feature 045)
+// ---------------------------------------------------------------------------
+
+/**
+ * «Parrilla: N» — tamaño del grupo (FINISHED + MINUS_LAPS), no la cantidad de
+ * filas visibles (un padre solo ve la de su hijo/a). Con menos de 5
+ * cronometrados el motor no calcula percentil ni brecha vs. mediana; se avisa
+ * para que «sin dato» no parezca un error.
+ */
+function FieldSizeNote({
+  categoryId,
+  field,
+}: {
+  categoryId: number;
+  field: { fieldSize: number; timedFinishers: number } | null;
+}) {
+  if (!field) return null;
+  return (
+    <span data-testid={`results-field-size-${categoryId}`}>
+      Parrilla: {formatFieldSize(field.fieldSize)}
+      {field.timedFinishers < MIN_TIMED_FINISHERS && (
+        <> · con menos de {MIN_TIMED_FINISHERS} tiempos no hay percentil ni brecha vs. mediana</>
+      )}
+    </span>
   );
 }
 
@@ -526,6 +650,8 @@ function ResultRow({
   raceEventId,
   activeFilters = {},
   showCourseColumns = false,
+  showMetricColumns = false,
+  showLeaderGaps = false,
 }: {
   row: RaceResultRow;
   sort: SortState;
@@ -544,8 +670,13 @@ function ResultRow({
    * desalineada).
    */
   showCourseColumns?: boolean;
+  /** Feature 045 — debe coincidir 1:1 con las `<TableHead>` de métricas. */
+  showMetricColumns?: boolean;
+  /** Feature 045 — solo variante de coach (brecha vs. 1.ª posición / podio). */
+  showLeaderGaps?: boolean;
 }) {
   const isOurClub = row.is_our_club;
+  const metrics = row.metrics ?? null;
 
   // Show per-row AI button: coach/admin only, our-club row, athlete_id linked,
   // and season + validaNum available.
@@ -685,6 +816,40 @@ function ResultRow({
                 <span className="text-mid-gray">sin dato</span>
               )}
             </TableCell>
+          </>
+        )}
+
+        {/* Métricas por fila (feature 045) — valores del motor, sin recalcular. */}
+        {showMetricColumns && (
+          <>
+            <TableCell
+              className="whitespace-nowrap text-right font-mono text-xs"
+              data-testid={`results-percentile-${row.competitor_id}`}
+            >
+              <MetricValue text={formatPercentile(metrics?.percentile ?? null)} />
+            </TableCell>
+            <TableCell
+              className="whitespace-nowrap text-right font-mono text-xs"
+              data-testid={`results-gap-median-${row.competitor_id}`}
+            >
+              <MetricValue text={formatGapPct(metrics?.gap_to_median_pct ?? null)} />
+            </TableCell>
+            {showLeaderGaps && (
+              <>
+                <TableCell
+                  className="hidden md:table-cell whitespace-nowrap text-right font-mono text-xs"
+                  data-testid={`results-gap-winner-${row.competitor_id}`}
+                >
+                  <MetricValue text={formatGapPct(leaderGapPct(metrics, "gap_to_winner_pct"))} />
+                </TableCell>
+                <TableCell
+                  className="hidden md:table-cell whitespace-nowrap text-right font-mono text-xs"
+                  data-testid={`results-gap-podium-${row.competitor_id}`}
+                >
+                  <MetricValue text={formatGapPct(leaderGapPct(metrics, "gap_to_podium_pct"))} />
+                </TableCell>
+              </>
+            )}
           </>
         )}
 

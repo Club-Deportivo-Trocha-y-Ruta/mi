@@ -41,6 +41,15 @@ la fuga de una etiqueta diagnóstica como violación ``must_block`` para
 texto generado por LLM. Esta plantilla es determinística, no LLM, pero
 aplica el mismo criterio por precaución: usa la PRESENCIA de esos campos
 solo para decidir qué frase genérica incluir, nunca su valor literal.
+
+Feature 046 (``contracts/ai-body-composition-leaf.md`` §4): cuando existe la
+hoja cualitativa ``AnalysisContext.body_composition``, se agrega UNA frase de
+composición corporal por audiencia a ``meaning`` — familia:
+``FAMILY_COPY[family_band]["family_sentence"]`` (nunca una frase roja: no
+existe copy rojo para familias por diseño); entrenador:
+``COACH_REASON_COPY[band_reason_code]``. Ambas son copy determinista ya
+revisada en ``app/services/body_composition.py``, sin cifras de pliegues ni
+porcentajes.
 """
 
 from __future__ import annotations
@@ -48,6 +57,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from app.services.ai.anthro.context import AnalysisContext
+from app.services.body_composition import COACH_REASON_COPY, FAMILY_COPY
 from app.services.ai.anthro.schemas import (
     Confidence,
     ConfidenceLevel,
@@ -136,6 +146,22 @@ def _meaning_lines(audience: str, growth_summary: dict[str, Any]) -> list[str]:
     return lines[:4]
 
 
+def _body_composition_line(audience: str, leaf: Optional[dict[str, Any]]) -> Optional[str]:
+    """Una frase de composición corporal por audiencia, o ``None``.
+
+    Familia: la frase de ``family_band`` — cualquier valor distinto de
+    ``verde`` se proyecta a ``ambar`` (defensa en profundidad: nunca existe
+    una frase roja para familias). Entrenador: el copy de
+    ``band_reason_code``; un código desconocido no agrega nada.
+    """
+    if not leaf:
+        return None
+    if audience == "family":
+        family_band = "verde" if leaf.get("family_band") == "verde" else "ambar"
+        return FAMILY_COPY[family_band]["family_sentence"]
+    return COACH_REASON_COPY.get(leaf.get("band_reason_code") or "")
+
+
 def _next_weeks_lines(audience: str) -> list[str]:
     if audience == "family":
         return [
@@ -170,6 +196,11 @@ def build_fallback_insight(context: AnalysisContext) -> AnthropometryInsightV1:
 
     changes = _delta_change_lines(context.measurement_deltas)
     meaning = _meaning_lines(audience, context.growth_summary)
+    body_composition_line = _body_composition_line(audience, context.body_composition)
+    if body_composition_line is not None:
+        # Cabe siempre dentro del máximo de 4 de ``meaning``: se recorta el
+        # resto a 3 antes de agregarla.
+        meaning = [*meaning[:3], body_composition_line]
     next_weeks = _next_weeks_lines(audience)
 
     return AnthropometryInsightV1(

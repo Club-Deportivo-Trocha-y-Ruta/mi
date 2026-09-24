@@ -5,6 +5,7 @@ from app.models.club import Club, ClubMember, ClubRole
 from app.models.athlete import Athlete, ParentAthlete, Sex, FamilyRelationship
 from app.models.anthropometry import AnthropometricRecord, MaturationStatus, NutritionalStatus
 from app.models.growth import GrowthReferenceLms, GrowthIndicator, GrowthSource
+from app.models.skinfold_measurement import SkinfoldMeasurement
 from app.models.parent_invite import ParentInvite
 from app.models.password_reset_token import PasswordResetToken
 from app.models.email_change_request import EmailChangeRequest
@@ -122,6 +123,8 @@ __all__ = [
     "GrowthReferenceLms",
     "GrowthIndicator",
     "GrowthSource",
+    # Feature 046 — Body composition by skinfolds
+    "SkinfoldMeasurement",
     "ParentInvite",
     "PasswordResetToken",
     "EmailChangeRequest",

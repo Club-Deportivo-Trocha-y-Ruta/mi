@@ -165,6 +165,64 @@ class TestGapPctTopEdge:
 
 
 # ---------------------------------------------------------------------------
+# gap_pct (feature 045) — ahora dibuja la «Brecha vs. mediana», que es
+# FIRMADA: negativa = más rápido que la mediana de la categoría.
+# ---------------------------------------------------------------------------
+
+_CIRCLE_CY_RE = re.compile(r'<circle\b[^>]*\bcy="(-?[\d.]+)"')
+
+
+class TestMedianGapSigned:
+    _HEIGHT = 160
+
+    def _render(self, points: list[dict]) -> str:
+        return _render_macro("gap_pct.svg.jinja", "gap_pct", points=points, height=self._HEIGHT)
+
+    def test_title_is_median_gap_and_never_mentions_p1(self):
+        html = self._render([{"x": 1, "y": 1.5, "label": "V I"}])
+        assert "Brecha vs. mediana (%)" in html
+        assert "P1" not in html
+        assert "Gap al" not in html
+
+    def test_reference_line_is_the_median(self):
+        html = self._render([{"x": 1, "y": -2.0, "label": "V I"}, {"x": 2, "y": 3.0, "label": "V II"}])
+        assert ">mediana<" in html
+
+    def test_negative_values_stay_inside_the_viewbox(self):
+        html = self._render(
+            [
+                {"x": 1, "y": -6.2, "label": "V I"},
+                {"x": 2, "y": 0.0, "label": "V II"},
+                {"x": 3, "y": 3.4, "label": "V III"},
+            ]
+        )
+        _assert_labels_in_viewbox(html, self._HEIGHT)
+        for raw_cy in _CIRCLE_CY_RE.findall(html):
+            assert 0 <= float(raw_cy) <= self._HEIGHT, html
+        assert "-6,2%" in html
+        _assert_no_metadata_tags(html)
+
+    def test_faster_than_median_is_drawn_above_slower_than_median(self):
+        html = self._render([{"x": 1, "y": -4.2, "label": "V I"}, {"x": 2, "y": 3.0, "label": "V II"}])
+        faster_cy, slower_cy = (float(v) for v in _CIRCLE_CY_RE.findall(html))
+        assert faster_cy < slower_cy
+
+    def test_all_negative_values_stay_inside_the_viewbox(self):
+        html = self._render([{"x": 1, "y": -1.0, "label": "V I"}, {"x": 2, "y": -8.0, "label": "V II"}])
+        _assert_labels_in_viewbox(html, self._HEIGHT)
+        for raw_cy in _CIRCLE_CY_RE.findall(html):
+            assert 0 <= float(raw_cy) <= self._HEIGHT, html
+
+    def test_missing_point_keeps_hollow_marker(self):
+        html = self._render([{"x": 1, "y": -1.0, "label": "V I"}, {"x": 2, "y": None, "label": "V II"}])
+        assert "s/d" in html
+
+    def test_all_missing_points_say_no_data(self):
+        html = self._render([{"x": 1, "y": None, "label": "V I"}])
+        assert "Sin datos" in html
+
+
+# ---------------------------------------------------------------------------
 # points_accumulated — borde: punto que toca el máximo del eje Y (tope)
 # ---------------------------------------------------------------------------
 

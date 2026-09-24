@@ -865,7 +865,7 @@ describe("ImportWizard — Step 3", () => {
     expect(screen.getByTestId("import-wizard-step2")).toBeInTheDocument();
   });
 
-  it("commit bloqueado por identidad pendiente (409 identity_review_pending): arma el mensaje con el conteo y muestra un link a la revisión de identidad", async () => {
+  it("commit bloqueado por identidad pendiente (409 identity_pending, cuerpo plano): muestra el copy con el conteo de ESTA carga y un link a review_path", async () => {
     vi.mocked(importsApi.parseRaceImport).mockResolvedValue(PARSE_RESPONSE);
     vi.mocked(importsApi.dryRunRaceImport).mockResolvedValue(
       DRY_RUN_CONFIRMED_ONLY,
@@ -874,12 +874,9 @@ describe("ImportWizard — Step 3", () => {
       response: {
         status: 409,
         data: {
-          detail: {
-            code: "identity_review_pending",
-            pending: 3,
-            message:
-              "Hay candidatos de identidad sin decidir. Resuélvelos en la revisión de identidad antes de confirmar la carga.",
-          },
+          detail: "identity_pending",
+          pending_for_import: 3,
+          review_path: "/competitions/imports?seccion=identidades&import=p-1",
         },
       },
     });
@@ -896,16 +893,19 @@ describe("ImportWizard — Step 3", () => {
     await waitFor(() =>
       expect(screen.getByTestId("wizard-step3-error")).toBeInTheDocument(),
     );
-    // El frontend arma su propio mensaje con `detail.pending` (más claro
-    // que el texto genérico del backend, que no incluye el número).
+    // Copy de contracts/ui-copy.md §Identity gate, con `pending_for_import`.
     expect(screen.getByTestId("wizard-step3-error")).toHaveTextContent(
-      "Hay 3 posibles coincidencias de identidad por revisar antes de confirmar la carga.",
+      "Hay 3 decisiones de identidad pendientes para esta carga. Resuélvelas en «Cargas e identidades» y vuelve: tu carga queda guardada.",
     );
+    // El enlace lleva a `review_path` (conserva `import=<id>` para volver).
     const link = screen.getByTestId("wizard-identity-review-link");
-    expect(link).toHaveAttribute("href", "/competitions/identity-review");
+    expect(link).toHaveAttribute(
+      "href",
+      "/competitions/imports?seccion=identidades&import=p-1",
+    );
   });
 
-  it("commit bloqueado por identidad pendiente con un solo candidato: usa singular", async () => {
+  it("commit bloqueado por identidad pendiente con una sola decisión: usa singular", async () => {
     vi.mocked(importsApi.parseRaceImport).mockResolvedValue(PARSE_RESPONSE);
     vi.mocked(importsApi.dryRunRaceImport).mockResolvedValue(
       DRY_RUN_CONFIRMED_ONLY,
@@ -914,11 +914,9 @@ describe("ImportWizard — Step 3", () => {
       response: {
         status: 409,
         data: {
-          detail: {
-            code: "identity_review_pending",
-            pending: 1,
-            message: "Hay candidatos de identidad sin decidir.",
-          },
+          detail: "identity_pending",
+          pending_for_import: 1,
+          review_path: "/competitions/imports?seccion=identidades&import=p-1",
         },
       },
     });
@@ -936,7 +934,7 @@ describe("ImportWizard — Step 3", () => {
       expect(screen.getByTestId("wizard-step3-error")).toBeInTheDocument(),
     );
     expect(screen.getByTestId("wizard-step3-error")).toHaveTextContent(
-      "Hay 1 posible coincidencia de identidad por revisar antes de confirmar la carga.",
+      "Hay 1 decisión de identidad pendiente para esta carga.",
     );
   });
 

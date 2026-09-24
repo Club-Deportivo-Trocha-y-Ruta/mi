@@ -14,6 +14,7 @@ import type {
   ImportCommitPendingResponse,
   ImportCommitRequest,
   ImportCommitResponse,
+  ImportDetail,
   ImportDryRunResponse,
   ImportListResponse,
   ImportParseRequestFields,
@@ -123,7 +124,7 @@ export async function commitRaceImport(
  * Ingiere las categorías que quedaron fuera de un commit parcial anterior
  * (`contracts/historical-load.md`). Sin body — reutiliza los matches ya
  * resueltos en el commit inicial. `409 nothing_pending` cuando no hay nada
- * pendiente; mismo candado `409 identity_review_pending` que `/commit`.
+ * pendiente; mismo candado `409 identity_pending` (por carga) que `/commit`.
  */
 export async function commitPendingRaceImport(
   parseId: string,
@@ -131,6 +132,40 @@ export async function commitPendingRaceImport(
 ): Promise<ImportCommitPendingResponse> {
   const response = await apiClient.post<ImportCommitPendingResponse>(
     `${BASE}/${parseId}/commit-pending`,
+    {},
+    { signal: options?.signal },
+  );
+  return response.data;
+}
+
+/**
+ * GET /api/race-analysis/imports/{import_id} — feature 045 (US3).
+ *
+ * Estado + meta público de una carga (cualquier estado) para retomar el
+ * wizard desde `?import=<id>`. `404` si no existe o es de otro club.
+ */
+export async function getRaceImport(
+  importId: string | number,
+  options?: { signal?: AbortSignal },
+): Promise<ImportDetail> {
+  const response = await apiClient.get<ImportDetail>(`${BASE}/${importId}`, {
+    signal: options?.signal,
+  });
+  return response.data;
+}
+
+/**
+ * POST /api/race-analysis/imports/{import_id}/discard — feature 045 (US3).
+ *
+ * `pending|dry_run` → `discarded` (200, idempotente si ya lo estaba).
+ * `409 import_not_discardable` en una carga confirmada o fallida.
+ */
+export async function discardRaceImport(
+  importId: string | number,
+  options?: { signal?: AbortSignal },
+): Promise<ImportDetail> {
+  const response = await apiClient.post<ImportDetail>(
+    `${BASE}/${importId}/discard`,
     {},
     { signal: options?.signal },
   );

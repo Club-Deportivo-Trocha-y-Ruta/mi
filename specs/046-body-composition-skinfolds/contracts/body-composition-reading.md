@@ -4,7 +4,7 @@ Pure function `build_reading(...)` in `backend/app/services/body_composition.py`
 
 ## 1. Inputs
 
-`latest_set`, `previous_set` (the most recent earlier set with ≥ 1 non-declined site, any gap), their records (`weight_kg`, `standing_height_cm`, `bmi_z_score`, `maturation_status`, `evaluation_date`), athlete `sex`, `GrowthVelocity` from `growth_summary` (may be `None`), expected velocity range for the stage, FUPRECOL percentiles for triceps and subscapular of the latest set (may be unavailable).
+`latest_set` (the most recent **counted** set, i.e. with ≥ 1 non-declined site), `previous_set` (the most recent counted set before it, any gap), `latest_attempt` (the most recent set of any kind, possibly fully declined), their records (`weight_kg`, `standing_height_cm`, `bmi_z_score`, `maturation_status`, `evaluation_date`), athlete `sex`, `GrowthVelocity` from `growth_summary` (may be `None`), expected velocity range for the stage, FUPRECOL percentiles for triceps and subscapular of the latest set (may be unavailable).
 
 ## 2. Leg codes
 
@@ -32,8 +32,8 @@ Pure function `build_reading(...)` in `backend/app/services/body_composition.py`
 2. **rojo** — `sets_count ≥ 2` and Σ4 `down_real` and weight `flat_or_down` and height `growing`. Reason `energy_availability_pattern`.
 3. **ámbar** — any of:
    - Σ4 `down_real` with weight `flat_or_down` but height `stalled`/`unavailable` → `sum_down_unexplained`;
+   - Σ4 `up_real` and velocity `below` → `sum_up_velocity_low` (checked before `sum_up_unexplained`: velocity `below` always makes growth explanation `none`, so evaluating `sum_up_unexplained` first would make this rule unreachable);
    - Σ4 `up_real` and growth explanation `none` → `sum_up_unexplained`;
-   - Σ4 `up_real` and velocity `below` → `sum_up_velocity_low`;
    - any reference code `low_extreme` or `high_extreme` → `reference_extreme`;
    - BMI-z `drop_large` → `bmi_z_drop`;
    - velocity `below` on the latest and the previous cycle (two consecutive) → `velocity_low_persistent`.
@@ -45,17 +45,41 @@ Pure function `build_reading(...)` in `backend/app/services/body_composition.py`
    - `sets_count == 1` → `first_set` (reference context may still add a note);
    - otherwise `stable`.
 
+### 3b. Latest attempt fully declined (spec clarification Q5)
+
+If `latest_attempt` is fully declined and a counted set exists, the reading is still built from `latest_set`/`previous_set`; the coach payload adds `latest_attempt_declined: {date}` and the card shows "Sin datos: el/la deportista prefirió no medirse" for that date. The family projection is unchanged (it keeps reflecting `latest_set`), the newsletter has no block for that month, and `next_due_date` keeps counting from `latest_set`. With no counted set at all → rule 1 (`has_data=false`).
+
+### 3c. Family projection (spec FR-025, clarifications Q1 and Q4)
+
+`family_band` is derived from `band` and `band_reason_code` and is the **only** band a family surface ever receives:
+
+| Coach `band` | `band_reason_code` | `family_band` |
+|---|---|---|
+| verde | any | `verde` |
+| ámbar | `reference_extreme` (the only ámbar rule that matched) | `verde` |
+| ámbar | any other | `ambar` |
+| rojo | `energy_availability_pattern` | `ambar` |
+
+`family_band` never takes the value `rojo`. When several ámbar rules match, the first matching rule in §3 order sets `band_reason_code`; a reference-only ámbar is detected by evaluating the other ámbar rules without the reference rule (helper `is_reference_only_ambar`).
+
 `legs_missing` lists every leg that was `unavailable`/`none` because data was absent. A missing `previous_set` or `height`/`weight` leg makes rule 2 impossible (documented in the reason).
 
 ## 4. Copy (español, Colombia)
 
-### Family (band + one sentence; the only body-composition text a parent ever sees)
+### Family (keyed by `family_band`; band + one sentence; the only body-composition text a parent ever sees)
 
-| Band | `family_label` | `family_sentence` |
+| `family_band` | `family_label` | `family_sentence` |
 |---|---|---|
 | verde | En su curva esperada | La composición corporal de tu hijo/a se mantiene dentro de lo esperado para su etapa de desarrollo. Sigue acompañando el proceso: esto va de la mano de un crecimiento saludable. |
 | ámbar | En observación | Notamos un cambio que vale la pena conversar. El entrenador se pondrá en contacto contigo para revisarlo juntos; no es una alarma, es una oportunidad de acompañar mejor a tu hijo/a. |
-| rojo | Requiere acompañamiento profesional | Identificamos una señal que amerita una valoración con un profesional de la salud. El entrenador ya está coordinando contigo los siguientes pasos; este acompañamiento adicional es normal y forma parte de cuidar bien a los deportistas en crecimiento. |
+
+There is no rojo row: a coach-side rojo is shown to families as ámbar (§3c); "Requiere acompañamiento profesional" is communicated by the coach in person and appears on no family surface (spec FR-025).
+
+### Newsletter block (deterministic, spec FR-036)
+
+Rendered as fixed copy into the monthly newsletter (Bitácora de etapa) PDF only in the month of a counted set's evaluation date; never passed to the newsletter AI. Title "Composición corporal", then `family_label` + `family_sentence` (by `family_band`), then the short notice:
+
+> Este mes el entrenador tomó una medición de pliegues cutáneos (con una pinza, en sitios como el brazo, la espalda y la pantorrilla), en un espacio privado y respetando siempre el derecho de tu hijo/a a decir que no, sin ninguna consecuencia. Se usa solo para acompañar su crecimiento: nunca para comparar deportistas ni como una meta.
 
 ### Coach (`coach_reason`, one sentence per reason code)
 
@@ -88,12 +112,14 @@ Pure function `build_reading(...)` in `backend/app/services/body_composition.py`
 
 ## 5. Test scenarios (SC-004, parametrised)
 
-| Scenario | Inputs (synthetic) | Expected |
+| Scenario | Inputs (synthetic) | Expected (coach band → `family_band`) |
 |---|---|---|
-| A — girl circa→post PHV | Σ4 32→39, weight 38→42.5, height 148→152.5, velocity within, F | verde `expected_pubertal_gain` |
-| B — boy post PHV | Σ4 28→27, weight 45→49.5, height 158→161, M | verde `post_phv_lean_gain` |
-| C — energy-availability | Σ4 30→22, weight 40.0→40.5, height 145→148.5 | rojo `energy_availability_pattern` |
-| D — single set, triceps ≥ P95 | one set, reference `high_extreme` | ámbar `reference_extreme`, never rojo |
+| A — girl circa→post PHV | Σ4 32→39, weight 38→42.5, height 148→152.5, velocity within, F | verde `expected_pubertal_gain` → verde |
+| B — boy post PHV | Σ4 28→27, weight 45→49.5, height 158→161, M | verde `post_phv_lean_gain` → verde |
+| C — energy-availability | Σ4 30→22, weight 40.0→40.5, height 145→148.5 | rojo `energy_availability_pattern` → ambar |
+| D — single set, triceps ≥ P95 | one set, reference `high_extreme` | ámbar `reference_extreme`, never rojo → verde |
 | E — threshold edge | Σ4 Δ = 6.9 vs 7.0 | `within_noise` vs `up_real` |
-| F — missing height leg | Σ4 30→22, weight flat, previous record without height delta | ámbar `sum_down_unexplained`, `legs_missing` contains `height` |
+| F — missing height leg | Σ4 30→22, weight flat, previous record without height delta | ámbar `sum_down_unexplained`, `legs_missing` contains `height` → ambar |
 | G — all declined | six declined | no reading, `has_data=false`, interval counter unchanged |
+| H — latest attempt declined | counted set S1, then a fully declined set 100 days later | reading from S1 (`first_set`), coach `latest_attempt_declined` set, `family_band` as for S1, `next_due_date` from S1, no newsletter block that month |
+| I — ámbar by reference plus real change | Σ4 `up_real` with growth explanation `none`, triceps ≥ P95 | ámbar `sum_up_unexplained` → ambar (not reference-only) |

@@ -6,8 +6,11 @@
  * recibe qué puntos, con qué trazo) en vez del SVG renderizado.
  */
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render as rtlRender, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { axe } from "jest-axe";
+import { MemoryRouter, useLocation } from "react-router-dom";
+import type { ReactElement } from "react";
 
 vi.mock("recharts", () => ({
   ResponsiveContainer: ({ children }: { children: React.ReactNode }) => (
@@ -62,17 +65,42 @@ vi.mock("recharts", () => ({
     data?: Array<{ value: number | null }>;
     stroke?: string;
     strokeDasharray?: string;
-  }) => (
-    <div
-      data-testid="line"
-      data-key={props.dataKey}
-      data-stroke={props.stroke}
-      data-dash={props.strokeDasharray ?? ""}
-      data-count={(props.data ?? []).length}
-      data-values={JSON.stringify((props.data ?? []).map((r) => r.value))}
-    />
-  ),
+    dot?: unknown;
+    activeDot?: unknown;
+  }) => {
+    const dotFn =
+      typeof props.dot === "function"
+        ? (props.dot as (p: unknown) => React.ReactNode)
+        : null;
+    return (
+      <div
+        data-testid="line"
+        data-key={props.dataKey}
+        data-stroke={props.stroke}
+        data-dash={props.strokeDasharray ?? ""}
+        data-count={(props.data ?? []).length}
+        data-values={JSON.stringify((props.data ?? []).map((r) => r.value))}
+        data-active-dot={JSON.stringify(props.activeDot ?? null)}
+      >
+        {/* Igual que recharts: invoca `dot(props)` por cada fila y pinta el
+            resultado dentro de un <svg>. */}
+        {dotFn && (
+          <svg>
+            {(props.data ?? []).map((row, index) =>
+              dotFn({ cx: 40 + index * 60, cy: 50, index, payload: row }),
+            )}
+          </svg>
+        )}
+      </div>
+    );
+  },
 }));
+
+// Los puntos son enlaces de react-router (feature 045, T075): todo render
+// necesita un Router. `wrapper` también aplica a `rerender`.
+function render(ui: ReactElement) {
+  return rtlRender(ui, { wrapper: MemoryRouter });
+}
 
 import { HistoryChart } from "@/components/race/history/HistoryChart";
 import { makeRaceHistoryPoint } from "@/test/msw/raceHistoryHandlers";
@@ -304,6 +332,250 @@ describe("HistoryChart", () => {
       // La primera marca cae en el punto más antiguo.
       const firstTickDate = new Date(ticks[0]);
       expect(firstTickDate.toISOString().slice(0, 10)).toBe("2024-02-01");
+    });
+  });
+
+  describe("prop `metric` (feature 045, T036)", () => {
+    const mainValues = () =>
+      JSON.parse(
+        screen.getAllByTestId("line")[0].getAttribute("data-values") ?? "[]",
+      ) as Array<number | null>;
+
+    const realValues = () => mainValues().filter((v) => v !== null);
+
+    it("por defecto grafica la brecha vs. mediana", () => {
+      render(<HistoryChart points={BASE_POINTS} />);
+      expect(screen.getByTestId("history-chart")).toHaveAttribute(
+        "data-metric",
+        "gap_to_median_pct",
+      );
+      expect(realValues()).toEqual([-8.1, -6.5, -4.2]);
+    });
+
+    it("percentil: valores del percentil, eje NO invertido y dominio 0–100, sin línea de mediana", () => {
+      const points = BASE_POINTS.map((p, i) => ({
+        ...p,
+        percentile: [40, 55, 63][i],
+      }));
+      render(<HistoryChart points={points} metric="percentile" />);
+
+      expect(realValues()).toEqual([40, 55, 63]);
+      expect(screen.getByTestId("y-axis")).toHaveAttribute("data-reversed", "false");
+      expect(screen.getByTestId("y-axis")).toHaveAttribute("data-domain", "[0,100]");
+      expect(screen.getByTestId("history-chart-axis-hint")).toHaveTextContent(/↑/);
+      // Sin brecha firmada no hay línea de referencia en 0.
+      const zeroLine = screen
+        .getAllByTestId("reference-line")
+        .find((el) => el.getAttribute("data-y") === "0");
+      expect(zeroLine).toBeUndefined();
+    });
+
+    it("posición: eje invertido (mejor arriba), enteros y nunca por debajo de la 1.ª", () => {
+      const points = BASE_POINTS.map((p, i) => ({
+        ...p,
+        position: [9, 6, 2][i],
+      }));
+      render(<HistoryChart points={points} metric="position" />);
+
+      expect(realValues()).toEqual([9, 6, 2]);
+      expect(screen.getByTestId("y-axis")).toHaveAttribute("data-reversed", "true");
+      const [lo, hi] = JSON.parse(
+        screen.getByTestId("y-axis").getAttribute("data-domain") ?? "[]",
+      );
+      expect(lo).toBeGreaterThanOrEqual(1);
+      expect(Number.isInteger(lo)).toBe(true);
+      expect(Number.isInteger(hi)).toBe(true);
+      expect(hi).toBeGreaterThanOrEqual(9);
+    });
+
+    it("coach: brecha vs. 1.ª posición y vs. podio con línea de referencia en 0", () => {
+      const points = BASE_POINTS.map((p, i) => ({
+        ...p,
+        gap_to_winner_pct: [12, 10, 8][i],
+        gap_to_podium_pct: [7, 5, 3][i],
+      }));
+      const { rerender } = render(
+        <HistoryChart points={points} metric="gap_to_winner_pct" />,
+      );
+      expect(realValues()).toEqual([12, 10, 8]);
+      expect(screen.getByTestId("y-axis")).toHaveAttribute("data-reversed", "true");
+      expect(
+        screen
+          .getAllByTestId("reference-line")
+          .find((el) => el.getAttribute("data-y") === "0"),
+      ).toHaveAttribute("data-label", "1.ª posición");
+
+      rerender(<HistoryChart points={points} metric="gap_to_podium_pct" />);
+      expect(realValues()).toEqual([7, 5, 3]);
+    });
+
+    it("familia: una métrica de líder/podio cae en la brecha vs. mediana", () => {
+      // Los puntos de familia ni siquiera traen las claves de líder/podio.
+      const points = BASE_POINTS.map((p) => {
+        const { gap_to_winner_pct: _w, gap_to_podium_pct: _p, ...family } =
+          p as typeof p & { gap_to_winner_pct: number; gap_to_podium_pct: number };
+        return family as RaceHistoryPoint;
+      });
+      for (const metric of ["gap_to_winner_pct", "gap_to_podium_pct"] as const) {
+        const { unmount } = render(
+          <HistoryChart points={points} metric={metric} audience="family" />,
+        );
+        expect(screen.getByTestId("history-chart")).toHaveAttribute(
+          "data-metric",
+          "gap_to_median_pct",
+        );
+        expect(realValues()).toEqual([-8.1, -6.5, -4.2]);
+        unmount();
+      }
+    });
+
+    it("familia: percentil y posición sí se grafican", () => {
+      render(<HistoryChart points={BASE_POINTS} metric="percentile" audience="family" />);
+      expect(screen.getByTestId("history-chart")).toHaveAttribute(
+        "data-metric",
+        "percentile",
+      );
+    });
+
+    it("una métrica sin dato (`null`) en todos los puntos no rompe el render", () => {
+      const points = BASE_POINTS.map((p) => ({ ...p, percentile: null }));
+      expect(() =>
+        render(<HistoryChart points={points} metric="percentile" />),
+      ).not.toThrow();
+      expect(realValues()).toEqual([]);
+    });
+  });
+
+  describe("puntos enlazados a su competencia (feature 045, T075 — FR-017 / US1-AC4)", () => {
+    function LocationProbe() {
+      return <output data-testid="location">{useLocation().pathname}</output>;
+    }
+
+    function renderWithLocation(ui: ReactElement) {
+      return rtlRender(
+        <MemoryRouter initialEntries={["/atleta"]}>
+          {ui}
+          <LocationProbe />
+        </MemoryRouter>,
+      );
+    }
+
+    it("coach: cada punto lleva al detalle de su competencia", () => {
+      render(<HistoryChart points={BASE_POINTS} audience="coach" />);
+      const links = screen.getAllByTestId("history-chart-dot-link");
+      expect(links.map((a) => a.getAttribute("href"))).toEqual([
+        "/competitions/30",
+        "/competitions/31",
+        "/competitions/41",
+      ]);
+    });
+
+    it("familia: cada punto lleva a la vista de resultados de la familia", () => {
+      const points = BASE_POINTS.map((p) => ({ ...p }));
+      render(<HistoryChart points={points} audience="family" />);
+      const links = screen.getAllByTestId("history-chart-dot-link");
+      expect(links.map((a) => a.getAttribute("href"))).toEqual([
+        "/parents/competitions/30",
+        "/parents/competitions/31",
+        "/parents/competitions/41",
+      ]);
+    });
+
+    it("sin `audience` se asume coach", () => {
+      render(<HistoryChart points={BASE_POINTS} />);
+      expect(
+        screen.getAllByTestId("history-chart-dot-link")[0],
+      ).toHaveAttribute("href", "/competitions/30");
+    });
+
+    it("cada enlace tiene nombre accesible con la válida", () => {
+      render(<HistoryChart points={BASE_POINTS} />);
+      expect(
+        screen.getByRole("link", { name: "Ver competencia: Válida 2 — Ginebra" }),
+      ).toHaveAttribute("href", "/competitions/31");
+    });
+
+    it("el área de toque es de 48 px (círculo de radio 24) aunque la marca sea de 4 px", () => {
+      render(<HistoryChart points={BASE_POINTS} />);
+      const link = screen.getAllByTestId("history-chart-dot-link")[0]!;
+      const radii = Array.from(link.querySelectorAll("circle")).map((c) =>
+        Number(c.getAttribute("r")),
+      );
+      expect(Math.max(...radii) * 2).toBeGreaterThanOrEqual(48);
+      expect(Math.min(...radii)).toBe(4);
+    });
+
+    it("un clic en el punto navega a la competencia (coach)", async () => {
+      const user = userEvent.setup();
+      renderWithLocation(<HistoryChart points={BASE_POINTS} audience="coach" />);
+      await user.click(
+        screen.getByRole("link", { name: "Ver competencia: Válida 2 — Ginebra" }),
+      );
+      expect(screen.getByTestId("location")).toHaveTextContent("/competitions/31");
+    });
+
+    it("un clic en el punto navega a la vista de familia (familia)", async () => {
+      const user = userEvent.setup();
+      renderWithLocation(<HistoryChart points={BASE_POINTS} audience="family" />);
+      await user.click(
+        screen.getByRole("link", { name: "Ver competencia: Válida 2 — Ginebra" }),
+      );
+      expect(screen.getByTestId("location")).toHaveTextContent(
+        "/parents/competitions/31",
+      );
+    });
+
+    it("por teclado: Tab llega al punto y Enter navega", async () => {
+      const user = userEvent.setup();
+      renderWithLocation(<HistoryChart points={BASE_POINTS} audience="coach" />);
+      await user.tab();
+      expect(
+        screen.getByRole("link", { name: "Ver competencia: Válida 1 — Palmira" }),
+      ).toHaveFocus();
+      await user.tab();
+      await user.keyboard("{Enter}");
+      expect(screen.getByTestId("location")).toHaveTextContent("/competitions/31");
+    });
+
+    it("el marcador hueco de un DNF también enlaza a su competencia", () => {
+      const points: RaceHistoryPoint[] = [
+        ...BASE_POINTS,
+        makeRaceHistoryPoint({
+          event_id: 43,
+          event_date: "2025-06-08",
+          season: 2025,
+          label: "Válida 3 — Buga",
+          category_code: "PJUV_A",
+          category_label: "PREJUVENIL A",
+          category_changed: false,
+          status: "dnf",
+          position: null,
+          gap_to_median_pct: null,
+        }),
+      ];
+      render(<HistoryChart points={points} audience="coach" />);
+      const hollowLink = screen
+        .getByTestId("history-chart-non-finisher-marker")
+        .closest("a");
+      expect(hollowLink).toHaveAttribute("href", "/competitions/43");
+      expect(
+        within(hollowLink as HTMLElement).getByTestId("history-chart-non-finisher-marker"),
+      ).toBeInTheDocument();
+    });
+
+    it("el punto activo (hover) no captura clics: no tapa el enlace", () => {
+      render(<HistoryChart points={BASE_POINTS} />);
+      const main = screen
+        .getAllByTestId("line")
+        .find((l) => l.getAttribute("data-stroke") !== "none" && l.getAttribute("data-dash") === "");
+      const active = JSON.parse(main!.getAttribute("data-active-dot") ?? "null");
+      expect(active).toMatchObject({ pointerEvents: "none" });
+    });
+
+    it("no tiene violaciones de accesibilidad con los puntos enlazados", async () => {
+      const { container } = render(<HistoryChart points={BASE_POINTS} />);
+      expect(screen.getAllByTestId("history-chart-dot-link")).toHaveLength(3);
+      expect(await axe(container)).toHaveNoViolations();
     });
   });
 

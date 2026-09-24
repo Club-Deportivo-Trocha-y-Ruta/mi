@@ -171,7 +171,13 @@ export interface AthleteInsightOut {
    */
   priority?: RaceEventPriority | null;
   use_case: string;
-  summary_text: string;
+  /**
+   * Feature 045 — el servidor OMITE esta clave para un padre cuando la fila
+   * es v3 (su markdown trae «gap a P3» y esperado-vs-real, que la familia
+   * nunca recibe): ahí la UI usa `headline` / `structured`. Coach/admin y
+   * las filas v1/v2 siempre la traen. Leer siempre con `?? ""`.
+   */
+  summary_text?: string;
   confidence: InsightConfidence;
   model: string;
   prompt_version: string;
@@ -205,9 +211,18 @@ export interface AthleteInsightOut {
 }
 
 export interface AthleteInsightDetailOut extends AthleteInsightOut {
-  recommendations: Array<Record<string, unknown>>;
+  /**
+   * Feature 045 — omitida para un padre cuando la fila es v3 (las acciones
+   * viajan en `structured.actions`). Coach/admin y filas v1/v2 la traen.
+   */
+  recommendations?: Array<Record<string, unknown>>;
   metrics_snapshot: MetricsSnapshot;
-  principles_cited: Array<Record<string, unknown>>;
+  /**
+   * Feature 045 — omitida para un padre cuando la fila es v3; la tarjeta de
+   * familia dibuja `structured.principles_cited`, no esta lista de nivel
+   * superior.
+   */
+  principles_cited?: Array<Record<string, unknown>>;
   supersedes: InsightLink[];
   superseded_by: InsightLink | null;
   /** True si la atleta tiene 1 válida en toda la temporada — gatilla banner N=1. */

@@ -18,3 +18,21 @@ export function findPendingHitlEvent(
   }
   return undefined;
 }
+
+/**
+ * Fragmentos del borrador que mencionan la brecha con el líder/podio
+ * (`payload.family_gap_mentions` del `hitl_request`, feature 045 T062/FR-022).
+ * Devuelve `[]` cuando el evento no existe, no trae la clave (backend previo,
+ * `hitl_required` legado) o el valor no es una lista de textos: la tarjeta de
+ * aprobación sólo muestra el aviso si hay al menos un fragmento. Se descartan
+ * las entradas vacías o no textuales; el backend ya topa en 3 fragmentos.
+ */
+export function familyGapMentionsFromEvent(
+  event: RunEvent | undefined,
+): string[] {
+  const raw = event?.payload?.family_gap_mentions;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (item): item is string => typeof item === "string" && item.trim() !== "",
+  );
+}

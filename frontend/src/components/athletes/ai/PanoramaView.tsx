@@ -169,6 +169,7 @@ export function PanoramaView({
       {/* KPI cards (BB2) */}
       <div
         className="grid grid-cols-1 gap-3 sm:grid-cols-3"
+        role="group"
         aria-label="Indicadores clave de rendimiento"
       >
         {/* KPI 1: Total análisis aprobados */}

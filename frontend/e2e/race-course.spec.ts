@@ -25,10 +25,11 @@
  * Stack real (mismo patrón que `competitions-unification.spec.ts` /
  * `cup-vs-championship.spec.ts` / `prefill-import-from-competition.spec.ts`):
  * sin mocks de `page.route()`, corre contra un backend FastAPI real + MySQL.
- * `BACKEND` abajo asume `:8000` (el mismo supuesto que esos specs hermanos);
- * para la pila aislada (`docker-compose.e2e.yml`, backend en `:8001`) hay que
- * ajustarlo junto con `E2E_APP_PORT`/`E2E_API_BASE_URL` — no lo hicieron
- * tampoco los specs hermanos, así que se deja igual por consistencia.
+ * `BACKEND` abajo lee `E2E_API_BASE_URL` (default `:8000`, igual que el resto
+ * de la suite): para la pila aislada (`docker-compose.e2e.yml`, backend en
+ * `:8001`) se corre con `E2E_APP_PORT=5175 E2E_API_BASE_URL=http://localhost:8001`.
+ * Este spec ESCRIBE (crea series/válidas y sube GPX): nunca apuntarlo al
+ * backend real del club.
  *
  * Datos: esta spec NO depende del seed para la parte de variantes — crea su
  * propia serie tipo copa y su propia válida por API directa antes de tocar
@@ -72,6 +73,16 @@
  * que dispara esa transición empty→con-datos), esa carrera es la causa más
  * probable, no un defecto del test.
  *
+ * Feature 045 (T064): el perfil del circuito vive ahora en la pestaña
+ * «Circuito y condiciones» (`?tab=circuito`; el alias legado
+ * `?tab=conditions` redirige ahí). Esa pestaña reúne `CourseTab` (bloque
+ * «Circuito») y `RaceConditionsCard` (bloque «Condiciones») en la MISMA
+ * página, así que los locators de esta spec que antes eran únicos porque
+ * las condiciones estaban en otra pestaña (Radix desmonta la inactiva)
+ * ahora deben acotarse — p. ej. `getByLabel("Notas")` también casaba con
+ * el `aria-label="Sin registro de notas"` de `RaceConditionsCard`, por eso
+ * la edición de la descripción se busca dentro de `getByRole("dialog")`.
+ *
  * Privacidad: sin nombres ni fechas de nacimiento de menores en ningún
  * literal de esta spec; los GPX subidos son sintéticos (nunca la grabación
  * real de un coach) — ver `frontend/e2e/fixtures/README.md`.
@@ -83,7 +94,7 @@ import path from "node:path";
 import { test, expect, type Page } from "@playwright/test";
 
 const COACH = { email: "entrenador@trochyruta.com", password: "Coach2026!" };
-const BACKEND = "http://localhost:8000";
+const BACKEND = process.env.E2E_API_BASE_URL ?? "http://localhost:8000";
 
 const COLD_START_TIMEOUT = 90_000;
 const NAV_TIMEOUT = 30_000;
@@ -337,8 +348,12 @@ test.describe("feature 043 — perfil de circuito (parte 1)", () => {
     // La creación vía UI (CompetitionFormPage, modo create) aterriza directo
     // en `?tab=circuito` (comentario feature 043 / T028 en
     // CompetitionFormPage.tsx) — como esta spec crea la válida por API,
-    // navegamos ahí directamente para llegar al mismo punto.
+    // navegamos ahí directamente para llegar al mismo punto. Desde la
+    // feature 045 esa pestaña se llama «Circuito y condiciones».
     await page.goto(`/competitions/${raceEventId}?tab=circuito`);
+    await expect(
+      page.getByRole("tab", { name: /circuito y condiciones/i }),
+    ).toHaveAttribute("aria-selected", "true", { timeout: COLD_START_TIMEOUT });
 
     const courseTab = page.getByTestId("course-tab");
     await expect(courseTab).toBeVisible({ timeout: COLD_START_TIMEOUT });
@@ -365,11 +380,14 @@ test.describe("feature 043 — perfil de circuito (parte 1)", () => {
     await expect(question).toBeVisible({ timeout: NAV_TIMEOUT });
     await expect(question).toContainText(/3 vueltas/);
 
-    await page.getByTestId("variant-upload-confirm").click(); // "Sí, guardar"
-    await expect(page.getByTestId("variant-upload-success")).toBeVisible({
+    // "Sí, guardar" solo CIERRA el sheet (`VariantUploadDialog`: el archivo ya
+    // quedó guardado al enviarlo; la etapa `success` con «Cerrar» existe solo
+    // para las variantes que no preguntan, p. ej. la 2.ª de abajo). No hay
+    // `variant-upload-success` en esta rama.
+    await page.getByTestId("variant-upload-confirm").click();
+    await expect(page.getByTestId("variant-upload-question")).toHaveCount(0, {
       timeout: NAV_TIMEOUT,
     });
-    await page.getByTestId("variant-upload-close").click();
 
     await expect(page.getByTestId("course-variants-card")).toBeVisible({
       timeout: NAV_TIMEOUT,
@@ -475,7 +493,7 @@ test.describe("feature 043 — perfil de circuito (parte 1)", () => {
  *     `course-description-describe-btn`, `course-description-card-complete`,
  *     radios/checkboxes por `aria-label` (`TERRAIN_TYPE_LABELS` /
  *     `KEY_SECTOR_LABELS` / `DIFFICULTY_LABELS` de
- *     `src/types/raceCourse.types.ts`), textarea vía `getByLabel("Notas")`.
+ *     `src/types/raceCourse.types.ts`), textarea vía `getByRole("dialog").getByLabel("Notas", { exact: true })`.
  *   - `CourseSummary.tsx` (T058, landed junto con esta tarea) —
  *     `course-summary`, `course-summary-description-{terrain,difficulty,
  *     sectors,notes}`.
@@ -771,6 +789,12 @@ test.describe("feature 043 — perfil de circuito (parte 2)", () => {
     await page.goto(`/competitions/${raceEventId}?tab=circuito`);
     const courseTab = page.getByTestId("course-tab");
     await expect(courseTab).toBeVisible({ timeout: COLD_START_TIMEOUT });
+    // «Circuito y condiciones» monta los dos bloques en la misma página
+    // (feature 045): el perfil del circuito y la tarjeta de condiciones.
+    await expect(page.getByTestId("circuit-conditions-tab")).toBeVisible();
+    await expect(page.getByTestId("conditions-tab")).toBeVisible({
+      timeout: NAV_TIMEOUT,
+    });
 
     // Estado vacío (0/4 campos) — coach ve el CTA "Describir la pista"
     // (`CourseDescriptionCard`, US3, ya en `main`).
@@ -788,8 +812,11 @@ test.describe("feature 043 — perfil de circuito (parte 2)", () => {
     await terrainRadio.click();
     await page.getByRole("radio", { name: "4 — Técnico" }).click();
     await page.getByRole("checkbox", { name: "Rock garden" }).click();
+    // Acotado al sheet: `RaceConditionsCard` (mismo tab desde la 045) también
+    // expone un `aria-label` «Sin registro de notas» que casaría con "Notas".
     await page
-      .getByLabel("Notas")
+      .getByRole("dialog")
+      .getByLabel("Notas", { exact: true })
       .fill(
         "Tramo con raíces cerca de la meta; avisar en la charla técnica previa.",
       );
@@ -910,7 +937,13 @@ test.describe("feature 043 — perfil de circuito (parte 2)", () => {
       // `resultsQuery`/`standingsQuery`, que sí puede mostrar su propio
       // banner de error, pero esa es una superficie totalmente distinta y
       // no es lo que esta aserción cubre).
-      await expect(parentPage.getByText(/circuito/i)).toHaveCount(0);
+      // El nombre de la propia válida de prueba («E2E Circuito — válida de
+      // prueba …», ver `createRaceEvent`) es el encabezado de la página y
+      // contiene la palabra: se excluye para que la aserción mida solo el
+      // contenido del perfil de circuito, no el título del evento.
+      await expect(
+        parentPage.getByText(/circuito/i).filter({ hasNotText: /E2E Circuito/ }),
+      ).toHaveCount(0);
     } finally {
       await parentContext.close();
     }

@@ -260,6 +260,22 @@ def _category_with_gap(header: str, bib_start: int) -> CategorySpec:
     return cat
 
 
+async def _keys_of_import(db_session_factory, parse_id: int) -> list[str]:
+    """Claves de registro de las filas que la carga aún tiene por ingestar
+    (feature 045, R-08): el candado de identidad solo mira candidatos que
+    las involucran. Las filas llevan nombres generados, así que se leen del
+    archivo almacenado en vez de adivinarlos."""
+    from app.routers import race_imports as router_mod
+    from app.services.race import identity_review
+
+    async with db_session_factory() as db:
+        imp = (
+            await db.execute(select(RaceImport).where(RaceImport.id == parse_id))
+        ).scalar_one()
+    loaded = await router_mod.load_identity_rows(imp)
+    return sorted(identity_review.import_record_keys(loaded.results, loaded.general))
+
+
 # ===========================================================================
 # FR-028 — parrilla completa, sin atletas del club
 # ===========================================================================
@@ -397,8 +413,16 @@ class TestPartialCommitAndCommitPending:
 
     @pytest.mark.asyncio
     async def test_commit_pending_obeys_identity_review_gate(
-        self, coach_client, tmp_path, monkeypatch
+        self, coach_client, tmp_path, db_session_factory
     ):
+        """Feature 045 (R-08): el candado de ``/commit-pending`` frena solo con
+        un candidato pendiente que involucre a las filas que va a ingestar."""
+        from app.models.race_identity_candidate import (
+            IdentityCandidateKind,
+            IdentityCandidateState,
+            RaceIdentityCandidate,
+        )
+
         ok_cat = _external_category("MASTER B1", 2, 600)
         gap_cat = _category_with_gap("MASTER C1", 700)
 
@@ -420,19 +444,33 @@ class TestPartialCommitAndCommitPending:
         )
         assert r.status_code == 200, r.text
 
-        from app.services.race import identity_review as identity_review_mod
-        from app.services.race.identity_review import RebuildResult
-
-        async def fake_rebuild(db, *, rows_loader, timeout_s=None):
-            return RebuildResult(created=0, unchanged=0, pending=1)
-
-        monkeypatch.setattr(identity_review_mod, "rebuild", fake_rebuild)
+        # Un candidato pendiente sobre una fila de MASTER C1 (la categoría que
+        # falta por ingestar), creado después de la carga: la cola está al día.
+        (own_key, *_rest) = await _keys_of_import(db_session_factory, parse_id)
+        async with db_session_factory() as db:
+            db.add(
+                RaceIdentityCandidate(
+                    pair_hash="p" * 64,
+                    kind=IdentityCandidateKind.same_person_suspect,
+                    state=IdentityCandidateState.pending,
+                    score=95,
+                    signals=["extra_or_missing_surname"],
+                    left_record={"key": own_key},
+                    right_record={"key": "otra\x1fterna\x1f"},
+                    linked_athlete_involved=True,
+                )
+            )
+            await db.commit()
 
         r = await coach_client.post(
             f"{_IMPORTS_URL}/{parse_id}/commit-pending", json={"resolved_matches": []}
         )
         assert r.status_code == 409, r.text
-        assert r.json()["detail"]["code"] == "identity_review_pending"
+        assert r.json() == {
+            "detail": "identity_pending",
+            "pending_for_import": 1,
+            "review_path": f"/competitions/imports?seccion=identidades&import={parse_id}",
+        }
 
 
 # ===========================================================================
@@ -680,7 +718,10 @@ class TestIdentityGateSkipsRedundantRebuild:
         parse_id = parsed["parse_id"]
         await coach_client.post(f"{_IMPORTS_URL}/{parse_id}/dry-run")
 
-        # Un candidato pendiente creado DESPUÉS del import: la cola está al día.
+        # Un candidato pendiente sobre una fila de ESTE import (feature 045:
+        # solo esos frenan el commit) creado DESPUÉS de subirlo: la cola está
+        # al día.
+        (own_key, *_rest) = await _keys_of_import(db_session_factory, parse_id)
         async with db_session_factory() as db:
             db.add(
                 RaceIdentityCandidate(
@@ -689,8 +730,8 @@ class TestIdentityGateSkipsRedundantRebuild:
                     state=IdentityCandidateState.pending,
                     score=95,
                     signals=["extra_or_missing_surname"],
-                    left_record={"name_printed": "Ana Prueba Uno"},
-                    right_record={"name_printed": "Ana Prueba Uno Dos"},
+                    left_record={"key": own_key, "name_printed": "Ana Prueba Uno"},
+                    right_record={"key": "otra\x1fterna\x1f", "name_printed": "Ana Prueba Uno Dos"},
                     linked_athlete_involved=True,
                 )
             )
@@ -707,6 +748,6 @@ class TestIdentityGateSkipsRedundantRebuild:
             f"{_IMPORTS_URL}/{parse_id}/commit", json={"resolved_matches": []}
         )
         assert resp.status_code == 409
-        assert resp.json()["detail"]["code"] == "identity_review_pending"
-        assert resp.json()["detail"]["pending"] == 1
+        assert resp.json()["detail"] == "identity_pending"
+        assert resp.json()["pending_for_import"] == 1
         assert called["n"] == 0

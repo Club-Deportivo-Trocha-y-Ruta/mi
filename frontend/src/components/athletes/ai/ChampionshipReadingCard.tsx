@@ -23,9 +23,19 @@
  * familia nunca la ve, en ningún lado (principio de salvaguardas
  * psicológicas). «Brecha vs. mediana» es la métrica comparable y se
  * muestra para ambas audiencias.
+ *
+ * Feature 045: la tarjeta enlaza a su competencia (FR-017) — coach al
+ * detalle interno, familia a su vista de resultados — con un destino táctil
+ * de 48 px (FR-063). Un valor ausente se lee «sin dato», nunca «—»
+ * (US2/AC3, FR-020); un DNF/DNS/DSQ se lee «No completó la prueba».
+ * Requiere un `Router` en el árbol.
  */
+import { ChevronRight } from "lucide-react";
+import { Link } from "react-router-dom";
+
 import { cn } from "@/lib/utils";
-import { formatGapPct } from "@/lib/raceHistoryFormat";
+import { raceEventHref } from "@/lib/raceEventHref";
+import { SIN_DATO, formatGapPct } from "@/lib/raceHistoryFormat";
 import type {
   ComparisonGroupOption,
   EvolutionPoint,
@@ -33,7 +43,9 @@ import type {
 
 interface ChampionshipReadingCardProps {
   point: EvolutionPoint;
-  group: ComparisonGroupOption;
+  /** Solo se lee `label` — así «Progresión» (que parte de puntos del
+   * historial, sin `ComparisonGroupOption` completo) también la usa. */
+  group: Pick<ComparisonGroupOption, "label">;
   audience?: "coach" | "family";
 }
 
@@ -54,15 +66,15 @@ export function ChampionshipReadingCard({
   const positionValue =
     point.position !== undefined && point.position !== null
       ? `P${point.position}`
-      : "—";
+      : SIN_DATO;
   const pelotonValue =
     point.field_size !== undefined && point.field_size !== null
       ? `${point.field_size} corredores`
-      : "—";
+      : SIN_DATO;
   const percentileValue =
     point.percentile !== undefined && point.percentile !== null
       ? String(Math.round(point.percentile))
-      : "—";
+      : SIN_DATO;
   const gapToMedianValue = formatGapPct(point.gap_to_median_pct ?? null);
   // Los puntos de familia no traen `gap_pct` (el tile es coach-only).
   const gapToWinnerValue = formatGapPct(
@@ -84,9 +96,24 @@ export function ChampionshipReadingCard({
       className={cn("rounded-card bg-surface-raised p-4 space-y-3", "shadow-card ring-1 ring-hairline")}
       data-testid="championship-reading-card"
     >
-      <header>
-        <h4 className="font-display text-sm text-charcoal">{group.label}</h4>
-        <p className="mt-0.5 text-xs text-mid-gray">{point.event_date}</p>
+      <header className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h4 className="font-display text-sm text-charcoal">{group.label}</h4>
+          <p className="mt-0.5 text-xs text-mid-gray">{point.event_date}</p>
+        </div>
+        <Link
+          to={raceEventHref(audience, point.event_id)}
+          aria-label={`Ver competencia: ${group.label}`}
+          data-testid="championship-reading-card-link"
+          className={cn(
+            "-mr-2 -mt-1 flex min-h-12 min-w-12 shrink-0 items-center justify-end gap-1 rounded-lg px-2",
+            "text-xs font-medium text-charcoal underline underline-offset-2 transition-colors hover:bg-light-gray/50",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
+          )}
+        >
+          Ver competencia
+          <ChevronRight size={14} aria-hidden="true" />
+        </Link>
       </header>
 
       {notFinished ? (

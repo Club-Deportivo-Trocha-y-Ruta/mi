@@ -80,7 +80,7 @@ def _stage_log_json(**overrides: Any) -> dict[str, Any]:
                 kind=WaypointKind.RACE,
                 date=date(2026, 6, 12),
                 label="Válida 3 · P2",
-                sublabel="+4,1 % al P1",
+                sublabel="Brecha vs. mediana: +4,1 %",
                 icon="map-pin",
             ),
         ],
@@ -452,6 +452,204 @@ async def test_detail_stage_log_key_set_never_leaks_coach_only_fields(parent_cli
     payload_str = str(stage_log)
     for token in forbidden_substrings:
         assert token not in payload_str
+
+
+# ---------------------------------------------------------------------------
+# Feature 045 (FR-022) — brecha a la ganadora/podio en bitácoras heredadas
+# ---------------------------------------------------------------------------
+
+# Bloques del snapshot tal como los persistía el builder anterior a la 045:
+# el coach conserva las cifras contra la ganadora/podio; la familia no las ve.
+_LEGACY_METRICS_SNAPSHOT: dict[str, Any] = {
+    "email_blocks": {
+        "race_results": {
+            "has_races": True,
+            "cups": [],
+            "results": [
+                {
+                    "position": 2,
+                    "gap_to_winner_pct": 4.21,
+                    "gap_to_winner_ms": 91234,
+                    "gap_to_median_pct": 3.2,
+                }
+            ],
+            "championships": [
+                {
+                    "label": "Campeonato Departamental",
+                    "position": 4,
+                    "gap_pct": 6.35,
+                    "gap_to_p3_ms": 30987,
+                    "gap_to_median_pct": 1.6,
+                    "percentile": 84.2,
+                }
+            ],
+        }
+    },
+    "pdf_only_blocks": {
+        "charts_context": {
+            "has_data": True,
+            "low_confidence": False,
+            "positions": [{"x": 1, "y": 5}],
+            "gap_pcts": [{"x": 1, "y": 7.77}],
+            "median_gap_pcts": [{"x": 1, "y": 3.2}],
+            "points_accumulated": [{"x": 1, "y": 20}],
+        }
+    },
+}
+_LEADER_GAP_TEXT_MARKERS = ("al P1", "del primer lugar", "4,1 % al", "4.1 %")
+_LEADER_GAP_NUMBER_MARKERS = ("4.21", "91234", "6.35", "30987", "7.77")
+
+
+def _legacy_stage_log_json() -> dict[str, Any]:
+    from app.services.training.stage_log import (
+        Summit,
+        SummitKind,
+        Waypoint,
+        WaypointKind,
+    )
+
+    return _stage_log_json(
+        trail=[
+            Waypoint(
+                kind=WaypointKind.RACE,
+                date=date(2026, 6, 12),
+                label="Válida 3 · P2",
+                sublabel="+4,1 % al P1",
+                icon="map-pin",
+            ),
+        ],
+        summit=Summit(
+            kind=SummitKind.RACE,
+            title="P2 en la Válida 3",
+            detail="Copa Valle · +4,1 % al P1",
+            caption="Su hijo llegó a 4.1 % del primer lugar, un resultado que refleja el trabajo del mes.",
+            date=date(2026, 6, 12),
+        ),
+    )
+
+
+async def _seed_legacy_bitacora(seeded_factory, *, newsletter_id: int = 5) -> None:
+    async with seeded_factory() as s:
+        s.add(
+            AthleteMonthlyNewsletter(
+                id=newsletter_id,
+                athlete_id=144,
+                year=2026,
+                month=8,
+                status=NewsletterStatus.sent,
+                stage_log_json=_legacy_stage_log_json(),
+                hidden_blocks=None,
+                metrics_snapshot=_LEGACY_METRICS_SNAPSHOT,
+                sent_at=datetime.now(timezone.utc),
+                generated_by_user_id=10,
+            )
+        )
+        await s.commit()
+
+
+@pytest.mark.asyncio
+async def test_detail_serves_legacy_snapshot_without_leader_gap(
+    seeded_factory, parent_client
+):
+    """La bitácora persistida antes de la 045 dice «+4,1 % al P1»; la
+    limpieza es al leer: el padre recibe el detalle sin esa brecha."""
+    await _seed_legacy_bitacora(seeded_factory)
+
+    resp = await parent_client.get("/api/parents/me/athletes/144/newsletters/5")
+
+    assert resp.status_code == 200
+    stage_log = resp.json()["stage_log"]
+    assert stage_log["trail"][0]["sublabel"] is None
+    assert stage_log["summit"]["detail"] == "Copa Valle"
+    assert "4.1 %" not in stage_log["summit"]["caption"]
+    for marker in _LEADER_GAP_TEXT_MARKERS:
+        assert marker not in resp.text, marker
+
+
+@pytest.mark.asyncio
+async def test_detail_does_not_write_the_cleanup_back_to_the_database(
+    seeded_factory, parent_client
+):
+    """Sin escrituras: lo persistido conserva el texto original."""
+    await _seed_legacy_bitacora(seeded_factory)
+
+    resp = await parent_client.get("/api/parents/me/athletes/144/newsletters/5")
+    assert resp.status_code == 200
+
+    async with seeded_factory() as s:
+        nl = (
+            await s.execute(
+                select(AthleteMonthlyNewsletter).where(AthleteMonthlyNewsletter.id == 5)
+            )
+        ).scalar_one()
+        assert nl.stage_log_json["trail"][0]["sublabel"] == "+4,1 % al P1"
+        assert nl.metrics_snapshot == _LEGACY_METRICS_SNAPSHOT
+
+
+class _CapturingGenerator:
+    """Generador de documentos falso: guarda el contexto que recibiría Jinja."""
+
+    def __init__(self) -> None:
+        self.contexts: list[dict[str, Any]] = []
+
+    async def generate(self, request):
+        from app.schemas.notification import DocumentFormat, GeneratedDocument
+
+        self.contexts.append(request.context)
+        return GeneratedDocument(
+            filename="bitacora.pdf",
+            format=DocumentFormat.PDF,
+            data=b"%PDF-1.4 fake",
+            content_type="application/pdf",
+        )
+
+
+@pytest.mark.asyncio
+async def test_pdf_template_context_has_no_winner_or_podium_keys(
+    seeded_factory, _client_factory
+):
+    """El PDF que descarga la familia se arma con ``race_results`` y
+    ``charts_context`` del snapshot; el contexto de la plantilla no lleva
+    ``gap_to_winner_*``/``gap_pct``/``gap_to_p3_*``/``gap_pcts`` (conserva la
+    brecha vs. mediana) y el texto de la bitácora va sin «al P1»."""
+    import json
+
+    from app.dependencies import get_document_generator
+    from app.services.race.audience import FAMILY_EXCLUDED_METRIC_FIELDS
+
+    await _seed_legacy_bitacora(seeded_factory)
+    generator = _CapturingGenerator()
+
+    async with await _client_factory(_parent_user()) as client:
+        app.dependency_overrides[get_document_generator] = lambda: generator
+        resp = await client.get("/api/parents/me/athletes/144/newsletters/5/pdf")
+
+    assert resp.status_code == 200
+    assert len(generator.contexts) == 1
+    context = generator.contexts[0]
+
+    def keys(node: Any) -> set[str]:
+        if isinstance(node, dict):
+            return set(node).union(*(keys(v) for v in node.values()))
+        if isinstance(node, list):
+            return set().union(*(keys(v) for v in node))
+        return set()
+
+    assert not (keys(context) & FAMILY_EXCLUDED_METRIC_FIELDS)
+    # Lo que la plantilla sí lee sigue ahí.
+    championship = context["race_results"]["championships"][0]
+    assert championship["gap_to_median_pct"] == 1.6
+    assert context["charts_annex"]["median_gap_pcts"] == [{"x": 1, "y": 3.2}]
+    # Ni cifras ni texto de la brecha a la ganadora en todo lo que ve Jinja.
+    rendered_context = json.dumps(context, ensure_ascii=False, default=str)
+    for marker in (*_LEADER_GAP_TEXT_MARKERS, *_LEADER_GAP_NUMBER_MARKERS):
+        assert marker not in rendered_context, marker
+
+
+@pytest.mark.asyncio
+async def test_pdf_coach_forbidden(coach_client):
+    resp = await coach_client.get("/api/parents/me/athletes/144/newsletters/1/pdf")
+    assert resp.status_code == 403
 
 
 # ---------------------------------------------------------------------------

@@ -66,7 +66,7 @@
       }
 
       @bottom-left {
-        content: "Documento confidencial — datos de menor de edad protegidos.";
+        content: "{% block page_footer_note %}Documento confidencial — datos de menor de edad protegidos.{% endblock %}";
         font-family: 'Inter Variable', Arial, Helvetica, sans-serif;
         font-size: 8pt;
         color: #5a5a5a;
@@ -293,7 +293,7 @@
 
   <div class="doc-footer">
     Generado el {% block generated_at %}{{ generated_at }}{% endblock %} &mdash;
-    Documento confidencial — datos de menor de edad protegidos.
+    {{ self.page_footer_note() }}
   </div>
 
 </body>

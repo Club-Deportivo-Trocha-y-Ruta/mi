@@ -3,6 +3,7 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.dependencies import (
     get_current_user,
@@ -15,7 +16,9 @@ from app.dependencies import (
 from app.models.anthropometry import AnthropometricRecord
 from app.models.athlete import Athlete, ParentAthlete
 from app.models.growth import GrowthSource
+from app.models.skinfold_measurement import SkinfoldMeasurement
 from app.models.user import User, UserRole
+from app.routers.body_composition import skinfold_set_out
 from app.schemas.anthropometry import (
     AnthropometryCreate,
     AnthropometryOut,
@@ -202,6 +205,17 @@ async def create_anthropometry(
     )
     db.add(record)
     await db.flush()
+    # Feature 046: a just-created record never has a skinfold set yet. Mark
+    # the relationship as already-loaded (empty) via `set_committed_value`
+    # rather than assigning `None` directly — a plain assignment on a
+    # `cascade="all, delete-orphan"` relationship first loads the previous
+    # value to reconcile the cascade, which is an async lazy-load outside a
+    # greenlet here (`AnthropometryOut.model_validate` below reads it
+    # synchronously) and, in older test harnesses that don't create the
+    # `skinfold_measurements` table, a hard failure.
+    from sqlalchemy.orm.attributes import set_committed_value
+
+    set_committed_value(record, "skinfolds", None)
 
     await record_audit(
         db,
@@ -262,6 +276,20 @@ async def create_anthropometry(
         nutritional_status_height=growth.nutritional_status_height if growth else None,
     )
     out.morphology = _build_morphology(record)
+    # Commit explícitamente aquí en vez de dejarlo solo al teardown de
+    # `get_db` (post-`yield`): FastAPI cierra el `AsyncExitStack` de las
+    # dependencias DESPUÉS de enviar la respuesta al cliente
+    # (`fastapi.routing.request_response`: `await response(...)` corre
+    # dentro del `async with AsyncExitStack()` pero antes de que ese bloque
+    # salga), así que sin este commit explícito el 201 podía llegar al
+    # cliente con la fila todavía sin persistir — una carrera real: el
+    # siguiente GET (p. ej. "Guardar y agregar pliegues" navegando al
+    # asistente) podía no ver el registro recién creado. Confirmado
+    # reproduciendo con httpx contra la MySQL aislada de e2e: ~80% de las
+    # veces el registro faltaba en un GET disparado inmediatamente después
+    # del POST. Ver `tests/test_athletes.py::TestCreateAnthropometry::
+    # test_created_record_is_immediately_visible_in_list`.
+    await db.commit()
     return out
 
 
@@ -274,8 +302,15 @@ async def list_anthropometry(
     current_user: User = Depends(get_current_user),
     athlete: Athlete = Depends(verify_athlete_access),
 ) -> list[AnthropometryOut]:
+    # Feature 046: eager-load skinfolds (+ its own `record` back-ref, needed
+    # by `skinfold_set_out` for `evaluation_date`) — no N+1 for the list view.
     result = await db.execute(
         select(AnthropometricRecord)
+        .options(
+            selectinload(AnthropometricRecord.skinfolds).selectinload(
+                SkinfoldMeasurement.record
+            )
+        )
         .where(AnthropometricRecord.athlete_id == athlete.id)
         .order_by(AnthropometricRecord.evaluation_date.desc())
     )
@@ -291,10 +326,28 @@ async def list_anthropometry(
             nutritional_status_height=ns_height,
         )
         out.morphology = _build_morphology(record)
+        out.skinfolds = (
+            skinfold_set_out(record.skinfolds) if record.skinfolds is not None else None
+        )
         # Filtrar datos sensibles para padres (privacidad del entrenamiento)
         if current_user.role == UserRole.parent:
             out.notes = None
             out.morphology = None
+            out.skinfolds = None
         output.append(out)
 
     return output
+
+
+# ---------------------------------------------------------------------------
+# Weight-correction hook (feature 046, T022): today there is no
+# PATCH/PUT route that lets a coach correct `weight_kg` on an existing
+# `AnthropometricRecord` — every write path is `create_anthropometry` above,
+# which always builds a fresh skinfold-less record. `apply_set` already
+# computes the Slaughter estimate from the weight present at save time, so
+# there is nothing stale to recompute yet. If/when a weight-correction route
+# is added, it must call `recompute_estimates_for_record(record)`
+# (`app/services/body_composition.py`) after mutating `weight_kg`, before
+# committing — `sum4_mm`/`sum6_mm`/per-site values are unaffected, only the
+# body-fat/FM/FFM estimate columns are weight-derived.
+# ---------------------------------------------------------------------------

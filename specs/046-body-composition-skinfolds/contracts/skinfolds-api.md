@@ -66,9 +66,14 @@ Each item gains `skinfolds: SkinfoldSetOut | null`. For `parent` the field is al
 Adds `body_composition`:
 
 - coach/admin → `BodyCompositionSummary` (all fields);
-- parent → `BodyCompositionFamilySummary` = `{has_data, latest_set_date, band, family_label, family_sentence}` and **no other keys** (schema-level, not null-filled). When `has_data=false` → `{"has_data": false}`.
+- parent → `BodyCompositionFamilySummary` = `{has_data, latest_set_date, family_band, family_label, family_sentence}` and **no other keys** (schema-level, not null-filled). `family_band` ∈ {`verde`, `ambar`} — never `rojo`, never the coach `band` (projection rules in `contracts/body-composition-reading.md` §3c). `latest_set_date` is the latest **counted** set; a later fully declined attempt is invisible to parents (§3b). When `has_data=false` → `{"has_data": false}`.
+- coach/admin additionally receive `latest_attempt_declined: {date} | null` (§3b) and both `band` and `family_band` (so the coach can see what the family sees).
 
-`band`, `family_label` and `family_sentence` values come from `contracts/body-composition-reading.md` §4.
+`family_band`, `family_label` and `family_sentence` values come from `contracts/body-composition-reading.md` §3c–§4.
+
+## 5b. Monthly newsletter (existing, extended — spec FR-036)
+
+No new endpoint. `newsletter_builder.py` gains a deterministic `body_composition` block (`{family_label, family_sentence, notice_text}` only) built from the same family projection, present only when a counted set's `evaluation_date` falls in the newsletter month; absent otherwise. The block is rendered by the newsletter PDF template from fixed copy (`contracts/body-composition-reading.md` §4 "Newsletter block") and is **never** added to the newsletter AI context or prompt.
 
 ## 6. `GET /api/athletes/{athlete_id}/body-composition/referral-note.pdf`
 
@@ -84,4 +89,4 @@ Adds `body_composition`:
 
 ## 9. Required tests (constitution II)
 
-Backend: `tests/routers/test_body_composition.py` — coach happy path (create, replace, delete); parent `PUT` 403; foreign-club coach 403; parent `GET body-composition` 403; interval 409 with `next_allowed_date`; age < 9 → 409; invalid readings 422; parent list projection `skinfolds == null`; parent growth-summary block has exactly the five allowed keys; referral note 409 without data; field guide 403 for parent. `tests/services/test_body_composition.py` — readings → value, tolerance, sums, equation by sex, recomputation on weight change, delta codes at 6.9/7.0 mm, band scenarios (SC-004). Frontend: MSW handlers for every route; vitest for hooks and wizard; jest-axe on page, cards and dialog.
+Backend: `tests/routers/test_body_composition.py` — coach happy path (create, replace, delete); parent `PUT` 403; foreign-club coach 403; parent `GET body-composition` 403; interval 409 with `next_allowed_date`; age < 9 → 409; invalid readings 422; parent list projection `skinfolds == null`; parent growth-summary block has exactly the five allowed keys and `family_band != "rojo"`; newsletter block present only in the set's month, fixed copy, absent from the AI request; referral note 409 without data; field guide 403 for parent. `tests/services/test_body_composition.py` — readings → value, tolerance, sums, equation by sex, recomputation on weight change, delta codes at 6.9/7.0 mm, band scenarios (SC-004). Frontend: MSW handlers for every route; vitest for hooks and wizard; jest-axe on page, cards and dialog.

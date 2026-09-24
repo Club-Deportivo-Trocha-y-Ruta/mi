@@ -4,7 +4,8 @@
  * Cubre los acceptance criteria de spec 015: al lanzar la importación desde
  * una competencia, el wizard abre precargado y bloqueado; el campeonato oculta
  * "Válida #"; el flujo standalone queda intacto; el camino bloqueado ofrece
- * "Editar metadata"; y no aparece PII de menores antes del dry-run.
+ * «Editar datos» (feature 045: antes «Editar metadata»); y no aparece PII de
+ * menores antes del dry-run.
  *
  * Stack real (no mocks):
  *   - Backend FastAPI en http://localhost:8000 (seed dev/Docker aplicado).
@@ -17,7 +18,7 @@
 import { test, expect, type Page } from "@playwright/test";
 
 const COACH = { email: "entrenador@trochyruta.com", password: "Coach2026!" };
-const BACKEND = "http://localhost:8000";
+const BACKEND = process.env.E2E_API_BASE_URL ?? "http://localhost:8000";
 
 const COLD_START_TIMEOUT = 90_000;
 const NAV_TIMEOUT = 30_000;
@@ -120,8 +121,12 @@ test.describe("Spec 015 — prefill import from competition", () => {
     await expect(summary).toContainText("Copa");
     await expect(summary).toContainText(/Válida #/i);
 
-    // Escape hatch presente y el botón Continuar (upload) disponible.
+    // Escape hatch presente (rotulado «Editar datos», feature 045) y el botón
+    // Continuar (upload) disponible.
     await expect(page.getByTestId("prefill-edit-metadata")).toBeVisible();
+    await expect(page.getByTestId("prefill-edit-metadata")).toContainText(
+      /editar datos/i,
+    );
     await expect(page.getByTestId("wizard-step1-submit")).toBeVisible();
   });
 

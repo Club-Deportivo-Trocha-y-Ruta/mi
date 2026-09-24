@@ -154,7 +154,14 @@ async def engine() -> AsyncGenerator[AsyncEngine, None]:
     )
     tables = [
         Base.metadata.tables[t]
-        for t in ("athletes", "anthropometric_records", "growth_reference_lms", *AUDIT_TABLES)
+        for t in (
+            "athletes",
+            "anthropometric_records",
+            "growth_reference_lms",
+            # Feature 046: `list_anthropometry` now eager-loads this table.
+            "skinfold_measurements",
+            *AUDIT_TABLES,
+        )
     ]
     async with eng.begin() as conn:
         await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=tables))

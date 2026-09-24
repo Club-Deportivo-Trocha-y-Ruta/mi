@@ -56,12 +56,17 @@ class RaceImportStatus(str, enum.Enum):
       antes existía en enum pero código nunca lo emitía).
     - ``committed``: ingesta exitosa, race_results escritos.
     - ``failed``: error fatal en parseo o validación.
+    - ``discarded``: el coach abandonó la carga (feature 045, migración
+      ``a76c264449a5``). Solo se llega desde ``pending``/``dry_run`` vía
+      ``POST /imports/{id}/discard``; un ``committed`` nunca se descarta. No
+      cuenta como "en curso" ni entra al universo de identidad.
     """
 
     pending = "pending"
     dry_run = "dry_run"
     committed = "committed"
     failed = "failed"
+    discarded = "discarded"
 
 
 class RaceImportKind(str, enum.Enum):

@@ -78,10 +78,11 @@ import { currentSeason, diffDaysFromToday } from "@/lib/datetime";
 import { usePrefetchOnIntent } from "@/hooks/usePrefetchOnIntent";
 import { useAuthStore } from "@/store/auth.store";
 import { UserRole } from "@/types/enums";
-import type {
-  RaceEventListFilters,
-  RaceEventListItem,
-  RaceEventStatus,
+import {
+  RACE_EVENT_PRIORITY_LABELS,
+  type RaceEventListFilters,
+  type RaceEventListItem,
+  type RaceEventStatus,
 } from "@/types/raceEvents.types";
 
 // ---------------------------------------------------------------------------
@@ -129,13 +130,20 @@ function needsResults(item: RaceEventListItem): boolean {
   return days !== null && days < 0;
 }
 
-// Sibling views of the Competencias area (data-model.md §2) — shared across
-// CompetitionsListPage, UnlinkedCompetitorsPage y SeasonInsightsPage.
+// Secciones del área «Competencias» (feature 045, US6) — mismas tres del menú
+// (`lib/navigation.ts`): la lista, «Temporada» y «Cargas e identidades».
 const COMPETITIONS_SIBLING_VIEWS: SiblingViewTabsItem[] = [
-  { label: "Válidas", to: "/competitions" },
-  { label: "Sin enlazar", to: "/competitions/unlinked" },
-  { label: "Panorama de temporada", to: `/competitions/insights/season/${currentSeason()}` },
+  { label: "Competencias", to: "/competitions" },
+  { label: "Temporada", to: `/competitions/season/${currentSeason()}` },
+  { label: "Cargas e identidades", to: "/competitions/imports" },
 ];
+
+// Botones del encabezado: 48 px de alto mínimo (feature 045, FR-019). El
+// `min-h-12` de Tailwind = 3rem = 48 px, por encima del 44 px anterior.
+const HEADER_ACTION_SECONDARY_CLASS =
+  "inline-flex min-h-12 items-center gap-2 rounded-lg bg-surface-raised px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring";
+const HEADER_ACTION_PRIMARY_CLASS =
+  "inline-flex min-h-12 items-center rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-surface transition-opacity hover:opacity-70 shadow-button-highlight";
 
 // ---------------------------------------------------------------------------
 // Componente principal
@@ -255,35 +263,35 @@ export function CompetitionsListPage() {
             {/* Acciones secundarias */}
             <Link
               to="/competitions/import"
-              className="inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-surface-raised px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
+              className={HEADER_ACTION_SECONDARY_CLASS}
               aria-label="Cargar resultados de una válida"
             >
               <Upload size={14} aria-hidden="true" />
               Cargar resultados
             </Link>
-            {/* Feature 044 (US4) — entrada a la revisión de identidad del histórico */}
+            {/* Feature 044 (US4) — entrada a la revisión de identidad del
+                histórico. 045: apunta directo a «Cargas e identidades» (la
+                ruta vieja solo redirige). */}
             <Link
-              to="/competitions/identity-review"
-              className="inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-surface-raised px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
+              to="/competitions/imports?seccion=identidades"
+              className={HEADER_ACTION_SECONDARY_CLASS}
               aria-label="Revisar identidad de competidores del histórico"
             >
               <UserCheck size={14} aria-hidden="true" />
               Revisión de identidad
             </Link>
-            {/* Feature 044 (US5) — entrada al tablero de carga histórica */}
+            {/* Feature 044 (US5) — entrada al tablero de carga histórica.
+                045: directo a «Cargas e identidades». */}
             <Link
-              to="/competitions/history"
-              className="inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-surface-raised px-4 py-2 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
+              to="/competitions/imports?seccion=cargas"
+              className={HEADER_ACTION_SECONDARY_CLASS}
               aria-label="Ver el tablero de carga histórica"
             >
               <History size={14} aria-hidden="true" />
               Carga histórica
             </Link>
             {/* Acción primaria */}
-            <Link
-              to="/competitions/new"
-              className="inline-flex min-h-[44px] items-center rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-surface transition-opacity hover:opacity-70 shadow-button-highlight"
-            >
+            <Link to="/competitions/new" className={HEADER_ACTION_PRIMARY_CLASS}>
               + Nueva competencia
             </Link>
           </>
@@ -342,10 +350,7 @@ export function CompetitionsListPage() {
           title="No hay competencias en esta temporada"
           description="Ajusta los filtros o crea la primera válida."
           action={
-            <Link
-              to="/competitions/new"
-              className="inline-flex min-h-[44px] items-center rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-surface transition-opacity hover:opacity-70 shadow-button-highlight"
-            >
+            <Link to="/competitions/new" className={HEADER_ACTION_PRIMARY_CLASS}>
               + Crear primera válida
             </Link>
           }
@@ -533,7 +538,9 @@ function CompetitionTableRow({
       onTouchStart={prefetchDetail}
     >
       <td className="px-4 py-3 text-sm font-medium text-charcoal">
-        {item.is_championship ? "CD" : `V${item.sequence_number}`}
+        {item.is_championship
+          ? RACE_EVENT_PRIORITY_LABELS.CD
+          : `V${item.sequence_number}`}
       </td>
       <td className="px-4 py-3 text-sm text-mid-gray whitespace-nowrap">
         {formatEventDate(item.event_date)}
@@ -616,7 +623,9 @@ function CompetitionCard({
             {item.name}
           </Link>
           <p className="mt-0.5 text-xs text-mid-gray">
-            {item.is_championship ? "CD" : `Válida ${item.sequence_number}`}
+            {item.is_championship
+              ? RACE_EVENT_PRIORITY_LABELS.CD
+              : `Válida ${item.sequence_number}`}
             {item.location ? ` · ${item.location}` : ""}
           </p>
         </div>
@@ -692,14 +701,14 @@ function ActionsKebab({
           </DropdownMenuItem>
         )}
 
-        {/* Editar metadata */}
+        {/* Editar datos */}
         <DropdownMenuItem asChild>
           <Link
             to={`/competitions/${item.id}/edit`}
             className="flex items-center gap-2"
           >
             <Edit2 size={14} aria-hidden="true" />
-            Editar metadata
+            Editar datos
           </Link>
         </DropdownMenuItem>
 

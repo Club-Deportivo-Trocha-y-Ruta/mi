@@ -4,9 +4,16 @@ Backing del endpoint ``GET /api/dashboard/coach-summary``
 (``app/routers/dashboard.py``). Cada agregado se calcula sobre tablas ya
 existentes (no hay migración nueva) y vive en su propia función con su
 propio ``try/except``: un fallo en un agregado no debe afectar a los otros
-dos (``research.md`` R2/R4/R5, ``data-model.md`` §1, partial-failure
-isolation). Cada función retorna ``None`` cuando su cálculo falla — nunca
-``0``, que significa "cero pendientes" de forma legítima.
+(``research.md`` R2/R4/R5, ``data-model.md`` §1, partial-failure isolation).
+Cada función retorna ``None`` cuando su cálculo falla — nunca ``0``, que
+significa "cero pendientes" de forma legítima.
+
+Feature 045 (US5) suma tres conteos de «Pendientes»: decisiones de identidad,
+cargas en curso y análisis por aprobar; FR-033 suma los competidores sin enlazar
+(insignia de «Cargas e identidades»). ``insights_stale`` y
+``analyses_awaiting_approval`` delegan en
+``services/race/pending_analyses.py``, la misma especificación que arma la
+lista ``GET /api/race-analysis/pending-analyses`` (SC-005).
 
 Privacidad: ningún agregado retorna nombres, fechas de nacimiento ni
 contenido de sesiones — solo conteos y sumas de minutos (FR-010). Los logs
@@ -22,14 +29,18 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.agent_run import AgentRun
 from app.models.athlete import Athlete
-from app.models.athlete_ai_insight import AthleteAiInsight
+from app.models.club import ClubMember, ClubRole
 from app.models.parental_consent import ParentalConsent
+from app.models.race_identity_candidate import IdentityCandidateState, RaceIdentityCandidate
+from app.models.race_import import RaceImport, RaceImportStatus
 from app.models.training_session import SessionAttendance, SessionStatus, TrainingSession
 from app.schemas.dashboard import WeeklyLoadBandOut
+from app.schemas.race_pending_analyses import PendingAnalysisState
 from app.services.category import compute_age_decimal
 from app.services.privacy import get_active_policy
+from app.services.race.competitor_linking import count_unlinked_competitors
+from app.services.race.pending_analyses import count_pending_analyses
 
 logger = logging.getLogger(__name__)
 
@@ -123,45 +134,135 @@ async def compute_insights_stale(
     db: AsyncSession,
     club_ids: set[int] | None,
 ) -> int | None:
-    """Cuenta atletas del club cuyo insight activo proviene de un run "stale".
+    """Cuenta los análisis desactualizados (stale) de los atletas del club.
 
-    Un insight activo (``athlete_ai_insights.is_active = 1``) es stale si el
-    ``AgentRun`` del que proviene tiene ``stale_since IS NOT NULL``. Esto
-    agrega a nivel de club, sin fan-out por atleta, el mismo concepto de
-    staleness que expone por-run ``StaleAnalysisBadge`` en el frontend
-    (``services/race/run_staleness.py``). No existe (ni existió) un campo
-    por-atleta ``stale_run_id`` en ningún endpoint de este módulo — feature
-    036 (T041) confirmó que el frontend lo declaraba sin que el backend lo
-    poblara jamás, y lo eliminó de ambos lados.
+    Un análisis es stale si el ``AgentRun`` del que proviene un insight activo
+    (``athlete_ai_insights.is_active = 1``) tiene ``stale_since IS NOT NULL``
+    — el mismo concepto que expone por-run ``StaleAnalysisBadge`` en el
+    frontend (``services/race/run_staleness.py``).
+
+    Unidad de conteo (feature 045, SC-005): un **run**, no un atleta. Antes
+    contaba atletas distintos; un atleta con dos análisis desactualizados (dos
+    válidas) sumaba 1 aunque la lista que abre la fila mostrara 2. La cuenta y
+    la lista salen ahora de la misma especificación
+    (``pending_analyses._membership_stmt``); con un solo análisis stale por
+    atleta el valor es idéntico al anterior.
 
     Retorna ``None`` si el cálculo falla.
     """
     try:
-        filters = [
-            AthleteAiInsight.is_active == 1,
-            AgentRun.stale_since.is_not(None),
-        ]
-        insight_athlete_filters = [Athlete.deleted_at.is_(None)]
-        if club_ids is not None:
-            insight_athlete_filters.append(Athlete.club_id.in_(club_ids))
-        filters.append(
-            AthleteAiInsight.athlete_id.in_(
-                select(Athlete.id).where(*insight_athlete_filters)
-            )
-        )
-
-        stmt = (
-            select(func.count(func.distinct(AthleteAiInsight.athlete_id)))
-            .select_from(AthleteAiInsight)
-            .join(AgentRun, AgentRun.id == AthleteAiInsight.agent_run_id)
-            .where(*filters)
-        )
-        return (await db.execute(stmt)).scalar_one()
+        return await count_pending_analyses(db, PendingAnalysisState.stale, club_ids)
     except Exception:
         logger.exception(
             "dashboard.insights_stale: fallo calculando agregado (club_ids=%s)",
             club_ids,
         )
+        return None
+
+
+async def compute_analyses_awaiting_approval(
+    db: AsyncSession,
+    club_ids: set[int] | None,
+) -> int | None:
+    """Cuenta los análisis IA que esperan la aprobación del coach (HITL).
+
+    ``AgentRun.status == awaiting_hitl`` de atletas vigentes del club. La lista
+    ``GET /api/race-analysis/pending-analyses?state=awaiting_approval`` sale de
+    la misma especificación, así que ambas cifras coinciden por construcción.
+
+    Retorna ``None`` si el cálculo falla.
+    """
+    try:
+        return await count_pending_analyses(
+            db, PendingAnalysisState.awaiting_approval, club_ids
+        )
+    except Exception:
+        logger.exception(
+            "dashboard.analyses_awaiting_approval: fallo calculando agregado (club_ids=%s)",
+            club_ids,
+        )
+        return None
+
+
+async def compute_identity_decisions_pending(db: AsyncSession) -> int | None:
+    """Cuenta los candidatos de identidad ``pending`` de la cola.
+
+    Es la cola completa (``data-model.md`` §7), sin acotar por club: los
+    candidatos son pares de competidores de carreras de terceros, y el rebuild
+    ya descarta los que no involucran a un atleta del club
+    (``identity_review.remove_out_of_scope``). Es un conteo del badge del
+    inbox; el detalle de los pares no sale de aquí.
+
+    Retorna ``None`` si el cálculo falla.
+    """
+    try:
+        stmt = select(func.count(RaceIdentityCandidate.id)).where(
+            RaceIdentityCandidate.state == IdentityCandidateState.pending
+        )
+        return int((await db.execute(stmt)).scalar_one())
+    except Exception:
+        logger.exception("dashboard.identity_decisions_pending: fallo calculando agregado")
+        return None
+
+
+async def compute_imports_in_progress(
+    db: AsyncSession,
+    club_ids: set[int] | None,
+) -> int | None:
+    """Cuenta las cargas de resultados en curso (``pending`` o ``dry_run``).
+
+    Se cuentan solo esos dos estados de forma explícita — no "todo menos
+    committed/failed" — para que un estado nuevo (p. ej. ``discarded``, que el
+    coach abandona a propósito) nunca infle el badge.
+
+    Las carreras no tienen ``club_id``: el vínculo con el club es la membresía
+    (coach/admin) de quien subió el archivo, la misma regla de alcance del
+    listado ``GET /api/race-analysis/imports/`` (``import_club_ids``).
+    ``club_ids=None`` no acota (admin sin ``club_id``).
+
+    Retorna ``None`` si el cálculo falla.
+    """
+    try:
+        stmt = select(func.count(RaceImport.id)).where(
+            RaceImport.status.in_((RaceImportStatus.pending, RaceImportStatus.dry_run))
+        )
+        if club_ids is not None:
+            stmt = stmt.where(
+                RaceImport.imported_by_user_id.in_(
+                    select(ClubMember.user_id).where(
+                        ClubMember.club_id.in_(club_ids),
+                        ClubMember.role_in_club.in_([ClubRole.coach, ClubRole.admin]),
+                    )
+                )
+            )
+        return int((await db.execute(stmt)).scalar_one())
+    except Exception:
+        logger.exception(
+            "dashboard.imports_in_progress: fallo calculando agregado (club_ids=%s)",
+            club_ids,
+        )
+        return None
+
+
+async def compute_unlinked_competitors_pending(db: AsyncSession) -> int | None:
+    """Cuenta los competidores sin enlazar que esperan acción del coach.
+
+    Es exactamente el ``total`` que devuelve la lista «Sin enlazar» de
+    «Cargas e identidades» (``GET /api/race-competitors/?unlinked=true
+    &club_filter=trocha``): ambos parten de
+    ``competitor_linking._unlinked_base_stmt`` y del mismo filtro de club, así
+    que la insignia y la lista coinciden por construcción (SC-005).
+
+    Los competidores de carreras no tienen ``club_id``; el alcance de club es el
+    filtro «Trocha y Ruta» (``club_text``), el mismo default de la lista — por
+    eso no depende de ``club_ids``, igual que ``identity_decisions_pending``.
+
+    Retorna ``None`` si el cálculo falla.
+    """
+    try:
+        return await count_unlinked_competitors(db)
+    except Exception:
+        logger.exception("dashboard.unlinked_competitors_pending: fallo calculando agregado")
         return None
 
 

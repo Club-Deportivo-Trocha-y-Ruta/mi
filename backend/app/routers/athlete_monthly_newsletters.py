@@ -1017,6 +1017,7 @@ async def download_newsletter_pdf(
 
     from app.services.notification.athlete_newsletter_pdf import generate_stage_log_pdf
     from app.services.training.stage_log import StageLog, to_parent_dto
+    from app.services.training.stage_log_builder import body_composition_annex
 
     stage_log_obj = StageLog.model_validate(nl.stage_log_json)
     parent_dto = to_parent_dto(stage_log_obj, nl.hidden_blocks)
@@ -1033,6 +1034,7 @@ async def download_newsletter_pdf(
         charts_context=pdf_only_blocks.get("charts_context"),
         percentile_curves=pdf_only_blocks.get("percentile_curves"),
         race_results=email_blocks.get("race_results"),
+        body_composition=body_composition_annex(snapshot),
     )
 
     # Actualizar hash si cambió

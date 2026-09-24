@@ -160,6 +160,21 @@ def test_r03_invented_number_degrades_only():
     _none(clean_result, "R03")
 
 
+def test_r03_training_window_size_is_grounded_and_in_sync_with_context():
+    """"28 días" comes from the training block the analyst is shown, so it is
+    grounded; the allow-list entry must track ``context._TRAINING_WINDOW_DAYS``."""
+    from app.services.ai.anthro import context as anthro_context
+    from app.services.ai.anthro.prechecks import _R03_STRUCTURAL_NUMBERS
+
+    assert str(anthro_context._TRAINING_WINDOW_DAYS) in _R03_STRUCTURAL_NUMBERS
+
+    window = _insight(changes=["Registró actividad en los últimos 28 días."])
+    _none(run_prechecks(window, _context()), "R03")
+
+    invented = _insight(changes=["Registró actividad en los últimos 29 días."])
+    _only(run_prechecks(invented, _context()), "R03")
+
+
 # ---------------------------------------------------------------------------
 # R04 — fecha exacta / edad decimal como predicción de PHV
 # ---------------------------------------------------------------------------

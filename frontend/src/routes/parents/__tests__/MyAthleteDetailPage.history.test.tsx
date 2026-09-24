@@ -1,14 +1,18 @@
 /**
- * MyAthleteDetailPage — tab "Carreras" del padre/acudiente (feature 044,
- * US7, T082/T079).
+ * MyAthleteDetailPage — vista «Progresión» de la pestaña «Carreras» del
+ * padre/acudiente (feature 044, US7, T082/T079; re-alojada en la feature 045,
+ * T045).
  *
- * Reutiliza `HistoryProgressionCard` (misma tarjeta que el coach ve en
- * `AthleteDetailPage.tsx`, tab "Carreras") con `audience="family"` — este
- * archivo NO repite la cobertura de estados carga/error/vacío ya cubierta en
- * `components/race/history/__tests__/HistoryProgressionCard.test.tsx`; se
- * enfoca en lo específico de esta página:
+ * Desde la feature 045 el tab «Carreras» es `CarrerasTab` (misma pestaña que
+ * ve el coach en `AthleteDetailPage.tsx`) y abre en «Progresión»
+ * (`ProgressionView`, el cascarón que hereda de `HistoryProgressionCard`).
+ * Este archivo corre esa cadena REAL con `audience="family"` — NO repite la
+ * cobertura de estados carga/error/vacío ya cubierta en
+ * `components/race/history/__tests__/HistoryProgressionCard.test.tsx` ni la
+ * del cascarón de vistas (`CarrerasTab.test.tsx`); se enfoca en lo específico
+ * de esta página:
  *
- *  - el tab existe y monta la tarjeta con `audience="family"` (nunca
+ *  - el tab existe y monta la vista con `audience="family"` (nunca
  *    "coach"), scopeada al atleta de la ruta;
  *  - la redacción familiar del cambio de categoría es la NEUTRAL decidida en
  *    la revisión UX (`HistoryTable.tsx`'s "Cambió de categoría…"), nunca la
@@ -71,9 +75,6 @@ vi.mock("@/components/race/history/HistoryChart", () => ({
 // que `MyAthleteDetailPage.test.tsx` / `MyAthleteDetailPage.activities.test.tsx`.
 vi.mock("@/components/athletes/AthleteInfoCard", () => ({
   AthleteInfoCard: () => <div data-testid="athlete-info-card">InfoCard</div>,
-}));
-vi.mock("@/components/athletes/ai/AthleteAIAnalysisTab", () => ({
-  AthleteAIAnalysisTab: () => <div data-testid="mock-ai-analysis-tab" />,
 }));
 
 // ---------------------------------------------------------------------------
@@ -158,14 +159,16 @@ async function openRacesTab() {
   const user = userEvent.setup();
   const tab = await screen.findByTestId("parent-tab-races");
   await user.click(tab);
-  return screen.findByTestId("history-progression-card");
+  // Feature 045: la pestaña única «Carreras» abre en «Progresión»
+  // (`ProgressionView`, cascarón de la antigua `HistoryProgressionCard`).
+  return screen.findByTestId("progression-view");
 }
 
 // ---------------------------------------------------------------------------
 // Suites
 // ---------------------------------------------------------------------------
 
-describe("MyAthleteDetailPage — tab Carreras (padre, feature 044, US7)", () => {
+describe("MyAthleteDetailPage — Carreras › Progresión (padre, features 044 US7 + 045)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockHooks();
@@ -177,7 +180,7 @@ describe("MyAthleteDetailPage — tab Carreras (padre, feature 044, US7)", () =>
     expect(await screen.findByTestId("parent-tab-races")).toHaveTextContent(/carreras/i);
   });
 
-  it("click en 'Carreras' monta HistoryProgressionCard con audience='family', scopeada al atleta de la ruta", async () => {
+  it("click en 'Carreras' monta Progresión con audience='family', scopeada al atleta de la ruta", async () => {
     renderAthletePage();
     await openRacesTab();
 

@@ -70,9 +70,6 @@ vi.mock("@/components/athletes/ResearchReferences", () => ({
 vi.mock("@/components/ai/PHVExplanationCard", () => ({
   PHVExplanationCard: () => <div data-testid="phv-explanation-card">PHVExplanationCard</div>,
 }));
-vi.mock("@/components/athletes/ai/AthleteAIAnalysisTab", () => ({
-  AthleteAIAnalysisTab: () => <div data-testid="mock-ai-analysis-tab" />,
-}));
 
 // ---------------------------------------------------------------------------
 // Imports de producción (después de mocks)

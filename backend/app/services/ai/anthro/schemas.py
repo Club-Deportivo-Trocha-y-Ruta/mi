@@ -95,7 +95,7 @@ class AnthropometryInsightV1(BaseModel):
 
 
 class AnthropometryCriticIssue(BaseModel):
-    """Una observación puntual del crítico, referida a una regla de precheck (R01–R12)."""
+    """Una observación puntual del crítico, referida a una regla de precheck (R01–R14)."""
 
     model_config = ConfigDict(extra="forbid")
 

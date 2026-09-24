@@ -45,10 +45,10 @@ def _full_month_dto() -> dict[str, Any]:
         "stage_title": "Una etapa sólida con la mejor carrera de la temporada",
         "trail": [
             {"kind": "first_session", "date": "2026-06-02", "label": "Primera sesión de la temporada", "sublabel": None, "icon": "flag", "is_future": False},
-            {"kind": "race", "date": "2026-06-15", "label": "Válida 3 · P2", "sublabel": "+4,1 % al P1", "icon": "map-pin", "is_future": False},
+            {"kind": "race", "date": "2026-06-15", "label": "Válida 3 · P2", "sublabel": "Brecha vs. mediana: +4,1 %", "icon": "map-pin", "is_future": False},
             {"kind": "next_race", "date": "2026-07-10", "label": "Próxima: Válida 4", "sublabel": "Ginebra", "icon": "compass", "is_future": True},
         ],
-        "summit": {"kind": "race", "title": "P2 en la Válida 3", "detail": "Prejuvenil A Femenino · +4,1 % al P1", "caption": "Subió dos puestos.", "date": "2026-06-15"},
+        "summit": {"kind": "race", "title": "P2 en la Válida 3", "detail": "Prejuvenil A Femenino · Brecha vs. mediana: +4,1 %", "caption": "Subió dos puestos.", "date": "2026-06-15"},
         "observations": [
             {"claim": "Asistió a 14 de 14 sesiones planificadas este mes.", "evidence": "14/14 sesiones (100 %).", "block_ref": "attendance"},
             {"claim": "Mejoró la frenada en curva cerrada.", "evidence": "Rúbrica técnica de 3,2 a 4,1.", "block_ref": "technical"},

@@ -4,6 +4,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import { getMe, login as loginRequest, refreshToken } from "@/api/auth";
 import { getAthletes } from "@/api/athletes";
 import { registerAuthHandlers } from "@/api/client";
+import { clearAllDrafts } from "@/hooks/useFormDraft";
 import { getMyAthletes } from "@/api/parents";
 import { getQueryClient } from "@/lib/queryClientHandle";
 import { wipePersistedCache } from "@/lib/queryPersister";
@@ -101,6 +102,11 @@ export const useAuthStore = create<AuthState>()(
         // datos persistidos de una cuenta quedarían en el dispositivo tras el
         // logout (Ley 1581 — menores).
         wipePersistedCache();
+        // Feature 046 (privacy-audit F8): borradores de captura (p. ej.
+        // pliegues cutáneos) quedan en localStorage hasta guardar o
+        // descartar; en logout los borramos todos para que una tablet
+        // compartida no arrastre un borrador de la cuenta anterior.
+        clearAllDrafts();
         // Privacy R4 (Wave 4): además del cache, limpiamos el "athlete
         // activo" persistido del padre. Sin esto, en tablets compartidas
         // el padre B heredaría el activeAthleteId del padre A hasta que
