@@ -397,6 +397,9 @@ META_ALLOWLIST: frozenset[str] = frozenset(
         # Feature 046 — skinfolds.saved / skinfolds.deleted: a count only,
         # never a reading value (`event_type` already covers the label).
         "site_count",
+        # Feature 044 (US5 amended, T137) — stage_extracted_results' audit
+        # row: which engine produced the staged document (never row content).
+        "via",
     }
 )
 

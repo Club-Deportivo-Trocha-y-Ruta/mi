@@ -1,24 +1,22 @@
-"""Tests de ``app.services.race.import_staging.stage_results_file`` (feature
-044, US5, T056 — contracts/historical-load.md §"Staging service").
+"""Tests de ``app.services.race.import_staging.stage_extracted_results``
+(feature 044, US5 amended 2026-09-26 — contracts/staged-import.md § Tests).
 
-Llama el servicio DIRECTAMENTE (sin pasar por FastAPI) — es exactamente lo
-que hará ``backend/scripts/stage_race_history.py`` (T063) y lo que prueba
-que la extracción de T059 no cambió el comportamiento de ``POST /parse``
-(los tests de router en ``tests/routers/test_race_imports*.py`` siguen en
-verde con el mismo aserto HTTP; este archivo es la comparación golden a
-nivel de servicio que T059 pidió como red de seguridad).
+Reemplaza el archivo previo (T056/T131): ``stage_extracted_results`` no
+parsea nada — recibe un ``ParsedResults`` ya extraído — así que estos tests
+llaman el servicio DIRECTAMENTE con documentos sintéticos
+(``tests/helpers/staging.py::stage_for_test``), sin PDF/WeasyPrint ni HTTP.
 
-Requiere WeasyPrint (vía ``tests/helpers/results_pdf_builder.py``) — en este
-Mac hace falta anteponer ``DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib`` al
-comando de pytest.
+``stage_results_file`` (el flujo legado detrás de ``POST /parse``, aún vivo
+para no romper el wizard de temporada corriente) sigue teniendo su propia
+cobertura en los tests de router — este archivo es ahora exclusivamente de
+``stage_extracted_results``.
 
 Privacidad: todos los nombres son sintéticos (``FakeNameGenerator``); ningún
-PDF real de la Federación se usa ni se genera aquí.
+archivo real de la Federación se usa ni se genera aquí.
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
-from pathlib import Path
+from datetime import datetime, timezone
 
 import pytest
 import pytest_asyncio
@@ -34,16 +32,27 @@ from sqlalchemy.pool import StaticPool
 from app.config import settings
 from app.models import Base
 from app.models.race_import import RaceImport, RaceImportKind, RaceImportStatus
+from app.models.race_import_staged_document import RaceImportStagedDocument
 from app.models.race_series import RaceSeries, RaceSeriesKind
 from app.models.user import User, UserRole
-from app.services.race.import_staging import stage_results_file
+from app.services.race.import_staging import (
+    StageHeader,
+    _STAGE_PUBLIC_META_KEYS,
+    stage_extracted_results,
+)
+from app.services.race.staged_document import (
+    ParsedCategory,
+    ParsedResults,
+    ResultsRow,
+    document_from_json,
+)
 from app.services.request_context import AuditContext
 from tests.helpers.audit_tables import AUDIT_TABLES
-from tests.helpers.results_pdf_builder import (
-    CategorySpec,
-    FakeNameGenerator,
-    build_results_pdf,
-    sequential_category,
+from tests.helpers.staging import (
+    DEFAULT_TEST_PROFILE,
+    default_test_document,
+    default_test_header,
+    stage_for_test,
 )
 
 
@@ -67,7 +76,9 @@ async def sqlite_engine() -> AsyncEngine:
             "race_series",
             "race_events",
             "race_imports",
+            "race_import_staged_documents",
             "race_categories",
+            "race_results",
             *AUDIT_TABLES,
         )
     ]
@@ -122,307 +133,371 @@ def _ctx(actor: User) -> AuditContext:
     return AuditContext.for_user(actor, request_id="test-req-import-staging")
 
 
-def _build_pdf(tmp_path: Path, *, valida_num: int, location: str,
-               event_date: date, categories: list[CategorySpec]) -> bytes:
-    path = build_results_pdf(
-        tmp_path / "sintetico.pdf",
-        valida_num=valida_num,
-        location=location,
-        event_date=event_date,
-        categories=categories,
-        name_generator=FakeNameGenerator(),
-    )
-    return path.read_bytes()
-
-
 # ---------------------------------------------------------------------------
-# Golden comparison — archivo 2026 (temporada corriente)
+# Staging básico
 # ---------------------------------------------------------------------------
 
 
-class TestGoldenComparison2026:
-    """El servicio extraído produce el mismo ``RaceImport`` + respuesta que
-    ``POST /parse`` producía antes de T059 (mismo escenario que
-    ``tests/routers/test_race_imports.py::TestParseEndpoint``, a nivel de
-    servicio)."""
-
+class TestStageCreatesPendingImport:
     @pytest.mark.asyncio
-    async def test_stage_creates_pending_import_matching_inputs(
-        self, db_session_factory, override_storage, actor_user, tmp_path
+    async def test_stage_creates_pending_import_with_document_row(
+        self, db_session_factory, override_storage, actor_user
     ):
-        category = sequential_category("INFANTIL A", 3)
-        for i, row in enumerate(category.rows, start=1):
-            row.bib = str(700 + i)
-        pdf_bytes = _build_pdf(
-            tmp_path,
-            valida_num=4,
-            location="Cali",
-            event_date=date(2026, 5, 17),
-            categories=[category],
-        )
-
         async with db_session_factory() as db:
-            response = await stage_results_file(
-                db,
-                file_bytes=pdf_bytes,
-                original_filename="valida_iv_resultados.pdf",
-                results_ext="pdf",
-                series_name="Copa Valle de Ciclomontañismo",
-                season=2026,
-                valida_num=4,
-                event_name="VALIDA IV CALI",
-                event_date=date(2026, 5, 17),
-                location="Cali",
-                actor=actor_user,
-                ctx=_ctx(actor_user),
-            )
+            result = await stage_for_test(db, actor=actor_user)
             await db.commit()
 
-            # Sin desacuerdo header/inputs (mismo valida_num/fecha/sede que
-            # el PDF trae impresos): sin warning header_mismatch.
-            assert response.warnings == []
-            assert response.header.season == 2026
-            assert response.header.valida_num == 4
-            assert response.n_rows_resultados == 3
-            assert len(response.categories) == 1
-            assert response.categories[0].code == "INF_A"
-            assert response.categories[0].completeness.status == "ok"
+            assert result.status == "pending"
+            assert result.n_rows == 3
+            assert result.n_categories == 1
+            assert result.already_committed is False
+            assert result.is_revision is False
 
             imp = (
                 await db.execute(
-                    select(RaceImport).where(RaceImport.id == response.parse_id)
+                    select(RaceImport).where(RaceImport.id == result.import_id)
                 )
             ).scalar_one()
             assert imp.status == RaceImportStatus.pending
-            assert imp.sha256 == response.sha256
             assert imp.kind == RaceImportKind.resultados
             assert imp.imported_by_user_id == actor_user.id
-            assert imp.parse_meta_json["header"]["season"] == 2026
-            assert imp.parse_meta_json["header"]["valida_num"] == 4
-            assert imp.parse_meta_json["header"]["location"] == "Cali"
-            # rows es un CONTEO en el meta cacheado, nunca la lista con nombres
-            # (data-model.md §7).
+            assert imp.parse_meta_json["n_rows_resultados"] == 3
+            assert imp.parse_meta_json["n_rows_general"] == 0
             assert imp.parse_meta_json["categories"][0]["rows"] == 3
 
-            series = (
+            doc_row = (
                 await db.execute(
-                    select(RaceSeries).where(RaceSeries.id == imp.series_id)
+                    select(RaceImportStagedDocument).where(
+                        RaceImportStagedDocument.import_id == result.import_id
+                    )
                 )
             ).scalar_one()
-            assert series.season_year == 2026
-            assert series.kind == RaceSeriesKind.cup
+            document = document_from_json(doc_row.document_json)
+            assert len(document.categories) == 1
+            assert len(document.categories[0].rows) == 3
+            assert doc_row.profile_id == DEFAULT_TEST_PROFILE.profile_id
 
     @pytest.mark.asyncio
-    async def test_zero_rows_raises_422(
-        self, db_session_factory, override_storage, actor_user, tmp_path
+    async def test_conditions_are_all_null_and_kind_is_resultados(
+        self, db_session_factory, override_storage, actor_user
+    ):
+        async with db_session_factory() as db:
+            result = await stage_for_test(db, actor=actor_user)
+            await db.commit()
+            imp = (
+                await db.execute(
+                    select(RaceImport).where(RaceImport.id == result.import_id)
+                )
+            ).scalar_one()
+            conditions = imp.parse_meta_json["conditions"]
+            assert conditions == {
+                "climate": None,
+                "temperature_c": None,
+                "surface_condition": None,
+                "altitude_msnm": None,
+                "weather_notes": None,
+            }
+            assert imp.kind == RaceImportKind.resultados
+            assert imp.parse_meta_json["n_rows_general"] == 0
+
+    @pytest.mark.asyncio
+    async def test_public_meta_keys_match_contract(
+        self, db_session_factory, override_storage, actor_user
+    ):
+        async with db_session_factory() as db:
+            result = await stage_for_test(db, actor=actor_user)
+            await db.commit()
+            imp = (
+                await db.execute(
+                    select(RaceImport).where(RaceImport.id == result.import_id)
+                )
+            ).scalar_one()
+            expected = set(_STAGE_PUBLIC_META_KEYS) | {
+                "results_ext",
+                "results_storage_path",
+                "parse_uuid",
+                "source",
+                "profile_id",
+            }
+            assert set(imp.parse_meta_json.keys()) == expected
+
+    @pytest.mark.asyncio
+    async def test_audit_row_carries_via_results_skill(
+        self, db_session_factory, override_storage, actor_user
+    ):
+        from app.models.audit_log import AuditLog
+
+        async with db_session_factory() as db:
+            result = await stage_for_test(db, actor=actor_user)
+            await db.commit()
+            audit_row = (
+                await db.execute(
+                    select(AuditLog).where(
+                        AuditLog.entity_id == result.import_id,
+                        AuditLog.entity_type == "race_import",
+                    )
+                )
+            ).scalar_one()
+            assert (audit_row.meta_json or {}).get("via") == "results_skill"
+
+    @pytest.mark.asyncio
+    async def test_imported_at_comes_from_database_clock(
+        self, db_session_factory, override_storage, actor_user, monkeypatch
+    ):
+        """``imported_at`` viene de ``func.now()`` (reloj de la BD), no del
+        reloj Python del proceso — congelamos este último y comprobamos que
+        difiere."""
+        frozen = datetime(2000, 1, 1, tzinfo=timezone.utc)
+
+        class _FrozenDatetime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return frozen if tz is None else frozen.astimezone(tz)
+
+        import app.models.race_import as race_import_module
+
+        monkeypatch.setattr(race_import_module, "datetime", _FrozenDatetime)
+
+        async with db_session_factory() as db:
+            result = await stage_for_test(db, actor=actor_user)
+            await db.commit()
+            imp = (
+                await db.execute(
+                    select(RaceImport).where(RaceImport.id == result.import_id)
+                )
+            ).scalar_one()
+            assert imp.imported_at is not None
+            assert imp.imported_at.replace(tzinfo=timezone.utc) != frozen
+
+
+# ---------------------------------------------------------------------------
+# Documento vacío
+# ---------------------------------------------------------------------------
+
+
+class TestEmptyDocumentRefused:
+    @pytest.mark.asyncio
+    async def test_empty_document_raises_422_empty_document(
+        self, db_session_factory, override_storage, actor_user
     ):
         from fastapi import HTTPException
 
-        pdf_bytes = _build_pdf(
-            tmp_path, valida_num=4, location="Cali",
-            event_date=date(2026, 5, 17), categories=[],
+        empty_doc = ParsedResults(categories=[], unreadable_rows=[])
+        async with db_session_factory() as db:
+            with pytest.raises(HTTPException) as exc_info:
+                await stage_for_test(db, document=empty_doc, actor=actor_user)
+            assert exc_info.value.status_code == 422
+            assert exc_info.value.detail["code"] == "empty_document"
+
+            # Nada quedó creado.
+            rows = (await db.execute(select(RaceImport))).scalars().all()
+            assert rows == []
+
+    @pytest.mark.asyncio
+    async def test_category_with_zero_rows_is_also_empty(
+        self, db_session_factory, override_storage, actor_user
+    ):
+        from fastapi import HTTPException
+
+        doc = ParsedResults(
+            categories=[ParsedCategory(header_raw="SIN FILAS", code=None, rows=[])],
+            unreadable_rows=[],
         )
         async with db_session_factory() as db:
             with pytest.raises(HTTPException) as exc_info:
-                await stage_results_file(
-                    db,
-                    file_bytes=pdf_bytes,
-                    original_filename="vacio.pdf",
-                    results_ext="pdf",
-                    series_name="Copa Valle de Ciclomontañismo",
-                    season=2026,
-                    valida_num=4,
-                    event_name="VALIDA IV CALI",
-                    event_date=date(2026, 5, 17),
-                    location="Cali",
-                    actor=actor_user,
-                    ctx=_ctx(actor_user),
-                )
+                await stage_for_test(db, document=doc, actor=actor_user)
             assert exc_info.value.status_code == 422
+            assert exc_info.value.detail["code"] == "empty_document"
 
 
 # ---------------------------------------------------------------------------
-# Carga histórica — inputs explícitos, nunca inferidos (FR-025)
+# Dedupe (FR-027) — pending y committed
 # ---------------------------------------------------------------------------
 
 
-class TestHistoricalStagingExplicitInputs:
-    @pytest.mark.asyncio
-    async def test_historical_file_uses_inputs_verbatim(
-        self, db_session_factory, override_storage, actor_user, tmp_path
-    ):
-        """El PDF trae impreso un header (VALIDA III, otra fecha/sede) —
-        igual que un acta histórica real. Los inputs del manifiesto ganan:
-        el header impreso solo pre-rellena el formulario, nunca decide."""
-        category = sequential_category("ELITE HOMBRES", 2)
-        for i, row in enumerate(category.rows, start=1):
-            row.bib = str(900 + i)
-
-        # El PDF "dice" ser la válida III de Palmira, 2025-06-14 — un header
-        # deliberadamente distinto del que declara el manifiesto histórico.
-        pdf_bytes = _build_pdf(
-            tmp_path,
-            valida_num=3,
-            location="Palmira",
-            event_date=date(2025, 6, 14),
-            categories=[category],
-        )
-
-        async with db_session_factory() as db:
-            response = await stage_results_file(
-                db,
-                file_bytes=pdf_bytes,
-                original_filename="copa_valle_2024_valida_7.pdf",
-                results_ext="pdf",
-                series_name="Copa Valle de Ciclomontañismo",
-                season=2024,
-                valida_num=7,
-                event_name="VALIDA VII BUGA",
-                event_date=date(2024, 11, 2),
-                location="Buga",
-                actor=actor_user,
-                ctx=_ctx(actor_user),
-            )
-            await db.commit()
-
-            # Los inputs ganan — nunca lo impreso.
-            assert response.header.season == 2024
-            assert response.header.valida_num == 7
-            assert response.header.event_name == "VALIDA VII BUGA"
-
-            imp = (
-                await db.execute(
-                    select(RaceImport).where(RaceImport.id == response.parse_id)
-                )
-            ).scalar_one()
-            assert imp.parse_meta_json["header"]["season"] == 2024
-            assert imp.parse_meta_json["header"]["valida_num"] == 7
-            assert imp.parse_meta_json["header"]["event_date"] == "2024-11-02"
-            assert imp.parse_meta_json["header"]["location"] == "Buga"
-
-            series = (
-                await db.execute(
-                    select(RaceSeries).where(RaceSeries.id == imp.series_id)
-                )
-            ).scalar_one()
-            assert series.season_year == 2024
-
-    @pytest.mark.asyncio
-    async def test_header_mismatch_warning_when_printed_header_disagrees(
-        self, db_session_factory, override_storage, actor_user, tmp_path
-    ):
-        category = sequential_category("MASTER A", 2)
-        pdf_bytes = _build_pdf(
-            tmp_path,
-            valida_num=3,
-            location="Palmira",
-            event_date=date(2025, 6, 14),
-            categories=[category],
-        )
-
-        async with db_session_factory() as db:
-            response = await stage_results_file(
-                db,
-                file_bytes=pdf_bytes,
-                original_filename="copa_valle_2024_valida_7.pdf",
-                results_ext="pdf",
-                series_name="Copa Valle de Ciclomontañismo",
-                season=2024,
-                valida_num=7,
-                event_name="VALIDA VII BUGA",
-                event_date=date(2024, 11, 2),
-                location="Buga",
-                actor=actor_user,
-                ctx=_ctx(actor_user),
-            )
-            await db.commit()
-
-        codes = {w.code for w in response.warnings}
-        assert "header_mismatch" in codes
-        mismatch = next(w for w in response.warnings if w.code == "header_mismatch")
-        assert set(mismatch.context["fields"]) == {
-            "valida_num", "location", "event_date",
-        }
-
-    @pytest.mark.asyncio
-    async def test_no_header_mismatch_when_inputs_match_printed_header(
-        self, db_session_factory, override_storage, actor_user, tmp_path
-    ):
-        category = sequential_category("MASTER B1", 2)
-        pdf_bytes = _build_pdf(
-            tmp_path,
-            valida_num=2,
-            location="Tulua",
-            event_date=date(2025, 3, 9),
-            categories=[category],
-        )
-
-        async with db_session_factory() as db:
-            response = await stage_results_file(
-                db,
-                file_bytes=pdf_bytes,
-                original_filename="copa_valle_2025_valida_2.pdf",
-                results_ext="pdf",
-                series_name="Copa Valle de Ciclomontañismo",
-                season=2025,
-                valida_num=2,
-                event_name="VALIDA II TULUA",
-                event_date=date(2025, 3, 9),
-                location="Tulua",
-                actor=actor_user,
-                ctx=_ctx(actor_user),
-            )
-            await db.commit()
-
-        assert response.warnings == []
-
-
-# ---------------------------------------------------------------------------
-# FR-027 — re-stage de un archivo idéntico, aún pending: no crea nada
-# ---------------------------------------------------------------------------
-
-
-class TestRestageIdenticalFileCreatesNothing:
+class TestDedupe:
     @pytest.mark.asyncio
     async def test_restaging_identical_pending_file_returns_same_import(
-        self, db_session_factory, override_storage, actor_user, tmp_path
+        self, db_session_factory, override_storage, actor_user
     ):
-        category = sequential_category("JUNIOR", 2)
-        pdf_bytes = _build_pdf(
-            tmp_path, valida_num=5, location="Cartago",
-            event_date=date(2026, 7, 12), categories=[category],
-        )
-        kwargs = dict(
-            file_bytes=pdf_bytes,
-            original_filename="valida_5.pdf",
-            results_ext="pdf",
-            series_name="Copa Valle de Ciclomontañismo",
-            season=2026,
-            valida_num=5,
-            event_name="VALIDA V CARTAGO",
-            event_date=date(2026, 7, 12),
-            location="Cartago",
-            actor=actor_user,
-            ctx=_ctx(actor_user),
-        )
+        doc = default_test_document()
+        header = default_test_header(valida_num=5)
+        file_bytes = b"contenido-identico-para-dedupe"
 
         async with db_session_factory() as db:
-            first = await stage_results_file(db, **kwargs)
+            first = await stage_for_test(
+                db, doc, header, actor_user, file_bytes=file_bytes
+            )
             await db.commit()
 
         async with db_session_factory() as db:
-            before_count = (
-                await db.execute(select(RaceImport))
-            ).scalars().all()
-            second = await stage_results_file(db, **kwargs)
+            before = (await db.execute(select(RaceImport))).scalars().all()
+            second = await stage_for_test(
+                db, doc, header, actor_user, file_bytes=file_bytes
+            )
             await db.commit()
-            after_count = (
-                await db.execute(select(RaceImport))
-            ).scalars().all()
+            after = (await db.execute(select(RaceImport))).scalars().all()
 
-        assert second.parse_id == first.parse_id
-        assert second.sha256 == first.sha256
-        assert len(after_count) == len(before_count), (
+        assert second.import_id == first.import_id
+        assert second.status == "pending"
+        assert len(after) == len(before), (
             "re-stagear un archivo idéntico aún pending no debe crear una "
             "segunda fila race_imports (FR-027)"
         )
+
+    @pytest.mark.asyncio
+    async def test_restaging_identical_committed_file_returns_already_committed(
+        self, db_session_factory, override_storage, actor_user
+    ):
+        doc = default_test_document()
+        header = default_test_header(valida_num=6)
+        file_bytes = b"contenido-ya-commiteado"
+
+        async with db_session_factory() as db:
+            staged = await stage_for_test(
+                db, doc, header, actor_user, file_bytes=file_bytes
+            )
+            await db.commit()
+
+        async with db_session_factory() as db:
+            imp = (
+                await db.execute(
+                    select(RaceImport).where(RaceImport.id == staged.import_id)
+                )
+            ).scalar_one()
+            imp.status = RaceImportStatus.committed
+            await db.commit()
+
+        async with db_session_factory() as db:
+            before = (await db.execute(select(RaceImport))).scalars().all()
+            result = await stage_for_test(
+                db, doc, header, actor_user, file_bytes=file_bytes
+            )
+            await db.commit()
+            after = (await db.execute(select(RaceImport))).scalars().all()
+
+        assert result.status == "already_committed"
+        assert result.already_committed is True
+        assert result.import_id == staged.import_id
+        assert len(after) == len(before)
+
+
+# ---------------------------------------------------------------------------
+# Fallos — upload y transacción no dejan huérfanos
+# ---------------------------------------------------------------------------
+
+
+class TestFailureLeavesNoOrphan:
+    @pytest.mark.asyncio
+    async def test_upload_failure_leaves_no_import(
+        self, db_session_factory, override_storage, actor_user, monkeypatch
+    ):
+        from app.services.training import storage_sftp
+
+        async def _boom(*args, **kwargs):
+            raise OSError("disco lleno (simulado)")
+
+        monkeypatch.setattr(storage_sftp, "upload_bytes", _boom)
+
+        async with db_session_factory() as db:
+            with pytest.raises(OSError):
+                await stage_for_test(db, actor=actor_user)
+            rows = (await db.execute(select(RaceImport))).scalars().all()
+            assert rows == []
+            docs = (
+                await db.execute(select(RaceImportStagedDocument))
+            ).scalars().all()
+            assert docs == []
+
+    @pytest.mark.asyncio
+    async def test_transaction_failure_deletes_uploaded_object_and_leaves_no_rows(
+        self, db_session_factory, override_storage, actor_user, monkeypatch
+    ):
+        from app.services.race import staged_document as staged_document_module
+        from app.services.training import storage_sftp
+
+        deleted_paths: list[str] = []
+        real_delete = storage_sftp.delete_object
+
+        async def _tracking_delete(storage_path: str) -> None:
+            deleted_paths.append(storage_path)
+            await real_delete(storage_path)
+
+        async def _boom_save(*args, **kwargs):
+            raise RuntimeError("fallo simulado en el insert del documento")
+
+        monkeypatch.setattr(storage_sftp, "delete_object", _tracking_delete)
+        monkeypatch.setattr(staged_document_module, "save", _boom_save)
+
+        async with db_session_factory() as db:
+            with pytest.raises(RuntimeError):
+                await stage_for_test(db, actor=actor_user)
+            rows = (await db.execute(select(RaceImport))).scalars().all()
+            assert rows == []
+            docs = (
+                await db.execute(select(RaceImportStagedDocument))
+            ).scalars().all()
+            assert docs == []
+
+        assert len(deleted_paths) == 1
+
+
+# ---------------------------------------------------------------------------
+# Revisión — un import committed previo de la misma (serie, válida)
+# ---------------------------------------------------------------------------
+
+
+class TestRevisionDetection:
+    @pytest.mark.asyncio
+    async def test_different_reading_of_committed_valida_is_flagged_revision(
+        self, db_session_factory, override_storage, actor_user
+    ):
+        from app.models.race_event import RaceEvent
+
+        header = default_test_header(season=2026, valida_num=7)
+
+        async with db_session_factory() as db:
+            series = RaceSeries(
+                name=header.series_name,
+                season_year=header.season,
+                organizer="Liga Vallecaucana de Ciclismo",
+                points_scheme_code="copa_valle_2026",
+                kind=RaceSeriesKind.cup,
+            )
+            db.add(series)
+            await db.flush()
+            event = RaceEvent(
+                series_id=series.id,
+                sequence_number=header.valida_num,
+                name=header.event_name,
+                event_date=header.event_date,
+                location=header.location,
+                created_by_user_id=actor_user.id,
+            )
+            db.add(event)
+            await db.flush()
+            prior_import = RaceImport(
+                filename="prev.pdf",
+                sha256="a" * 64,
+                series_id=series.id,
+                status=RaceImportStatus.committed,
+                stats_json={},
+                imported_by_user_id=actor_user.id,
+                event_id=event.id,
+                committed_at=datetime.now(timezone.utc),
+                committed_by_user_id=actor_user.id,
+            )
+            db.add(prior_import)
+            await db.commit()
+
+            result = await stage_for_test(
+                db,
+                default_test_document(),
+                header,
+                actor_user,
+                file_bytes=b"un-archivo-diferente-de-la-misma-valida",
+            )
+            await db.commit()
+
+        assert result.is_revision is True
+        assert result.parent_import_id == prior_import.id
