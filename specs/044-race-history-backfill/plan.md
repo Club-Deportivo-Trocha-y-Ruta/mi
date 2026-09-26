@@ -6,6 +6,8 @@
 
 **Note**: This template is filled in by the `/speckit-plan` command. See `.specify/templates/plan-template.md` for the execution workflow.
 
+> **Amendment 2026-09-26 — skill-only results loading.** The sections that follow describe the feature as implemented (2026-09-18…22). The amendment that removes every results upload and loads results only through the results skill is planned in [Amendment 2026-09-26](#amendment-2026-09-26--skill-only-results-loading) at the end of this file. Where the two disagree, the amendment wins.
+
 ## Summary
 
 Load the fifteen historical válidas (2024: 7, 2025: 8) with the **full start list**, through the existing import path, and give each club athlete **one continuous progression across 2024–2026** that stays truthful when the athlete changes category. Planning research on three real files (inspected outside the repository, counts only) changed two premises of the spec and produced one validated design:
@@ -147,3 +149,201 @@ No violations. One watch item, not a violation: if `POST /race-identity/rebuild`
 **G4 measurement (2026-09-21, local laptop, aiosqlite).** Synthetic universe of 3 000 rows (15 staged imports × 200, 1 200 distinct synthetic riders, 5 % with a dropped surname): candidate building + persistence **0.22 s** first run (1 193 candidates), **0.09 s** idempotent re-run (0 created). The candidate core is far inside budget. What the figure excludes is the `rows_loader`: in production `load_identity_rows` re-downloads each staged PDF over SFTP and re-parses it — **0.60 s per 229-row file** measured locally for the parse alone, so a full 15-file historical stage costs ≈ 9 s of parsing plus SFTP latency, on every `/rebuild` **and** every `/commit` (the gate runs a rebuild first). On Render's free tier this will likely exceed 10 s for the historical load; for a normal 2026 commit (one staged file) it stays ≈ 1–2 s. Mitigation, assigned to W4 before the real load (see note on T061): cache the corrected parsed rows per staged import keyed by `(sha256, corrections revision)` so a rebuild reparses only imports whose file or corrections changed; until then the staging runbook stages the historical files in batches of ≤ 5 per rebuild.
 
 **G4 mitigation implemented and re-measured (2026-09-21, same laptop, W4).** Two process-local bounded LRUs (`routers/race_imports.py`, comment above `_reload_results_document`): the raw parse keyed by `sha256` (never invalidates — a committed import's file never changes) and the corrected-categories result keyed by `(sha256, len(corrections))` (a new correction changes the key; the stale entry is simply never requested again, evicted by the LRU bound). `_reload_parsed_from_storage` now returns a 5th value (`categories`) so the commit/commit-pending gate can compute `pending_categories` without a second reload. Measured against 15 real staged imports through the actual `load_identity_rows` → SFTP-local-fallback-download → pdfplumber-parse path (synthetic PDFs, 2 categories × 15 rows = 30 rows/file, 450 rows total — smaller than the 200-rows/file scenario above, chosen to keep the local re-measurement fast; the win is architectural, not row-count-dependent, since the cache is keyed per staged import regardless of its row count): first `identity_review.rebuild` **1.513 s** (15/15 files downloaded + parsed, 0 candidates — synthetic headers don't resolve to seeded category codes, which doesn't affect the timing being measured); a second `rebuild` immediately after, same corrections revision for all 15 imports, **0.002 s** — a ≈750× reduction, confirming the mitigation eliminates the repeat-download-and-reparse cost on every `/rebuild` and `/commit` gate check. The historical-load runbook's "batches of ≤ 5" workaround is no longer needed once this ships; `runbook-ops.md` should drop that line when the real load happens.
+
+---
+
+## Amendment 2026-09-26 — skill-only results loading
+
+**Date**: 2026-09-26 | **Spec**: Clarifications 2026-09-26; FR-044…FR-049; corrected FR-027; Assumptions "Planning adjustments (2026-09-26)" | **Research**: R-17…R-31 | **Planning branch**: `claude/speckit-results-skills-upload-dap0pw` (the owner decides the implementation branch)
+
+### Summary (amendment)
+
+Each organiser prints results differently, and a fixed parser behind an upload keeps breaking. From now on, results enter the platform only through a **skill** that the operator runs on a computer with an LLM coding assistant:
+
+1. A local script **masks** the official file.
+2. The LLM writes a declarative **reading profile** from the masked view only.
+3. A tested engine **applies** the profile to the real file locally.
+4. The same script **stages** the válida: into the local database by default, and into production only with an explicit target and confirmation.
+
+The web app keeps every review screen and loses only the upload step; the coach still reviews, resolves and commits.
+
+Planning found two facts the clarification session did not know:
+- Every review step re-parses the stored file today, so staged rows must be persisted. This adds one new 1:1 table.
+- The revision path is only half-built: the diff and apply logic exist, but no endpoint calls them. The amendment wires them, with identity-aware matching.
+
+Retired along the way:
+- the GENERAL sheet;
+- the fixed PDF and CSV parsers;
+- the `/parse` route and the old staging script;
+- three settings;
+- two real official files committed as test fixtures.
+
+### Technical Context (delta)
+
+**Language/Version**: unchanged.
+
+**Primary Dependencies**:
+- No new dependency.
+- `pdfplumber` stays: it is used by the engine and by the newsletter PDF reader. `python-multipart` stays: four other routes accept uploads.
+- Profiles are JSON.
+- The CLI loads `backend/.env.production` with `python-dotenv` (already installed through `pydantic-settings`), as `scripts/bitacora_snapshot.py` does.
+
+**Storage**:
+- One new table, `race_import_staged_documents` (1:1 with the import, a JSON document, cascade delete). No change to the `race_imports` columns.
+- Reading profiles are committed JSON files.
+- The evidence file goes to Hostinger SFTP in production and to the local fallback locally.
+
+**Testing**:
+- Default pytest lane:
+  - engine: masking, vocabulary pins, run primitives, profile parity, a second fictional layout, delimited text;
+  - CLI: target guards, actor checks, stdout sweep;
+  - staging service and loader;
+  - revision wiring and the removed-results read sweep;
+  - the structural upload guard.
+- About 60 router tests move from HTTP `/parse` to a staging helper and keep their assertions.
+- `-m mysql`: the new table and the migration round-trip.
+- vitest + MSW + jest-axe: the review-only wizard and the no-upload guard.
+- Playwright: `race-history.spec.ts` stages through the CLI.
+- The golden eval is not affected.
+
+**Target Platform**:
+- The CLI runs on the operator's computer (backend venv) against the local MySQL (compose) or the production MySQL on Hostinger. Remote access to Hostinger needs the operator's IP on the allow-list (runbook §1.2).
+- The web app is unchanged.
+
+**Performance Goals**:
+- Review routes read one row by primary key instead of downloading from SFTP and parsing.
+- The identity rebuild no longer re-parses files, so the G4 concern of the original plan disappears.
+- Staging a 280-row válida writes about 60 KB of JSON.
+- No endpoint budget changes.
+
+**Constraints**:
+- FR-046: no rider data reaches the LLM.
+- FR-047: local by default, production only when explicit.
+- The CLI's stdout and logs carry no rider data, and no `.env.production` value appears in the transcript.
+- Single Alembic head; no new enum value on an existing column.
+- Legacy imports are never mutated by the migration.
+- Product copy in español neutro; planning corpus in English.
+
+**Scale/Scope**:
+- 1 migration, 1 table.
+- A new `results_skill` package (seven modules), a CLI and one product profile.
+- 8 backend modules changed.
+- 4 backend files deleted, plus two real fixtures.
+- Frontend: wizard step 1 and 5 modules removed, 7 entry points, about 15 strings, about 20 test files.
+- 1 skill with 3 references, and 6 documents updated.
+
+### Constitution Check (amendment)
+
+*Gate before Phase 0 and again after Phase 1: both PASS.*
+
+| Principle | How the amendment satisfies it | Status |
+|---|---|---|
+| I. Code Quality | Parsing knowledge moves into one engine of pure functions (`build_masked_view`, `apply_profile`, `leak_count`) plus data files; the layout-specific parsers are deleted rather than kept beside it. Shared types move to a neutral module. The review routes replace three copies of reload, cache and connection-release code with one loader. `revision.compute_diff` and `commit_revision` are reused and adapted, not rewritten. The new public modules carry docstrings. `ruff` + `tsc --noEmit`. | PASS |
+| II. Testing (NON-NEGOTIABLE) | Every contract ends with its tests. Privacy invariants are explicit: masked-view and stdout sweeps over synthetic names, the leak check, "no router imports the engine", the structural upload guard. Denied paths: the upload route is gone for every role, and the CLI refuses non-admin/coach users and unsafe targets. The migration round-trips under `-m mysql`. Ported tests keep their assertions; only their staging changes. Unrun lanes are reported. | PASS |
+| III. UX Consistency | The coach keeps the same review, category, correction, identity and commit screens. Entry points that promised an upload are removed, not left dead. The new empty and legacy states are designed in Spanish and reviewed by `ux-researcher`, with jest-axe at zero violations. The revision diff, already designed, becomes reachable. | PASS |
+| IV. Performance | Review routes stop downloading and parsing a file on every request. No list query loads documents (the 1:1 table is read by id only). The bundle shrinks (code removed). | PASS |
+| V. Youth Psych. Safeguards | Not a psychological instrument; unchanged. | N/A |
+| Gate — Privacy | FR-046 is enforced by structure (masked view, vocabulary pins, leak check) and by procedure (skill rules, deny rules). The CLI never prints rider data. Staged documents live only in the database and are deleted on commit and discard. Privacy-audit finding A closes. Two real official files leave the tree; purging them from history is flagged to the owner. The mandatory `data-privacy-guard` audit of the engine, CLI, skill and API deltas, reviewed by `data-platform-lead`, happens before any real file is masked. | PASS |
+| Gate — Stack discipline | No new dependency. The CLI reuses the app's models, services and settings. Profiles are JSON. | PASS |
+| Gate — Security | The upload surface shrinks to the four reviewed non-results endpoints, pinned by a test. A production write needs an explicit target and confirmation, a schema-head match and SFTP. The acting user must be an active admin or coach. Secrets are read from git-ignored files and scrubbed from errors. Deny rules keep the private folders out of the LLM session. | PASS |
+| Gate — Secrets | No `.env.production` value is printed or passed on a command line; the production confirmation names the target, not the database. | PASS |
+| Gate — AI features | No product AI change (no prompt, model or pipeline). The development-time LLM that writes profiles sees only masked content: the constitution's rule on third-party prompts, applied to the operator's tooling. | PASS |
+| Gate — Observability | CLI output and engine logs carry only ids, counts, codes, ordinals and pages. The audit `create` records `via = results_skill`, and each change of a revision commit is audited. | PASS |
+| Workflow | Conventional Commits in Spanish, with no AI mention. The owner decides the implementation branch. | PASS |
+
+**Post-design re-check (after Phase 1)**: unchanged. Five planning adjustments are recorded in `spec.md` Assumptions:
+1. the GENERAL sheet is retired for every season;
+2. race conditions leave the load;
+3. the revision diff and apply are wired;
+4. legacy imports are re-staged;
+5. a revision applies as a whole.
+
+### Project Structure (amendment delta)
+
+**Documentation**:
+- `spec.md` (Clarifications 2026-09-26, FR-044…FR-049, adjustments);
+- `research.md` R-17…R-31;
+- `data-model.md` §11;
+- `contracts/`: six new files — `masked-view.md`, `reading-profile.md`, `results-skill-cli.md`, `staged-import.md`, `revision-via-skill.md`, `ui-review-only.md` — and notes added to `historical-load.md` and `reading-integrity.md`;
+- `quickstart.md` §9;
+- `tasks.md` Phase 11 onward.
+
+**Source code**:
+
+```text
+backend/
+├── alembic/versions/<rev>_race_import_staged_documents.py   # new; down_revision = the single head (be4595de1ad2 at planning)
+├── app/
+│   ├── config.py                                  # − race_max_pdf_mb, race_parse_timeout_seconds, race_pending_ttl_hours
+│   ├── models/race_import_staged_document.py      # new
+│   ├── routers/race_imports.py                    # − /parse, upload helpers, reload + caches; + loader, 409 restage_required, revision branches
+│   ├── services/audit.py                          # − registry entry of /parse
+│   └── services/race/
+│       ├── staged_document.py                     # new: ResultsRow, ParsedCategory, ParsedResults, UnreadableRow; load / delete
+│       ├── import_staging.py                      # stage_extracted_results (parse-free)
+│       ├── completeness.py                        # types from staged_document
+│       ├── ingestor.py · identity_review.py       # − GENERAL
+│       ├── revision.py                            # identity-aware compute_diff; commit_revision wired; reason always required
+│       ├── pdf_parser.py · csv_parser.py          # deleted
+│       └── results_skill/                         # new; imported by no router
+│           ├── __init__.py (ENGINE_VERSION) · vocabulary.py · masking.py · pdf_runs.py
+│           └── profile.py · apply.py · target.py
+├── race_reading_profiles/copa-valle-results-pdf.json          # new
+├── scripts/race_results.py                        # new CLI; scripts/stage_race_history.py deleted
+└── tests/
+    ├── helpers/staging.py (new) · helpers/results_pdf_builder.py (+ unruled fictional layout, CLI entry)
+    ├── fixtures/race/valida_iv_2026_*.pdf         # deleted (real official files)
+    ├── fixtures/race_profiles/fictional-unruled.json
+    ├── privacy/test_no_results_upload.py · scripts/test_race_results_cli.py
+    ├── services/race/results_skill/… · test_staged_document.py · test_revision_diff_identity.py · test_deleted_results_excluded.py
+    └── routers/…                                  # about 60 tests ported from HTTP /parse to stage_for_test
+
+frontend/src/
+├── App.tsx                                        # redirects without ?import
+├── components/competitions/import/ImportWizard.tsx      # − step 1; RaceUploadZone.tsx deleted
+├── components/competitions/imports/LoadsSection.tsx · ResumeStatusNotice.tsx · DiscardImportDialog.tsx
+├── components/competitions/tabs/ResultsTab.tsx · components/calendar/EventForm.tsx
+├── routes/competitions/CompetitionImportPage.tsx · CompetitionsListPage.tsx · CompetitionDetailPage.tsx
+├── api/raceImports.ts · hooks/ai/useRaceImports.ts · hooks/race/useImportPrefill.ts (deleted) · types/raceImports.types.ts
+└── e2e/race-history.spec.ts (stages through the CLI) · prefill-import-from-competition.spec.ts (deleted) · cup-vs-championship.spec.ts
+
+.claude/skills/race-results-load/SKILL.md · references/{masked-view,reading-profile,manifest}.md   # new
+.claude/settings.json                                # + permissions.deny for output/race-results/**/private/**
+docs/10-race-results/history-backfill-design.md (addendum) · runbook-ops.md (§12 rewritten)
+docs/10-race-results/upload-design.md · upload-workflow.md (superseded banner) · CLAUDE.md (race-results bullet)
+docs/implementation-status.md · docs/technical-notes.md
+```
+
+**Structure decision**:
+- The engine lives inside the race module (`app/services/race/results_skill/`) so it shares types, the normalizer and the tests, but no router may import it (pinned).
+- The CLI follows the existing `scripts/` pattern.
+- The skill follows `bitacora-pdf`.
+
+**Implementation order**, expanded in `tasks.md`:
+1. Foundations: migration, model, type move, staging test helper.
+2. Engine: runs, masking, vocabulary, profile, apply, and Copa Valle parity.
+3. Staging on persisted documents: service, loader, router rewiring, legacy 409, GENERAL removal, test ports.
+4. CLI: target guard and evidence upload.
+5. Upload removal and its guard.
+6. Frontend review-only.
+7. Revision wiring.
+8. Skill and deny rules.
+9. Docs, privacy audit and gates.
+10. Owner steps.
+
+**Dependencies**:
+- Phases 2 and 3 are independent after phase 1.
+- Phase 4 needs 2 and 3.
+- Phase 5 needs 3.
+- Phase 6 needs its backend counterparts (3, 5) for the e2e, but its component work can start once the contracts are fixed.
+- Phase 7 needs 3.
+- Phase 8 needs 4.
+- Phase 9 needs everything.
+
+### Complexity Tracking (amendment)
+
+No violation. Watch items:
+
+- **Revision wiring (R-24)** is the largest and most delicate piece, so it has its own phase. If the owner defers it, `stage` must refuse a different reading of a committed válida (`revision_not_available`, CLI exit 12) instead of staging a revision whose commit would only add rows, as the current path does. The skill's report then says the válida needs the revision phase.
+- **Production writes from a laptop.** Hostinger's remote-MySQL allow-list and connection timeouts apply. The CLI stages one válida per transaction, and `--dry` exists to validate before writing.
+- **Unmeasured volume**: the size of the largest real document. The estimate is about 60 KB for 280 rows, well inside MySQL's JSON and packet limits; it is re-checked on the first real válida and recorded here.

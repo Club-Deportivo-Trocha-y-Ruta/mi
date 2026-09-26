@@ -1,5 +1,7 @@
 # Contract — Historical load (US5 · FR-023…FR-029)
 
+> **Amended 2026-09-26.** The sections *Staging service* and *Script* are superseded. Results are no longer staged from an uploaded file or by `stage_race_history.py`: the results skill stages them (`staged-import.md`, `results-skill-cli.md`). The row *Same válida, different file* now follows `revision-via-skill.md`. Full start list, points and standings, idempotence by SHA-256, board fields, `matches_unresolved`, the current season untouched, and ordering still hold.
+
 One path, no parallel rules: the fifteen historical válidas go through the same preview → dry-run → commit flow, duplicate protection and audit trail as a current-season import (FR-023).
 
 ## Staging service

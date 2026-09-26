@@ -1,5 +1,7 @@
 # Contract — Reading integrity (US1 · FR-001…FR-007)
 
+> **Amended 2026-09-26.** The *Parser* section is superseded: the fixed PDF and CSV parsers are retired, and reading is done by the results-skill engine applying a reading profile (`reading-profile.md`, `masked-view.md`). Completeness, corrections, acknowledgement and partial commit still hold; their rows now come from the staged document (`staged-import.md`).
+
 ## Parser (`app/services/race/pdf_parser.py`)
 
 ```python

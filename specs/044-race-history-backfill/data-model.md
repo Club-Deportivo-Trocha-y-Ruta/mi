@@ -108,3 +108,101 @@ Rows inside `corrections` hold rider names; this JSON is database-only and is ex
 7. Season-specific categories never appear in a selector for current-season data.
 8. Re-staging or re-committing an identical file creates no row in any table.
 9. No log line, trace or exception message produced by any new code path contains a rider name, club or city.
+
+---
+
+## 11. Amendment 2026-09-26 — skill-only results loading
+
+One Alembic revision. `down_revision` is the single head at the time of writing (`be4595de1ad2` on this branch); run `alembic heads` and expect exactly one line before creating it. The revision adds no enum value to an existing column.
+
+### 11.1 `race_import_staged_documents` (new)
+
+This table holds the rows a skill run extracted for one staged import. It is the only place the review steps read rows from; the server never re-reads the stored file (FR-048, FR-049, research R-20).
+
+| Column | Type | Notes |
+|---|---|---|
+| `import_id` | `INT PK, FK → race_imports.id ON DELETE CASCADE` | 1:1 with the import |
+| `schema_version` | `SMALLINT NOT NULL` | `1` |
+| `profile_id` | `VARCHAR(64) NOT NULL` | reading profile applied (R-18) |
+| `profile_sha256` | `CHAR(64) NOT NULL` | hash of the profile file as applied, so a later profile edit cannot silently change what the coach reviewed |
+| `engine_version` | `VARCHAR(16) NOT NULL` | `results_skill` engine version |
+| `document_json` | `JSON NOT NULL` | see 11.2 |
+| `created_at` | `DATETIME NOT NULL` | database clock |
+
+The table has no index beyond the primary key.
+
+Rows hold rider names, clubs and cities, the same sensitivity class as `race_competitors` and `parse_meta_json["corrections"]`. They live in the database only. No schema serialises them, and no log, trace or exception message includes them.
+
+### 11.2 `document_json`
+
+```json
+{
+  "categories": [
+    {"header_raw": "PREJUVENIL A DAMAS", "code": "PJUV_A_F",
+     "rows": [{"position": 1, "bib": "123", "name": "…", "city": "…", "club": "…",
+               "time_raw": "1:02:03", "points": 150}]}
+  ],
+  "unreadable_rows": [{"page": 3, "ordinal": 12}]
+}
+```
+
+- `categories` keeps document order.
+- `code` is `null` for an unrecognised header (FR-002).
+- `time_raw == ""` means classified without time (R-01 point 4). A status keeps its text (`DNF`, `(-1 VUELTA)`, …) and is read by `normalizer.parse_time`, as before.
+- `staged_document.load` deserialises the document into `ParsedResults`. The types are unchanged, moved to `app/services/race/staged_document.py`.
+
+### 11.3 `race_imports` — no schema change; meaning for staged imports
+
+| Column | Value for an import staged by the skill |
+|---|---|
+| `kind` | always `resultados` (R-25); `general_storage_path`, `general_storage_url` and `general_sha256` stay `NULL` |
+| `sha256` | SHA-256 of the original file, used for duplicate protection as before |
+| `storage_path` / `storage_url` | the evidence file (R-23); moved from `pending/` to `committed/` on commit, as before |
+| `imported_by_user_id` | the `--user-id` given to `stage`, which must be an active admin or coach (R-22) |
+| `imported_at` | database clock (R-20) |
+| `status` | `pending` at stage; then `committed` or `discarded`, as before |
+| `parent_import_id` / `revision_reason` | set by the revision commit (R-24); today they were never set on this path |
+
+`parse_meta_json` keys written at stage:
+- The public set the wizard's resume path needs: `header`, `conditions` (every field `null`), `categories_found`, `n_rows_resultados`, `n_rows_general` (= 0), `categories` (counts plus completeness) and `unreadable_rows`.
+- The internal keys commit uses: `results_ext`, `results_storage_path` and `parse_uuid`.
+- Two new keys, `source: "results_skill"` and `profile_id`, which are not public.
+
+`corrections`, `acknowledged` and `pending_categories` behave as today.
+
+### 11.4 Lifecycle
+
+```text
+stage (skill) ──► pending ──► commit, every category consistent ──► committed      [document deleted, meta NULL]
+                     │        commit, some categories pending    ──► committed      [document kept, pending_categories]
+                     │                         └── commit-pending, none left ──►    [document deleted, meta NULL]
+                     └──► discard ──► discarded                                     [document deleted]
+
+revision (a different reading of a committed válida): same lifecycle; dry-run returns the diff,
+commit applies it through commit_revision and sets parent_import_id and revision_reason.
+
+legacy (staged by the old upload, no document):
+  pending                              → GET and discard only; every other review route: 409 restage_required
+  committed with pending_categories    → commit-pending: 409 restage_required (re-stage it as a revision, R-27)
+```
+
+### 11.5 Reading profiles (files, not tables)
+
+Profiles live in `backend/race_reading_profiles/<profile_id>.json`, are committed and reviewed, and hold no rider data. The schema is in `contracts/reading-profile.md`. The profile's hash is copied into `race_import_staged_documents.profile_sha256` at stage.
+
+### 11.6 Settings and variables removed
+
+- Backend: `RACE_MAX_PDF_MB`, `RACE_PARSE_TIMEOUT_SECONDS` and `RACE_PENDING_TTL_HOURS` (the last is unused today), in `app/config.py` and `.env.example`.
+- Frontend: `VITE_RACE_MAX_PDF_MB`.
+- The evidence size cap becomes a constant of the skill CLI (8 MB, today's value).
+
+### 11.7 Invariants added (each has a test)
+
+10. No endpoint accepts a results file. The set of file-accepting endpoints equals the reviewed allow-list of four (training route file, session media, course variant create and replace).
+11. No review endpoint reads the stored file. A staged import's rows come only from its staged document.
+12. A staged document exists only while its import is `pending` or has `pending_categories`. Commit-to-completion and discard delete it.
+13. Without `--target production --confirm produccion`, `stage` writes only to a database whose host is local and differs from the production target.
+14. A masked view produced from a synthetic file contains none of that file's names, clubs or cities. No subcommand's stdout contains any either.
+15. A committed revision changes committed results only through `commit_revision`, with one `race_result_revisions` row per change. Athlete links survive, and every read path excludes soft-deleted results.
+16. `imported_at` of a staged import comes from the database clock.
+17. A reading profile committed to the repository validates against schema v1 and contains no key outside it.

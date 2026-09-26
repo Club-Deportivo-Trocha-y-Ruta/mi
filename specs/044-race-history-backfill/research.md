@@ -310,6 +310,7 @@ Three findings shape the design:
   Rows of new competitors pass the per-import identity gate (feature 045), like any staged import.
 - **Links and deleted rows.** Athlete links are never overwritten (existing `commit_revision` rule). Read paths already filter `race_results.deleted_at IS NULL` (24 uses across the race module). A test sweep pins that filter on every surface that consumes results: `history`, `field_metrics`, `standings`, `results_read`, the analyst context and the family views.
 - **Legacy partial commits** (R-27) are completed through this path: re-staging the válida yields a revision whose diff creates the rows of the pending categories.
+- **No partial revision.** FR-006's partial commit stays for first loads. A revision applies as a whole: every category of the new reading must be consistent or acknowledged first (`409 revision_incomplete` otherwise), because a half-applied revision would leave a válida mixing two readings. The spec's Assumptions record this as a planning adjustment. The reason is mandatory on every revision commit, not only when rows are removed, as the spec requires.
 
 **Rationale.** The owner chose revisions over a single-row editor. The diff and apply logic exist and are tested, and so does the UI. What is missing is the wiring and the identity-aware match, which is less work than a new editor and keeps a single audited correction path. The wiring is an independent phase in `tasks.md`, so the owner can defer it without blocking the rest.
 
