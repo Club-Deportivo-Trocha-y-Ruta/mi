@@ -62,7 +62,7 @@ from app.models.race_result import RaceResult
 from app.schemas.race import EventMeta
 from app.services.race import revision as revision_svc
 from app.services.race.ingestor import RaceIngestor
-from app.services.race.pdf_parser import ResultsRow
+from app.services.race.staged_document import ResultsRow
 
 from tests.fixtures.race_history_fixtures import create_race_category, create_user
 from tests.helpers.audit_tables import AUDIT_TABLES

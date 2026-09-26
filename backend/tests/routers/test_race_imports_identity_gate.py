@@ -57,8 +57,14 @@ from app.models.race_identity_candidate import (
 from app.models.race_import import RaceImport, RaceImportStatus
 from app.models.race_result import RaceResult
 from app.models.user import User, UserRole
+from app.models.race_series import RaceSeriesKind, RaceSeriesLevel
 from app.services.race import identity_review as ir
 from app.services.race.identity_resolver import signature_triple
+from app.services.race.import_staging import StageHeader, stage_extracted_results
+from app.services.race.results_skill.apply import apply_profile
+from app.services.race.results_skill.profile import load_profile
+from app.services.race.staged_document import StagedProfileMeta
+from app.services.request_context import AuditContext
 from tests.helpers.audit_tables import AUDIT_TABLES
 from tests.helpers.results_pdf_builder import (
     CategorySpec,
@@ -253,17 +259,21 @@ def _category(header: str, names: tuple[str, ...], bib_start: int, *, gap: bool 
 
 
 async def _stage(
+    db_session_factory,
     client,
     tmp_path: Path,
     categories: list[CategorySpec],
     valida_num: int,
     *,
-    with_general: bool = False,
+    actor_id: int = 10,
 ) -> int:
-    """Sube una carga (``/parse``) y devuelve su ``parse_id`` (queda ``pending``).
-
-    ``with_general`` adjunta un PDF GENERAL: el contenido lo dicta el fixture
-    ``general_rows`` (el parser está sustituido)."""
+    """Sucesor de ``POST /parse`` (retirado, T152): interpreta el PDF
+    sintético con ``results_skill.apply_profile`` y staguea vía
+    ``stage_extracted_results``. Devuelve su ``parse_id`` (queda
+    ``pending``). ``client`` ya no se usa para stagear, pero se conserva en
+    la firma para no reordenar cada llamador; GENERAL se retiró (R-25) —
+    el parámetro ``with_general`` que existía aquí desaparece con él (nunca
+    se pasaba ``True``)."""
     pdf = build_results_pdf(
         tmp_path / f"sintetico_{valida_num}.pdf",
         valida_num=valida_num,
@@ -272,24 +282,41 @@ async def _stage(
         categories=categories,
         name_generator=FakeNameGenerator(),
     )
-    form = {
-        "series_name": "Copa Valle de Ciclomontañismo",
-        "season": "2024",
-        "valida_num": str(valida_num),
-        "event_name": f"VALIDA {valida_num} PALMIRA",
-        "event_date": f"2024-06-{valida_num:02d}",
-        "location": "Palmira",
-    }
-    files = {"resultados_pdf": ("resultados.pdf", pdf.read_bytes(), "application/pdf")}
-    if with_general:
-        files["general_pdf"] = (
-            "general.pdf",
-            b"%PDF-1.4 general " + str(valida_num).encode(),
-            "application/pdf",
+    pdf_bytes = pdf.read_bytes()
+    profile = load_profile("copa-valle-results-pdf")
+    document = apply_profile(pdf_bytes, "pdf", profile)
+
+    header = StageHeader(
+        series_name="Copa Valle de Ciclomontañismo",
+        series_kind=RaceSeriesKind.cup,
+        series_level=RaceSeriesLevel.departmental,
+        season=2024,
+        valida_num=valida_num,
+        event_name=f"VALIDA {valida_num} PALMIRA",
+        event_date=date(2024, 6, valida_num),
+        location="Palmira",
+    )
+    staged_profile = StagedProfileMeta(
+        profile_id=profile.profile_id,
+        profile_sha256="9" * 64,
+        engine_version="test-helper",
+    )
+
+    async with db_session_factory() as session:
+        actor = await session.get(User, actor_id)
+        result = await stage_extracted_results(
+            session,
+            document=document,
+            profile=staged_profile,
+            file_bytes=pdf_bytes,
+            original_filename="resultados.pdf",
+            results_ext="pdf",
+            header=header,
+            actor=actor,
+            ctx=AuditContext.for_user(actor, request_id="test-stage-identity-gate"),
         )
-    r = await client.post(f"{_IMPORTS_URL}/parse", data=form, files=files)
-    assert r.status_code == 200, r.text
-    return r.json()["parse_id"]
+        await session.commit()
+    return result.import_id
 
 
 def _snapshot(name: str, *, competitor_id: Optional[int] = None) -> dict:
@@ -400,8 +427,8 @@ class TestCommitGateIsPerImport:
         self, coach_client, tmp_path, db_session_factory
     ):
         """(a) el candidato solo habla de las filas de la carga B."""
-        parse_a = await _stage(coach_client, tmp_path, [_category("INFANTIL A", A_NAMES, 100)], 3)
-        await _stage(coach_client, tmp_path, [_category("INFANTIL A", B_NAMES, 200)], 4)
+        parse_a = await _stage(db_session_factory, coach_client, tmp_path, [_category("INFANTIL A", A_NAMES, 100)], 3)
+        await _stage(db_session_factory, coach_client, tmp_path, [_category("INFANTIL A", B_NAMES, 200)], 4)
         cand_id = await _seed_candidate(
             db_session_factory, _snapshot(B_NAMES[0]), _snapshot(B_NAMES[1])
         )
@@ -423,8 +450,8 @@ class TestCommitGateIsPerImport:
         self, coach_client, tmp_path, db_session_factory
     ):
         """(b) un lado es de la carga A y el otro de la B."""
-        parse_a = await _stage(coach_client, tmp_path, [_category("INFANTIL A", A_NAMES, 100)], 3)
-        await _stage(coach_client, tmp_path, [_category("INFANTIL A", B_NAMES, 200)], 4)
+        parse_a = await _stage(db_session_factory, coach_client, tmp_path, [_category("INFANTIL A", A_NAMES, 100)], 3)
+        await _stage(db_session_factory, coach_client, tmp_path, [_category("INFANTIL A", B_NAMES, 200)], 4)
         await _seed_candidate(db_session_factory, _snapshot(A_NAMES[0]), _snapshot(B_NAMES[0]))
 
         r = await coach_client.post(
@@ -441,7 +468,7 @@ class TestCommitGateIsPerImport:
     ):
         """(c) el competidor de la carga es nuevo (sin ``competitor_id``): su
         clave alcanza, no hace falta que ya exista en ``race_competitors``."""
-        parse_a = await _stage(coach_client, tmp_path, [_category("INFANTIL A", A_NAMES, 100)], 3)
+        parse_a = await _stage(db_session_factory, coach_client, tmp_path, [_category("INFANTIL A", A_NAMES, 100)], 3)
         await _seed_candidate(
             db_session_factory,
             _snapshot(A_NAMES[1], competitor_id=None),
@@ -460,8 +487,8 @@ class TestCommitGateIsPerImport:
     async def test_pending_for_import_counts_only_this_imports_candidates(
         self, coach_client, tmp_path, db_session_factory
     ):
-        parse_a = await _stage(coach_client, tmp_path, [_category("INFANTIL A", A_NAMES, 100)], 3)
-        await _stage(coach_client, tmp_path, [_category("INFANTIL A", B_NAMES, 200)], 4)
+        parse_a = await _stage(db_session_factory, coach_client, tmp_path, [_category("INFANTIL A", A_NAMES, 100)], 3)
+        await _stage(db_session_factory, coach_client, tmp_path, [_category("INFANTIL A", B_NAMES, 200)], 4)
         await _seed_candidate(db_session_factory, _snapshot(A_NAMES[0]), _snapshot(OUTSIDER))
         await _seed_candidate(db_session_factory, _snapshot(OUTSIDER), _snapshot(A_NAMES[2]))
         await _seed_candidate(db_session_factory, _snapshot(B_NAMES[0]), _snapshot(B_NAMES[1]))
@@ -477,7 +504,7 @@ class TestCommitGateIsPerImport:
     async def test_decided_candidate_of_this_import_does_not_block(
         self, coach_client, tmp_path, db_session_factory
     ):
-        parse_a = await _stage(coach_client, tmp_path, [_category("INFANTIL A", A_NAMES, 100)], 3)
+        parse_a = await _stage(db_session_factory, coach_client, tmp_path, [_category("INFANTIL A", A_NAMES, 100)], 3)
         await _seed_candidate(
             db_session_factory,
             _snapshot(A_NAMES[0]),
@@ -502,12 +529,12 @@ class TestCommitGateIsPerImport:
 # ===========================================================================
 
 
-async def _stage_partial_import(client, tmp_path: Path) -> int:
+async def _stage_partial_import(db_session_factory, client, tmp_path: Path) -> int:
     """Sube la carga A con una categoría sana y otra con hueco de posiciones
     (``MASTER C1``: ordinales [1, 2, 4]). Devuelve su ``parse_id``."""
     ok_cat = _category("MASTER B1", ("Hugo Sano Uno", "Iris Sana Dos"), 300)
     gap_cat = _category("MASTER C1", A_NAMES, 100, gap=True)
-    return await _stage(client, tmp_path, [ok_cat, gap_cat], 3)
+    return await _stage(db_session_factory, client, tmp_path, [ok_cat, gap_cat], 3)
 
 
 async def _first_commit_and_acknowledge(client, parse_a: int) -> None:
@@ -528,8 +555,8 @@ class TestCommitPendingGateIsPerImport:
     async def test_candidate_about_another_import_does_not_block(
         self, coach_client, tmp_path, db_session_factory
     ):
-        parse_a = await _stage_partial_import(coach_client, tmp_path)
-        await _stage(coach_client, tmp_path, [_category("INFANTIL A", B_NAMES, 200)], 4)
+        parse_a = await _stage_partial_import(db_session_factory, coach_client, tmp_path)
+        await _stage(db_session_factory, coach_client, tmp_path, [_category("INFANTIL A", B_NAMES, 200)], 4)
         await _first_commit_and_acknowledge(coach_client, parse_a)
         await _seed_candidate(db_session_factory, _snapshot(B_NAMES[0]), _snapshot(B_NAMES[1]))
 
@@ -544,8 +571,8 @@ class TestCommitPendingGateIsPerImport:
     async def test_candidate_spanning_this_and_another_import_blocks(
         self, coach_client, tmp_path, db_session_factory
     ):
-        parse_a = await _stage_partial_import(coach_client, tmp_path)
-        await _stage(coach_client, tmp_path, [_category("INFANTIL A", B_NAMES, 200)], 4)
+        parse_a = await _stage_partial_import(db_session_factory, coach_client, tmp_path)
+        await _stage(db_session_factory, coach_client, tmp_path, [_category("INFANTIL A", B_NAMES, 200)], 4)
         await _first_commit_and_acknowledge(coach_client, parse_a)
         await _seed_candidate(db_session_factory, _snapshot(A_NAMES[0]), _snapshot(B_NAMES[0]))
 
@@ -560,7 +587,7 @@ class TestCommitPendingGateIsPerImport:
     async def test_candidate_about_a_new_competitor_of_this_import_blocks(
         self, coach_client, tmp_path, db_session_factory
     ):
-        parse_a = await _stage_partial_import(coach_client, tmp_path)
+        parse_a = await _stage_partial_import(db_session_factory, coach_client, tmp_path)
         await _first_commit_and_acknowledge(coach_client, parse_a)
         await _seed_candidate(
             db_session_factory,
@@ -581,7 +608,7 @@ class TestCommitPendingGateIsPerImport:
     ):
         """Las filas de ``MASTER B1`` ya se ingestaron en el primer commit: un
         candidato sobre ellas no frena el ``/commit-pending`` de otra categoría."""
-        parse_a = await _stage_partial_import(coach_client, tmp_path)
+        parse_a = await _stage_partial_import(db_session_factory, coach_client, tmp_path)
         await _first_commit_and_acknowledge(coach_client, parse_a)
         await _seed_candidate(
             db_session_factory, _snapshot("Hugo Sano Uno"), _snapshot(OUTSIDER)
@@ -622,6 +649,7 @@ class TestGateWithARealRebuild:
     ):
         await _seed_club_athlete(db_session_factory)
         parse_a = await _stage(
+            db_session_factory,
             coach_client,
             tmp_path,
             [_category("INFANTIL A", (NEAR_DUPLICATE, *A_NAMES[1:]), 100)],
@@ -653,7 +681,7 @@ class TestGateWithARealRebuild:
         """«Los commits parciales avanzan»: el candidato habla de una fila que
         solo está en una categoría con hueco (queda ``pending_categories``), o
         sea que este commit no la ingesta."""
-        parse_a = await _stage_partial_import(coach_client, tmp_path)
+        parse_a = await _stage_partial_import(db_session_factory, coach_client, tmp_path)
         await _seed_candidate(db_session_factory, _snapshot(A_NAMES[0]), _snapshot(OUTSIDER))
 
         r = await coach_client.post(
@@ -690,7 +718,7 @@ class TestCorrectionsRefreshTheQueue:
         self, coach_client, tmp_path, db_session_factory
     ):
         await _seed_club_athlete(db_session_factory)
-        parse_a = await _stage(coach_client, tmp_path, [_category("INFANTIL A", A_NAMES, 100)], 3)
+        parse_a = await _stage(db_session_factory, coach_client, tmp_path, [_category("INFANTIL A", A_NAMES, 100)], 3)
         # La cola queda al día DESPUÉS de la carga (un candidato de otra cosa).
         await _seed_candidate(db_session_factory, _snapshot(B_NAMES[0]), _snapshot(B_NAMES[1]))
         await self._add_row(coach_client, parse_a, NEAR_DUPLICATE)
@@ -709,7 +737,7 @@ class TestCorrectionsRefreshTheQueue:
     ):
         """El recálculo por corrección no inventa bloqueos."""
         await _seed_club_athlete(db_session_factory)
-        parse_a = await _stage(coach_client, tmp_path, [_category("INFANTIL A", A_NAMES, 100)], 3)
+        parse_a = await _stage(db_session_factory, coach_client, tmp_path, [_category("INFANTIL A", A_NAMES, 100)], 3)
         await _seed_candidate(db_session_factory, _snapshot(B_NAMES[0]), _snapshot(B_NAMES[1]))
         await self._add_row(coach_client, parse_a, "Hugo Distinto Cinco")
 
@@ -728,7 +756,7 @@ class TestCorrectionsRefreshTheQueue:
         recalcular (un rebuild reparsea todos los imports: minutos en Render).
         Se nota porque un rebuild podaría este candidato sembrado a mano, que
         no involucra a ningún atleta del club."""
-        parse_a = await _stage(coach_client, tmp_path, [_category("INFANTIL A", A_NAMES, 100)], 3)
+        parse_a = await _stage(db_session_factory, coach_client, tmp_path, [_category("INFANTIL A", A_NAMES, 100)], 3)
         await self._add_row(coach_client, parse_a, "Hugo Distinto Cinco")
         await _seed_candidate(db_session_factory, _snapshot(A_NAMES[0]), _snapshot(OUTSIDER))
 

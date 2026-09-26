@@ -5,20 +5,19 @@ de ``AsyncSession`` que usa el ingestor — select, add, flush, commit, rollback
 No requiere aiosqlite ni MySQL.
 
 Cobertura mínima (≥5 casos, workflow §4.4):
-- Ingest V-IV completo: 26 categorías, 229 race_results, 10 TyR.
+- Ingest V-IV completo (dataset sintético multi-categoría): conteos,
+  velocidad, metadata del evento (T153 — ver nota de amendment más abajo).
 - Re-ingest sin SHA: idempotente por UNIQUE (results_skipped sube).
 - Re-ingest con SHA committed: abort idempotente (results_inserted=0).
 - Match decision aplicada: bib 553 queda con athlete_id confirmado.
 - Warning tiempo anómalo: bib 424 (0:04:33 en INF_A) genera warning con
   ``bib`` + ``cat`` pero NO el nombre.
-- GENERAL primero: bib 1411 crea competitor pero NO race_result V-IV.
 - Sex inferido por code de categoría.
 """
 from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-from pathlib import Path
 
 import pytest
 
@@ -30,12 +29,8 @@ from app.models.race_result import ResultStatus
 from app.schemas.race import EventMeta
 from app.services.race.ingestor import RaceIngestor, _derive_sex_from_code
 from app.services.race.normalizer import normalize_name
-from app.services.race.pdf_parser import (
-    GeneralRow,
-    ResultsRow,
-    parse_general_pdf,
-    parse_results_pdf,
-)
+from app.services.race.staged_document import ResultsRow
+from tests.helpers.results_pdf_builder import FakeNameGenerator
 
 
 # ---------------------------------------------------------------------------
@@ -57,8 +52,8 @@ def _meta_v4() -> EventMeta:
         surface_condition=SurfaceCondition.seca,
         altitude_msnm=1003,
         weather_notes="Pista en buen estado.",
-        pdf_results_filename="valida_iv_2026_resultados.pdf",
-        pdf_general_filename="valida_iv_2026_general.pdf",
+        pdf_results_filename="resultados_sintetico_v4.pdf",
+        pdf_general_filename="general_sintetico_v4.pdf",
     )
 
 
@@ -81,30 +76,55 @@ def _row(
     )
 
 
-def _g_row(bib: str, name: str, club: str, ppv: list[int]) -> GeneralRow:
-    return GeneralRow(
-        overall_position=1,
-        bib=bib,
-        name=name,
-        city="Yumbo",
-        club=club,
-        points_per_valida=ppv,
-        total_points=sum(ppv),
-    )
+# ---------------------------------------------------------------------------
+# Amendment 2026-09-26 (T153): ``pdf_parser.py``/``parse_results_pdf`` se
+# retiraron — las 4 pruebas que leían los PDFs reales de la Válida IV
+# (los PDFs reales de válida IV, T155 los borra)
+# staguean ahora un dataset 100% sintético (``FakeNameGenerator``, nunca
+# datos reales de menores) en vez de parsear un archivo. Se pierde la cifra
+# exacta "229 filas/26 categorías/10 TyR" del acta real — lo que estas
+# pruebas verifican no es esa cifra en sí, sino que el ingestor cuenta,
+# inserta y reporta correctamente sobre un dataset multi-categoría con TyR
+# mezclados con externos; las cifras nuevas son las que el propio dataset
+# sintético declara (ver ``_N_CATEGORIES``/``_ROWS_PER_CATEGORY``/``_N_TYR``).
+# ---------------------------------------------------------------------------
+
+_SYNTHETIC_CATEGORY_CODES = ["TET_CP", "PRE_A", "INF_A_F", "JUN_M", "MAS_B1"]
+_N_CATEGORIES = len(_SYNTHETIC_CATEGORY_CODES)
+_ROWS_PER_CATEGORY = 4
+_TOTAL_ROWS = _N_CATEGORIES * _ROWS_PER_CATEGORY
+#: De cada categoría, la primera fila es TyR (club Trocha y Ruta); el resto
+#: son clubes externos ficticios.
+_N_TYR = _N_CATEGORIES
+
+
+def _build_synthetic_v4_results() -> dict[str, list[ResultsRow]]:
+    gen = FakeNameGenerator()
+    results: dict[str, list[ResultsRow]] = {}
+    for code in _SYNTHETIC_CATEGORY_CODES:
+        rows = []
+        for pos in range(1, _ROWS_PER_CATEGORY + 1):
+            club = "Club Trocha y Ruta" if pos == 1 else gen.next_club()
+            rows.append(
+                _row(
+                    pos, str(100 * len(results) + pos), gen.next_name(), club,
+                    f"0:{30 + pos:02d}:00", max(1, 40 - pos),
+                )
+            )
+        results[code] = rows
+    return results
 
 
 # ===========================================================================
-# 1. Ingest V-IV completo desde fixtures PDF
+# 1. Ingest V-IV completo (dataset sintético multi-categoría)
 # ===========================================================================
 
 
 class TestIngestFromFullPdf:
     @pytest.mark.asyncio
-    async def test_ingest_valida_iv_creates_expected_counts(
-        self, fake_session, valida_iv_resultados_pdf: Path, valida_iv_general_pdf: Path
-    ):
-        """Ingestar V-IV completo desde PDFs reales — verificar conteos."""
-        results = parse_results_pdf(valida_iv_resultados_pdf)
+    async def test_ingest_valida_iv_creates_expected_counts(self, fake_session):
+        """Ingestar V-IV completo (dataset sintético) — verificar conteos."""
+        results = _build_synthetic_v4_results()
 
         ingestor = RaceIngestor(fake_session)
         report = await ingestor.ingest_event(
@@ -113,20 +133,14 @@ class TestIngestFromFullPdf:
             ingested_by_user_id=999,
         )
 
-        # 26 categorías observadas en V-IV (edge-cases §1)
-        assert len(results) == 26
+        assert len(results) == _N_CATEGORIES
 
-        # 229 finalistas en RESULTADOS. Corregido de 227 en la feature 044: el
-        # acta imprime 229 y el parser por líneas perdía dos filas con club
-        # largo superpuesto al tiempo (PREINFANTIL B puesto 17, MASTER B1
-        # puesto 5); el lector por banda las recupera.
         total_rows = sum(len(rs) for rs in results.values())
-        assert total_rows == 229
-        assert report.results_inserted == 229
+        assert total_rows == _TOTAL_ROWS
+        assert report.results_inserted == _TOTAL_ROWS
         assert report.results_skipped == 0
 
-        # 10 TyR en RESULTADOS V-IV (edge-cases §5)
-        assert report.tyr_count == 10
+        assert report.tyr_count == _N_TYR
 
         # Por default, ningún athlete_id se asigna automáticamente
         race_results = list(fake_session.store.results.values())
@@ -135,17 +149,15 @@ class TestIngestFromFullPdf:
             if fake_session.store.competitors[r.competitor_id].club_text
             and "trocha" in (fake_session.store.competitors[r.competitor_id].club_text.lower())
         ]
-        assert len(tyr_results) == 10
+        assert len(tyr_results) == _N_TYR
         assert all(r.athlete_id is None for r in tyr_results)
 
     @pytest.mark.asyncio
-    async def test_ingest_speed_under_5s(
-        self, fake_session, valida_iv_resultados_pdf: Path, valida_iv_general_pdf: Path
-    ):
+    async def test_ingest_speed_under_5s(self, fake_session):
         """Workflow §4 criterio: ingest V-IV < 5s."""
         import time as _time
 
-        results = parse_results_pdf(valida_iv_resultados_pdf)
+        results = _build_synthetic_v4_results()
 
         ingestor = RaceIngestor(fake_session)
         t0 = _time.monotonic()
@@ -158,11 +170,9 @@ class TestIngestFromFullPdf:
         assert elapsed < 5.0, f"Ingest tardó {elapsed:.2f}s (debe ser <5s)"
 
     @pytest.mark.asyncio
-    async def test_ingest_creates_event_with_meta(
-        self, fake_session, valida_iv_resultados_pdf: Path
-    ):
+    async def test_ingest_creates_event_with_meta(self, fake_session):
         """``RaceEvent`` se persiste con todos los campos de ``EventMeta``."""
-        results = parse_results_pdf(valida_iv_resultados_pdf)
+        results = _build_synthetic_v4_results()
 
         ingestor = RaceIngestor(fake_session)
         report = await ingestor.ingest_event(
@@ -180,7 +190,7 @@ class TestIngestFromFullPdf:
         assert event.temperature_c == Decimal("27.5")
         assert event.surface_condition == SurfaceCondition.seca
         assert event.altitude_msnm == 1003
-        assert event.pdf_results_filename == "valida_iv_2026_resultados.pdf"
+        assert event.pdf_results_filename == "resultados_sintetico_v4.pdf"
 
 
 # ===========================================================================
@@ -513,11 +523,9 @@ class TestSexDerivation:
 
 class TestFullIdempotency:
     @pytest.mark.asyncio
-    async def test_re_ingest_pdf_committed_aborts_clean(
-        self, fake_session, valida_iv_resultados_pdf: Path
-    ):
-        """Ingest V-IV completo + re-ingest con mismo sha = abort."""
-        results = parse_results_pdf(valida_iv_resultados_pdf)
+    async def test_re_ingest_pdf_committed_aborts_clean(self, fake_session):
+        """Ingest V-IV completo (dataset sintético) + re-ingest con mismo sha = abort."""
+        results = _build_synthetic_v4_results()
         sha = "f" * 64
         ingestor = RaceIngestor(fake_session)
 
@@ -527,9 +535,7 @@ class TestFullIdempotency:
             pdf_results_sha256=sha,
             ingested_by_user_id=1,
         )
-        # 229, no 227: ver la nota de test_ingest_valida_iv_creates_expected_counts
-        # (el parser por líneas perdía dos filas con club largo superpuesto).
-        assert r1.results_inserted == 229
+        assert r1.results_inserted == _TOTAL_ROWS
 
         # Re-ingest con mismo sha → no escribe results
         snapshot_results_count = len(fake_session.store.results)

@@ -48,8 +48,18 @@ from app.models.race_category import RaceCategory
 from app.models.race_competitor import RaceCompetitor
 from app.models.race_import import RaceImport
 from app.models.race_result import RaceResult
-from app.models.race_series import RaceSeries
+from app.models.race_series import RaceSeries, RaceSeriesKind, RaceSeriesLevel
 from app.models.user import User, UserRole
+from app.services.race.import_staging import (
+    StageHeader,
+    _categories_read,
+    _unreadable_rows_meta,
+    stage_extracted_results,
+)
+from app.services.race.results_skill.apply import apply_profile
+from app.services.race.results_skill.profile import load_profile
+from app.services.race.staged_document import StagedProfileMeta
+from app.services.request_context import AuditContext
 from tests.helpers.audit_tables import AUDIT_TABLES
 from tests.helpers.results_pdf_builder import (
     CategorySpec,
@@ -232,14 +242,73 @@ def _build_pdf_bytes(
     return path.read_bytes()
 
 
-async def _parse(client, tmp_path, categories, **form_overrides) -> dict:
-    pdf_bytes = _build_pdf_bytes(tmp_path, categories)
-    files = {"resultados_pdf": ("resultados.pdf", pdf_bytes, "application/pdf")}
-    r = await client.post(
-        f"{_IMPORTS_URL}/parse", data=_historical_form(**form_overrides), files=files
+async def _stage(
+    db_session_factory, pdf_bytes: bytes, *, actor_id: int = 10, **form_overrides
+):
+    """Sucesor de ``POST /parse`` (retirado, T152): interpreta ``pdf_bytes``
+    con ``results_skill.apply_profile`` y staguea vía
+    ``stage_extracted_results``. Devuelve ``(stage_result, categories_read,
+    unreadable_rows_read)`` — la tercera y cuarta pieza son las mismas que
+    la vieja respuesta HTTP de ``/parse`` traía en ``categories``/
+    ``unreadable_rows``."""
+    form = _historical_form(**form_overrides)
+    profile = load_profile("copa-valle-results-pdf")
+    document = apply_profile(pdf_bytes, "pdf", profile)
+
+    header = StageHeader(
+        series_name=form["series_name"],
+        series_kind=RaceSeriesKind.cup,
+        series_level=RaceSeriesLevel.departmental,
+        season=int(form["season"]),
+        valida_num=int(form["valida_num"]),
+        event_name=form["event_name"],
+        event_date=date.fromisoformat(form["event_date"]),
+        location=form["location"],
     )
-    assert r.status_code == 200, r.text
-    return r.json()
+    staged_profile = StagedProfileMeta(
+        profile_id=profile.profile_id,
+        profile_sha256="8" * 64,
+        engine_version="test-helper",
+    )
+
+    async with db_session_factory() as session:
+        actor = await session.get(User, actor_id)
+        parsed_codes = {c.code for c in document.categories if c.code}
+        cat_by_code: dict[str, RaceCategory] = {}
+        if parsed_codes:
+            cat_stmt = select(RaceCategory).where(RaceCategory.code.in_(parsed_codes))
+            cat_by_code = {
+                c.code: c for c in (await session.execute(cat_stmt)).scalars().all()
+            }
+        categories_read = _categories_read(document, cat_by_code)
+        unreadable_rows_read = _unreadable_rows_meta(document)
+
+        result = await stage_extracted_results(
+            session,
+            document=document,
+            profile=staged_profile,
+            file_bytes=pdf_bytes,
+            original_filename="resultados.pdf",
+            results_ext="pdf",
+            header=header,
+            actor=actor,
+            ctx=AuditContext.for_user(actor, request_id="test-stage-history"),
+        )
+        await session.commit()
+
+    return result, categories_read, unreadable_rows_read
+
+
+async def _parse(client, tmp_path, categories, db_session_factory, **form_overrides) -> dict:
+    pdf_bytes = _build_pdf_bytes(tmp_path, categories)
+    result, categories_read, unreadable_rows_read = await _stage(
+        db_session_factory, pdf_bytes, **form_overrides
+    )
+    return {
+        "parse_id": result.import_id,
+        "categories": [c.model_dump() for c in categories_read],
+        "unreadable_rows": unreadable_rows_read,
+    }
 
 
 def _external_category(header: str, n: int, bib_start: int) -> CategorySpec:
@@ -289,7 +358,7 @@ class TestFullStartListCommitted:
     ):
         cat_a = _external_category("INFANTIL A", 2, 100)
         cat_b = _external_category("MASTER A", 3, 200)
-        parsed = await _parse(coach_client, tmp_path, [cat_a, cat_b])
+        parsed = await _parse(coach_client, tmp_path, [cat_a, cat_b], db_session_factory)
         parse_id = parsed["parse_id"]
 
         r = await coach_client.post(f"{_IMPORTS_URL}/{parse_id}/dry-run")
@@ -317,7 +386,7 @@ class TestFullStartListCommitted:
         cat.rows[0].points = 17
         cat.rows[1].points = 3
 
-        parsed = await _parse(coach_client, tmp_path, [cat])
+        parsed = await _parse(coach_client, tmp_path, [cat], db_session_factory)
         parse_id = parsed["parse_id"]
         await coach_client.post(f"{_IMPORTS_URL}/{parse_id}/dry-run")
         r = await coach_client.post(
@@ -348,7 +417,7 @@ class TestPartialCommitAndCommitPending:
         ok_cat = _external_category("INFANTIL B", 2, 400)
         gap_cat = _category_with_gap("PREJUVENIL A", 500)
 
-        parsed = await _parse(coach_client, tmp_path, [ok_cat, gap_cat])
+        parsed = await _parse(coach_client, tmp_path, [ok_cat, gap_cat], db_session_factory)
         parse_id = parsed["parse_id"]
         await coach_client.post(f"{_IMPORTS_URL}/{parse_id}/dry-run")
 
@@ -427,7 +496,7 @@ class TestPartialCommitAndCommitPending:
         ok_cat = _external_category("MASTER B1", 2, 600)
         gap_cat = _category_with_gap("MASTER C1", 700)
 
-        parsed = await _parse(coach_client, tmp_path, [ok_cat, gap_cat])
+        parsed = await _parse(coach_client, tmp_path, [ok_cat, gap_cat], db_session_factory)
         parse_id = parsed["parse_id"]
         await coach_client.post(f"{_IMPORTS_URL}/{parse_id}/dry-run")
         r = await coach_client.post(
@@ -486,13 +555,9 @@ class TestIdempotence:
     ):
         cat = _external_category("ELITE HOMBRES", 2, 800)
         pdf_bytes = _build_pdf_bytes(tmp_path, [cat])
-        files = {"resultados_pdf": ("resultados.pdf", pdf_bytes, "application/pdf")}
 
-        r1 = await coach_client.post(
-            f"{_IMPORTS_URL}/parse", data=_historical_form(), files=files
-        )
-        assert r1.status_code == 200, r1.text
-        parse_id = r1.json()["parse_id"]
+        result1, _, _ = await _stage(db_session_factory, pdf_bytes)
+        parse_id = result1.import_id
 
         await coach_client.post(f"{_IMPORTS_URL}/{parse_id}/dry-run")
         r = await coach_client.post(
@@ -512,12 +577,13 @@ class TestIdempotence:
 
         before = await _counts()
 
-        # Re-stagear el mismo archivo (ya committed) -> 409, nada nuevo.
-        files_again = {"resultados_pdf": ("resultados.pdf", pdf_bytes, "application/pdf")}
-        r2 = await coach_client.post(
-            f"{_IMPORTS_URL}/parse", data=_historical_form(), files=files_again
-        )
-        assert r2.status_code == 409, r2.text
+        # Re-stagear el mismo archivo (ya committed) -> dedupe estructural,
+        # nada nuevo (amendment 2026-09-26: stage_extracted_results ya no
+        # lanza 409 para este caso, devuelve already_committed=True).
+        result2, _, _ = await _stage(db_session_factory, pdf_bytes)
+        assert result2.status == "already_committed"
+        assert result2.already_committed is True
+        assert result2.import_id == parse_id
 
         # Re-commitear el mismo parse_id -> ya no está pending -> 404.
         r3 = await coach_client.post(
@@ -537,10 +603,10 @@ class TestIdempotence:
 class TestStandingsIsCalculated:
     @pytest.mark.asyncio
     async def test_standings_response_carries_is_calculated_true(
-        self, coach_client, tmp_path
+        self, coach_client, tmp_path, db_session_factory
     ):
         cat = _external_category("MASTER D", 2, 900)
-        parsed = await _parse(coach_client, tmp_path, [cat])
+        parsed = await _parse(coach_client, tmp_path, [cat], db_session_factory)
         parse_id = parsed["parse_id"]
         await coach_client.post(f"{_IMPORTS_URL}/{parse_id}/dry-run")
         r = await coach_client.post(
@@ -571,14 +637,14 @@ class TestStandingsIsCalculated:
 class TestListSeasonFieldsAfterFullCommit:
     @pytest.mark.asyncio
     async def test_fully_committed_import_resolves_season_via_event(
-        self, coach_client, tmp_path
+        self, coach_client, tmp_path, db_session_factory
     ):
         """Sin `pending_categories`, `parse_meta_json` queda en ``None`` — el
         listado debe resolver season/valida_num/series_name vía
         ``RaceEvent``/``RaceSeries`` en vez de la meta (que ya no existe)."""
         cat = _external_category("MASTER C1", 2, 1100)
         parsed = await _parse(
-            coach_client, tmp_path, [cat], season="2025", valida_num="6",
+            coach_client, tmp_path, [cat], db_session_factory, season="2025", valida_num="6",
             event_name="VALIDA VI TULUA",
         )
         parse_id = parsed["parse_id"]
@@ -606,13 +672,13 @@ class TestListSeasonFieldsAfterFullCommit:
 class TestMatchesUnresolved:
     @pytest.mark.asyncio
     async def test_commit_with_unresolved_tyr_match_returns_409(
-        self, coach_client, tmp_path
+        self, coach_client, tmp_path, db_session_factory
     ):
         cat = sequential_category("ELITE HOMBRES", 1)
         cat.rows[0].bib = "1200"
         cat.rows[0].club = "Club Trocha y Ruta"
 
-        parsed = await _parse(coach_client, tmp_path, [cat])
+        parsed = await _parse(coach_client, tmp_path, [cat], db_session_factory)
         parse_id = parsed["parse_id"]
         await coach_client.post(f"{_IMPORTS_URL}/{parse_id}/dry-run")
 
@@ -626,7 +692,7 @@ class TestMatchesUnresolved:
 
     @pytest.mark.asyncio
     async def test_commit_pending_with_unresolved_tyr_match_returns_409(
-        self, coach_client, tmp_path
+        self, coach_client, tmp_path, db_session_factory
     ):
         ok_cat = _external_category("MASTER D", 2, 1300)
         gap_cat = _category_with_gap("MASTER B2", 1400)
@@ -634,7 +700,7 @@ class TestMatchesUnresolved:
         # resolved_match solo se exige en el commit-pending que la ingesta.
         gap_cat.rows[0].club = "Club Trocha y Ruta"
 
-        parsed = await _parse(coach_client, tmp_path, [ok_cat, gap_cat])
+        parsed = await _parse(coach_client, tmp_path, [ok_cat, gap_cat], db_session_factory)
         parse_id = parsed["parse_id"]
         await coach_client.post(f"{_IMPORTS_URL}/{parse_id}/dry-run")
         r = await coach_client.post(
@@ -675,7 +741,7 @@ class TestIdentityGateSkipsRedundantRebuild:
         )
         from app.routers import race_imports as router_mod
 
-        parsed = await _parse(coach_client, tmp_path, [sequential_category("ELITE HOMBRES", 3)])
+        parsed = await _parse(coach_client, tmp_path, [sequential_category("ELITE HOMBRES", 3)], db_session_factory)
         parse_id = parsed["parse_id"]
         await coach_client.post(f"{_IMPORTS_URL}/{parse_id}/dry-run")
 

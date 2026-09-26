@@ -2,7 +2,6 @@
 
 Cubre branches no ejercitados:
 - ``ValueError`` cuando RESULTADOS contiene categoría desconocida.
-- Warning + skip cuando GENERAL contiene categoría desconocida.
 - ``ValueError`` cuando ``normalize_name`` retorna vacío.
 - Actualización in-place de evento existente (no insert duplicado).
 - Update suave de ``club_text`` / ``sex`` en competitor existente.
@@ -20,7 +19,7 @@ from app.models.race_competitor import CompetitorSex
 from app.models.race_event import SurfaceCondition
 from app.schemas.race import EventMeta
 from app.services.race.ingestor import RaceIngestor
-from app.services.race.pdf_parser import GeneralRow, ResultsRow
+from app.services.race.staged_document import ResultsRow
 
 
 def _meta(valida: int = 4, **kw) -> EventMeta:
@@ -42,13 +41,6 @@ def _row(pos, bib, name, club, time_raw="0:30:00", points=20) -> ResultsRow:
     return ResultsRow(
         position=pos, bib=bib, name=name, city="X", club=club,
         time_raw=time_raw, points=points,
-    )
-
-
-def _g_row(bib, name, club, ppv) -> GeneralRow:
-    return GeneralRow(
-        overall_position=1, bib=bib, name=name, city="X", club=club,
-        points_per_valida=ppv, total_points=sum(ppv),
     )
 
 

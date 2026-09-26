@@ -18,7 +18,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from itertools import count
-from pathlib import Path
 from typing import Any, Iterator, Optional
 
 import pytest
@@ -32,29 +31,12 @@ from app.models.race_import import RaceImport
 from app.models.race_result import RaceResult
 from app.models.race_series import RaceSeries
 
-_FIXTURES_ROOT = Path(__file__).parent.parent.parent / "fixtures" / "race"
-
-
-# ---------------------------------------------------------------------------
-# PDFs fixture
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture(scope="session")
-def valida_iv_resultados_pdf() -> Path:
-    """Ruta al PDF RESULTADOS Válida IV 2026 (Cali, 17-mayo)."""
-    p = _FIXTURES_ROOT / "valida_iv_2026_resultados.pdf"
-    assert p.exists(), f"Fixture faltante: {p}"
-    return p
-
-
-@pytest.fixture(scope="session")
-def valida_iv_general_pdf() -> Path:
-    """Ruta al PDF GENERAL acumulado tras Válida IV 2026."""
-    p = _FIXTURES_ROOT / "valida_iv_2026_general.pdf"
-    assert p.exists(), f"Fixture faltante: {p}"
-    return p
-
+# T155 (amendment 2026-09-26, contracts/staged-import.md): las fixtures
+# ``valida_iv_2026_resultados.pdf``/``_general.pdf`` (PDFs reales de la
+# Federación, antes referenciadas aquí vía ``_FIXTURES_ROOT``) se borraron
+# junto con ``pdf_parser.py`` (T153) — nada las lee ya; los tests que las
+# usaban staguean un dataset sintético (``FakeNameGenerator``) en su lugar.
+# Quedan en el historial de git; ver ``privacy-audit.md`` §4.
 
 # ---------------------------------------------------------------------------
 # FakeAsyncSession: in-memory mini-DB para tests del ingestor

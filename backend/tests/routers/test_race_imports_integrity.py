@@ -49,9 +49,20 @@ from app.dependencies import get_current_user, get_db
 from app.main import app
 from app.models import Base
 from app.models.audit_log import AuditLog
+from app.models.race_category import RaceCategory
 from app.models.race_import import RaceImport, RaceImportKind, RaceImportStatus
-from app.models.race_series import RaceSeries
+from app.models.race_series import RaceSeries, RaceSeriesKind, RaceSeriesLevel
 from app.models.user import User, UserRole
+from app.services.race.import_staging import (
+    StageHeader,
+    _categories_read,
+    _unreadable_rows_meta,
+    stage_extracted_results,
+)
+from app.services.race.results_skill.apply import apply_profile
+from app.services.race.results_skill.profile import load_profile
+from app.services.race.staged_document import StagedProfileMeta
+from app.services.request_context import AuditContext
 from tests.helpers.audit_tables import AUDIT_TABLES
 from tests.helpers.results_pdf_builder import (
     CategorySpec,
@@ -263,12 +274,69 @@ def _build_pdf(tmp_path: Path, categories: list[CategorySpec]) -> bytes:
     return path.read_bytes()
 
 
-async def _parse_pdf(client, tmp_path: Path, categories: list[CategorySpec]) -> dict:
+async def _parse_pdf(
+    client, tmp_path: Path, categories: list[CategorySpec], db_session_factory
+) -> dict:
+    """Sucesor de ``POST /parse`` (retirado, T152): construye el PDF
+    sintético, lo interpreta con ``results_skill.apply_profile`` (mismo
+    perfil ``copa-valle-results-pdf`` de T129) y staguea el documento vía
+    ``stage_extracted_results``. Devuelve un dict con la misma forma pública
+    que la vieja respuesta de ``/parse`` (``parse_id``, ``categories[]`` con
+    filas completas, ``unreadable_rows[]``) para que las aserciones
+    existentes (acopladas al contrato HTTP, no a detalles internos) sigan
+    intactas — ``client`` ya no se usa aquí, pero se deja en la firma para
+    no tocar cada llamador.
+    """
     pdf_bytes = _build_pdf(tmp_path, categories)
-    files = {"resultados_pdf": ("resultados.pdf", pdf_bytes, "application/pdf")}
-    r = await client.post(f"{_IMPORTS_URL}/parse", data=_parse_form(), files=files)
-    assert r.status_code == 200, r.text
-    return r.json()
+    profile = load_profile("copa-valle-results-pdf")
+    document = apply_profile(pdf_bytes, "pdf", profile)
+
+    header = StageHeader(
+        series_name="Copa Valle",
+        series_kind=RaceSeriesKind.cup,
+        series_level=RaceSeriesLevel.departmental,
+        season=2026,
+        valida_num=4,
+        event_name="VALIDA IV CALI",
+        event_date=date(2026, 5, 17),
+        location="CALI",
+    )
+    staged_profile = StagedProfileMeta(
+        profile_id=profile.profile_id,
+        profile_sha256="7" * 64,
+        engine_version="test-helper",
+    )
+
+    async with db_session_factory() as session:
+        actor = await session.get(User, 10)
+        parsed_codes = {c.code for c in document.categories if c.code}
+        cat_by_code: dict[str, RaceCategory] = {}
+        if parsed_codes:
+            cat_stmt = select(RaceCategory).where(RaceCategory.code.in_(parsed_codes))
+            cat_by_code = {
+                c.code: c for c in (await session.execute(cat_stmt)).scalars().all()
+            }
+        categories_read = _categories_read(document, cat_by_code)
+        unreadable_rows_read = _unreadable_rows_meta(document)
+
+        result = await stage_extracted_results(
+            session,
+            document=document,
+            profile=staged_profile,
+            file_bytes=pdf_bytes,
+            original_filename="resultados.pdf",
+            results_ext="pdf",
+            header=header,
+            actor=actor,
+            ctx=AuditContext.for_user(actor, request_id="test-parse-pdf"),
+        )
+        await session.commit()
+
+    return {
+        "parse_id": result.import_id,
+        "categories": [c.model_dump() for c in categories_read],
+        "unreadable_rows": unreadable_rows_read,
+    }
 
 
 def _gap_category(header: str = "INFANTIL A") -> CategorySpec:
@@ -288,7 +356,7 @@ def _gap_category(header: str = "INFANTIL A") -> CategorySpec:
 class TestParseReturnsCategoriesAndCompleteness:
     @pytest.mark.asyncio
     async def test_parse_response_has_categories_and_unreadable_rows(
-        self, coach_client, tmp_path: Path
+        self, coach_client, tmp_path: Path, db_session_factory
     ):
         known_ok = sequential_category("INFANTIL A", 3)
         for i, row in enumerate(known_ok.rows, start=1):
@@ -314,7 +382,7 @@ class TestParseReturnsCategoriesAndCompleteness:
         )
 
         data = await _parse_pdf(
-            coach_client, tmp_path, [known_ok, known_inconsistent, unknown]
+            coach_client, tmp_path, [known_ok, known_inconsistent, unknown], db_session_factory
         )
 
         assert "categories" in data, "respuesta de /parse sin campo categories[] (T019 pendiente)"
@@ -344,8 +412,10 @@ class TestParseReturnsCategoriesAndCompleteness:
 
 class TestCorrectionsEndpoint:
     @pytest.mark.asyncio
-    async def test_correction_add_lifts_the_block(self, coach_client, tmp_path: Path):
-        data = await _parse_pdf(coach_client, tmp_path, [_gap_category()])
+    async def test_correction_add_lifts_the_block(
+        self, coach_client, tmp_path: Path, db_session_factory
+    ):
+        data = await _parse_pdf(coach_client, tmp_path, [_gap_category()], db_session_factory)
         parse_id = data["parse_id"]
         assert "categories" in data, "respuesta de /parse sin campo categories[] (T019 pendiente)"
         cats = {c["header_raw"]: c for c in data["categories"]}
@@ -372,9 +442,9 @@ class TestCorrectionsEndpoint:
 
     @pytest.mark.asyncio
     async def test_correction_unknown_category_returns_422(
-        self, coach_client, tmp_path: Path
+        self, coach_client, tmp_path: Path, db_session_factory
     ):
-        data = await _parse_pdf(coach_client, tmp_path, [_gap_category()])
+        data = await _parse_pdf(coach_client, tmp_path, [_gap_category()], db_session_factory)
         parse_id = data["parse_id"]
 
         r = await coach_client.post(
@@ -393,7 +463,7 @@ class TestCorrectionsEndpoint:
 
     @pytest.mark.asyncio
     async def test_correction_add_without_position_returns_422(
-        self, coach_client, tmp_path: Path
+        self, coach_client, tmp_path: Path, db_session_factory
     ):
         """Una fila ``add``/``edit`` sin ``position`` desaparecería en
         silencio de ``check_completeness`` (que solo mira filas con
@@ -401,7 +471,7 @@ class TestCorrectionsEndpoint:
         fila corregida sin contar para nada. El borde HTTP la rechaza antes
         de llegar a ``apply_corrections``.
         """
-        data = await _parse_pdf(coach_client, tmp_path, [_gap_category()])
+        data = await _parse_pdf(coach_client, tmp_path, [_gap_category()], db_session_factory)
         parse_id = data["parse_id"]
 
         r = await coach_client.post(
@@ -423,12 +493,12 @@ class TestCorrectionsEndpoint:
 
     @pytest.mark.asyncio
     async def test_correction_edit_with_null_position_returns_422(
-        self, coach_client, tmp_path: Path
+        self, coach_client, tmp_path: Path, db_session_factory
     ):
         """Mismo hueco que arriba pero con ``op=edit`` y ``position`` enviado
         explícitamente en ``null`` (en vez de omitido) — ambas formas deben
         rechazarse igual."""
-        data = await _parse_pdf(coach_client, tmp_path, [_gap_category()])
+        data = await _parse_pdf(coach_client, tmp_path, [_gap_category()], db_session_factory)
         parse_id = data["parse_id"]
 
         r = await coach_client.post(
@@ -449,14 +519,14 @@ class TestCorrectionsEndpoint:
 
     @pytest.mark.asyncio
     async def test_correction_with_position_still_lifts_the_block(
-        self, coach_client, tmp_path: Path
+        self, coach_client, tmp_path: Path, db_session_factory
     ):
         """Regresión de la validación nueva: una corrección `add` que SÍ
         trae `position` sigue funcionando igual que antes y sigue cerrando
         el hueco de completitud (mismo caso que
         ``test_correction_add_lifts_the_block``, aquí explícito para dejar
         el contraste con los dos 422 de arriba)."""
-        data = await _parse_pdf(coach_client, tmp_path, [_gap_category()])
+        data = await _parse_pdf(coach_client, tmp_path, [_gap_category()], db_session_factory)
         parse_id = data["parse_id"]
 
         r = await coach_client.post(
@@ -488,7 +558,7 @@ class TestAcknowledgeEndpoint:
     async def test_acknowledge_with_catalogue_reason_is_audited(
         self, coach_client, tmp_path: Path, db_session_factory
     ):
-        data = await _parse_pdf(coach_client, tmp_path, [_gap_category()])
+        data = await _parse_pdf(coach_client, tmp_path, [_gap_category()], db_session_factory)
         parse_id = data["parse_id"]
 
         async with db_session_factory() as session:
@@ -529,9 +599,9 @@ class TestAcknowledgeEndpoint:
 
     @pytest.mark.asyncio
     async def test_acknowledge_unknown_reason_returns_422(
-        self, coach_client, tmp_path: Path
+        self, coach_client, tmp_path: Path, db_session_factory
     ):
-        data = await _parse_pdf(coach_client, tmp_path, [_gap_category()])
+        data = await _parse_pdf(coach_client, tmp_path, [_gap_category()], db_session_factory)
         parse_id = data["parse_id"]
 
         r = await coach_client.post(

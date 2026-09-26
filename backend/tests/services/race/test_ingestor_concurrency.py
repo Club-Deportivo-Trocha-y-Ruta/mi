@@ -37,7 +37,7 @@ from app.services.race.ingestor import (
     _anomaly_threshold_for,
     _derive_sex_from_code,
 )
-from app.services.race.pdf_parser import ResultsRow
+from app.services.race.staged_document import ResultsRow
 
 
 def _meta(valida: int = 4) -> EventMeta:

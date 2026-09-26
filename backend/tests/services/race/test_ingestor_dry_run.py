@@ -22,10 +22,7 @@ from app.models.race_event import SurfaceCondition
 from app.models.race_import import RaceImport, RaceImportStatus
 from app.schemas.race import EventMeta
 from app.services.race.ingestor import RaceIngestor
-from app.services.race.pdf_parser import (
-    ResultsRow,
-    parse_results_pdf,
-)
+from app.services.race.staged_document import ResultsRow
 
 
 # ---------------------------------------------------------------------------
@@ -46,8 +43,8 @@ def _meta_v4() -> EventMeta:
         surface_condition=SurfaceCondition.seca,
         altitude_msnm=1003,
         weather_notes="Pista en buen estado.",
-        pdf_results_filename="valida_iv_2026_resultados.pdf",
-        pdf_general_filename="valida_iv_2026_general.pdf",
+        pdf_results_filename="resultados_sintetico_v4.pdf",
+        pdf_general_filename="general_sintetico_v4.pdf",
     )
 
 
@@ -177,7 +174,7 @@ class TestPromotePendingToCommitted:
         sha = "abcd" * 16
         # Simular endpoint /parse: persiste un pending row PREVIAMENTE
         pending = RaceImport(
-            filename="valida_iv_2026_resultados.pdf",
+            filename="resultados_sintetico_v4.pdf",
             sha256=sha,
             series_id=99,  # placeholder; se reseteará por _upsert_series
             status=RaceImportStatus.pending,

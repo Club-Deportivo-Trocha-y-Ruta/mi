@@ -6,13 +6,14 @@ que ningún nombre generado proviene de una lista de personas reales.
 """
 from __future__ import annotations
 
+import re
 from datetime import date
 from pathlib import Path
 
 import pdfplumber
 import pytest
 
-from app.services.race.pdf_parser import _RESULTS_ROW_RE
+from app.services.race.normalizer import LAP_WORD_PATTERN
 from tests.helpers.name_sweep import assert_no_fake_names
 from tests.helpers.results_csv_builder import build_results_csv
 from tests.helpers.results_pdf_builder import (
@@ -23,6 +24,27 @@ from tests.helpers.results_pdf_builder import (
     RowSpec,
     build_results_pdf,
     sequential_category,
+)
+
+#: Retirado junto con ``app.services.race.pdf_parser`` (T153, amendment
+#: 2026-09-26) — copiado aquí tal cual porque es el oráculo de este
+#: self-test (¿el builder reproduce el defecto real de club largo
+#: superpuesto al tiempo?), no lógica de producción: el lector band-first
+#: de ``results_skill`` no clasifica filas con un único regex de línea, así
+#: que esta constante ya no vive en ningún módulo de ``app``.
+_LAP_TOKEN = (
+    r"(?:\(\s*\)?\s*-?\s*\d{1,2}\s*-?|-\s*\d{1,2}\s*-?|\d{1,2}\s*-)\s*"
+    + LAP_WORD_PATTERN
+    + r"(?:\s*[)=\-])?(?:\s*\(\w+\))?"
+)
+_RESULTS_ROW_RE = re.compile(
+    r"^(?P<pos>\d+)\s+(?P<bib>\d+)\s+(?P<body>.+?)\s*"
+    r"(?P<time>(?<![\d:])\d{1,2}:\d{2}(?::'?\d{2})?"
+    r"|(?<=\s)(?:DNF|DSQ|DNS)"
+    r"|" + _LAP_TOKEN
+    + r"|(?<=\s)-\d{1,2})\s+"
+    r"(?P<points>\d+)\s*$",
+    re.IGNORECASE,
 )
 
 

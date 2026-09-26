@@ -158,7 +158,7 @@ def test_race_import_instantiation_with_only_legacy_fields():
     funcionando con todas las columnas F-UP1 NULL salvo ``kind`` (default).
     """
     imp = RaceImport(
-        filename="valida_iv_2026_resultados.pdf",
+        filename="resultados_sintetico_v4.pdf",
         sha256="a" * 64,
         series_id=1,
         status=RaceImportStatus.committed,
@@ -167,7 +167,7 @@ def test_race_import_instantiation_with_only_legacy_fields():
         imported_at=datetime.now(timezone.utc),
     )
     # Atributos legacy poblados
-    assert imp.filename == "valida_iv_2026_resultados.pdf"
+    assert imp.filename == "resultados_sintetico_v4.pdf"
     assert imp.sha256 == "a" * 64
     assert imp.status == RaceImportStatus.committed
 
@@ -187,7 +187,7 @@ def test_race_import_instantiation_with_only_legacy_fields():
 def test_race_import_instantiation_with_upload_fields():
     """Un RaceImport F-UP1 con TODOS los campos upload poblados."""
     imp = RaceImport(
-        filename="valida_iv_2026_resultados.pdf",
+        filename="resultados_sintetico_v4.pdf",
         original_filename="Valida IV - Resultados.pdf",
         sha256="b" * 64,
         series_id=1,
