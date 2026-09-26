@@ -439,22 +439,22 @@ This follows the same policy as Phases 1–10:
 
 **Purpose**: open the amendment and add the synthetic material every later phase needs.
 
-- [ ] T108 Open the amendment:
-  - record the owner's choice of implementation branch here;
-  - run `alembic heads` and expect exactly one line (`be4595de1ad2` at planning), then record it;
-  - confirm that T098 (G7) passed and record where T099/T100 stand;
-  - confirm that the only real official files in the tree are the two in `backend/tests/fixtures/race/`.
+- [X] T108 Open the amendment:
+  - implementation branch: `claude/speckit-results-skills-upload-dap0pw` (owner-designated session branch — this session's work landed directly on it, no separate branch created);
+  - `alembic heads` (offline, script-directory only — no MySQL available in this session) resolved to exactly one line, `be4595de1ad2`, matching the value recorded at planning;
+  - T098 (G7): `[X]` — passed 2026-09-22, handed to the owner for deploy. T099 (post-deploy smoke) and T100 (pre-load privacy check) are both still `[ ]`: they run after the owner's production deploy, which has not happened yet;
+  - confirmed: `backend/tests/fixtures/race/` holds exactly two files (`valida_iv_2026_general.pdf`, `valida_iv_2026_resultados.pdf`) plus the synthetic `valida_i_2026_sevilla.csv` — the two PDFs are the only real official files in the tree.
 
   [agent: engineering-lead · opus]
-- [ ] T109 [P] Extend `backend/tests/helpers/results_pdf_builder.py` (fake names only):
+- [X] T109 [P] Extend `backend/tests/helpers/results_pdf_builder.py` (fake names only):
   - an **unruled fictional layout**: no rulings; columns in the order position, surname, given names, club, city, time, points;
   - a `--layout {historical,2026,unruled}` option;
   - a CLI entry, `python -m tests.helpers.results_pdf_builder --layout … --out …`, for quickstart §9.4.
 
-  Add a synthetic delimited generator in `backend/tests/helpers/results_csv_builder.py`: `;`, `,` and tab delimiters, with categories as a column or as separator rows. Add self-tests to `backend/tests/helpers/test_results_pdf_builder.py`.
+  Added a synthetic delimited generator in `backend/tests/helpers/results_csv_builder.py`: `;`, `,` and tab delimiters, with categories as a column or as separator rows. Added self-tests to `backend/tests/helpers/test_results_pdf_builder.py` (29 pass, up from 18).
 
   [agent: qa-engineer · sonnet]
-- [ ] T110 [P] Add `backend/tests/helpers/name_sweep.py::assert_no_fake_names(text, generator)`. It fails if any accent-folded word of three or more letters from the generator's names, clubs or cities appears in `text`. The masking, CLI and stdout tests reuse it.
+- [X] T110 [P] Add `backend/tests/helpers/name_sweep.py::assert_no_fake_names(text, generator)`. It fails if any accent-folded word of three or more letters from the generator's names, clubs or cities appears in `text`. The masking, CLI and stdout tests reuse it.
 
   [agent: qa-engineer · sonnet]
 
@@ -464,40 +464,52 @@ This follows the same policy as Phases 1–10:
 
 **Purpose**: the staged-document table and the neutral types that both stories need. **Blocks Phases 13–18.**
 
-- [ ] T111 [P] Write `backend/tests/mysql/test_race_import_staged_documents.py` (`-m mysql`). It checks:
+- [ ] T111 [P] Write `backend/tests/mysql/test_race_import_staged_documents.py` (`-m mysql`) — deferred 2026-09-26: no MySQL available in this session (no Docker, no `TEST_DATABASE_URL`). It checks:
   - the table exactly as in `data-model.md` §11.1: `import_id INT PK, FK → race_imports.id ON DELETE CASCADE`, `schema_version SMALLINT NOT NULL`, `profile_id VARCHAR(64) NOT NULL`, `profile_sha256 CHAR(64) NOT NULL`, `engine_version VARCHAR(16) NOT NULL`, `document_json JSON NOT NULL`, `created_at DATETIME NOT NULL`;
   - that deleting the import cascades;
   - a JSON round-trip of a 300-row synthetic document;
   - upgrade → downgrade → upgrade, clean.
 
+  Written and collects cleanly (`pytest --collect-only`, 5 tests) and skips itself correctly without `TEST_DATABASE_URL` (5 skipped, verified); not run against real MySQL.
+
   [agent: qa-engineer · sonnet]
-- [ ] T112 [P] Write `backend/tests/services/race/test_staged_document.py`. It covers:
+- [X] T112 [P] Write `backend/tests/services/race/test_staged_document.py`. It covers:
   - a `save` → `load` round-trip into `ParsedResults` that preserves category order, `code: null` for an unrecognised header, `time_raw == ""` and unreadable rows;
   - `StagedDocumentMissing` when no row exists;
   - `delete` is idempotent;
   - no log record carries a row value (caplog plus `assert_no_fake_names`).
 
+  5 passed (SQLite in-memory, `users`/`race_series`/`race_imports`/`race_import_staged_documents`).
+
   [agent: qa-engineer · sonnet]
-- [ ] T113 Move `ResultsRow` (seven fields: `position`, `bib`, `name`, `city`, `club`, `time_raw`, `points`), `ParsedCategory`, `ParsedResults` and `UnreadableRow`, unchanged, to `backend/app/services/race/staged_document.py`.
+- [X] T113 Move `ResultsRow` (seven fields: `position`, `bib`, `name`, `city`, `club`, `time_raw`, `points`), `ParsedCategory`, `ParsedResults` and `UnreadableRow`, unchanged, to `backend/app/services/race/staged_document.py`.
   - Keep a temporary re-export in `pdf_parser.py`, which T153 removes.
   - Update the imports in `completeness.py`, `routers/race_imports.py` and `import_staging.py`, the `TYPE_CHECKING` imports in `ingestor.py` and `revision.py`, and every test that imports these types (`identity_support.py`, `test_completeness.py`, `test_ingestor_*.py`, `test_reingest_staleness.py`, `test_inactive_categories_hidden.py`).
   - No behaviour change; the default lane stays green.
 
+  `test_ingestor_*.py` do not import `pdf_parser`/these types directly (checked by grep — they build results dicts via `identity_support.py`, already updated), so nothing to change there. Default lane: all touched files pass individually and in the wider sweep (1991 passed; the 9 pre-existing failures elsewhere are unrelated — hardcoded owner Mac paths, missing optional `langchain-claude-cli`, and unrelated business-logic assertions in the AI/gpx modules).
+
   [agent: data-analyst · sonnet]
-- [ ] T114 Write the Alembic revision `backend/alembic/versions/<rev>_race_import_staged_documents.py`, with `down_revision` = the single head recorded in T108. It creates `race_import_staged_documents` exactly as in `data-model.md` §11.1, with no index beyond the primary key. It adds no enum value to any existing column. The downgrade drops the table.
+- [X] T114 Write the Alembic revision `backend/alembic/versions/<rev>_race_import_staged_documents.py`, with `down_revision` = the single head recorded in T108. It creates `race_import_staged_documents` exactly as in `data-model.md` §11.1, with no index beyond the primary key. It adds no enum value to any existing column. The downgrade drops the table.
+
+  `backend/alembic/versions/c9d0e1f2a3b4_race_import_staged_documents.py`, `down_revision = "be4595de1ad2"`. `alembic heads` now resolves to `c9d0e1f2a3b4` (single head). `tests/test_audit_mysql.py::CURRENT_HEAD` updated to match (that test's own chain-integrity check runs offline and passed after the bump).
 
   [agent: database-architect · sonnet]
-- [ ] T115 Create the model `backend/app/models/race_import_staged_document.py` (`RaceImportStagedDocument`) and register it in `backend/app/models/__init__.py`. Do not add an implicitly loaded relationship on `RaceImport`; the loader selects by primary key, which avoids async lazy-load errors. Its docstring states the privacy class.
+- [X] T115 Create the model `backend/app/models/race_import_staged_document.py` (`RaceImportStagedDocument`) and register it in `backend/app/models/__init__.py`. Do not add an implicitly loaded relationship on `RaceImport`; the loader selects by primary key, which avoids async lazy-load errors. Its docstring states the privacy class.
+
+  No `relationship` added; `staged_document.load` uses `db.get(RaceImportStagedDocument, imp.id)`.
 
   [agent: database-architect · sonnet]
-- [ ] T116 Implement `save(db, import_id, document, profile_meta)`, `load(db, imp) -> ParsedResults`, `delete(db, import_id)`, `StagedDocumentMissing` and the `document_to_json` / `document_from_json` helpers (`schema_version` 1) in `backend/app/services/race/staged_document.py`. The module docstring covers inputs, outputs and side effects: the rows hold minors' names and are never logged. T112 goes green.
+- [X] T116 Implement `save(db, import_id, document, profile_meta)`, `load(db, imp) -> ParsedResults`, `delete(db, import_id)`, `StagedDocumentMissing` and the `document_to_json` / `document_from_json` helpers (`schema_version` 1) in `backend/app/services/race/staged_document.py`. The module docstring covers inputs, outputs and side effects: the rows hold minors' names and are never logged. T112 goes green.
+
+  T112 (5 tests) green, including the caplog + `assert_no_fake_names` no-leak check.
 
   [agent: fastapi-architect · sonnet]
-- [ ] T117 Gate G8 — foundations:
-  - default lane green;
-  - T111 run against a `_test` MySQL, or explicitly deferred here with the reason;
-  - single Alembic head;
-  - a lead's sign-off in `specs/044-race-history-backfill/tasks.md` with the date.
+- [X] T117 Gate G8 — foundations — signed off 2026-09-26 by `engineering-lead` (self-verified in this session):
+  - default lane green: touched files pass individually and in a ~2000-test sweep of `tests/services/race`, `tests/routers` (race imports), `tests/models`; 9 pre-existing failures confirmed unrelated (see T113 note) — no new failures from this work;
+  - T111 written, collects cleanly, skips itself correctly without `TEST_DATABASE_URL` — run against a real `_test` MySQL deferred: no MySQL available in this session (see T111);
+  - single Alembic head: `c9d0e1f2a3b4` (`alembic heads`, offline);
+  - `ruff check` clean on every file touched in Phases 11–12.
 
   [agent: engineering-lead · opus]
 
