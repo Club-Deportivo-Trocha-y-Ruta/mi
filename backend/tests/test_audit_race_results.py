@@ -123,6 +123,7 @@ async def sqlite_engine() -> AsyncEngine:
             "event_attendances",
             "training_sessions",
             "race_imports",
+            "race_import_staged_documents",
             "race_categories",
             "race_competitors",
             # Feature 044 (US4): el commit reconstruye la revisión de

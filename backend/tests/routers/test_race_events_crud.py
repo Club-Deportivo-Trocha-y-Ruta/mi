@@ -177,6 +177,7 @@ async def sqlite_engine() -> AsyncEngine:
             # training_sessions: relación CalendarEvent.training_session (cargada al borrar)
             "training_sessions",
             "race_imports",
+            "race_import_staged_documents",
             "race_categories",
             "race_competitors",
             "race_results",

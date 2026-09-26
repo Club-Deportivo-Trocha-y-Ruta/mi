@@ -80,6 +80,7 @@ _TABLES_NEEDED = [
     "race_competitor_signatures",
     "race_results",
     "race_imports",
+            "race_import_staged_documents",
     *AUDIT_TABLES,
 ]
 

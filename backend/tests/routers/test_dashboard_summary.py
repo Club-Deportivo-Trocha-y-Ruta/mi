@@ -100,6 +100,7 @@ _TABLES = (
     "session_attendance",
     "race_identity_candidates",
     "race_imports",
+            "race_import_staged_documents",
     # «Sin enlazar» (FR-033): el conteo y la lista leen estas cuatro.
     "race_competitors",
     "race_results",

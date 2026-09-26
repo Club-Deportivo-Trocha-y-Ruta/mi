@@ -129,6 +129,7 @@ async def engine() -> AsyncGenerator[AsyncEngine, None]:
             "race_competitor_signatures",
             "race_results",
             "race_imports",
+            "race_import_staged_documents",
             "race_identity_candidates",
             "race_competitor_link_audit",
             *AUDIT_TABLES,

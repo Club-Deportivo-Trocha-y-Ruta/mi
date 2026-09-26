@@ -54,6 +54,7 @@ _TABLES = [
     "race_series",
     "race_events",
     "race_imports",
+            "race_import_staged_documents",
     "race_categories",
     "race_competitors",
     "race_results",

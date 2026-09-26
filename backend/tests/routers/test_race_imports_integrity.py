@@ -115,6 +115,7 @@ async def sqlite_engine() -> AsyncEngine:
             "race_series",
             "race_events",
             "race_imports",
+            "race_import_staged_documents",
             # `/parse` resuelve `mapping_kind` por categoría contra el
             # catálogo (``RaceCategory.is_active``, research R-03) — mismo
             # patrón de tablas que ``tests/routers/test_race_imports.py``.

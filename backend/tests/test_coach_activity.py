@@ -99,6 +99,7 @@ _EXTRA_TABLES = (
     "session_attendance",
     "agent_runs",
     "race_imports",
+            "race_import_staged_documents",
     "race_result_revisions",
     "race_competitor_link_audit",
 )
