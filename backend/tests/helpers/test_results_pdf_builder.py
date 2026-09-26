@@ -13,6 +13,8 @@ import pdfplumber
 import pytest
 
 from app.services.race.pdf_parser import _RESULTS_ROW_RE
+from tests.helpers.name_sweep import assert_no_fake_names
+from tests.helpers.results_csv_builder import build_results_csv
 from tests.helpers.results_pdf_builder import (
     FIRST_NAMES,
     LAST_NAMES,
@@ -315,3 +317,176 @@ def test_valida_num_out_of_range_raises(tmp_path: Path, valida_num: int):
             categories=[category],
             name_generator=gen,
         )
+
+
+class TestLayoutOption:
+    """T109 — ``--layout {historical,2026,unruled}``."""
+
+    @pytest.mark.parametrize("layout", ["historical", "2026"])
+    def test_ruled_layouts_keep_the_bib_column_and_rulings(
+        self, tmp_path: Path, layout: str
+    ):
+        gen = FakeNameGenerator()
+        category = sequential_category("INFANTIL A", 2)
+        pdf_path = build_results_pdf(
+            tmp_path / f"{layout}.pdf",
+            valida_num=1,
+            location="Ciudad Ficticia",
+            event_date=date(2026, 3, 1),
+            categories=[category],
+            name_generator=gen,
+            layout=layout,
+        )
+        with pdfplumber.open(pdf_path) as pdf:
+            tables = pdf.pages[0].find_tables()
+        assert len(tables) == 1
+        assert len(tables[0].rows) == len(category.rows) + 1
+
+    def test_unruled_layout_has_no_rulings(self, tmp_path: Path):
+        gen = FakeNameGenerator()
+        category = sequential_category("INFANTIL A", 3)
+        pdf_path = build_results_pdf(
+            tmp_path / "unruled.pdf",
+            valida_num=1,
+            location="Ciudad Ficticia",
+            event_date=date(2026, 3, 1),
+            categories=[category],
+            name_generator=gen,
+            layout="unruled",
+        )
+        with pdfplumber.open(pdf_path) as pdf:
+            tables = pdf.pages[0].find_tables()
+        # Sin rulings, ``find_tables`` (estrategia "lines") no detecta banda
+        # alguna — a diferencia de los layouts ruled de arriba.
+        assert tables == []
+
+    def test_unruled_layout_column_order_has_no_bib(self, tmp_path: Path):
+        gen = FakeNameGenerator()
+        category = CategorySpec(
+            header="INFANTIL A",
+            rows=[RowSpec(position=1, name="Nombre Apellido Ficticio", points=50)],
+        )
+        pdf_path = build_results_pdf(
+            tmp_path / "unruled.pdf",
+            valida_num=1,
+            location="Ciudad Ficticia",
+            event_date=date(2026, 3, 1),
+            categories=[category],
+            name_generator=gen,
+            layout="unruled",
+        )
+        with pdfplumber.open(pdf_path) as pdf:
+            text = pdf.pages[0].extract_text() or ""
+        # "Apellido Ficticio" (apellidos) antes que "Nombre" (nombre de
+        # pila) — orden invertido respecto al layout ruled — y sin dorsal.
+        line = next(
+            line for line in text.splitlines() if "Apellido Ficticio" in line
+        )
+        assert line.split()[1:3] == ["Apellido", "Ficticio"]
+        assert "N°" not in text
+
+    def test_unruled_layout_names_still_come_from_the_generator(self, tmp_path: Path):
+        gen = FakeNameGenerator()
+        category = sequential_category("INFANTIL A", 5)
+        pdf_path = build_results_pdf(
+            tmp_path / "unruled.pdf",
+            valida_num=1,
+            location="Ciudad Ficticia",
+            event_date=date(2026, 3, 1),
+            categories=[category],
+            name_generator=gen,
+            layout="unruled",
+        )
+        with pdfplumber.open(pdf_path) as pdf:
+            text = pdf.pages[0].extract_text() or ""
+        assert_no_fake_names("", gen)  # sanity: el generador SÍ trae vocabulario
+        vocab_words = {w for name in gen.generated for w in name.split()}
+        assert vocab_words  # el generador produjo nombres
+        for word in vocab_words:
+            assert word in text
+
+
+class TestResultsCsvBuilder:
+    """T109 — generador CSV/TSV sintético."""
+
+    @pytest.mark.parametrize("delimiter", [";", ",", "\t"])
+    def test_delimiter_round_trips_expected_row_count(
+        self, tmp_path: Path, delimiter: str
+    ):
+        gen = FakeNameGenerator()
+        category = sequential_category("INFANTIL A", 4)
+        csv_path = build_results_csv(
+            tmp_path / "resultados.csv",
+            valida_num=1,
+            location="Ciudad Ficticia",
+            event_date=date(2026, 3, 1),
+            categories=[category],
+            name_generator=gen,
+            delimiter=delimiter,
+        )
+        text = csv_path.read_text(encoding="utf-8")
+        data_lines = [
+            line
+            for line in text.splitlines()
+            if line and line.split(delimiter)[0].strip().isdigit()
+        ]
+        assert len(data_lines) == len(category.rows)
+
+    def test_categories_as_separator_rows(self, tmp_path: Path):
+        gen = FakeNameGenerator()
+        cat_a = sequential_category("INFANTIL A", 2)
+        cat_b = sequential_category("INFANTIL B", 2)
+        csv_path = build_results_csv(
+            tmp_path / "resultados.csv",
+            valida_num=1,
+            location="Ciudad Ficticia",
+            event_date=date(2026, 3, 1),
+            categories=[cat_a, cat_b],
+            name_generator=gen,
+            categories_as_column=False,
+        )
+        text = csv_path.read_text(encoding="utf-8")
+        assert "CAT: INFANTIL A" in text
+        assert "CAT: INFANTIL B" in text
+        # Cada categoría trae su propia fila de encabezado de columnas.
+        assert text.count("POS;") == 2
+
+    def test_categories_as_a_column(self, tmp_path: Path):
+        gen = FakeNameGenerator()
+        cat_a = sequential_category("INFANTIL A", 2)
+        cat_b = sequential_category("INFANTIL B", 3)
+        csv_path = build_results_csv(
+            tmp_path / "resultados.csv",
+            valida_num=1,
+            location="Ciudad Ficticia",
+            event_date=date(2026, 3, 1),
+            categories=[cat_a, cat_b],
+            name_generator=gen,
+            categories_as_column=True,
+        )
+        text = csv_path.read_text(encoding="utf-8")
+        assert "CAT: INFANTIL A" not in text  # sin fila separadora
+        assert "CATEGORIA;" in text
+        rows_with_cat_a = [
+            line for line in text.splitlines() if line.startswith("INFANTIL A;")
+        ]
+        rows_with_cat_b = [
+            line for line in text.splitlines() if line.startswith("INFANTIL B;")
+        ]
+        assert len(rows_with_cat_a) == len(cat_a.rows)
+        assert len(rows_with_cat_b) == len(cat_b.rows)
+
+    def test_names_come_only_from_the_generator(self, tmp_path: Path):
+        gen = FakeNameGenerator()
+        category = sequential_category("INFANTIL A", 6)
+        csv_path = build_results_csv(
+            tmp_path / "resultados.csv",
+            valida_num=1,
+            location="Ciudad Ficticia",
+            event_date=date(2026, 3, 1),
+            categories=[category],
+            name_generator=gen,
+        )
+        text = csv_path.read_text(encoding="utf-8")
+        for name in gen.generated:
+            assert name in text

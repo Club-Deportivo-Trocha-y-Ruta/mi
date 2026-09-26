@@ -20,15 +20,25 @@ ficticias — nunca de datos reales de un atleta o club real.
 """
 from __future__ import annotations
 
+import argparse
 import itertools
 import random
 from dataclasses import dataclass, field
 from datetime import date
 from html import escape
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Literal, Optional, Sequence
 
 from weasyprint import HTML
+
+#: Los tres layouts que T109 pide: ``historical`` (el defecto de desborde
+#: R-01, comportamiento por defecto de este módulo desde T002/T003),
+#: ``2026`` (el layout fijo de la válida IV 2026 — mismas columnas, sin el
+#: defecto de desborde: T122/la fase 13 lo usan para los golden de paridad)
+#: y ``unruled`` (layout ficticio de un organizador distinto, sin rulings y
+#: con otro orden de columnas — prueba que el motor de lectura de la fase 13
+#: no está pensado solo para el layout de Copa Valle).
+Layout = Literal["historical", "2026", "unruled"]
 
 # ---------------------------------------------------------------------------
 # Generador de nombres falsos
@@ -98,12 +108,20 @@ class FakeNameGenerator:
         self._rng = random.Random(self.seed)
 
     def next_name(self) -> str:
+        given, surname = self.next_name_parts()
+        return f"{given} {surname}"
+
+    def next_name_parts(self) -> tuple[str, str]:
+        """Como ``next_name`` pero separado en (nombre de pila, apellidos) —
+        lo que pide el layout ``unruled`` (columnas "surname"/"given names"
+        aparte, sin columna de dorsal). Agrega el nombre completo a
+        ``generated`` igual que ``next_name``."""
         first = self._rng.choice(FIRST_NAMES)
         last1 = self._rng.choice(LAST_NAMES)
         last2 = self._rng.choice(LAST_NAMES)
-        name = f"{first} {last1} {last2}"
-        self.generated.append(name)
-        return name
+        given, surname = first, f"{last1} {last2}"
+        self.generated.append(f"{given} {surname}")
+        return given, surname
 
     def next_city(self) -> str:
         return self._rng.choice(CITY_POOL)
@@ -238,7 +256,24 @@ _COL_WIDTHS_PX: dict[str, int] = {
 }
 _TABLE_WIDTH_PX = sum(_COL_WIDTHS_PX.values())
 
-_CSS = f"""
+#: Columnas del layout ``unruled`` (T109): "position, surname, given names,
+#: club, city, time, points" — sin dorsal, con el nombre partido en dos
+#: columnas y en orden apellidos-antes-que-nombre.
+_UNRULED_COL_WIDTHS_PX: dict[str, int] = {
+    "ord": 30,
+    "surname": 140,
+    "given": 110,
+    "club": 100,
+    "city": 130,
+    "time": 90,
+    "points": 50,
+}
+_UNRULED_TABLE_WIDTH_PX = sum(_UNRULED_COL_WIDTHS_PX.values())
+
+
+def _css(*, ruled: bool, table_width_px: int) -> str:
+    border = "1px solid black" if ruled else "none"
+    return f"""
 @page {{ size: Letter; margin: 1.2cm; }}
 body {{ font-family: sans-serif; font-size: 9pt; }}
 p.event-header {{ font-weight: bold; margin: 0 0 8px 0; }}
@@ -246,11 +281,11 @@ p.cat-header {{ font-weight: bold; margin: 10px 0 2px 0; }}
 table {{
     border-collapse: collapse;
     table-layout: fixed;
-    width: {_TABLE_WIDTH_PX}px;
+    width: {table_width_px}px;
     margin-bottom: 4px;
 }}
 th, td {{
-    border: 1px solid black;
+    border: {border};
     padding: 2px 3px;
     white-space: nowrap;
     overflow: visible;
@@ -259,10 +294,15 @@ th, td {{
 """
 
 
-def _colgroup_html() -> str:
-    cols = "".join(
-        f'<col style="width:{width}px">' for width in _COL_WIDTHS_PX.values()
-    )
+#: Layouts ruled (``historical``/``2026``) comparten CSS y columnas; solo
+#: ``unruled`` (sin rulings, columnas propias) difiere.
+_CSS = _css(ruled=True, table_width_px=_TABLE_WIDTH_PX)
+_UNRULED_CSS = _css(ruled=False, table_width_px=_UNRULED_TABLE_WIDTH_PX)
+
+
+def _colgroup_html(layout: Layout) -> str:
+    widths = _UNRULED_COL_WIDTHS_PX if layout == "unruled" else _COL_WIDTHS_PX
+    cols = "".join(f'<col style="width:{width}px">' for width in widths.values())
     return f"<colgroup>{cols}</colgroup>"
 
 
@@ -277,12 +317,23 @@ def _time_cell(row: RowSpec) -> str:
     return ""
 
 
+def _name_parts(row: RowSpec, gen: FakeNameGenerator) -> tuple[str, str]:
+    """``(given, surname)`` — de ``row.name`` si vino explícito (se parte en
+    el primer espacio) o del generador si no."""
+    if row.name is not None:
+        given, _, surname = row.name.partition(" ")
+        return given, surname
+    return gen.next_name_parts()
+
+
 def _render_row_html(
-    row: RowSpec, gen: FakeNameGenerator, bib_counter: "itertools.count[int]"
+    row: RowSpec,
+    gen: FakeNameGenerator,
+    bib_counter: "itertools.count[int]",
+    *,
+    layout: Layout,
 ) -> str:
     position = "" if row.position is None else str(row.position)
-    bib = row.bib if row.bib is not None else str(next(bib_counter))
-    name = row.name if row.name is not None else gen.next_name()
     city = row.city if row.city is not None else gen.next_city()
     if row.club is not None:
         club = row.club
@@ -293,9 +344,18 @@ def _render_row_html(
     time_cell = _time_cell(row)
     points = "" if row.points is None else str(row.points)
 
-    cells = [
-        position, bib, escape(name), escape(city), escape(club), time_cell, points,
-    ]
+    if layout == "unruled":
+        given, surname = _name_parts(row, gen)
+        cells = [
+            position, escape(surname), escape(given), escape(club), escape(city),
+            time_cell, points,
+        ]
+    else:
+        bib = row.bib if row.bib is not None else str(next(bib_counter))
+        name = row.name if row.name is not None else gen.next_name()
+        cells = [
+            position, bib, escape(name), escape(city), escape(club), time_cell, points,
+        ]
     tds = "".join(f"<td>{c}</td>" for c in cells)
     return f"<tr>{tds}</tr>"
 
@@ -307,6 +367,7 @@ def _render_html(
     event_date: date,
     categories: Sequence[CategorySpec],
     name_generator: FakeNameGenerator,
+    layout: Layout,
 ) -> str:
     header_line = (
         f"VALIDA {_roman(valida_num)} {location.upper()} "
@@ -316,23 +377,33 @@ def _render_html(
     bib_counter = itertools.count(100)
     blocks: list[str] = [f'<p class="event-header">{escape(header_line)}</p>']
 
-    for category in categories:
-        blocks.append(f'<p class="cat-header">CAT: {escape(category.header)}</p>')
+    if layout == "unruled":
+        header_row = (
+            "<tr><th>Ord</th><th>Apellidos</th><th>Nombres</th>"
+            "<th>Club/Patrocinador</th><th>Ciudad</th><th>Tiempo</th>"
+            "<th>Puntos</th></tr>"
+        )
+        css = _UNRULED_CSS
+    else:
         header_row = (
             "<tr><th>Ord</th><th>N°</th><th>Nombre completo</th>"
             "<th>Ciudad</th><th>Club/Patrocinador</th><th>Tiempo</th>"
             "<th>Puntos</th></tr>"
         )
+        css = _CSS
+
+    for category in categories:
+        blocks.append(f'<p class="cat-header">CAT: {escape(category.header)}</p>')
         rows_html = "".join(
-            _render_row_html(row, name_generator, bib_counter)
+            _render_row_html(row, name_generator, bib_counter, layout=layout)
             for row in category.rows
         )
         blocks.append(
-            f"<table>{_colgroup_html()}{header_row}{rows_html}</table>"
+            f"<table>{_colgroup_html(layout)}{header_row}{rows_html}</table>"
         )
 
     body = "\n".join(blocks)
-    return f"<html><head><style>{_CSS}</style></head><body>{body}</body></html>"
+    return f"<html><head><style>{css}</style></head><body>{body}</body></html>"
 
 
 def build_results_pdf(
@@ -343,8 +414,9 @@ def build_results_pdf(
     event_date: date,
     categories: Sequence[CategorySpec],
     name_generator: Optional[FakeNameGenerator] = None,
+    layout: Layout = "historical",
 ) -> Path:
-    """Renderiza un PDF sintético de resultados con el layout Copa Valle.
+    """Renderiza un PDF sintético de resultados.
 
     ``categories`` documenta el orden de aparición en el documento (todas
     las categorías se imprimen en una sola tabla por categoría; WeasyPrint
@@ -353,6 +425,12 @@ def build_results_pdf(
     ``name_generator`` es opcional — si no se pasa uno, se crea uno propio
     con ``DEFAULT_SEED`` (determinístico). Pásalo explícitamente si el
     test necesita inspeccionar ``generator.generated`` después.
+
+    ``layout`` (T109, amendment 2026-09-26): ``"historical"`` (por defecto,
+    sin cambios de comportamiento respecto a T002/T003), ``"2026"`` (mismas
+    columnas, para los golden de paridad de T122) o ``"unruled"`` (sin
+    rulings, columnas "position, surname, given names, club, city, time,
+    points" — sin dorsal).
     """
     out_path = Path(path)
     gen = name_generator if name_generator is not None else FakeNameGenerator()
@@ -362,7 +440,55 @@ def build_results_pdf(
         event_date=event_date,
         categories=categories,
         name_generator=gen,
+        layout=layout,
     )
     out_path.parent.mkdir(parents=True, exist_ok=True)
     HTML(string=html).write_pdf(str(out_path))
     return out_path
+
+
+# ---------------------------------------------------------------------------
+# CLI (T109, quickstart §9.4): genera un PDF sintético de muestra para
+# probar el motor de lectura de la fase 13 a mano, sin escribir un test.
+# ---------------------------------------------------------------------------
+
+
+def _default_categories() -> list[CategorySpec]:
+    return [
+        sequential_category("INFANTIL A", 6),
+        sequential_category("PREJUVENIL A DAMAS", 4),
+    ]
+
+
+def _build_cli(argv: Optional[Sequence[str]] = None) -> Path:
+    parser = argparse.ArgumentParser(
+        prog="python -m tests.helpers.results_pdf_builder",
+        description=(
+            "Genera un PDF sintético de resultados (nombres/ciudades/clubes "
+            "ficticios) en el layout indicado, para probar a mano el motor "
+            "de lectura offline de la fase 13."
+        ),
+    )
+    parser.add_argument(
+        "--layout",
+        choices=("historical", "2026", "unruled"),
+        default="historical",
+    )
+    parser.add_argument("--out", required=True, help="Ruta del PDF a escribir.")
+    parser.add_argument("--valida-num", type=int, default=1)
+    parser.add_argument("--location", default="Ciudad Ficticia")
+    args = parser.parse_args(argv)
+
+    return build_results_pdf(
+        args.out,
+        valida_num=args.valida_num,
+        location=args.location,
+        event_date=date(2026, 3, 1),
+        categories=_default_categories(),
+        layout=args.layout,
+    )
+
+
+if __name__ == "__main__":  # pragma: no cover — atajo manual, sin test dedicado
+    written = _build_cli()
+    print(f"PDF sintético escrito en: {written}")
