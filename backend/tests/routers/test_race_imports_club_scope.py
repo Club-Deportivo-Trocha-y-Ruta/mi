@@ -279,7 +279,7 @@ async def client_factory(db_session_factory, seed, override_storage):
 # ---------------------------------------------------------------------------
 
 
-def _staging_document() -> "ParsedResults":
+def _staging_document():
     """Documento equivalente al que devolvía el viejo ``stub_parsers`` — una
     fila TyR y una ajena, sin tocar disco (amendment 2026-09-26: ``POST
     /parse`` se retiró, contracts/staged-import.md)."""

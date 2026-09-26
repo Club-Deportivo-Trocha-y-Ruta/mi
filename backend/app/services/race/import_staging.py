@@ -40,8 +40,6 @@ from app.schemas.race_imports import (
     CompletenessRead,
     ParsedCategoryRead,
     ParsedResultsRowRead,
-    ParseWarning,
-    UnreadableRowRead,
 )
 from app.services.audit import AuditEntityType, record_audit
 from app.services.race import staged_document as staged_document_module
@@ -49,7 +47,6 @@ from app.services.race.completeness import check_category
 from app.services.race.normalizer import mapping_kind_for
 from app.services.race.revision import detect_revision
 from app.services.race.staged_document import (
-    ParsedCategory,
     ParsedResults,
     ResultsRow,
     StagedProfileMeta,

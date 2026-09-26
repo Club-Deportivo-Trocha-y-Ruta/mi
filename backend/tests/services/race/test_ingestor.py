@@ -21,14 +21,12 @@ from decimal import Decimal
 
 import pytest
 
-from app.models.race_category import CategoryGender, CategoryTier
 from app.models.race_competitor import CompetitorSex
 from app.models.race_event import RaceEventStatus, SurfaceCondition
 from app.models.race_import import RaceImportStatus
 from app.models.race_result import ResultStatus
 from app.schemas.race import EventMeta
 from app.services.race.ingestor import RaceIngestor, _derive_sex_from_code
-from app.services.race.normalizer import normalize_name
 from app.services.race.staged_document import ResultsRow
 from tests.helpers.results_pdf_builder import FakeNameGenerator
 

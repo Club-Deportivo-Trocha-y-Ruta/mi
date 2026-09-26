@@ -45,8 +45,8 @@ from __future__ import annotations
 import functools
 import logging
 from collections.abc import Mapping, Sequence
-from datetime import date, datetime, timezone
-from typing import Annotated, Optional
+from datetime import datetime, timezone
+from typing import Optional
 
 from fastapi import (
     APIRouter,
@@ -67,9 +67,9 @@ from app.models.club import ClubMember, ClubRole
 from app.models.race_category import RaceCategory
 from app.models.race_event import RaceEvent
 from app.models.race_identity_candidate import RaceIdentityCandidate
-from app.models.race_import import RaceImport, RaceImportKind, RaceImportStatus
+from app.models.race_import import RaceImport, RaceImportStatus
 from app.models.race_import_staged_document import RaceImportStagedDocument
-from app.models.race_series import RaceSeries, RaceSeriesKind, RaceSeriesLevel
+from app.models.race_series import RaceSeries
 from app.models.user import User, UserRole
 from app.schemas.race import EventMeta
 from app.schemas.race_imports import (

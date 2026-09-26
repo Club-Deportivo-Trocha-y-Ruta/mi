@@ -23,17 +23,13 @@ Cubre los códigos HTTP del contrato (upload-design.md §4) que sí sobreviven:
 """
 from __future__ import annotations
 
-import io
-import json
 from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import create_engine, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -42,7 +38,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.config import settings
-from app.dependencies import get_db, require_role
+from app.dependencies import get_db
 from app.main import app
 from app.models import Base
 from app.models.race_import import RaceImport, RaceImportKind, RaceImportStatus
@@ -300,7 +296,6 @@ async def coach_client(
 
     app.dependency_overrides[get_db] = _override_db
     # Override require_role para devolver coach10
-    from app.routers import race_imports as router_mod
 
     # require_role devuelve callables, los overrideamos por la callable retornada
     # haciendo monkey-patch del dependency creator directamente desde el módulo.
