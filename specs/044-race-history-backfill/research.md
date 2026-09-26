@@ -159,3 +159,235 @@ Untouched. A regression test loads the 2026 analyst context with 2024–2025 dat
 ## R-16 — Deferred governance (FR-043)
 
 Erasure of unlinked competitors and retention of stored source files are documented as the next feature in `docs/10-race-results/history-backfill-design.md` and `runbook-ops.md`; the privacy audit file for this feature records them as accepted debt with an owner and no date promise.
+
+---
+
+# Amendment 2026-09-26 — Skill-only results loading (R-17…R-31)
+
+The owner removed every results-file upload (spec Clarifications 2026-09-26: FR-044…FR-049 and the corrected FR-027). This section plans that change on top of the implemented feature. It rests on two read-only sweeps of the code at `ebbb786`: backend routers, staging, parsers, ingestor, identity, revision and tests; frontend wizard, board, entry points and tests.
+
+Three findings shape the design:
+
+1. **Nothing persists parsed rows.** `parse_meta_json["categories"][].rows` is a count on purpose. Dry-run, commit, commit-pending, corrections, acknowledge and the identity-review loader all re-download the stored file and re-parse it (`_reload_results_document`, `_reload_parsed_from_storage`, two process-level LRU caches). Removing the server-side parser therefore requires persisting the staged rows (R-20).
+2. **The revision flow is half-wired.** Detection (`detect_revision`, `will_be_revision`, `parent_committed_at`), the reason catalogue, `revision_reason` storage and AI-run invalidation are live. The diff preview is not: the wizard renders `DiffTable` from `is_revision`/`diff_rows` in the dry-run response, and the backend never returns them. The apply step is not either: `revision.compute_diff` and `revision.commit_revision` are implemented and tested but no endpoint calls them. A revision commit today goes through `ingest_event`, which only inserts `(event, category, competitor)` pairs that do not exist yet, so nothing is updated or removed. The corrected FR-027 therefore requires wiring these pieces (R-24). During clarification the owner was told this path was "already built, only the entry point changes"; that was wrong, and it has been reported to the owner.
+3. **The wizard can already resume a staged import by id.** Feature 045 US3 added `/competitions/import?import=<id>`: `useRaceImport` → `parseResultFromDetail` → step 2 (dry-run, corrections, acknowledge, commit, discard), as `ImportWizard.resume.test.tsx` proves. Removing the upload is therefore mostly deleting step 1, provided every staged import carries the public `parse_meta_json` keys that `/parse` writes today (R-20).
+
+## R-17 — What the LLM may see: a masked layout view (FR-046, SC-013)
+
+**Decision.** A local, deterministic `mask` step reads the official file and writes a *layout view*: geometry and token classes, no rider data. It is the only file content the LLM ever reads.
+
+- **Tokens.** Each line (PDF: row band or baseline; delimited text: row) is split into tokens. A token glued across a letter/digit boundary is split first (the R-01 `A9:99:99` case). The classes are:
+  - `WORD`: contains a letter.
+  - `INT`: digits only.
+  - `TIME`: `h:mm:ss`, `mm:ss` and the variants `normalizer.parse_time` accepts.
+  - `STATUS`: `DNF`, `DNS`, `DSQ`, `DQ` and the lap-deficit forms matched by `normalizer.LAP_WORD_PATTERN`.
+  - `PUNCT`.
+- **Structural lines.** A line is structural when it has no `TIME`, no `STATUS`, no `INT` of five or more digits, and every `WORD` is in the reviewed vocabulary. Structural lines render verbatim; they carry column titles, category headers and the document title.
+- **Content lines.** Every other line renders `WORD` → `⟨W⟩`, `INT` → `⟨N{digits}⟩` and `TIME` → `⟨T {shape}⟩`. `STATUS` and `PUNCT` stay verbatim.
+- **Geometry.**
+  - PDF: runs are segmented exactly as the apply engine segments them (R-19: content-stream order, with a new run on a gap > 1 pt or a backwards x jump), and each run is prefixed with its start x. Each page lists its width and the x of its table rulings.
+  - Delimited text: each cell is prefixed with its column index. The header row is structural only under the same vocabulary rule.
+- **Vocabulary.** A committed, reviewed list made of:
+  - the words of `normalizer.HEADER_TO_CODE` keys, plus `CAT`;
+  - column titles: `POS`, `PUESTO`, `DORSAL`, `NUMERO`, `NOMBRE(S)`, `APELLIDO(S)`, `DEPORTISTA`, `CORREDOR`, `CLUB`, `EQUIPO`, `PATROCINADOR`, `CIUDAD`, `MUNICIPIO`, `TIEMPO`, `DIFERENCIA`, `VUELTAS`, `PUNTOS`, `CATEGORIA`, `EDAD`;
+  - document words: `RESULTADOS`, `VALIDA`, `COPA`, `CAMPEONATO`, `CLASIFICACION`, `OFICIAL(ES)`;
+  - roman numerals I–XII;
+  - connectors: `DE`, `DEL`, `LA`, `LAS`, `LOS`, `Y`, `EN`.
+
+  A unit test pins that the list contains **no month or weekday name** (Abril, Julio and Mayo are also given names and surnames), no place name, and nothing outside these classes.
+- **Leak check (SC-013).** After `apply` extracts the real rows (R-18), the view is searched for every word of three or more letters from every extracted name, club and city. Only a count is printed. Any hit:
+  - exits with code 3 and stops the run;
+  - triggers the PII-leak procedure in `docs/10-race-results/runbook-ops.md` §3.5;
+  - leads to removing the vocabulary word that let it through, in a reviewed change.
+
+**Rationale.** Defining a layout needs geometry, token classes, column titles and category headers, never a value. A digit count separates an ordinal from a bib or a year, the time shape identifies the time column, and statuses are not personal data. This is the `bitacora-pdf` pattern: the LLM reads an anonymized brief, and a script holds the real names.
+
+**Alternatives considered.**
+- (a) Show the full text: rejected by the owner (Clarifications Q1) and by the constitution.
+- (b) Mask only the name, club and city columns: circular, because finding those columns is the LLM's task.
+- (c) Keep numbers verbatim: rejected. Organisers may print a birth-year, age or identity-document column, and a minor's birth year may not reach a provider.
+- (d) Stable per-word ids (`⟨W0412⟩`): rejected. They reveal repeated surnames (siblings) and add nothing to layout work.
+- (e) A local model reading the full file: option C of Q1, not chosen.
+
+**Residual risk.** A rider's record could produce a structural line made only of vocabulary words, for example a club named after a category word printed alone on a wrapped line. The leak check catches it; it is never silent.
+
+## R-18 — Reading profile: declarative data applied by one tested engine (FR-001, FR-002, FR-045)
+
+**Decision.** The LLM's output is a **reading profile**: a JSON document committed under `backend/race_reading_profiles/<profile_id>.json` (schema v1; JSON because no YAML parser is a dependency). By construction it holds no rider data: a schema test allows only a closed set of keys and value types (`contracts/reading-profile.md`). The engine `apply_profile(file, profile)` in `app/services/race/results_skill/` turns the real file into a `StagedDocument` locally.
+
+- **PDF.** Rows come from table bands (ruled layouts, R-01) or baselines (unruled layouts). Runs are assigned to columns by their start x; a run always starts inside its own column even when the previous cell overflowed (R-01 point 6). Category header lines are found by the profile's rule. Each label is mapped through the profile's `category_aliases`, then `normalizer.HEADER_TO_CODE`. An unknown label stays an unrecognised category with its rows (FR-002).
+- **Delimited text.** Columns are taken by index. The category comes from a column or from separator rows.
+- **Field grammar comes from the platform, not the profile.** `normalizer.parse_time` reads times, statuses and lap deficits (the T024b variants), and `check_category` checks completeness. There is one grammar for the whole platform.
+- **Output.** The seven fields of `ResultsRow` (`position`, `bib`, `name`, `city`, `club`, `time_raw`, `points`), grouped into ordered categories with `header_raw` and `code`, plus unreadable rows (page, ordinal).
+
+**Rationale.** A single interpreter, covered by CI, carries the privacy and correctness guarantees. A new organiser layout is a data file reviewed in a pull request, not new code run once over real data. When a layout needs a primitive the engine lacks, the primitive is added with a synthetic fixture as a normal change.
+
+**Alternatives considered.**
+- (a) The LLM writes a Python extractor per organiser: rejected. It is untested code run over real data on every load, nothing structural stops it from printing rows, and each load would need a code review.
+- (b) Keep the fixed parser and add organiser branches: this is the path the owner called unsustainable.
+
+## R-19 — Retire the fixed parsers, keep what they learned (FR-001, FR-007)
+
+- `pdf_parser.py` and `csv_parser.py` are deleted together with the upload route.
+  - Runtime importers: `completeness.py`, `routers/race_imports.py`, `import_staging.py`, and `csv_parser.py` itself.
+  - `ingestor.py` and `revision.py` import the types only under `TYPE_CHECKING`.
+  - `normalizer`, `identity_review`, `identity_resolver` and `matcher` do not depend on them.
+- The shared types move unchanged to a neutral module, `app/services/race/staged_document.py`: `ResultsRow` (seven fields), `ParsedCategory`, `ParsedResults` and `UnreadableRow`. `GeneralRow` and `EventHeader` are dropped (R-25).
+- The band and run primitives (content-stream order, run segmentation, start-x assignment, table-band detection) move to `results_skill/pdf_runs.py`, together with their hand-built-char tests (`test_band_reader.py`).
+- **Parity.**
+  - The first profile, `copa-valle-results-pdf`, must reproduce the retired parser's output on the synthetic builder files (the historical overprint layout and the 2026 layout). That way 044's reading guarantees (100 % of rows on overprinted files, the lap-deficit variants) survive as engine plus data.
+  - A second, fictional organiser layout (different column order, unruled) proves the engine is not shaped around Copa Valle.
+- `parse_event_header` goes. Season, válida, date and venue were never inferred (FR-025, R-02); they now come from the manifest or from an existing race event (R-31).
+- FR-007 on real files is checked locally and read-only by `compare` (R-30), never in CI.
+
+## R-20 — Staged rows live in the database; the server never re-reads the file (FR-048, FR-049)
+
+**Decision.**
+
+- **Storage.** A new 1:1 table, `race_import_staged_documents` (data-model §11), holds each import's `StagedDocument` as JSON, plus the profile id, the profile hash and the engine version. The alternatives were worse:
+  - a key in `parse_meta_json`: the list endpoint and the identity universe load that JSON for every import;
+  - a column on `race_imports`: every `select(RaceImport)` would load it, and a `deferred` column fails under async lazy loading.
+- **Loading.** `staged_document.load(db, imp) -> ParsedResults` replaces `_reload_results_document`, `_reload_parsed_from_storage`, the two LRU caches, the 410 "re-upload" path and the "release the connection before SFTP" commits. Corrections stay patches in `parse_meta_json["corrections"]` and are applied after loading, as today. **This closes privacy-audit finding A** (process caches holding unfiltered rows).
+- **Metadata.** The stage step writes the same public `parse_meta_json` keys `/parse` writes today: `header`, `conditions`, `categories_found`, `n_rows_resultados`, `n_rows_general` (= 0), `categories` with counts and completeness, and `unreadable_rows`. The wizard's resume path needs these. It also writes:
+  - the internal keys commit depends on: `results_ext`, `results_storage_path` and `parse_uuid` (the commit storage move needs `parse_uuid`);
+  - `source: "results_skill"` and `profile_id`.
+- **Deletion.** The document row is deleted on full commit (together with `parse_meta_json = None`, as today) and on discard. It survives a partial commit until `commit-pending` finishes. This is data minimization: once results are committed they live in `race_results`, and the evidence file (R-23) is the source of record.
+- **Clock.** `imported_at` comes from the database clock, not the operator's laptop. `_identity_rebuild_needed` compares it with `RaceIdentityCandidate.created_at` (server clock), so a skewed laptop clock could skip a needed rebuild.
+- **Same-content re-stage.** A pending import with the same SHA-256 is returned as is (today's behaviour). A committed one is refused as `already_committed`.
+
+## R-21 — Target selection and credentials (FR-047)
+
+**Decision.**
+
+- **Local by default.** The local target reads `backend/.env` through `app.config`. It refuses to run unless all of these hold:
+  - `MYSQL_HOST` is local: `localhost`, `127.0.0.1`, `::1`, the compose service `mysql`, or `host.docker.internal`;
+  - `APP_ENV` is not `production`;
+  - if `backend/.env.production` exists, the `(MYSQL_HOST, MYSQL_DB)` pair differs from the one in it. The comparison is internal and no value is printed.
+- **Production** requires `--target production --confirm produccion`, so the confirmation names the target. Then it:
+  - loads only the keys it needs from `backend/.env.production` before importing `app.*`, following the `bitacora_snapshot._load_env` pattern: `MYSQL_*`, `HOSTINGER_SFTP_*` and `HOSTINGER_PUBLIC_BASE_URL`, with `APP_ENV=development`, `AI_ENABLED=false` and `STRAVA_ENABLED=false`;
+  - refuses if SFTP is not fully configured, because a production import must not point at a file on a laptop;
+  - refuses if the database's `alembic_version` differs from the repository head, because models and schema must match before writing;
+  - scrubs every environment value from error messages.
+- **The skill never stages to production on its own initiative.** It does so only after the operator asks for it in the session, and it shows the command before running it.
+- **`--dry`** resolves the target and validates everything, then writes nothing.
+
+**Rationale.** A local backend pointed at the production database writes to production (runbook §12.2), so the default must be safe by structure, not by convention. Naming the target in the confirmation, instead of repeating the database name, keeps every `.env.production` value out of the transcript.
+
+## R-22 — Who stages: attribution and RBAC parity for a script that bypasses HTTP (FR-048)
+
+**Decision.**
+- `--user-id` is required. It must be an active user with role `admin` or `coach` in the target database: today's `_load_actor`, and the same roles the removed route required.
+- That user becomes `imported_by_user_id`, which also drives club scope (`permissions.py`) and the dry-run roster, exactly as today.
+- Audit: `record_audit(create, race_import)` with `AuditContext.for_user(actor)` and `meta.via = "results_skill"`.
+- The staged import stays pending and invisible outside the import review. Only an authenticated coach can commit it in the app, so the audit record of the commit still names the person who decided.
+- Anyone holding the database credentials can already write anything. The check prevents mistakes, not an attacker, and the contract says so.
+
+## R-23 — Evidence file (FR-049)
+
+**Decision.**
+- **Upload.** `stage` uploads the original file through `storage_sftp.upload_bytes` to `race-imports/pending/{parse_uuid}/resultados.{pdf|csv}`. This is today's path scheme, so commit's move to `race-imports/committed/{parse_uuid}/` keeps working.
+- **Validation.** Content is checked by magic bytes: `%PDF-` for PDFs; for delimited text, UTF-8 plus a delimiter (today's `_is_csv_like`). The size cap is a script constant, today's 8 MB.
+- **Order.** Extract and validate locally first, upload second, insert the import third, in one database transaction. If the insert fails, the uploaded object is deleted best-effort. (Today a failed parse leaves orphaned files.)
+- The app never reads the stored file again (FR-049). Retention stays deferred (FR-043).
+
+## R-24 — Corrections are revisions, and revisions become real (FR-027 corrected, SC-006)
+
+**Decision.**
+- **Staging.** `stage` calls `detect_revision`. A different reading of a válida whose `(series, sequence_number)` is already committed becomes a pending revision. An identical SHA-256 is refused (`already_committed`).
+- **Dry-run, revision branch.** When the import is a revision, dry-run returns the shape the wizard already renders: `is_revision: true`, `parent_event_id`, `diff_summary`, `diff_rows` and `warnings` (`ImportDryRunRevisionResponse` in `frontend/src/types/raceImports.types.ts`). `revision.compute_diff` computes it.
+- **Commit, revision branch.** The diff is applied with `revision.commit_revision`:
+  - updates, and soft-deletes through `deleted_at`;
+  - one `race_result_revisions` row per change;
+  - a pessimistic lock on the event;
+  - `parent_import_id` and `revision_reason` set, with the reason mandatory when anything is removed.
+
+  The existing AI-run invalidation then runs. The non-revision commit path is unchanged.
+- **Identity-aware matching.** `compute_diff` predates 044. It matches by `(category, normalized_name)` with a fuzzy fallback, which is wrong now that two competitors may share a name (044 signatures). It is adapted to:
+  - resolve each row with the same read-only resolution the ingestor uses (signature plus discriminator);
+  - diff by `(category, competitor_id)`;
+  - keep the fuzzy fallback only for rows whose signature is new.
+
+  Rows of new competitors pass the per-import identity gate (feature 045), like any staged import.
+- **Links and deleted rows.** Athlete links are never overwritten (existing `commit_revision` rule). Read paths already filter `race_results.deleted_at IS NULL` (24 uses across the race module). A test sweep pins that filter on every surface that consumes results: `history`, `field_metrics`, `standings`, `results_read`, the analyst context and the family views.
+- **Legacy partial commits** (R-27) are completed through this path: re-staging the válida yields a revision whose diff creates the rows of the pending categories.
+
+**Rationale.** The owner chose revisions over a single-row editor. The diff and apply logic exist and are tested, and so does the UI. What is missing is the wiring and the identity-aware match, which is less work than a new editor and keeps a single audited correction path. The wiring is an independent phase in `tasks.md`, so the owner can defer it without blocking the rest.
+
+## R-25 — The GENERAL sheet is retired (FR-024 for every season)
+
+- **What it is.** The optional GENERAL upload is the Liga's cumulative season standings. It never creates results: the ingestor only upserts competitors from it (`_upsert_competitor_from_general`) and feeds their names to the identity universe.
+- **Why it can go.** Historical staging never accepted it, and FR-024 already excludes cumulative standings files.
+- **Decision.** The skill stages only the per-válida results file, for every season.
+  - New imports are `kind = resultados`. The `general_*` columns stay for legacy rows.
+  - Removed as dead code: the ingestor's GENERAL step, `GeneralRow`, `parse_general_pdf`, `_parse_general_with_timeout`, and the GENERAL handling in the identity loader (`GENERAL_VALIDA_NUM`).
+- **Side effect.** Fewer third-party minors get a competitor record without any result, which is data minimization. This is recorded in `spec.md` as a planning adjustment.
+
+## R-26 — Remove the upload surface, and prove it stays removed (FR-044, SC-014)
+
+**Backend.** Delete:
+- `POST /api/race-analysis/imports/parse` (`parse_import`);
+- its upload-only helpers: `_is_pdf`, `_is_csv_like`, `_read_with_cap`, `_validate_results_magic`, `_validate_general_magic`, the dead `_sanitize_filename` and `_compute_sha256`, the related constants and the `File`/`Form`/`UploadFile` imports;
+- `_response_for_already_staged`;
+- the settings used only by the route: `race_max_pdf_mb`, `race_parse_timeout_seconds`, the unused `race_pending_ttl_hours`, and their `.env.example` lines;
+- the audit-registry entry `("POST", "/api/race-analysis/imports/parse")` (`test_audit_coverage` fails otherwise);
+- `scripts/stage_race_history.py`;
+- the mutmut entries that name the parsers.
+
+`python-multipart` and `pdfplumber` stay in `requirements.txt`: four other routes accept uploads, and the newsletter PDF reader uses pdfplumber.
+
+**Frontend.**
+- Delete wizard step 1 (upload, metadata, conditions, prefill), `RaceUploadZone`, `parseRaceImport`, `useImportParse`, `ImportParseRequestFields`, `useImportPrefill` and its types, and `VITE_RACE_MAX_PDF_MB`.
+- The wizard becomes a review of a staged import and requires `?import=<id>`. Without it, `/competitions/import` and `/competitions/:id/import` redirect to the board (`/competitions/imports?seccion=cargas`).
+- Every "Cargar resultados", "Importar resultados" and "Cargar archivo" entry point is removed or rewritten (full list in `contracts/ui-review-only.md`). The new copy explains that loads are prepared outside the app and appear in *Cargas* for review.
+
+**Structural guards.**
+1. A backend test walks `app.routes` and asserts that the only endpoints with a file parameter are the four known non-results uploads: training route file, session media, and course variant create and replace. Any new upload fails CI until it is added deliberately.
+2. A denied-path test: a multipart POST to the old path returns 404/405 for every role.
+3. A frontend test asserts there is no `input[type=file]` in the competitions import area, the board, the competitions list and detail pages, or the results tab.
+
+## R-27 — Imports staged before the change
+
+- **Pending imports without a staged document** can no longer be reviewed, because their rows lived only in the stored file.
+  - Every review endpoint except `GET` and discard returns `409 {"detail": "restage_required"}`.
+  - The board shows them with a neutral badge and only *Descartar*.
+  - `ResumeStatusNotice` explains that the load must be prepared again.
+- **Committed imports with `pending_categories`** (partial commits made through the old path): `commit-pending` returns the same 409. The fix is to re-stage the válida with the skill; that yields a revision whose diff creates the missing categories (R-24).
+- **No data migration touches either group.** The runbook's pre-deploy checklist counts both with one SQL query, so the owner knows what to re-stage.
+
+## R-28 — Real official files in the repository
+
+- `tests/fixtures/race/valida_iv_2026_resultados.pdf` and `valida_iv_2026_general.pdf` are real official files (flagged in R-14). `valida_i_2026_sevilla.csv` is synthetic.
+- Once the parser tests, and the four ingestor tests that read the two PDFs, are retired or moved to synthetic builder output, both PDFs are deleted from the tree.
+- They remain in git history. Purging it means rewriting `main`, which is an owner decision. It is recorded as a follow-up in the privacy audit and not done here.
+
+## R-29 — Skill packaging and session guardrails
+
+- **Skill.** `.claude/skills/race-results-load/SKILL.md` (English, instruction corpus), with `references/masked-view.md`, `references/reading-profile.md` (schema plus a synthetic worked example) and `references/manifest.md`. Trigger phrases in Spanish and English ("cargar resultados de la válida …", "load race results").
+- **CLI.** `backend/scripts/race_results.py`, with subcommands `mask`, `profile-check`, `apply`, `compare` and `stage`. The engine lives in `app/services/race/results_skill/`; a test pins that no router imports it.
+- **Outputs.** Under the git-ignored `output/race-results/<run>/`:
+  - `masked/`: the only folder the LLM reads;
+  - `private/`: extracted rows, never read by the LLM.
+
+  Official files and the manifest live outside the repository (the old script's rule, kept).
+- **Stdout discipline.** Every subcommand prints only ids, counts, structural category labels, ordinals, codes and paths, never a name, club, city, bib or time. A test sweeps every subcommand's output against the synthetic names.
+- **Claude Code guardrails.** The project's `.claude/settings.json` gains `permissions.deny` rules for reading `output/race-results/**/private/**`. `SKILL.md` tells the operator where to keep official files so a matching local deny rule can be added. These rules are defence in depth; the masked view is the control. The exact rule syntax is checked at implementation.
+
+## R-30 — Local-first loop and the FR-007 check
+
+- **The loop.**
+  1. `mask`
+  2. profile (LLM)
+  3. `apply`: counts, completeness, leak check
+  4. optional `compare`
+  5. `stage` (local)
+  6. review and commit in the local app
+  7. `stage --target production`
+  8. the coach reviews and commits in production
+- **`compare`** reads the committed results of the same válida from the target database, read-only, and prints matched, changed, missing and extra counts per category. It is the FR-007 check for the 2026 válidas already loaded, and a preview of what a revision would do.
+- **Identity decisions taken locally do not travel.** Production computes its own queue against production competitors, and the coach decides there.
+
+## R-31 — What moves out of the web wizard
+
+- **Válida metadata** (series, kind, level, season, válida, date, venue, event name) moves to the manifest and is validated by the same rules as the removed form (`series_kind`, `series_level`, ISO date).
+- **`race_event_id`** in the manifest replaces the calendar prefill of feature 015. The script reads series, season, válida, date and venue from that event and its series in the target database. The prefill was client-side composition, so no endpoint is removed for it.
+- **Race conditions** (climate, temperature, surface, altitude, notes) are no longer captured at load. The coach enters them on the válida's existing *Condiciones* tab (`ConditionsTab` → `RaceConditionsCard`). Staged imports carry empty `conditions`.
