@@ -22,7 +22,7 @@ The web app keeps every review screen and loses the upload step. Loads are prepa
 - **Changed.** *Volver* on step 2 goes back to the board, not to step 1. `reset()`, *Empezar una carga nueva*, *Cargar otro* and a successful discard all navigate to the board.
 - **Unchanged.** Dry-run (including the revision branch, now reachable: `revision-via-skill.md`), `CategoryMappingTable`, `RowCorrectionDialog`, `AcknowledgeGapDialog`, match resolution, commit, discard, and step 3 (the AI button, `RaceConditionsCard`, `CourseTab`). `CompetitionImportPage.handleCompleted` still navigates to the válida.
 - `resumeFromDetail.ts` stays the entry point.
-- **Legacy imports.** When the detail says the import was staged by the old upload (any review route answers `409 restage_required`), `ResumeStatusNotice` shows the legacy message below, and only *Descartar* is offered.
+- **Legacy imports.** When `restage_required` is true on the detail, or any review route answers `409 restage_required`, `ResumeStatusNotice` shows the legacy message below and only *Descartar* is offered. On the board (`LoadsSection`), a row with `restage_required` shows a neutral «Preparar de nuevo» badge and only *Descartar*.
 
 ## Removed
 

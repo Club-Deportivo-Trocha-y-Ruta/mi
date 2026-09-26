@@ -63,7 +63,8 @@ This closes privacy-audit finding A. With no file to fetch, the "release the MyS
 | `POST /{id}/commit-pending` | rows from the loader; deletes the document when nothing remains pending; `409 restage_required` when missing (a legacy partial commit, R-27) |
 | `POST /{id}/corrections`, `POST /{id}/acknowledge` | rows from the loader; `409 restage_required` when missing |
 | `POST /{id}/discard` | also deletes the document |
-| `GET /{id}`, `GET /`, reason catalogues, `GET /{race_event_id}/diff` | unchanged |
+| `GET /{id}`, `GET /` | + `restage_required: bool` on `ImportDetailRead` and `ImportListItem`: true when the import is `pending` with no document, or committed with `pending_categories` and no document. It is computed with one batched `EXISTS` per page, so no document is loaded. Otherwise unchanged |
+| reason catalogues, `GET /{race_event_id}/diff` | unchanged |
 | `POST /api/race-identity/rebuild`, commit identity gate | `load_identity_rows` reads the loader; a legacy staged import is reported as unreadable, as an unreadable file is today; GENERAL rows are no longer loaded |
 
 `409` body: `{"detail": "restage_required", "import_id": <id>}`. The message shown to the coach lives in the frontend (`ui-review-only.md`).
@@ -108,6 +109,6 @@ Kept: `RaceImportKind.general` and `both`, and the `general_*` columns, for lega
   - the public meta keys match what the wizard's resume path reads;
   - the audit row carries `via`.
 - `test_staged_document.py`: load round-trip; a missing document raises `StagedDocumentMissing`; delete on full commit, on commit-pending completion and on discard; kept on partial commit.
-- Legacy handling: an import created without a document gets `409 restage_required` on each review route; discard still works; GET still works.
+- Legacy handling: an import created without a document gets `409 restage_required` on each review route; discard still works; GET still works; `restage_required` is true on detail and list, and false for a staged import. The list is checked with a statement-count assertion (no N+1).
 - `test_audit_coverage` stays green after the registry entry is removed.
 - `tests/conftest.py` loses the cache-clear autouse fixture.

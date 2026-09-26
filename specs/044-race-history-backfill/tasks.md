@@ -298,9 +298,9 @@ Per `.claude/agents/README.md`: leads orchestrate on **opus** and never write co
 
 ### Owner-only steps (no agent — real data, real people)
 
-- [ ] T105 Obtain the fifteen official files and write the manifest **outside the repository**; stage them with `backend/scripts/stage_race_history.py`
-- [ ] T106 Resolve pending categories (correct or acknowledge) and complete the identity review in the UI
-- [ ] T107 Commit season by season; spot-check three club athletes against the official files; publish the privacy-notice version, set `RACE_HISTORY_FAMILY_POLICY_VERSION`, re-check a parent account
+- ~~T105 Obtain the fifteen official files and write the manifest **outside the repository**; stage them with `backend/scripts/stage_race_history.py`~~ — **superseded 2026-09-26** by T190–T192 (the upload and that script are retired)
+- ~~T106 Resolve pending categories (correct or acknowledge) and complete the identity review in the UI~~ — **superseded 2026-09-26** by T192 (same UI steps, on válidas staged by the skill)
+- ~~T107 Commit season by season; spot-check three club athletes against the official files; publish the privacy-notice version, set `RACE_HISTORY_FAMILY_POLICY_VERSION`, re-check a parent account~~ — **superseded 2026-09-26** by T192
 
 ---
 
@@ -365,4 +365,831 @@ Phases 1–3 alone already fix a live defect: the same overprint can lose rows i
 - `[P]` = different files, no dependency on an incomplete task.
 - Commit after each task or logical group; Conventional Commits, type in English, description in español latino, no mention of AI tooling.
 - Never edit the 2026 parser oracles to make a test pass (T020).
+- Stop at every gate; a lead signs it in this file with the date.
+
+---
+
+# Amendment 2026-09-26 — Skill-only results loading (T108…T192)
+
+**Input**: `spec.md` (Clarifications 2026-09-26; FR-044…FR-049; corrected FR-027; Assumptions "Planning adjustments (2026-09-26)"), `plan.md` § Amendment 2026-09-26, `research.md` R-17…R-31, `data-model.md` §11, and six new contracts: `contracts/masked-view.md`, `contracts/reading-profile.md`, `contracts/results-skill-cli.md`, `contracts/staged-import.md`, `contracts/revision-via-skill.md` and `contracts/ui-review-only.md`. Also `quickstart.md` §9.
+
+**Scope.** Every results-file upload is removed. Results enter only through the `race-results-load` skill:
+- a local script masks the file;
+- the LLM writes a reading profile from the masked view;
+- a tested engine applies it locally;
+- the same script stages the válida, locally by default and in production only when explicit.
+
+The web app keeps review and commit. The amendment also wires the half-built revision path, and retires GENERAL, the fixed parsers, `/parse`, the old staging script and the two real fixtures.
+
+**Tests**: REQUIRED, as for Phases 1–10: test tasks sit before the code they cover. Ported tests keep their assertions; only how they stage changes. A test deleted with the code it covered is listed by name in the commit body of the task that deletes it.
+
+**Story labels**: the amendment changes two existing stories:
+- `[US1]`: reading, which is now the masked view plus the reading-profile engine.
+- `[US5]`: the load path: staging, CLI, upload removal, review-only web app and revisions.
+
+Setup, Foundational, Skill and Polish tasks carry no label.
+
+**Hard ordering rules**:
+1. **No real official file is masked, applied or staged** before T180 (skill signed off) and T185 (audit reviewed). Until then everything runs on builder output.
+2. **Phases 16 and 17 ship in the same deploy**: the frontend must never call a removed route.
+3. **Phase 18 may be deferred.** While it is, the `revision_not_available` guard of T147 stays on: `stage` refuses a different reading of a committed válida (CLI exit 12) rather than staging a revision whose commit would only add rows.
+4. **T122 generates the parity golden files with the retired parser before T153 deletes it.**
+
+**Privacy rule for every task** (unchanged): fixtures are synthetic, and no official file, rider name, club or city is committed, logged, traced or pasted into a prompt. This now also covers the development session itself: the LLM reads only `masked/` and `report.json` of a run.
+
+## Agent assignment (owner request: sonnet or opus "según el caso")
+
+This follows the same policy as Phases 1–10:
+- Leads orchestrate on **opus** and write no code.
+- Workers execute on **sonnet**.
+- A worker is promoted to opus through the Agent tool's `model` override only where one subtle mistake leaks minors' data or corrupts results. That is the case for seven tasks:
+  - T126: masking, the only barrier between rider data and the LLM;
+  - T128: run-to-column assignment, which decides every name, club and time;
+  - T138: rewiring the six review routes that feed commit and the identity gate;
+  - T145: the target guard, the only barrier between a laptop and the production database;
+  - T173: identity-aware diff, which decides whose result changes or disappears;
+  - T174: applying revisions to committed results under a lock;
+  - T177: the skill instructions, which keep an LLM session away from minors' data.
+- `data-privacy-guard` stays on sonnet by policy and is reviewed by an opus lead.
+
+| Agent | Model | Tasks | Used for |
+|---|---|---|---|
+| `engineering-lead` | opus | 8 | T108 and gates G8–G14 (T117, T130, T142, T150, T156, T168, T176). Writes no code. |
+| `data-platform-lead` | opus | 2 | Signs the skill for real files (T180); reviews the amendment's privacy audit (T185). |
+| `product-manager` | opus | 1 | Final acceptance (T189). |
+| `data-analyst` | **opus** (override) | 4 | Masking, apply engine, identity-aware diff, skill authoring (T126, T128, T173, T177). |
+| `data-analyst` | sonnet | 5 | Type move, run primitives, vocabulary, profile schema, profiles (T113, T124, T125, T127, T129). |
+| `fastapi-architect` | **opus** (override) | 2 | Review routes on staged documents; revision wiring (T138, T174). |
+| `fastapi-architect` | sonnet | 12 | Loader, staging service, identity loader, legacy flag, GENERAL removal, CLI, removals, guard flip. |
+| `devops-engineer` | **opus** (override) | 1 | Target guard (T145). |
+| `devops-engineer` | sonnet | 1 | Claude Code deny rules (T178). |
+| `database-architect` | sonnet | 2 | Migration and model of the new table (T114, T115). |
+| `integration-engineer` | sonnet | 1 | Evidence upload and cleanup on SFTP (T149). |
+| `qa-engineer` | sonnet | 30 | Every test task, the port of about 60 router tests, e2e, lanes and gates. |
+| `react-ui-engineer` | sonnet | 5 | Review-only wizard, removals, routes, entry points, copy (T161–T165). |
+| `ux-researcher` | sonnet | 1 | Copy and states review (T166). |
+| `data-privacy-guard` | sonnet | 3 | Real-fixture removal, skill review, mandatory audit (T155, T179, T184). |
+| `technical-writer` | sonnet | 3 | Runbook, design doc and CLAUDE.md bullet, status and notes (T181–T183). |
+| `release-manager` | sonnet | 1 | Pre-deploy checklist and post-deploy smoke (T188). |
+| **Total** | **18 opus · 64 sonnet** | **82** | + T190–T192 owner-only steps (no agent) |
+
+---
+
+## Phase 11: Setup (amendment)
+
+**Purpose**: open the amendment and add the synthetic material every later phase needs.
+
+- [ ] T108 Open the amendment:
+  - record the owner's choice of implementation branch here;
+  - run `alembic heads` and expect exactly one line (`be4595de1ad2` at planning), then record it;
+  - confirm that T098 (G7) passed and record where T099/T100 stand;
+  - confirm that the only real official files in the tree are the two in `backend/tests/fixtures/race/`.
+
+  [agent: engineering-lead · opus]
+- [ ] T109 [P] Extend `backend/tests/helpers/results_pdf_builder.py` (fake names only):
+  - an **unruled fictional layout**: no rulings; columns in the order position, surname, given names, club, city, time, points;
+  - a `--layout {historical,2026,unruled}` option;
+  - a CLI entry, `python -m tests.helpers.results_pdf_builder --layout … --out …`, for quickstart §9.4.
+
+  Add a synthetic delimited generator in `backend/tests/helpers/results_csv_builder.py`: `;`, `,` and tab delimiters, with categories as a column or as separator rows. Add self-tests to `backend/tests/helpers/test_results_pdf_builder.py`.
+
+  [agent: qa-engineer · sonnet]
+- [ ] T110 [P] Add `backend/tests/helpers/name_sweep.py::assert_no_fake_names(text, generator)`. It fails if any accent-folded word of three or more letters from the generator's names, clubs or cities appears in `text`. The masking, CLI and stdout tests reuse it.
+
+  [agent: qa-engineer · sonnet]
+
+---
+
+## Phase 12: Foundational (amendment)
+
+**Purpose**: the staged-document table and the neutral types that both stories need. **Blocks Phases 13–18.**
+
+- [ ] T111 [P] Write `backend/tests/mysql/test_race_import_staged_documents.py` (`-m mysql`). It checks:
+  - the table exactly as in `data-model.md` §11.1: `import_id INT PK, FK → race_imports.id ON DELETE CASCADE`, `schema_version SMALLINT NOT NULL`, `profile_id VARCHAR(64) NOT NULL`, `profile_sha256 CHAR(64) NOT NULL`, `engine_version VARCHAR(16) NOT NULL`, `document_json JSON NOT NULL`, `created_at DATETIME NOT NULL`;
+  - that deleting the import cascades;
+  - a JSON round-trip of a 300-row synthetic document;
+  - upgrade → downgrade → upgrade, clean.
+
+  [agent: qa-engineer · sonnet]
+- [ ] T112 [P] Write `backend/tests/services/race/test_staged_document.py`. It covers:
+  - a `save` → `load` round-trip into `ParsedResults` that preserves category order, `code: null` for an unrecognised header, `time_raw == ""` and unreadable rows;
+  - `StagedDocumentMissing` when no row exists;
+  - `delete` is idempotent;
+  - no log record carries a row value (caplog plus `assert_no_fake_names`).
+
+  [agent: qa-engineer · sonnet]
+- [ ] T113 Move `ResultsRow` (seven fields: `position`, `bib`, `name`, `city`, `club`, `time_raw`, `points`), `ParsedCategory`, `ParsedResults` and `UnreadableRow`, unchanged, to `backend/app/services/race/staged_document.py`.
+  - Keep a temporary re-export in `pdf_parser.py`, which T153 removes.
+  - Update the imports in `completeness.py`, `routers/race_imports.py` and `import_staging.py`, the `TYPE_CHECKING` imports in `ingestor.py` and `revision.py`, and every test that imports these types (`identity_support.py`, `test_completeness.py`, `test_ingestor_*.py`, `test_reingest_staleness.py`, `test_inactive_categories_hidden.py`).
+  - No behaviour change; the default lane stays green.
+
+  [agent: data-analyst · sonnet]
+- [ ] T114 Write the Alembic revision `backend/alembic/versions/<rev>_race_import_staged_documents.py`, with `down_revision` = the single head recorded in T108. It creates `race_import_staged_documents` exactly as in `data-model.md` §11.1, with no index beyond the primary key. It adds no enum value to any existing column. The downgrade drops the table.
+
+  [agent: database-architect · sonnet]
+- [ ] T115 Create the model `backend/app/models/race_import_staged_document.py` (`RaceImportStagedDocument`) and register it in `backend/app/models/__init__.py`. Do not add an implicitly loaded relationship on `RaceImport`; the loader selects by primary key, which avoids async lazy-load errors. Its docstring states the privacy class.
+
+  [agent: database-architect · sonnet]
+- [ ] T116 Implement `save(db, import_id, document, profile_meta)`, `load(db, imp) -> ParsedResults`, `delete(db, import_id)`, `StagedDocumentMissing` and the `document_to_json` / `document_from_json` helpers (`schema_version` 1) in `backend/app/services/race/staged_document.py`. The module docstring covers inputs, outputs and side effects: the rows hold minors' names and are never logged. T112 goes green.
+
+  [agent: fastapi-architect · sonnet]
+- [ ] T117 Gate G8 — foundations:
+  - default lane green;
+  - T111 run against a `_test` MySQL, or explicitly deferred here with the reason;
+  - single Alembic head;
+  - a lead's sign-off in `specs/044-race-history-backfill/tasks.md` with the date.
+
+  [agent: engineering-lead · opus]
+
+**Checkpoint**: Phases 13 and 14 can run in parallel.
+
+---
+
+## Phase 13: User Story 1 (amended) — the LLM reads a masked view; a tested engine reads the file (Priority: P1)
+
+**Goal**: any organiser's layout is read by a reading profile applied locally, and the LLM only ever sees the masked layout view (FR-001, FR-002, FR-045, FR-046, SC-013).
+
+**Independent Test**: builder files in the historical, 2026 and unruled layouts, plus synthetic CSVs:
+- every masked view contains no fake name, club or city;
+- `copa-valle-results-pdf` reproduces the retired parser's rows;
+- the unruled layout is read completely with its own profile.
+
+### Tests for User Story 1 (amended) ⚠️ write first
+
+- [ ] T118 [P] [US1] Write `backend/tests/services/race/results_skill/test_vocabulary.py`. It pins:
+  - every word of the `normalizer.HEADER_TO_CODE` keys, plus `CAT`, is present;
+  - the column, document, roman-numeral and connector lists of `contracts/masked-view.md` are present;
+  - no month or weekday name;
+  - only `[A-Z0-9]` after accent folding;
+  - no word longer than 14 letters.
+
+  [agent: qa-engineer · sonnet]
+- [ ] T119 [P] [US1] Write `backend/tests/services/race/results_skill/test_masking.py`, covering every case listed in `contracts/masked-view.md` § Tests:
+  - no fake name, club or city in any layout;
+  - every `WORD`, `INT` and `TIME` is masked in content lines;
+  - `STATUS` stays verbatim, including the T024b lap-deficit variants;
+  - glued tokens are split;
+  - structural lines are verbatim, and a header with an unknown word renders as content;
+  - a Hypothesis property with names equal to vocabulary words;
+  - `leak_count` catches a vocabulary-only continuation line;
+  - determinism;
+  - refusals: no text layer, more than 8 MB, neither PDF nor UTF-8 delimited text.
+
+  [agent: qa-engineer · sonnet]
+- [ ] T120 [P] [US1] Port every case of `backend/tests/services/race/test_band_reader.py` to `backend/tests/services/race/results_skill/test_pdf_runs.py`: hand-built char dicts, stream order, a gap above `run_gap_pt`, a backwards x jump, an overprinted club.
+
+  [agent: qa-engineer · sonnet]
+- [ ] T121 [P] [US1] Write `backend/tests/services/race/results_skill/test_profile_schema.py` and `test_profiles_valid.py`.
+  - Schema v1 accepts the contract example.
+  - It rejects:
+    - unknown keys;
+    - `run_gap_pt` outside 0.3–5.0;
+    - a `profile_id` that does not match `^[a-z0-9-]{3,64}$`;
+    - a `description` longer than 120 characters;
+    - non-vocabulary words in `category_aliases` keys or in `skip_structural_lines_starting_with`;
+    - a missing required field (`position`, `name`, `club`, `time_or_status`).
+  - Every file under `backend/race_reading_profiles/` and `backend/tests/fixtures/race_profiles/` validates.
+
+  [agent: qa-engineer · sonnet]
+- [ ] T122 [P] [US1] Generate the parity golden files **with the retired parser, before T153 deletes it**. Run `pdf_parser.parse_results_document` on builder output of the historical-overprint and 2026 layouts and write `backend/tests/fixtures/race/parity/{historical,2026}.json` (synthetic, fake names; sweep them with `assert_no_fake_names` against a non-generator list).
+
+  Then write `backend/tests/services/race/results_skill/test_apply_profile.py`, asserting that `apply_profile(copa-valle-results-pdf)` equals the golden rows one by one. It also covers:
+  - removed and duplicated ordinals;
+  - an unknown header (`code` None, rows kept);
+  - lap-deficit variants in `time_raw`;
+  - a position with no time;
+  - a category continuing across a page break;
+  - rows before the first header ending up in `SIN CATEGORÍA`;
+  - an unreadable band becoming `UnreadableRow(page, ordinal)`.
+
+  [agent: qa-engineer · sonnet]
+- [ ] T123 [P] [US1] Write `backend/tests/services/race/results_skill/test_apply_second_layout.py` and `test_apply_delimited.py`.
+  - The unruled layout with `backend/tests/fixtures/race_profiles/fictional-unruled.json` (surname and given names in separate columns, a different column order) is recovered completely.
+  - Delimited text covers a category column, separator rows, multi-column names, and the `;` and tab delimiters.
+
+  [agent: qa-engineer · sonnet]
+
+### Implementation for User Story 1 (amended)
+
+- [ ] T124 [US1] Create the package `backend/app/services/race/results_skill/`:
+  - `__init__.py` holds `ENGINE_VERSION = "1"` and a module docstring (never imported by a router);
+  - `pdf_runs.py` receives the band and run primitives moved out of `pdf_parser.py` (content-stream order, run segmentation with `run_gap_pt`, start x, `find_tables` row bands, baseline bands for unruled layouts), with identical behaviour.
+
+  `pdf_parser.py` imports them from the new module until T153. T120 goes green.
+
+  [agent: data-analyst · sonnet]
+- [ ] T125 [P] [US1] Implement `backend/app/services/race/results_skill/vocabulary.py`: a frozen set built from `normalizer.HEADER_TO_CODE` plus the fixed lists of `contracts/masked-view.md`. Its docstring explains the review rule for adding words. T118 goes green.
+
+  [agent: data-analyst · sonnet]
+- [ ] T126 [US1] Implement `backend/app/services/race/results_skill/masking.py`: `build_masked_view`, `render_masked_view` and `leak_count`, exactly as in `contracts/masked-view.md`.
+  - Token classes and the glued-token split.
+  - The structural-line rule.
+  - PDF geometry through `pdf_runs` (start x per run, page width, ruling x).
+  - Delimited-text rendering.
+  - Refusals: text layer, 8 MB, magic bytes.
+
+  The functions are pure, with no logging of content. T119 goes green.
+
+  [agent: data-analyst · opus]
+- [ ] T127 [P] [US1] Implement `backend/app/services/race/results_skill/profile.py`:
+  - `ReadingProfile`, Pydantic v2 with `extra="forbid"`, schema v1 as in `contracts/reading-profile.md`, with validators: vocabulary-only words in aliases and skip lists, numeric ranges, `profile_id` pattern, required fields;
+  - `load_profile(id_or_path)`;
+  - `profile_sha256(path)`.
+
+  T121's schema cases go green.
+
+  [agent: data-analyst · sonnet]
+- [ ] T128 [US1] Implement `apply_profile(file_bytes, results_ext, profile) -> ParsedResults` in `backend/app/services/race/results_skill/apply.py`, as in `contracts/reading-profile.md` § Engine.
+  - PDF:
+    - rows from `table_bands` or `baselines`;
+    - start-x assignment of runs to columns;
+    - the header rule, then aliases, then `normalizer.HEADER_TO_CODE`;
+    - skip lines;
+    - `SIN CATEGORÍA`;
+    - unreadable rows.
+  - Delimited text: column mapping, a category column or separator rows, multi-column names.
+
+  The engine never parses times itself; `time_raw` is kept for `normalizer.parse_time`.
+
+  [agent: data-analyst · opus]
+- [ ] T129 [US1] Author two profiles **from the masked views of builder files only**:
+  - `backend/race_reading_profiles/copa-valle-results-pdf.json`;
+  - `backend/tests/fixtures/race_profiles/fictional-unruled.json`.
+
+  Iterate until T121, T122 and T123 are green.
+
+  [agent: data-analyst · sonnet]
+- [ ] T130 [US1] Gate G9 — engine:
+  - T118–T123 green;
+  - golden and profile files swept, with no real names;
+  - no module under `app/routers` imports `results_skill` (grep);
+  - sign-off in `specs/044-race-history-backfill/tasks.md`.
+
+  [agent: engineering-lead · opus]
+
+**Checkpoint**: the engine reads every synthetic layout, and the masked view is proven clean.
+
+---
+
+## Phase 14: User Story 5 (amended) — review steps read the staged document; the server never re-reads a file (Priority: P1)
+
+**Goal**: staged rows are persisted, and every review route reads them from the database. Legacy imports are handled, and GENERAL is retired (FR-048, FR-049, R-20, R-25, R-27).
+
+**Independent Test**: stage a synthetic document through the service, with storage downloads monkeypatched to raise. Then:
+- dry-run, corrections, acknowledge, commit, commit-pending and discard all work;
+- the document is deleted on full commit, on commit-pending completion and on discard;
+- a legacy import answers `409 restage_required`.
+
+### Tests for User Story 5 — staged documents ⚠️ write first
+
+- [ ] T131 [P] [US5] Rewrite `backend/tests/services/race/test_import_staging.py` for `stage_extracted_results`, following `contracts/staged-import.md` § Tests.
+  - Dedupe, for a pending and for a committed import.
+  - An empty document is refused (`empty_document`).
+  - An upload failure leaves no import.
+  - A transaction failure deletes the uploaded object and leaves neither an import nor a document.
+  - `imported_at` comes from the database clock: freeze the Python clock and assert the value differs from it.
+  - Public meta keys equal `_PUBLIC_PARSE_META_KEYS`, plus `results_ext`, `results_storage_path`, `parse_uuid`, `source`, `profile_id`.
+  - `conditions` are all null, `n_rows_general == 0` and `kind == resultados`.
+  - The audit row carries `meta.via == "results_skill"`.
+  - A different reading of a committed válida is flagged `is_revision`.
+
+  [agent: qa-engineer · sonnet]
+- [ ] T132 [P] [US5] Write `backend/tests/helpers/staging.py::stage_for_test(db, document, header, actor, *, file_bytes=None, results_ext="pdf")`. It builds a synthetic document when none is given, calls `stage_extracted_results` with storage on the local fallback, and returns `StageResult`.
+
+  [agent: qa-engineer · sonnet]
+- [ ] T133 [P] [US5] Write `backend/tests/routers/test_race_imports_staged_rows.py`, with `storage_sftp.download_to_tempfile` monkeypatched to raise.
+  - dry-run, corrections, acknowledge, commit and commit-pending succeed from the document.
+  - The document is deleted on full commit, on commit-pending completion and on discard, and kept on a partial commit.
+
+  [agent: qa-engineer · sonnet]
+- [ ] T134 [P] [US5] Write `backend/tests/routers/test_race_imports_legacy.py`, for an import created without a document.
+  - `409 {"detail": "restage_required", "import_id": …}` on dry-run, commit, corrections and acknowledge.
+  - A committed import with `pending_categories` and no document gets the same 409 on commit-pending.
+  - GET detail and discard still work.
+  - `restage_required` is true on detail and list, and false for a staged import. The list is checked with a statement-count assertion (no N+1).
+  - The identity rebuild reports the import as unreadable.
+
+  [agent: qa-engineer · sonnet]
+- [ ] T135 [US5] Port the first batch from HTTP `/parse` to `stage_for_test`:
+  - `backend/tests/routers/test_race_imports.py`
+  - `test_race_imports_revision.py`
+  - `test_race_series_014.py`
+  - `backend/tests/test_race_imports_series_level.py`
+  - `backend/tests/test_audit_race_results.py`
+
+  Keep every assertion that is not about upload mechanics. Delete the tests of size cap, magic bytes, timeout, 410 re-upload and download, and list each one by name in the commit body.
+
+  [agent: qa-engineer · sonnet]
+- [ ] T136 [US5] Port the second batch:
+  - `backend/tests/routers/test_race_imports_club_scope.py`
+  - root `backend/tests/test_race_imports_club_scope.py`: replace the "dry-run hits a missing file" trick with a real staged document
+  - `test_race_imports_integrity.py`
+  - `test_race_imports_history.py`: drop the cache no-redownload test and the file path of the direct `load_identity_rows` call
+  - `test_race_imports_identity_gate.py`: drop `GeneralRow`
+  - `backend/tests/services/race/identity_support.py`
+
+  [agent: qa-engineer · sonnet]
+
+### Implementation for User Story 5 — staged documents
+
+- [ ] T137 [US5] Implement `stage_extracted_results` in `backend/app/services/race/import_staging.py`, following steps 1–6 of `contracts/staged-import.md`.
+  - Reuse `_get_or_create_series`, `_categories_read` and `detect_revision`.
+  - Upload the evidence to `race-imports/pending/{parse_uuid}/resultados.{ext}`.
+  - Write one transaction with the import, the document and the audit `create`.
+  - Take `imported_at` from `func.now()`.
+  - On failure, delete the uploaded object best-effort.
+  - Return `StageResult`.
+
+  Keep `stage_results_file` until T152. T131 goes green.
+
+  [agent: fastapi-architect · sonnet]
+- [ ] T138 [US5] In `backend/app/routers/race_imports.py`, replace `_reload_results_document`, `_reload_parsed_from_storage`, `_RAW_PARSE_CACHE`, `_CORRECTED_CATEGORIES_CACHE`, `_lru_get`/`_lru_put` and `clear_parsed_rows_caches` with `staged_document.load`.
+  - Corrections and acknowledge validate against the loaded rows.
+  - Dry-run, commit and commit-pending build `{code: rows}`, `category_headers_raw` and `categories` from the document.
+  - Remove the "release the connection before SFTP" commits (around lines 1021, 1129, 1296, 1570, 1767 and 1859, and `identity_review.py:778`).
+  - Map `StagedDocumentMissing` → `409 {"detail": "restage_required", "import_id": id}`.
+  - Delete the document on full commit, on commit-pending completion and on discard.
+  - Remove the cache-clear autouse fixture from `backend/tests/conftest.py`.
+
+  T133 and T134 go green (all but the list flag).
+
+  [agent: fastapi-architect · opus]
+- [ ] T139 [US5] Make `load_identity_rows` (`backend/app/routers/race_imports.py`) and `load_universe` (`backend/app/services/race/identity_review.py`) read the staged document. A legacy import is reported as unreadable, as unreadable files are today. Remove the GENERAL rows handling (`GENERAL_VALIDA_NUM`); the `kind=general` skip stays for legacy rows.
+
+  [agent: fastapi-architect · sonnet]
+- [ ] T140 [US5] Add `restage_required: bool` to `ImportDetailRead` and `ImportListItem` (`backend/app/schemas/race_imports.py`). Compute it in `GET /{id}` and `GET /` with one batched `EXISTS` per page. It is true for `pending` with no document, and for committed with `pending_categories` and no document. T134 goes fully green.
+
+  [agent: fastapi-architect · sonnet]
+- [ ] T141 [US5] Retire GENERAL in `backend/app/services/race/ingestor.py`:
+  - remove the "GENERAL first" step (`_upsert_competitor_from_general`), the `general_by_category` parameter and the unused `pdf_general_sha256`;
+  - adjust callers and the `test_ingestor*.py` cases that fed GENERAL rows;
+  - keep `RaceImportKind.general` and `both` for legacy rows.
+
+  [agent: fastapi-architect · sonnet]
+- [ ] T142 [US5] Gate G10 — review API on documents:
+  - T131–T136 green;
+  - `grep -rn "download_to_tempfile" backend/app/routers/race_imports.py backend/app/services/race/identity_review.py` finds nothing;
+  - finding A of the privacy audit is ready to close in T184;
+  - sign-off in `specs/044-race-history-backfill/tasks.md`.
+
+  [agent: engineering-lead · opus]
+
+---
+
+## Phase 15: User Story 5 (amended) — one CLI stages the válida, local first (Priority: P1)
+
+**Goal**: `python -m scripts.race_results` masks, applies, compares and stages. It is local by default, production only when explicit, and never prints rider data (FR-045, FR-047, FR-048, FR-049).
+
+**Independent Test**: the CLI suite on aiosqlite, with fake env files in a tmp dir and no network.
+
+### Tests for User Story 5 — CLI ⚠️ write first
+
+- [ ] T143 [P] [US5] Write `backend/tests/scripts/test_race_results_cli.py`, following `contracts/results-skill-cli.md` § Tests.
+  - The happy path `mask` → `profile-check` → `apply` → `stage`.
+  - The local guard.
+  - The production guard: missing `--confirm`, missing SFTP, head mismatch.
+  - Actor refusals: unknown, inactive, parent, athlete.
+  - Duplicates: the same file staged twice gives one import; a committed same file exits 8.
+  - A revision exits 12 while T175 is pending.
+  - `--dry` changes no race table count.
+  - A file inside the repository and a scanned PDF are refused.
+  - Every exit code of the contract.
+  - `assert_no_fake_names` over stdout, stderr and `report.json` of every subcommand.
+
+  [agent: qa-engineer · sonnet]
+- [ ] T144 [P] [US5] Write `backend/tests/services/race/results_skill/test_target.py` for `resolve_target`.
+  - Local allow-list hosts: `localhost`, `127.0.0.1`, `::1`, `mysql`, `host.docker.internal`.
+  - `APP_ENV=production` refused.
+  - A `(MYSQL_HOST, MYSQL_DB)` pair equal to `.env.production` refused.
+  - Production requires `--confirm produccion`.
+  - Incomplete SFTP refused.
+  - An `alembic_version` mismatch refused (fake version table).
+  - `scrub()` replaces every loaded value.
+
+  [agent: qa-engineer · sonnet]
+
+### Implementation for User Story 5 — CLI
+
+- [ ] T145 [US5] Implement `backend/app/services/race/results_skill/target.py`:
+  - `resolve_target(target, confirm, env_dir)`;
+  - production keys loaded from `backend/.env.production` before `app.*` is imported: only `MYSQL_*`, `HOSTINGER_SFTP_*` and `HOSTINGER_PUBLIC_BASE_URL`, and set `APP_ENV=development`, `AI_ENABLED=false`, `STRAVA_ENABLED=false`;
+  - the local allow-list, and the pair comparison without printing;
+  - the SFTP completeness check;
+  - `alembic_version` against the repository head (`ScriptDirectory`);
+  - `scrub(text)`.
+
+  T144 goes green.
+
+  [agent: devops-engineer · opus]
+- [ ] T146 [US5] Create `backend/scripts/race_results.py` with argparse subcommands `mask`, `profile-check`, `apply`, `compare` and `stage`.
+  - The run folder is `output/race-results/<YYYYMMDD-HHMMSS>-<sha8>/{masked,private}/`, plus `report.json`.
+  - Refuse paths inside the repository, reusing `_find_repo_root` and `_assert_outside_repo` from the retired script.
+  - Exit codes exactly as in the contract (0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12).
+  - Operator messages in Spanish.
+  - Stdout discipline: never a name, club, city, bib, time or points value. Exceptions become class name plus code.
+
+  [agent: fastapi-architect · sonnet]
+- [ ] T147 [US5] Wire `stage` in `backend/scripts/race_results.py`.
+  - Manifest validation:
+    - the explicit form: `series_name`, `series_kind`, `series_level`, `season`, `valida_num`, `event_name`, `event_date` as an ISO date, `location`;
+    - or `{"race_event_id": N}`, resolved from `RaceEvent` plus `RaceSeries` in the target;
+    - unknown keys refused, and no conditions.
+  - The actor must be an active `admin` or `coach` (the `_load_actor` semantics).
+  - Call `stage_extracted_results` with the profile id, hash and engine version.
+  - `--dry`.
+  - The `revision_not_available` guard (exit 12), a module constant that T175 turns off.
+  - Print the review path `/competitions/import?import=<id>`.
+
+  [agent: fastapi-architect · sonnet]
+- [ ] T148 [US5] Implement `compare` in `backend/scripts/race_results.py`:
+  - a read-only session: `SET TRANSACTION READ ONLY` on MySQL, and always `rollback()`;
+  - per-category matched, changed, missing and extra counts against the válida's committed, non-deleted results;
+  - exit 7 when the válida is not found.
+
+  [agent: fastapi-architect · sonnet]
+- [ ] T149 [US5] Handle the evidence file in `stage`:
+  - magic bytes: `%PDF-`, or UTF-8 plus a delimiter;
+  - an 8 MB cap constant;
+  - `storage_sftp.upload_bytes`;
+  - a best-effort delete on failure: add `storage_sftp.delete_object` if missing, with tests in `backend/tests/services/race/test_storage_race_uploads.py`;
+  - production refuses the local fallback.
+
+  [agent: integration-engineer · sonnet]
+- [ ] T150 [US5] Gate G11 — CLI:
+  - T143 and T144 green;
+  - quickstart §9.4 run once on the local docker stack with a builder file; record the counts only;
+  - sign-off in `specs/044-race-history-backfill/tasks.md`.
+
+  [agent: engineering-lead · opus]
+
+---
+
+## Phase 16: User Story 5 (amended) — no results upload remains (Priority: P1)
+
+**Goal**: no endpoint or backend script accepts a results file, and the fixed parsers and the real fixtures are gone (FR-044, SC-014, R-26, R-28).
+
+**Independent Test**: `test_no_results_upload.py` (allow-list, denied path for four roles, engine not imported by routers).
+
+- [ ] T151 [P] [US5] Write `backend/tests/privacy/test_no_results_upload.py`, following `contracts/staged-import.md` § Structural guards:
+  - the file-parameter allow-list has exactly four entries;
+  - a multipart POST to `/api/race-analysis/imports/parse` returns 404 or 405 for admin, coach, parent and athlete;
+  - no router imports `app.services.race.results_skill`.
+
+  [agent: qa-engineer · sonnet]
+- [ ] T152 [US5] Delete, in `backend/app/routers/race_imports.py`:
+  - `POST /parse` (`parse_import`);
+  - `_is_pdf`, `_is_csv_like`, `_read_with_cap`, `_validate_results_magic`, `_validate_general_magic`, `_sanitize_filename`, `_compute_sha256`;
+  - the upload constants, the `File`/`Form`/`UploadFile` imports, and the upload parts of the module docstring.
+
+  In `import_staging.py`, delete `stage_results_file`, `_response_for_already_staged`, `_parse_results_with_timeout` and `_parse_general_with_timeout`.
+
+  Remove `("POST", "/api/race-analysis/imports/parse")` from the registry in `backend/app/services/audit.py`; `tests/test_audit_coverage.py` stays green.
+
+  [agent: fastapi-architect · sonnet]
+- [ ] T153 [US5] Delete the fixed parsers and their tests.
+  - Delete `backend/app/services/race/pdf_parser.py` and `csv_parser.py`, including the temporary re-exports.
+  - Delete `test_parser.py`, `test_parser_edge_cases.py`, `test_parser_historical_layout.py`, `test_parser_time_variants.py`, `test_band_reader.py` (ported in T120) and `test_csv_parser.py`. In the commit body, list what each covered and where that coverage now lives (T120, T122, T123).
+  - Move the four `test_ingestor.py` cases that read real fixtures to builder output.
+  - Update the mutmut entries in `backend/pyproject.toml`.
+
+  [agent: fastapi-architect · sonnet]
+- [ ] T154 [US5] Remove `race_max_pdf_mb`, `race_parse_timeout_seconds` and `race_pending_ttl_hours` from `backend/app/config.py` and `.env.example`. Delete `backend/scripts/stage_race_history.py` and `backend/tests/scripts/test_stage_race_history.py`.
+
+  [agent: fastapi-architect · sonnet]
+- [ ] T155 [US5] Once `grep -rn valida_iv_2026 backend/` finds only the fixtures themselves:
+  - delete the real official files `backend/tests/fixtures/race/valida_iv_2026_resultados.pdf` and `valida_iv_2026_general.pdf`;
+  - update `backend/tests/services/race/conftest.py`;
+  - record in `privacy-audit.md` that both files remain in git history and that purging them is an owner decision. No history rewrite is performed.
+
+  [agent: data-privacy-guard · sonnet]
+- [ ] T156 [US5] Gate G12 — removal:
+  - `pytest -q` and `ruff check` green;
+  - `grep -rn "pdf_parser\|csv_parser\|imports/parse" backend/app` finds nothing;
+  - T151 green;
+  - sign-off in `specs/044-race-history-backfill/tasks.md`.
+
+  [agent: engineering-lead · opus]
+
+---
+
+## Phase 17: User Story 5 (amended) — the web app reviews and commits, never uploads (Priority: P1)
+
+**Goal**: the coach reviews staged imports in the existing screens, with no upload anywhere (FR-044, FR-048, SC-014, `contracts/ui-review-only.md`). **Ships in the same deploy as Phase 16.**
+
+**Independent Test**:
+- `noResultsUpload.test.tsx` passes;
+- the ported wizard suites start from `?import=<id>`;
+- the e2e stages through the CLI.
+
+### Tests for User Story 5 — web ⚠️ write first
+
+- [ ] T157 [P] [US5] Write `frontend/src/components/competitions/__tests__/noResultsUpload.test.tsx`. Render the review page, the board, the competitions list and detail, and the results tab. Assert there is no `input[type=file]` and no «Cargar resultados», «Importar resultados» or «Cargar archivo».
+
+  [agent: qa-engineer · sonnet]
+- [ ] T158 [P] [US5] Write `frontend/src/components/competitions/imports/__tests__/ResumeStatusNotice.legacy.test.tsx`:
+  - `restage_required` true, or a 409 `restage_required`, shows the legacy notice with only *Descartar*;
+  - a board row shows the «Preparar de nuevo» badge;
+  - jest-axe reports zero violations.
+
+  [agent: qa-engineer · sonnet]
+- [ ] T159 [P] [US5] Port the wizard suites to start from `?import=<id>` with MSW: extend `frontend/src/test/msw/raceImportsHistoryHandlers.ts` with detail and dry-run handlers, following the `ImportWizard.resume.test.tsx` pattern.
+  - `ImportWizard.test.tsx`: steps 2–3, matches, one 409 message per code (`already_committed`, `restage_required`).
+  - `ImportWizard.categories.test.tsx`
+  - `ImportWizard.postimport.test.tsx`
+  - the upload-only case of `ImportWizard.resume.test.tsx`
+
+  [agent: qa-engineer · sonnet]
+- [ ] T160 [P] [US5] Update the entry-point tests: `CompetitionsListPage.test.tsx`, `ResultsTable.test.tsx`, `EventForm.race-event-id.test.tsx`, `CompetitionImportPage.test.tsx`, `navigation.test.ts`, `competitionsRedirects.test.tsx` (no `?import` goes to the board; `?import` still routes), `LoadsSection.test.tsx` and `CompetitionImportsPage.test.tsx`.
+
+  Delete `RaceUploadZone.test.tsx`, `api/__tests__/raceImports.conditions.test.ts`, the `useImportParse` cases in `useRaceImports.test.tsx`, `ImportWizard.{prefill,locked,championship,standalone,conditions}.test.tsx`, and the step-1 parts of `ImportWizard.014.test.tsx`.
+
+  [agent: qa-engineer · sonnet]
+
+### Implementation for User Story 5 — web
+
+- [ ] T161 [US5] Remove step 1 from `frontend/src/components/competitions/import/ImportWizard.tsx`, as in the contract.
+  - `STEPS` becomes «Revisar carga», «Resultado».
+  - Delete `step1Schema` and its `useForm`, the prefill blocks and wiring, the metadata and conditions sections, the upload zones, `submitStep1` and the file state.
+  - *Volver*, `reset()`, *Empezar una carga nueva*, *Cargar otro* and a successful discard all navigate to `/competitions/imports?seccion=cargas`.
+
+  [agent: react-ui-engineer · sonnet]
+- [ ] T162 [US5] Delete:
+  - `frontend/src/components/competitions/import/RaceUploadZone.tsx`;
+  - `parseRaceImport` (`src/api/raceImports.ts`);
+  - `useImportParse` and `UseImportParseVariables` (`src/hooks/ai/useRaceImports.ts`);
+  - `ImportParseRequestFields` and `ImportPrefill*` (`src/types/raceImports.types.ts`); keep `ImportParseResponse`;
+  - `src/hooks/race/useImportPrefill.ts`;
+  - `VITE_RACE_MAX_PDF_MB` (`src/vite-env.d.ts`).
+
+  Add `restage_required` to the list and detail types.
+
+  [agent: react-ui-engineer · sonnet]
+- [ ] T163 [US5] In `frontend/src/App.tsx`, redirect `/competitions/import` and `/competitions/:id/import` without `?import` to `/competitions/imports?seccion=cargas`; with `?import` they render the review. Set the review copy in `routes/competitions/CompetitionImportPage.tsx`: «Revisar carga de resultados» / «Revisa la lectura, resuelve lo pendiente y confirma.».
+
+  [agent: react-ui-engineer · sonnet]
+- [ ] T164 [US5] Change the entry points as in the contract table: `CompetitionsListPage.tsx`, `CompetitionDetailPage.tsx`, `tabs/ResultsTab.tsx` (copy plus «Ir a Cargas»), `imports/LoadsSection.tsx` (no «Cargar archivo»; «Revisar la carga»; the legacy badge with only *Descartar*) and `calendar/EventForm.tsx`. Add the legacy state to `imports/ResumeStatusNotice.tsx`.
+
+  [agent: react-ui-engineer · sonnet]
+- [ ] T165 [US5] Sweep the copy using the contract's copy table:
+  - `DiscardImportDialog.tsx`;
+  - the `DiffTable.tsx` aria-label;
+  - the per-code 409 messages in `ImportWizard.tsx`;
+  - «Confirmar carga» and «Carga confirmada»;
+  - the loading fallbacks in `App.tsx` and `CompetitionImportPage.tsx`;
+  - the board's description and empty state;
+  - the results-tab empty state;
+  - the calendar hint.
+
+  Everything is in español neutro with full diacritics.
+
+  [agent: react-ui-engineer · sonnet]
+- [ ] T166 [US5] Review the new copy, the legacy state and the redirects on the coach's tablet, against the Nielsen heuristics and the no-dead-entry-point rule. Record the review as a new section of `specs/044-race-history-backfill/ux-review.md`.
+
+  [agent: ux-researcher · sonnet]
+- [ ] T167 [US5] Update the Playwright specs.
+  - `frontend/e2e/race-history.spec.ts`: stage the builder files with `python -m scripts.race_results` (`mask` → `apply` with the test profile → `stage --target local`) against the e2e stack's database instead of `setInputFiles`. Everything after staging stays unchanged.
+  - Delete `e2e/prefill-import-from-competition.spec.ts`.
+  - `e2e/cup-vs-championship.spec.ts` E2E-014-006: assert the staged level in the review header.
+  - Update the skipped test's comment in `e2e/competitions-unification.spec.ts`.
+
+  [agent: qa-engineer · sonnet]
+- [ ] T168 [US5] Gate G13 — web:
+  - `npm run typecheck`, `npm run build` and `npm test` green;
+  - T167 run on the isolated stack, or explicitly deferred with the reason;
+  - Phases 16 and 17 confirmed to ship together;
+  - sign-off in `specs/044-race-history-backfill/tasks.md`.
+
+  [agent: engineering-lead · opus]
+
+**Checkpoint (amendment MVP)**: Phases 11–17 + 19 give skill-only loading end to end for first loads. Revisions are refused with exit 12 until Phase 18.
+
+---
+
+## Phase 18: User Story 5 (amended) — corrections are real revisions (Priority: P2 within the amendment; deferrable)
+
+**Goal**: a different reading of a committed válida is reviewed as a diff and applied as a whole with a reason. Athlete links survive, and removed results disappear from every read (FR-027 corrected, SC-006, `contracts/revision-via-skill.md`).
+
+**Independent Test**: commit a synthetic válida, then stage an edited reading (one time changed, one row removed, one row added).
+- The dry-run shows 1 update, 1 delete and 1 create.
+- A commit without a reason gets 422.
+- A commit with a reason applies the three changes with `race_result_revisions` rows.
+- The removed row disappears from `history`, `field_metrics`, `standings` and the family views.
+
+### Tests for User Story 5 — revisions ⚠️ write first
+
+- [ ] T169 [P] [US5] Write `backend/tests/services/race/test_revision_diff_identity.py`:
+  - two same-name competitors in one category (decided "different people") are diffed separately;
+  - a surname correction resolves through the fuzzy fallback with `fuzzy_matched: true`;
+  - a club athlete's fuzzy candidate stays `create`;
+  - a category move yields `delete` plus `create`;
+  - `unchanged` rows are counted but omitted from `diff_rows`.
+
+  [agent: qa-engineer · sonnet]
+- [ ] T170 [P] [US5] Extend `backend/tests/routers/test_race_imports_revision.py`:
+  - dry-run returns the `ImportDryRunRevisionResponse` shape;
+  - commit without `revision_reason` gets 422;
+  - `409 revision_incomplete` when a category is inconsistent;
+  - `409 event_locked` when the event is locked;
+  - an identity-gate 409 on a revision with a new name;
+  - the applied update, create and delete, with `race_result_revisions` rows;
+  - `parent_import_id` is set;
+  - an athlete link survives;
+  - `invalidate_runs_for_event` is called;
+  - the staged document is deleted.
+
+  [agent: qa-engineer · sonnet]
+- [ ] T171 [P] [US5] Write `backend/tests/services/race/test_deleted_results_excluded.py`. After a revision soft-deletes one result, it is absent from `history`, `field_metrics` / `compute_category_metrics`, `standings`, `results_read` (coach and family), the analyst context (`queries.py`), the season panorama and the family results views.
+
+  [agent: qa-engineer · sonnet]
+- [ ] T172 [P] [US5] Port `frontend/src/components/competitions/import/__tests__/DiffConfirm.test.tsx` to the real revision dry-run shape through MSW: the diff table renders, the reason is required, and the commit payload carries `revision_reason`.
+
+  [agent: qa-engineer · sonnet]
+
+### Implementation for User Story 5 — revisions
+
+- [ ] T173 [US5] Adapt `revision.compute_diff` in `backend/app/services/race/revision.py`.
+  - Resolve each row through the read-only path of `identity_resolver` (signature plus the discriminator of R-06 §9–10), and diff by `(category_code, competitor_id)`.
+  - Keep the fuzzy `partial_ratio ≥ 92` fallback only for rows that resolve to "new", flagged `fuzzy_matched: true`. It never auto-matches a club athlete.
+  - Count `unchanged` rows but omit them from the rows returned.
+
+  T169 goes green.
+
+  [agent: data-analyst · opus]
+- [ ] T174 [US5] Wire the revision branch in `backend/app/routers/race_imports.py`, as in `contracts/revision-via-skill.md`.
+  - **Dry-run** returns the new `ImportDryRunRevisionResponse` schema (`backend/app/schemas/race_imports.py`, mirroring the frontend type).
+  - **Commit**:
+    1. `revision_reason` is mandatory (422).
+    2. The per-import identity gate runs.
+    3. `revision_incomplete` 409 when a category is not consistent.
+    4. The diff is recomputed server-side.
+    5. `commit_revision` applies it, with creations through the ingestor's resolver, signature writing and frozen labels.
+    6. `parent_import_id`, `revision_reason` and `committed_*` are set.
+    7. The document is deleted and the evidence moved.
+    8. `invalidate_runs_for_event` runs.
+    9. The audit records counts only.
+  - Widen `commit_revision`'s reason rule to every revision.
+
+  T170, T171 and T172 go green.
+
+  [agent: fastapi-architect · opus]
+- [ ] T175 [US5] Turn off the `revision_not_available` guard in `backend/scripts/race_results.py`, and change T143's revision case to expect a staged revision (exit 0 and the `revisión de la importación #N` line).
+
+  [agent: fastapi-architect · sonnet]
+- [ ] T176 [US5] Gate G14 — revisions:
+  - T169–T172 and T143 green;
+  - the read sweep green;
+  - one legacy partial commit completed through a revision on the local stack, with a builder file;
+  - sign-off in `specs/044-race-history-backfill/tasks.md`.
+
+  [agent: engineering-lead · opus]
+
+---
+
+## Phase 19: The skill and the session guardrails
+
+**Purpose**: the operator's procedure, written for the LLM, with its guardrails (R-29, `contracts/results-skill-cli.md` § Skill procedure).
+
+- [ ] T177 [P] Write the skill in English:
+  - `.claude/skills/race-results-load/SKILL.md`:
+    - the eight rules of the contract;
+    - the prerequisites;
+    - the local-first loop;
+    - the production-only-on-request rule;
+    - the report format;
+    - a trigger description in Spanish and English.
+  - `references/masked-view.md`: how to read the geometry, and what never to ask.
+  - `references/reading-profile.md`: schema v1 with a worked example built on a builder file's masked view (fake names only).
+  - `references/manifest.md`: both forms, with placeholders.
+
+  [agent: data-analyst · opus]
+- [ ] T178 [P] Add `permissions.deny` for `Read(./output/race-results/**/private/**)` to `.claude/settings.json`, checking the exact rule syntax against the current Claude Code documentation (the `update-config` skill). Document in `SKILL.md` the optional local deny rule for the operator's official-files folder. Confirm that `output/` is still git-ignored.
+
+  [agent: devops-engineer · sonnet]
+- [ ] T179 Review the skill, its references, the deny rules and the vocabulary against FR-046 / SC-013 and the CLAUDE.md hard rules. Record the findings in `specs/044-race-history-backfill/privacy-audit.md` §4 (new).
+
+  [agent: data-privacy-guard · sonnet]
+- [ ] T180 Review T179, then sign the skill as usable on real files, or list the blockers, in `privacy-audit.md` §4. **No real official file is masked before this sign-off.**
+
+  [agent: data-platform-lead · opus]
+
+---
+
+## Phase 20: Polish & cross-cutting (amendment)
+
+- [ ] T181 [P] Update `docs/10-race-results/runbook-ops.md`:
+  - §12.1: the pre-deploy legacy count (quickstart §9.6 step 1) and the new migration;
+  - §12.2: the CLI's target guard replaces the reminder about a local backend pointed at production;
+  - §12.3: rewritten for the skill, local first and production only when explicit;
+  - §12.7: staged documents and revisions;
+  - §1.2: the Hostinger remote-MySQL allow-list for the operator's IP.
+
+  [agent: technical-writer · sonnet]
+- [ ] T182 [P] Documentation:
+  - an addendum to `docs/10-race-results/history-backfill-design.md` summarising R-17…R-31;
+  - "superseded" banners on `docs/10-race-results/upload-design.md` and `upload-workflow.md`;
+  - a minimal correction of the race-results bullet in `CLAUDE.md`: loading is done by the results skill; the web app reviews and commits; there is no upload endpoint. No history in that file.
+
+  [agent: technical-writer · sonnet]
+- [ ] T183 [P] Add the amendment's step table to `docs/implementation-status.md` and a dated entry to `docs/technical-notes.md`.
+
+  [agent: technical-writer · sonnet]
+- [ ] T184 Run the mandatory privacy audit of the amendment: engine and vocabulary, CLI and its output, staged documents, router deltas, revision wiring, frontend deltas and deleted fixtures. Record the verdict in `privacy-audit.md` §4 and close finding A of §2.
+
+  [agent: data-privacy-guard · sonnet]
+- [ ] T185 Review T184's verdict and record it in `privacy-audit.md` §5.
+
+  [agent: data-platform-lead · opus]
+- [ ] T186 Run `pytest -m mysql backend/tests/mysql/test_race_import_staged_documents.py` (T111 and the migration round-trip) against a `_test` database, and record the result in `docs/implementation-status.md`, or state explicitly there that it was not run and why.
+
+  [agent: qa-engineer · sonnet]
+- [ ] T187 Run the full offline gates: backend `pytest -q` and `ruff check`; frontend `npm run typecheck`, `npm run build` and `npm test`. Compare lazy-chunk sizes of the competitions routes before and after; they must not grow. Record `pytest -m golden` as not affected (no prompt or pipeline change), as in T088. Write every result in `docs/implementation-status.md`.
+
+  [agent: qa-engineer · sonnet]
+- [ ] T188 Pre-deploy checklist:
+  - single head;
+  - backup;
+  - legacy count;
+  - migration timing;
+  - Phases 16 and 17 in one deploy;
+  - obsolete `RACE_*` variables noted for removal in Render.
+
+  Post-deploy smoke:
+  - `/health`;
+  - one authenticated endpoint;
+  - `GET /api/race-analysis/imports/` lists with `restage_required`;
+  - `POST /api/race-analysis/imports/parse` answers 404 or 405.
+
+  [agent: release-manager · sonnet]
+- [ ] T189 Final acceptance on the deployed build against FR-044…FR-049, corrected FR-027, SC-006, SC-013 and SC-014, together with the SC items still open from T104. List every unverified criterion with its owner in `specs/044-race-history-backfill/tasks.md`.
+
+  [agent: product-manager · opus]
+
+### Owner-only steps (no agent — real data, real people)
+
+- [ ] T190 Before the deploy, run the legacy count (`specs/044-race-history-backfill/quickstart.md` §9.6 step 1) and decide, for each open import, whether to discard it or re-stage it after the deploy.
+- [ ] T191 After T180 and T185, prepare each historical válida locally with the skill (`.claude/skills/race-results-load/SKILL.md`): the official file stays outside the repository; `mask` → profile → `apply` → `stage` locally → review and commit in the local app → spot-check.
+- [ ] T192 On an explicit decision, stage in production with `--target production --confirm produccion`, season by season, oldest first. The coach resolves pending categories and the identity review and commits in the production app. Then:
+  - spot-check three club athletes against the official files;
+  - publish the privacy-notice version, set `RACE_HISTORY_FAMILY_POLICY_VERSION`, and re-check a parent account (`docs/10-race-results/runbook-ops.md` §12.6).
+
+---
+
+## Dependencies & Execution Order (amendment)
+
+### Phase dependencies
+
+- **Setup (11)** → **Foundational (12)** → Phases 13 and 14, which are independent and can run in parallel.
+- **CLI (15)** needs 13 (engine) and 14 (staging service).
+- **Removal (16)** needs:
+  - 14, because the tests are ported first;
+  - T122, because the golden files are generated before the parser is deleted;
+  - 15, because the skill must exist before the upload goes.
+- **Web (17)**: component work can start after 12. T167 (e2e) needs 15. **16 and 17 ship in one deploy.**
+- **Revisions (18)** need 14; T175 needs 15. The phase is deferrable (hard ordering rule 3).
+- **Skill (19)** needs 15.
+- **Polish (20)** needs everything that ships. The owner steps T190–T192 need T188, T180 and T185.
+
+### Same-file serialisation (never parallel)
+
+- `backend/app/routers/race_imports.py`: T138 → T140 → T152 → T174
+- `backend/app/services/race/import_staging.py`: T137 → T152
+- `backend/app/services/race/pdf_parser.py`: T113 → T124 → T153 (deleted)
+- `backend/app/services/race/identity_review.py`: T138 → T139
+- `backend/app/services/race/ingestor.py`: T141 → T174
+- `backend/app/services/race/revision.py`: T173 → T174
+- `backend/scripts/race_results.py`: T146 → T147 → T148 → T175
+- `backend/tests/routers/test_race_imports_revision.py`: T135 → T170
+- `backend/tests/scripts/test_race_results_cli.py`: T143 → T175
+- `frontend/src/components/competitions/import/ImportWizard.tsx`: T161 → T165
+- `frontend/src/components/competitions/imports/LoadsSection.tsx`: T164 → T165
+
+### Parallel example: after gate G8
+
+```text
+Track A (US1 engine): qa-engineer·sonnet T118 T119 T120 T121 T122 T123 → data-analyst·sonnet T124 T125 T127
+                      → data-analyst·opus T126 T128 → data-analyst·sonnet T129 → G9 (T130)
+Track B (US5 staging): qa-engineer·sonnet T131 T132 T133 T134 → fastapi-architect·sonnet T137
+                      → fastapi-architect·opus T138 → fastapi-architect·sonnet T139 T140 T141 → qa-engineer·sonnet T135 T136 → G10 (T142)
+Track C (US5 web, components only): qa-engineer·sonnet T157 T158 T159 T160 → react-ui-engineer·sonnet T161 … T165
+```
+
+## Implementation Strategy (amendment)
+
+1. **Amendment MVP**: Phases 11–17, plus 19, deployed together with 16 and 17 in one release. The result is skill-only loading end to end: the LLM sees only masked views, local is the default, production requires an explicit request, and the coach reviews and commits in the app. A different reading of a committed válida is refused with a clear message.
+2. **Revisions (18)**: needed before any correction of a committed válida, and to complete legacy partial commits.
+3. **Real load (owner, T190–T192)**: only after the skill is signed (T180) and the audit reviewed (T185).
+
+**Waves** (owner preference: work in waves, pause at 80 % of session usage):
+- **W6**: Phases 11–12.
+- **W7**: Phases 13 and 14 in parallel.
+- **W8**: Phase 15, T151, and Phase 17 component work.
+- **W9**: Phase 16 implementation, T167, and Phase 18.
+- **W10**: Phases 19–20.
+
+Opus is spent on 18 tasks. If the session budget is tight, only T177 may fall back to sonnet, because T179 and T180 review it anyway. **Never** T126, T128, T138, T145, T173 or T174.
+
+## Notes (amendment)
+
+- Wherever an open task of Phases 1–10 (T099, T100, T104) says "stage", it means the results skill since 2026-09-26.
+- Commit after each task or logical group. Use Conventional Commits, with the type in English and the description in español latino, and no mention of AI tooling.
 - Stop at every gate; a lead signs it in this file with the date.
