@@ -317,6 +317,78 @@ class ImportDryRunResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Dry-run — rama de revisión (amendment 2026-09-26, T173/T174,
+# contracts/revision-via-skill.md §"Dry-run, revision branch")
+# ---------------------------------------------------------------------------
+
+
+class ResultSnapshotRead(BaseModel):
+    """Espejo de ``frontend/src/types/raceImports.types.ts::ResultSnapshot``.
+
+    Subconjunto público de un ``RaceResult`` — nunca lleva ``athlete_id`` ni
+    ids internos de usuario."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    position: Optional[int] = None
+    race_time_ms: Optional[int] = None
+    points_awarded: Optional[int] = None
+    status: Optional[str] = None
+
+
+class DiffRowRead(BaseModel):
+    """Una fila del diff de revisión — espejo de
+    ``frontend/src/types/raceImports.types.ts::DiffRow``.
+
+    Privacidad: ``competitor_display_name`` proviene del acta pública de la
+    Federación (misma regla que ``MatchPreview.competitor_name``); nunca se
+    exponen ``raw_city``/``raw_club``/``raw_bib`` (uso interno de
+    ``commit_revision``, T173) ni ids de usuario.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    action: Literal["create", "update", "delete"]
+    competitor_normalized_name: str
+    competitor_display_name: str
+    category_code: str
+    result_id: Optional[int] = None
+    before: Optional[ResultSnapshotRead] = None
+    after: Optional[ResultSnapshotRead] = None
+    fuzzy_matched: bool = False
+
+
+class DiffSummaryRead(BaseModel):
+    """Espejo de ``DiffSummary`` — conteos agregados del diff."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    n_create: int
+    n_update: int
+    n_delete: int
+    n_unchanged: int
+    n_total: int
+
+
+class ImportDryRunRevisionResponse(BaseModel):
+    """Dry-run en modo revisión — espejo de
+    ``frontend/src/types/raceImports.types.ts::ImportDryRunRevisionResponse``.
+
+    ``diff_rows`` omite las filas ``unchanged`` (se cuentan en
+    ``diff_summary.n_unchanged``, contrato §"Dry-run, revision branch").
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    parse_id: int
+    is_revision: Literal[True] = True
+    parent_event_id: int
+    diff_summary: DiffSummaryRead
+    diff_rows: list[DiffRowRead]
+    warnings: list[str] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
 # Commit request / response
 # ---------------------------------------------------------------------------
 

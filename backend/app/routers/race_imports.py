@@ -57,7 +57,7 @@ from fastapi import (
 )
 from fastapi.responses import JSONResponse
 from sqlalchemy import func, or_, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, require_role
@@ -79,11 +79,14 @@ from app.schemas.race_imports import (
     AcknowledgeReasonsResponse,
     CategoryCompletenessResponse,
     CompletenessRead,
+    DiffRowRead,
+    DiffSummaryRead,
     DryRunCounts,
     ImportCommitRequest,
     ImportCommitResponse,
     ImportDetailRead,
     ImportDryRunResponse,
+    ImportDryRunRevisionResponse,
     ImportListItem,
     ImportListResponse,
     MatchPreview,
@@ -113,7 +116,13 @@ from app.services.race.import_staging import (
 )
 from app.services.race.ingestor import RaceIngestor
 from app.services.race.matcher import match_athletes
-from app.services.race.revision import detect_revision
+from app.services.race.revision import (
+    DiffRow,
+    RevisionContext,
+    commit_revision,
+    compute_diff,
+    detect_revision,
+)
 from app.services.race.revision_diff_view import build_event_diff_view
 from app.services.race.run_staleness import invalidate_runs_for_event
 from app.services.race.staged_document import (
@@ -672,13 +681,91 @@ def _build_event_meta_from_parse_meta(
     )
 
 
-@router.post("/{parse_id}/dry-run", response_model=ImportDryRunResponse)
+async def _detect_import_revision(
+    db: AsyncSession, imp: RaceImport, parse_meta: dict
+) -> Optional[RevisionContext]:
+    """¿Esta carga stageada es una revisión de una válida ya commiteada?
+
+    Amendment 2026-09-26 (T174, contracts/revision-via-skill.md): a
+    diferencia de ``stage_extracted_results`` (que solo la detecta para
+    reportarla en el CLI), dry-run y commit necesitan el ``RevisionContext``
+    completo (parent_event_id) para recomputar el diff. Se re-detecta con el
+    mismo header persistido en ``parse_meta_json`` — ``series_id`` ya
+    resuelto por el stage evita divergencia de nombre (BUG-1 fix, igual que
+    ``detect_revision`` documenta).
+    """
+    header = parse_meta.get("header") or {}
+    if not header:
+        return None
+    return await detect_revision(
+        db,
+        series_name=str(header.get("series_name", "")),
+        season=int(header.get("season", 0)),
+        valida_num=int(header.get("valida_num", 0)),
+        series_id=imp.series_id,
+    )
+
+
+def _diff_row_to_read(row: DiffRow) -> DiffRowRead:
+    return DiffRowRead(
+        action=row.action,
+        competitor_normalized_name=row.competitor_normalized_name,
+        competitor_display_name=row.competitor_display_name,
+        category_code=row.category_code,
+        result_id=row.result_id,
+        before=row.before,
+        after=row.after,
+        fuzzy_matched=row.fuzzy_matched,
+    )
+
+
+async def _build_revision_dry_run_response(
+    db: AsyncSession,
+    imp_id: int,
+    revision_ctx: RevisionContext,
+    parsed_results: dict[str, list[ResultsRow]],
+    season: int,
+) -> ImportDryRunRevisionResponse:
+    """Rama de revisión del dry-run — contrato §"Dry-run, revision branch"."""
+    diff_report = await compute_diff(
+        db, parsed_results, revision_ctx.parent_event_id, season
+    )
+    return ImportDryRunRevisionResponse(
+        parse_id=imp_id,
+        is_revision=True,
+        parent_event_id=revision_ctx.parent_event_id,
+        diff_summary=DiffSummaryRead(
+            n_create=diff_report.summary.n_create,
+            n_update=diff_report.summary.n_update,
+            n_delete=diff_report.summary.n_delete,
+            n_unchanged=diff_report.summary.n_unchanged,
+            n_total=diff_report.summary.n_total,
+        ),
+        diff_rows=[
+            _diff_row_to_read(row)
+            for row in diff_report.rows
+            if row.action != "unchanged"
+        ],
+        warnings=[],
+    )
+
+
+@router.post(
+    "/{parse_id}/dry-run",
+    response_model=ImportDryRunResponse | ImportDryRunRevisionResponse,
+)
 async def dry_run_import(
     parse_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
-) -> ImportDryRunResponse | JSONResponse:
-    """Endpoint 2 wizard (dry-run) — ejecuta ingest sin commit + retorna matches."""
+) -> ImportDryRunResponse | ImportDryRunRevisionResponse | JSONResponse:
+    """Endpoint 2 wizard (dry-run) — ejecuta ingest sin commit + retorna matches.
+
+    Amendment 2026-09-26 (T174): si la carga es una revisión de una válida ya
+    commiteada, la rama entera cambia — se devuelve el diff identity-aware
+    (``ImportDryRunRevisionResponse``) en vez de correr
+    ``RaceIngestor.ingest_event`` (que no sabe de revisiones).
+    """
     imp = await _load_pending_import(db, parse_id, current_user)
     parse_meta = imp.parse_meta_json or {}
 
@@ -688,6 +775,13 @@ async def dry_run_import(
     categories_doc = ParsedResults(categories=categories, unreadable_rows=[])
     category_headers_raw = _category_headers_raw(categories_doc)
     parsed_results = _legacy_results_by_category(categories_doc)
+
+    revision_ctx = await _detect_import_revision(db, imp, parse_meta)
+    if revision_ctx is not None:
+        season = int((parse_meta.get("header") or {}).get("season", 0))
+        return await _build_revision_dry_run_response(
+            db, imp.id, revision_ctx, parsed_results, season
+        )
 
     # Construir EventMeta desde parse_meta (incluye condiciones de carrera si las hay)
     try:
@@ -823,6 +917,171 @@ async def dry_run_import(
 
 
 # ---------------------------------------------------------------------------
+# Endpoint 3: POST /{parse_id}/commit — rama de revisión (T174)
+# ---------------------------------------------------------------------------
+
+
+async def _commit_revision_branch(
+    db: AsyncSession,
+    imp: RaceImport,
+    categories: list[ParsedCategory],
+    parsed_results: dict[str, list[ResultsRow]],
+    revision_ctx: RevisionContext,
+    body: ImportCommitRequest,
+    parse_id: int,
+    current_user: User,
+    ctx: AuditContext,
+) -> ImportCommitResponse | JSONResponse:
+    """``POST /{parse_id}/commit`` cuando la carga es una revisión —
+    ``contracts/revision-via-skill.md`` §"Commit, revision branch". Orden
+    fijado por el contrato: motivo → candado de identidad → completitud (sin
+    revisión parcial) → diff recomputado server-side → aplicar.
+    """
+    # 1. revision_reason obligatorio en TODA revisión (T174 punto 1).
+    if body.revision_reason is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "revision_reason es obligatorio para confirmar una revisión "
+                "(catálogo cerrado, ver GET /revision-reasons)."
+            ),
+        )
+    revision_reason = body.revision_reason.value
+
+    # 2. Candado de identidad por carga (feature 045) — sobre TODAS las
+    #    filas de la carga: una revisión no tiene "categorías elegibles"
+    #    parciales todavía (eso lo decide el punto 3).
+    blocked = await _identity_gate(db, imp, parsed_results, operation="commit")
+    if blocked is not None:
+        return blocked
+
+    # `_identity_gate` hace su propio `commit()` (para persistir un rebuild
+    # si hizo falta), lo que suelta el lock FOR UPDATE y expira `imp` — se
+    # re-verifica que sigue pending, igual que el camino normal.
+    imp = await _load_pending_import(db, parse_id, current_user, for_update=True)
+    parse_meta = imp.parse_meta_json or {}
+
+    # 3. Sin revisión parcial (contrato): cualquier categoría inconsistente
+    #    sin reconocer bloquea la revisión completa.
+    _eligible_codes, pending_categories = _eligible_and_pending_categories(
+        categories, parse_meta
+    )
+    if pending_categories:
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={
+                "detail": "revision_incomplete",
+                "pending_categories": pending_categories,
+            },
+        )
+
+    season = int((parse_meta.get("header") or {}).get("season", 0))
+
+    # 4. Diff recomputado server-side — el del dry-run NUNCA se toma del
+    #    cliente (contrato punto 4).
+    diff_report = await compute_diff(
+        db, parsed_results, revision_ctx.parent_event_id, season
+    )
+
+    # 5. Aplicar transaccional (lock pesimista sobre el RaceEvent adentro).
+    try:
+        report = await commit_revision(
+            db, imp, revision_ctx, diff_report, revision_reason, current_user.id
+        )
+    except OperationalError:
+        await db.rollback()
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={"detail": "event_locked"},
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        )
+    await db.flush()
+
+    # 6. Evidencia movida a committed/ + documento stageado borrado
+    #    (FR-048/049 — nunca vuelve a leerse).
+    parse_uuid = parse_meta.get("parse_uuid", "unknown")
+    if imp.storage_path:
+        ext = parse_meta.get("results_ext", "pdf")
+        dst_rel = f"race-imports/committed/{parse_uuid}/resultados.{ext}"
+        try:
+            new_path, new_url = await storage_sftp.move_object(
+                imp.storage_path, dst_rel
+            )
+            imp.storage_path = new_path
+            imp.storage_url = new_url
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "race_import_commit_revision move_object failed parse_id=%s err=%s",
+                parse_id,
+                exc,
+            )
+    imp.parse_meta_json = None
+    await staged_document.delete(db, imp.id)
+    await db.flush()
+
+    # 7. Invalidación de runs IA — best effort, nunca bloquea el commit.
+    try:
+        await invalidate_runs_for_event(db, report.event_id)
+        await db.flush()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "race_import_commit_revision invalidate_runs failed parse_id=%s err=%s",
+            parse_id,
+            exc,
+        )
+
+    # 8. Auditoría — solo conteos, nunca nombres (privacidad menores).
+    await record_audit(
+        db,
+        action=AuditAction.execute,
+        entity_type=AuditEntityType.race_import,
+        entity_id=imp.id,
+        actor=ctx.actor,
+        actor_kind=ctx.actor_kind,
+        club_id=None,
+        changed_fields=["status"],
+        diff={
+            "status": (
+                RaceImportStatus.pending.value,
+                RaceImportStatus.committed.value,
+            )
+        },
+        meta={
+            "race_event_id": report.event_id,
+            "is_revision": True,
+            "n_create": report.n_create,
+            "n_update": report.n_update,
+            "n_delete": report.n_delete,
+        },
+        request_id=ctx.request_id,
+    )
+
+    logger.info(
+        "race_import_commit_revision parse_id=%s parent_import_id=%s event_id=%s "
+        "creates=%d updates=%d deletes=%d revisions=%d",
+        parse_id,
+        report.parent_import_id,
+        report.event_id,
+        report.n_create,
+        report.n_update,
+        report.n_delete,
+        report.revisions_created,
+    )
+
+    return ImportCommitResponse(
+        parse_id=parse_id,
+        race_event_id=report.event_id,
+        n_results_inserted=report.n_create,
+        n_competitors_created=0,
+        n_competitors_linked=0,
+        pending_categories=[],
+    )
+
+
+# ---------------------------------------------------------------------------
 # Endpoint 3: POST /{parse_id}/commit
 # ---------------------------------------------------------------------------
 
@@ -841,6 +1100,9 @@ async def commit_import(
     ``pending`` involucra a las filas de ESTA carga; ``JSONResponse`` porque su
     cuerpo plano (``detail`` + ``pending_for_import`` + ``review_path``) no cabe
     en ``HTTPException``.
+
+    Amendment 2026-09-26 (T174): si es una revisión de una válida ya
+    commiteada, toda la rama cambia — ver ``_commit_revision_branch``.
     """
     imp = await _load_pending_import(db, parse_id, current_user, for_update=True)
     parse_meta = imp.parse_meta_json or {}
@@ -851,6 +1113,20 @@ async def commit_import(
     categories_doc = ParsedResults(categories=categories, unreadable_rows=[])
     category_headers_raw = _category_headers_raw(categories_doc)
     parsed_results = _legacy_results_by_category(categories_doc)
+
+    revision_ctx = await _detect_import_revision(db, imp, parse_meta)
+    if revision_ctx is not None:
+        return await _commit_revision_branch(
+            db,
+            imp,
+            categories,
+            parsed_results,
+            revision_ctx,
+            body,
+            parse_id,
+            current_user,
+            ctx,
+        )
 
     # Feature 044 (US5, T060/T061): categorías elegibles para ESTE commit
     # (consistentes o reconocidas) vs. las que quedan `pending_categories`

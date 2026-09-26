@@ -324,7 +324,7 @@ class TestFrozenColumnsSurviveRevision:
                     _row(1, "501", "Ana Ficticia", "Club Trocha y Ruta", "0:21:00", 38),
                 ]
             }
-            diff = await revision_svc.compute_diff(db, new_parsed, ctx.parent_event_id)
+            diff = await revision_svc.compute_diff(db, new_parsed, ctx.parent_event_id, season=2026)
             assert diff.summary.n_update == 1, (
                 "El diff debe clasificar el cambio de tiempo como update, no "
                 "create/delete — si no, el resto del test no prueba lo que dice."
@@ -354,7 +354,9 @@ class TestFrozenColumnsSurviveRevision:
                 parse_import=parse_import,
                 revision_context=ctx,
                 diff_report=diff,
-                revision_reason=None,
+                # T174 (amendment 2026-09-26): revision_reason es obligatorio
+                # en TODA revisión ahora, no solo cuando hay deletes.
+                revision_reason="timing_fix",
                 changed_by_user_id=10,
             )
             await db.commit()

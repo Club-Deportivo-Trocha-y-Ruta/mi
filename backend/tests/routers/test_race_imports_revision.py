@@ -69,23 +69,55 @@ async def sqlite_engine() -> AsyncEngine:
         RaceResultRevision,
     )
 
+    from app.models.club import Club, ClubMember  # noqa: F401
+    from app.models.race_competitor_signature import (  # noqa: F401
+        RaceCompetitorSignature,
+    )
+    from app.models.race_identity_candidate import (  # noqa: F401
+        RaceIdentityCandidate,
+    )
+
     tables = [
         Base.metadata.tables[t]
         for t in (
             "users",
+            "clubs",
+            "club_members",
             "race_series",
             "race_events",
             "race_imports",
             "race_import_staged_documents",
             "race_categories",
             "race_competitors",
+            "race_competitor_signatures",
+            "race_identity_candidates",
             "race_results",
-            "race_result_revisions",
             *AUDIT_TABLES,
         )
     ]
     async with engine.begin() as conn:
         await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=tables))
+        # ``race_result_revisions.id`` es BigInteger en el modelo real —
+        # SQLite solo activa el alias rowid/autoincrement con el token EXACTO
+        # "INTEGER PRIMARY KEY" (mismo workaround documentado en
+        # tests/services/race/test_ingestor_frozen_labels.py, T026): un DDL
+        # crudo aparte, solo para este engine desechable — nunca se muta
+        # ``Base.metadata`` compartido.
+        from sqlalchemy import text as _text
+
+        await conn.execute(
+            _text(
+                "CREATE TABLE race_result_revisions ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "result_id INTEGER REFERENCES race_results(id), "
+                "action VARCHAR(20) NOT NULL, "
+                "changed_by_user_id INTEGER NOT NULL REFERENCES users(id), "
+                "changed_at DATETIME NOT NULL, "
+                "diff_json JSON NOT NULL, "
+                "reason VARCHAR(300)"
+                ")"
+            )
+        )
     yield engine
     await engine.dispose()
 
@@ -536,3 +568,525 @@ class TestStagingRevisionDetection:
         result2 = await _stage(db_session_factory, marker=b"second parse b")
         # Aún sin committed previo, el 2do staging tampoco es revisión.
         assert result2.is_revision is False
+
+
+# ---------------------------------------------------------------------------
+# T170 — endpoints /dry-run y /commit en la rama de revisión
+# (contracts/revision-via-skill.md §"Dry-run, revision branch" / "Commit,
+# revision branch"). A diferencia de las clases anteriores (que solo
+# ejercitan detect_revision / stage_extracted_results), estos tests montan
+# la app real vía httpx.AsyncClient — mismo patrón que
+# ``tests/routers/test_race_imports_staged_rows.py``.
+# ---------------------------------------------------------------------------
+
+from types import SimpleNamespace
+
+from httpx import ASGITransport, AsyncClient
+
+from app.dependencies import get_current_user, get_db
+from app.main import app
+from app.models.race_category import RaceCategory
+from app.models.race_competitor import CompetitorSex, RaceCompetitor
+from app.models.race_competitor_signature import RaceCompetitorSignature
+from app.models.race_result import RaceResult, ResultStatus
+from app.models.race_series import RaceSeriesKind, RaceSeriesLevel
+from app.services.race.import_staging import StageHeader, stage_extracted_results
+from app.services.race.staged_document import (
+    ParsedCategory,
+    ParsedResults,
+    ResultsRow,
+    StagedProfileMeta,
+)
+from app.services.request_context import AuditContext
+
+_IMPORTS_URL = "/api/race-analysis/imports"
+_REVISION_VALIDA = 7
+
+
+def _make_coach(user_id: int = 10) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=user_id,
+        first_name="Coach",
+        last_name="Ten",
+        email=f"coach{user_id}@test.local",
+        role=UserRole.coach,
+        can_login=True,
+        is_active=True,
+        club_memberships=[],
+    )
+
+
+@pytest_asyncio.fixture
+async def revision_parent(seed_data, db_session_factory):
+    """Evento padre COMMITTED con una fila persistida en INF_A — la base
+    sobre la que las revisiones de este bloque corrigen/agregan/eliminan."""
+    async with db_session_factory() as db:
+        event = RaceEvent(
+            id=1, series_id=1, sequence_number=_REVISION_VALIDA,
+            name="Valida VII", event_date=datetime(2026, 6, 1).date(),
+            location="Cali", created_by_user_id=10,
+            status=RaceEventStatus.COMPLETED,
+        )
+        category = RaceCategory(
+            id=1, code="INF_A", label="Infantil A", sex=CompetitorSex.M,
+            age_min=10, age_max=11, tier="menores", sort_order=1, is_active=True,
+        )
+        parent_import = RaceImport(
+            id=900, filename="parent.pdf", original_filename="parent.pdf",
+            sha256="p" * 64, series_id=1, event_id=1,
+            status=RaceImportStatus.committed, stats_json={},
+            imported_by_user_id=10, imported_at=datetime.now(timezone.utc),
+            kind=RaceImportKind.resultados,
+        )
+        competitor = RaceCompetitor(
+            id=1, normalized_name="andres felipe rios", display_name="Andres Felipe Rios",
+            club_text="Club Trocha y Ruta", city_text="Cali", sex=CompetitorSex.M,
+            athlete_id=None,
+        )
+        db.add_all([event, category, parent_import, competitor])
+        await db.flush()
+        db.add(
+            RaceCompetitorSignature(
+                competitor_id=1, normalized_name="andres felipe rios",
+                club_norm="club trocha y ruta", city_norm="cali",
+                discriminator="", first_season=2026, last_season=2026,
+            )
+        )
+        db.add(
+            RaceResult(
+                id=1, event_id=1, category_id=1, competitor_id=1, athlete_id=None,
+                bib_number=101, position=1, status=ResultStatus.FINISHED,
+                race_time_ms=20 * 60_000, points_awarded=50, created_by_user_id=10,
+            )
+        )
+        await db.commit()
+    yield
+
+
+async def _stage_revision(
+    db_session_factory,
+    *,
+    rows: list[ResultsRow],
+    marker: bytes,
+    header_code: str = "INF_A",
+    header_raw: str = "INFANTIL A",
+) -> int:
+    """Staguea una revisión de ``revision_parent`` (misma serie/válida, SHA
+    distinto) con filas a medida. Devuelve el ``import_id`` staged."""
+    document = ParsedResults(
+        categories=[ParsedCategory(header_raw=header_raw, code=header_code, rows=rows)],
+        unreadable_rows=[],
+    )
+    header = StageHeader(
+        series_name="Copa Valle de Ciclomontañismo",
+        series_kind=RaceSeriesKind.cup,
+        series_level=RaceSeriesLevel.departmental,
+        season=2026,
+        valida_num=_REVISION_VALIDA,
+        event_name="VALIDA VII CALI",
+        event_date=datetime(2026, 6, 1).date(),
+        location="CALI",
+    )
+    profile = StagedProfileMeta(
+        profile_id="test-race-imports-revision-t170",
+        profile_sha256="4" * 64,
+        engine_version="test-helper",
+    )
+    async with db_session_factory() as session:
+        actor = await session.get(User, 10)
+        result = await stage_extracted_results(
+            session,
+            document=document,
+            profile=profile,
+            file_bytes=_PDF_HEADER + marker,
+            original_filename="revision.pdf",
+            results_ext="pdf",
+            header=header,
+            actor=actor,
+            ctx=AuditContext.for_user(actor, request_id="test-t170"),
+        )
+        await session.commit()
+        assert result.is_revision is True
+        return result.import_id
+
+
+@pytest_asyncio.fixture
+async def coach_client(sqlite_engine, db_session_factory, override_storage):
+    async def _override_db():
+        async with db_session_factory() as session:
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+
+    app.dependency_overrides[get_db] = _override_db
+    app.dependency_overrides[get_current_user] = lambda: _make_coach()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
+    app.dependency_overrides.clear()
+
+
+class TestRevisionDryRun:
+    @pytest.mark.asyncio
+    async def test_dry_run_returns_revision_diff_shape(
+        self, revision_parent, db_session_factory, coach_client
+    ):
+        import_id = await _stage_revision(
+            db_session_factory,
+            marker=b"dry-run-update",
+            rows=[
+                ResultsRow(
+                    position=1, bib="101", name="Andres Felipe Rios",
+                    city="Cali", club="Club Trocha y Ruta",
+                    time_raw="0:19:50", points=50,
+                ),
+                ResultsRow(
+                    position=2, bib="102", name="Nueva Persona Uno",
+                    city="Cali", club="Club Trocha y Ruta",
+                    time_raw="0:21:00", points=45,
+                ),
+            ],
+        )
+
+        r = await coach_client.post(f"{_IMPORTS_URL}/{import_id}/dry-run")
+
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["is_revision"] is True
+        assert body["parent_event_id"] == 1
+        assert body["diff_summary"]["n_update"] == 1
+        assert body["diff_summary"]["n_create"] == 1
+        assert body["diff_summary"]["n_delete"] == 0
+        actions = {row["action"] for row in body["diff_rows"]}
+        assert actions == {"update", "create"}
+        assert all(row["action"] != "unchanged" for row in body["diff_rows"])
+
+
+class TestRevisionCommit:
+    async def _commit(self, coach_client, import_id: int, **body):
+        return await coach_client.post(f"{_IMPORTS_URL}/{import_id}/commit", json=body)
+
+    @pytest.mark.asyncio
+    async def test_commit_without_reason_returns_422(
+        self, revision_parent, db_session_factory, coach_client
+    ):
+        import_id = await _stage_revision(
+            db_session_factory, marker=b"no-reason",
+            rows=[
+                ResultsRow(
+                    position=1, bib="101", name="Andres Felipe Rios",
+                    city="Cali", club="Club Trocha y Ruta",
+                    time_raw="0:19:50", points=50,
+                ),
+            ],
+        )
+        r = await self._commit(coach_client, import_id, resolved_matches=[])
+        assert r.status_code == 422, r.text
+
+    @pytest.mark.asyncio
+    async def test_commit_applies_update_create_delete_and_writes_revisions(
+        self, revision_parent, db_session_factory, coach_client
+    ):
+        import_id = await _stage_revision(
+            db_session_factory,
+            marker=b"full-apply",
+            rows=[
+                ResultsRow(
+                    position=1, bib="101", name="Andres Felipe Rios",
+                    city="Cali", club="Club Trocha y Ruta",
+                    time_raw="0:19:50", points=50,
+                ),
+                ResultsRow(
+                    position=2, bib="102", name="Nueva Persona Uno",
+                    city="Cali", club="Club Trocha y Ruta",
+                    time_raw="0:21:00", points=45,
+                ),
+            ],
+        )
+
+        r = await self._commit(
+            coach_client, import_id,
+            resolved_matches=[],
+            revision_reason="official_correction",
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["race_event_id"] == 1
+        assert body["n_results_inserted"] == 1  # 1 create
+        assert body["pending_categories"] == []
+
+        async with db_session_factory() as db:
+            from sqlalchemy import select as _select
+
+            results = (
+                await db.execute(
+                    _select(RaceResult).where(
+                        RaceResult.event_id == 1, RaceResult.deleted_at.is_(None)
+                    )
+                )
+            ).scalars().all()
+            assert len(results) == 2  # el update (id=1) + el create nuevo.
+            updated = next(r for r in results if r.id == 1)
+            assert updated.race_time_ms == 19 * 60_000 + 50_000
+
+            from app.models.race_result_revision import RaceResultRevision
+
+            revisions = (
+                await db.execute(_select(RaceResultRevision))
+            ).scalars().all()
+            actions = {rr.action.value for rr in revisions}
+            assert actions == {"update", "create"}
+
+            imp = await db.get(RaceImport, import_id)
+            assert imp.status == RaceImportStatus.committed
+            assert imp.parent_import_id == 900
+            assert imp.revision_reason == "official_correction"
+
+    @pytest.mark.asyncio
+    async def test_commit_deletes_a_result_and_writes_delete_revision(
+        self, revision_parent, db_session_factory, coach_client
+    ):
+        """El documento nuevo NO trae al competidor 101 — su fila persistida
+        se elimina (soft-delete) con un ``RaceResultRevision`` `delete`."""
+        import_id = await _stage_revision(
+            db_session_factory,
+            marker=b"delete-case",
+            rows=[
+                ResultsRow(
+                    position=1, bib="200", name="Otra Persona Distinta",
+                    city="Cali", club="Club Trocha y Ruta",
+                    time_raw="0:18:00", points=50,
+                ),
+            ],
+        )
+
+        r = await self._commit(
+            coach_client, import_id,
+            resolved_matches=[],
+            revision_reason="result_removed",
+        )
+        assert r.status_code == 200, r.text
+
+        async with db_session_factory() as db:
+            deleted = await db.get(RaceResult, 1)
+            assert deleted.deleted_at is not None
+            # El status oficial NUNCA se toca en un soft-delete de revisión.
+            assert deleted.status == ResultStatus.FINISHED
+
+    @pytest.mark.asyncio
+    async def test_commit_preserves_existing_athlete_link_on_update(
+        self, revision_parent, db_session_factory, coach_client
+    ):
+        """Un ``athlete_id`` ya asignado por el coach NO se pisa al aplicar
+        un update de revisión (contrato: los links de atleta nunca se
+        reescriben en una revisión)."""
+        async with db_session_factory() as db:
+            result_obj = await db.get(RaceResult, 1)
+            result_obj.athlete_id = 999
+            await db.commit()
+
+        import_id = await _stage_revision(
+            db_session_factory,
+            marker=b"athlete-link-survives",
+            rows=[
+                ResultsRow(
+                    position=1, bib="101", name="Andres Felipe Rios",
+                    city="Cali", club="Club Trocha y Ruta",
+                    time_raw="0:19:00", points=55,
+                ),
+            ],
+        )
+        r = await self._commit(
+            coach_client, import_id,
+            resolved_matches=[],
+            revision_reason="timing_fix",
+        )
+        assert r.status_code == 200, r.text
+
+        async with db_session_factory() as db:
+            result_obj = await db.get(RaceResult, 1)
+            assert result_obj.athlete_id == 999
+
+    @pytest.mark.asyncio
+    async def test_commit_deletes_the_staged_document(
+        self, revision_parent, db_session_factory, coach_client
+    ):
+        import_id = await _stage_revision(
+            db_session_factory,
+            marker=b"doc-deleted",
+            rows=[
+                ResultsRow(
+                    position=1, bib="101", name="Andres Felipe Rios",
+                    city="Cali", club="Club Trocha y Ruta",
+                    time_raw="0:19:00", points=50,
+                ),
+            ],
+        )
+        r = await self._commit(
+            coach_client, import_id,
+            resolved_matches=[],
+            revision_reason="timing_fix",
+        )
+        assert r.status_code == 200, r.text
+
+        async with db_session_factory() as db:
+            from sqlalchemy import select as _select
+
+            from app.models.race_import_staged_document import (
+                RaceImportStagedDocument,
+            )
+
+            row = (
+                await db.execute(
+                    _select(RaceImportStagedDocument).where(
+                        RaceImportStagedDocument.import_id == import_id
+                    )
+                )
+            ).scalar_one_or_none()
+            assert row is None
+
+    @pytest.mark.asyncio
+    async def test_commit_invalidates_ai_runs_for_the_event(
+        self, revision_parent, db_session_factory, coach_client, monkeypatch
+    ):
+        calls: list[int] = []
+
+        async def _fake_invalidate(db, event_id):
+            calls.append(event_id)
+
+        import app.routers.race_imports as router_module
+
+        monkeypatch.setattr(
+            router_module, "invalidate_runs_for_event", _fake_invalidate
+        )
+
+        import_id = await _stage_revision(
+            db_session_factory,
+            marker=b"invalidate-runs",
+            rows=[
+                ResultsRow(
+                    position=1, bib="101", name="Andres Felipe Rios",
+                    city="Cali", club="Club Trocha y Ruta",
+                    time_raw="0:19:00", points=50,
+                ),
+            ],
+        )
+        r = await self._commit(
+            coach_client, import_id,
+            resolved_matches=[],
+            revision_reason="timing_fix",
+        )
+        assert r.status_code == 200, r.text
+        assert calls == [1]
+
+    @pytest.mark.asyncio
+    async def test_commit_locked_event_returns_409(
+        self, revision_parent, db_session_factory, coach_client, monkeypatch
+    ):
+        from sqlalchemy.exc import OperationalError
+
+        import app.services.race.revision as revision_module
+
+        async def _raise_locked(db, event_id):
+            raise OperationalError("locked", None, None)
+
+        monkeypatch.setattr(revision_module, "_acquire_event_lock", _raise_locked)
+
+        import_id = await _stage_revision(
+            db_session_factory,
+            marker=b"event-locked",
+            rows=[
+                ResultsRow(
+                    position=1, bib="101", name="Andres Felipe Rios",
+                    city="Cali", club="Club Trocha y Ruta",
+                    time_raw="0:19:00", points=50,
+                ),
+            ],
+        )
+        r = await self._commit(
+            coach_client, import_id,
+            resolved_matches=[],
+            revision_reason="timing_fix",
+        )
+        assert r.status_code == 409, r.text
+        assert r.json()["detail"] == "event_locked"
+
+    @pytest.mark.asyncio
+    async def test_commit_blocked_by_identity_gate_for_a_new_name(
+        self, revision_parent, db_session_factory, coach_client, monkeypatch
+    ):
+        """Un nombre nuevo en la revisión que el candado de identidad
+        (feature 045) todavía tiene `pending` bloquea el commit igual que en
+        un import normal — se verifica que la rama de revisión invoca el
+        MISMO `_identity_gate`, no un camino aparte que lo salte."""
+        from app.services.race import identity_review as ir
+
+        async def _fake_pending(db, keys):
+            return [object()]  # cualquier candidato pending es suficiente.
+
+        monkeypatch.setattr(ir, "pending_candidates_for_import", _fake_pending)
+
+        import_id = await _stage_revision(
+            db_session_factory,
+            marker=b"identity-gate-new-name",
+            rows=[
+                ResultsRow(
+                    position=1, bib="900", name="Nombre Totalmente Nuevo",
+                    city="Cali", club="Club Trocha y Ruta",
+                    time_raw="0:18:30", points=50,
+                ),
+            ],
+        )
+        r = await self._commit(
+            coach_client, import_id,
+            resolved_matches=[],
+            revision_reason="result_added",
+        )
+        assert r.status_code == 409, r.text
+        body = r.json()
+        assert body["detail"] == "identity_pending"
+        assert body["pending_for_import"] == 1
+
+        # No debe haber aplicado nada — el import sigue pending.
+        async with db_session_factory() as db:
+            imp = await db.get(RaceImport, import_id)
+            assert imp.status == RaceImportStatus.pending
+
+    @pytest.mark.asyncio
+    async def test_commit_incomplete_category_returns_409(
+        self, revision_parent, db_session_factory, coach_client
+    ):
+        """Una categoría con un hueco en la numeración (sin reconocer) deja
+        toda la revisión incompleta — sin revisión parcial (contrato)."""
+        import_id = await _stage_revision(
+            db_session_factory,
+            marker=b"revision-incomplete",
+            rows=[
+                ResultsRow(
+                    position=1, bib="101", name="Andres Felipe Rios",
+                    city="Cali", club="Club Trocha y Ruta",
+                    time_raw="0:19:00", points=50,
+                ),
+                ResultsRow(
+                    # Hueco: posición 3 sin la 2 — categoría inconsistente.
+                    position=3, bib="103", name="Otra Persona Mas",
+                    city="Cali", club="Club Trocha y Ruta",
+                    time_raw="0:22:00", points=40,
+                ),
+            ],
+        )
+        r = await self._commit(
+            coach_client, import_id,
+            resolved_matches=[],
+            revision_reason="position_fix",
+        )
+        assert r.status_code == 409, r.text
+        assert r.json()["detail"] == "revision_incomplete"
+        assert "INFANTIL A" in r.json()["pending_categories"]
+
+        async with db_session_factory() as db:
+            imp = await db.get(RaceImport, import_id)
+            assert imp.status == RaceImportStatus.pending

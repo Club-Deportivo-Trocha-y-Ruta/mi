@@ -400,6 +400,11 @@ META_ALLOWLIST: frozenset[str] = frozenset(
         # Feature 044 (US5 amended, T137) — stage_extracted_results' audit
         # row: which engine produced the staged document (never row content).
         "via",
+        # Amendment 2026-09-26 (T174) — commit de una revisión: conteos del
+        # diff aplicado (create/update/delete), nunca nombres ni result_id.
+        "n_create",
+        "n_update",
+        "n_delete",
     }
 )
 
