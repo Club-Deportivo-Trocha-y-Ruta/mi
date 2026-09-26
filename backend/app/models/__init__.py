@@ -59,6 +59,9 @@ from app.models.race_identity_candidate import (
     RaceIdentityCandidate,
 )
 
+# Amendment 2026-09-26 — Carga de resultados solo por skill
+from app.models.race_import_staged_document import RaceImportStagedDocument
+
 # Race-analysis v2 agentic module (BE-1)
 from app.models.agent_run import AgentRun, AgentRunStatus
 from app.models.athlete_ai_insight import AthleteAiInsight, InsightConfidence
@@ -214,4 +217,6 @@ __all__ = [
     "RaceIdentityCandidate",
     "IdentityCandidateKind",
     "IdentityCandidateState",
+    # Amendment 2026-09-26 — Carga de resultados solo por skill
+    "RaceImportStagedDocument",
 ]
