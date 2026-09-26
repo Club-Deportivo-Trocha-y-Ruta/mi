@@ -1164,9 +1164,10 @@ This follows the same policy as Phases 1–10:
   **Done 2026-09-26.** Findings recorded in `privacy-audit.md` §4 under a new "T179" subsection. Verdict: aligned with FR-046/SC-013 and CLAUDE.md — no blocking findings. Confirmed directly in `masking.py` (not from the T177 note alone) that `_classify_token` masks every `WORD` token unconditionally, so no real word ever reaches `masked/view.txt`, even on a structural line — stricter than the contract's own illustrative example, and `references/masked-view.md` documents that real, tested behaviour correctly. `vocabulary.py` reviewed word-by-word (five closed sets, no runtime path to add one) — none is or resembles a rider name/city/club; the PR-review rule for additions matches what the code actually enforces. Deny rule syntax and scope confirmed correct (blocks `output/.../private/**` inside the repo; `SKILL.md` is honest that the real official file, outside the repo, needs the skill's own rule 2, not this deny rule). `SKILL.md`'s eight rules quoted verbatim from the contract; `reading-profile.md`'s worked example re-verified by re-running `build_masked_view`/`apply_profile` on a matching synthetic PDF; `manifest.md` has no real-shaped data, only explicit placeholders.
 
   [agent: data-privacy-guard · sonnet]
-- [ ] T180 Review T179, then sign the skill as usable on real files, or list the blockers, in `privacy-audit.md` §4. **No real official file is masked before this sign-off.**
+- [X] T180 Review T179, then sign the skill as usable on real files, or list the blockers, in `privacy-audit.md` §4. **No real official file is masked before this sign-off.**
 
   [agent: data-platform-lead · opus]
+  **Done 2026-09-26.** Firmada por data-platform-lead (privacy-audit.md §4 «T180») tras re-verificar B1–B3 (177 passed). Condición previa C1, pendiente de aprobación del dueño: agregar la regla anclada `Read(/output/race-results/**/private/**)` y comprobar el rechazo desde la raíz y desde `backend/` antes de T191.
 
 ---
 
@@ -1200,9 +1201,10 @@ This follows the same policy as Phases 1–10:
   **Done 2026-09-26.** Full `git diff origin/main...HEAD` audited across all seven named areas, recorded in `privacy-audit.md` §4 under a new "T184" subsection. Verdict: **APROBADO**, no critical/high/medium blocking findings. One hygiene-only observation (CLI's `stage` would print `StageResult.warnings` verbatim if that field is ever populated with free text; today it is always empty by construction, grep-confirmed) recorded as a forward-looking recommendation, not a finding. Router's new revision-branch schema (`DiffRowRead`) exposes `competitor_display_name` only to `[admin, coach]`, same accepted category as the rest of the import wizard; internal `raw_city`/`raw_club`/`raw_bib` confirmed never serialized. Frontend deltas grepped clean for `console.*`/`localStorage`/`sessionStorage`; URLs use opaque numeric import ids. New golden/parity fixtures inspected directly and confirmed fictional (`FakeNameGenerator` convention). **Finding A of §2 closed**: `grep -rn "_RAW_PARSE_CACHE\|_CORRECTED_CATEGORIES_CACHE\|download_to_tempfile" app/routers/race_imports.py app/services/race/identity_review.py app/routers/race_identity.py` → zero matches — T138 removed both process-level caches entirely when review routes moved to `staged_document.load`, so the caché-without-its-own-RBAC problem no longer exists.
 
   [agent: data-privacy-guard · sonnet]
-- [ ] T185 Review T184's verdict and record it in `privacy-audit.md` §5.
+- [X] T185 Review T184's verdict and record it in `privacy-audit.md` §5.
 
   [agent: data-platform-lead · opus]
+  **Done 2026-09-26.** Dictamen T184 confirmado APROBADO en privacy-audit.md §5; la corrección de B1 (`14c59d3`) prevalece sobre el punto 2 original.
 - [ ] T186 Run `pytest -m mysql backend/tests/mysql/test_race_import_staged_documents.py` (T111 and the migration round-trip) against a `_test` database, and record the result in `docs/implementation-status.md`, or state explicitly there that it was not run and why. — **deferred 2026-09-26: no MySQL instance available in this sandboxed session (no Docker, no `TEST_DATABASE_URL`). Recorded as not run, with reason, in `docs/implementation-status.md`'s new T186/T187 subsection.**
 
   [agent: qa-engineer · sonnet]

@@ -259,3 +259,50 @@ No encontré, en ningún archivo tocado por este amendment, un nombre, fecha de 
 6. **Hueco no bloqueante, encontrado en esta ronda**: `cmd_compare` no tiene ningún test dedicado (`grep` sobre `tests/` no encuentra ninguna invocación de `cmd_compare`/`"compare"` fuera de comentarios) — la garantía de que su única línea no numérica (`code`) sale de un vocabulario cerrado la verifiqué leyendo el código, no con un test que la ejerza. No es un hallazgo de privacidad (el código es correcto por construcción, mismo mecanismo ya cubierto por `test_apply_profile.py`/`test_vocabulary.py` para `_resolve_category_code`), pero lo dejo anotado como recomendación para quien toque `compare` a continuación: agregar un `TestStdoutSweep`-style para ese subcomando cuando exista un helper de test que llegue a comitear una válida completa (hoy ese helper no existe en `tests/scripts/`).
 
 **Dictamen**: **RESUELTO.** B1, B2 y B3 están corregidos y comiteados; ningún subcomando de `race_results.py` imprime, en ninguna rama de éxito o error revisada, un nombre, ciudad, club, dorsal, tiempo, puntaje o el `header_raw` crudo de una categoría. No aplico ningún cambio de código en esta ronda — no encontré una vía real de fuga que corregir, solo el hueco de cobertura de prueba del punto 6, que dejo como recomendación y no como bloqueante.
+
+---
+
+### T180 — Firma de la skill `race-results-load` para archivos oficiales reales (data-platform-lead, 2026-09-26)
+
+**Alcance**: revisión de T179, del dictamen T184, de los hallazgos B1, B2 y B3 de la revisión previa de este lead y de sus correcciones: `14c59d3` (CLI + `TestApplyReportNeverPrintsHeaderText`), `a815549` (skill + regla `permissions.deny`), `b78ff65` (`SKILL.md`, exit 12, contrato) y `9c0fe83` (re-verificación de `data-privacy-guard`, dictamen RESUELTO). Diffs leídos completos; esta revisión no editó código.
+
+**Verificado de forma independiente**:
+
+1. **B1**: `_document_report_lines` (`backend/scripts/race_results.py`) ya no interpola nada del archivo. `label` es `⟨reconocida #k⟩` o `⟨no reconocida #k⟩`, y `code` sale del vocabulario cerrado o es `"—"`. También se revisaron los `print` de `mask`, `profile-check`, `stage`, `compare` y `main`:
+   - los mensajes de `TargetError` son literales fijos;
+   - los errores pasan por `scrub`;
+   - `main` imprime solo la clase de la excepción;
+   - `compare` imprime solo `code` y conteos.
+
+   El único texto derivado del disco que puede imprimirse es la ruta que el propio operador pasó (exit 6), que no es un dato de un menor.
+2. **Pruebas**: `tests/scripts/test_race_results_cli.py` y `tests/services/race/results_skill` → **177 passed, 0 failed**.
+3. **B2**: la skill, sus tres referencias y la regla `deny` están comiteadas en `a815549`.
+4. **B3**: `SKILL.md` describe el exit 12 como posible solo con `REVISION_STAGING_AVAILABLE` apagado; el flag está en `True` (T175).
+
+**Hallazgo nuevo (condición C1, previa al primer archivo real)**: según la documentación de permisos de Claude Code, `./ruta` se resuelve contra el directorio actual y `/ruta` se ancla al directorio de trabajo principal del proyecto. `SKILL.md` indica trabajar desde `backend/`. Desde ahí, `Read(./output/race-results/**/private/**)` podría apuntar a `backend/output/...`, que no existe, y dejar sin protección `<repo>/output/race-results/<run>/private/`. Las reglas `Read` tampoco cubren subprocesos arbitrarios. La barrera principal sigue siendo la regla 2 de la skill.
+
+**Condiciones de la firma**:
+
+- **C1 (obligatoria, antes de T191)**: agregar en `.claude/settings.json` la variante anclada `"Read(/output/race-results/**/private/**)"`, conservando la actual. Comprobar con una corrida sintética que un `Read` sobre `private/document.json` se rechaza desde la raíz y desde `backend/`, y registrar el resultado en `tasks.md` T180.
+- **C2 (recomendada)**: el operador agrega en su `.claude/settings.local.json` una regla `deny` sobre la carpeta fuera del repo donde guarda actas y manifiestos.
+- **C3 (operativa)**: la primera válida real se carga solo con `--target local`, y el entrenador la revisa y la confirma en la app local antes de cualquier `stage --target production`. Una válida por invocación.
+- **No bloqueante**:
+  - `compare` no tiene prueba dedicada;
+  - `pytest -m mysql` (T186) no se ha corrido; el primer `stage` local contra MySQL real será su primera ejecución, y debe decirse así en el informe de T191.
+
+**Veredicto T180**: **FIRMADA**, con efecto una vez cerrada C1. Hasta entonces ningún archivo oficial real se enmascara.
+
+
+## §5 — Revisión del dictamen T184 (T185, data-platform-lead, 2026-09-26)
+
+**Dictamen T184 confirmado: APROBADO**, leído junto con la subsección "Re-verificación B1–B3" de §4, que lo corrige y prevalece sobre el texto histórico.
+
+- **Corrección de B1**: la afirmación del punto 2 de T184 dependía del perfil de lectura. Desde `14c59d3` el CLI no imprime `header_raw` en ninguna rama, y `TestApplyReportNeverPrintsHeaderText` lo fija como regresión.
+- **Resto de T184**: sin objeciones.
+- **Observaciones abiertas, no bloqueantes**:
+  - `StageResult.warnings` se imprime tal cual (hoy siempre vacío);
+  - `compare` no tiene prueba dedicada;
+  - condición C1 de T180.
+- **Fuera del alcance de esta enmienda**: los pendientes de FR-043 de §3, a cargo del dueño del club.
+
+**Consecuencia**: T185 queda cerrada. La carga real (T190–T192) se habilita cuando C1 esté comiteada y verificada.
