@@ -37,7 +37,7 @@ The official file and the manifest stay outside the repository; `mask` refuses a
 ### `apply --run <dir> --profile <profile_id | path>`
 
 - Re-checks the source file's SHA-256 against `private/source.json`, applies the profile, writes `private/document.json` and runs the leak check.
-- Stdout, per category: index, label (verbatim only if structural, otherwise `⟨no reconocida #k⟩`), code or `—`, rows, completeness (`ok` / `faltan [3]` / `repetidas [20]`), status counts. Then unreadable rows as `(page, ordinal)`, the totals, and `fuga: 0`.
+- Stdout, per category: index, label (`⟨reconocida #k⟩` or `⟨no reconocida #k⟩`; the printed header text is **never** shown, because a too-broad header rule can turn a rider row into a header — privacy-audit §4 B1), code or `—`, rows, completeness (`ok` / `faltan [3]` / `repetidas [20]`), status counts. Then unreadable rows as `(page, ordinal)`, the totals, and `fuga: 0`.
 - Exit codes:
   - 0: done; inconsistent categories are not an error, the coach resolves them in the app;
   - 3: leak;

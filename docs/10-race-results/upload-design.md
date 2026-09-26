@@ -1,5 +1,16 @@
 # Copa Valle PDF Upload UI — Technical Design
 
+> **Superseded 2026-09-26 (feature 044 amendment).** The upload route this document designs
+> (`POST /api/race-analysis/imports/parse`, the wizard's step 1, `RaceUploadZone`) no longer
+> exists. Loading a results file now runs entirely through
+> `.claude/skills/race-results-load/SKILL.md` (`mask` → profile → `apply` → `stage`), never
+> through an HTTP upload — see `docs/10-race-results/history-backfill-design.md` §12 and
+> `specs/044-race-history-backfill/contracts/results-skill-cli.md`. This document is kept for
+> the parts of the pipeline the amendment did **not** touch (identity, corrections, the
+> commit step, the review UI's shape once an import is staged) — read it with that filter on;
+> anything describing the upload step itself, the wizard's step 1, or a PDF/CSV `multipart`
+> body reaching the backend is history, not current behaviour.
+
 **Project:** Club Deportivo Trocha y Ruta — Youth XCO
 **Module:** `services/race/` + `routers/race_analysis.py` + `frontend/src/routes/results/`
 **Date:** 2026-05-20

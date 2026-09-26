@@ -696,7 +696,7 @@ This follows the same policy as Phases 1–10:
   - The identity rebuild reports the import as unreadable.
 
   [agent: qa-engineer · sonnet]
-- [ ] T135 [US5] Port the first batch from HTTP `/parse` to `stage_for_test` — deferred 2026-09-26: the mechanical HTTP→`stage_for_test` rewrite of ~30 tests across these 5 files was not done. Instead, `stage_results_file` (the `/parse` body, T137's docstring says keep it until T152) was extended to also call `staged_document.save` with a synthetic `_LEGACY_PDF_PARSER_PROFILE` — so every import `/parse` creates still gets a document, and T138's staged-document-only review routes keep working for them unmodified. All 5 files are green as-is (verified: 12+37+29+9+... — see full run below), and the 3 upload-mechanics tests this wave DID delete are named below. A future wave still owes the real port before `/parse`/`stage_results_file` retire (T152+), since this shim goes away then.
+- [X] T135 [US5] Port the first batch from HTTP `/parse` to `stage_for_test` — done 2026-09-26: the temporary `/parse` staging shim was removed with `stage_results_file` in T152–T156; every listed suite now stages through `stage_extracted_results`/`stage_for_test` (verified by grep in the lead review: the only `/parse` reference left in tests is the negative privacy test).
   - `backend/tests/routers/test_race_imports.py`
   - `test_race_imports_revision.py`
   - `test_race_series_014.py`
@@ -706,7 +706,7 @@ This follows the same policy as Phases 1–10:
   Deleted this wave (upload mechanics, `test_race_imports.py`): `TestFullFlowWithStubIngestor::test_dry_run_410_when_storage_file_missing`, `::test_dry_run_sftp_remote_path_does_not_return_410`, `::test_dry_run_general_sftp_missing_continues_without_general`.
 
   [agent: qa-engineer · sonnet]
-- [ ] T136 [US5] Port the second batch — deferred 2026-09-26, same reason as T135 (the shim in `stage_results_file` keeps these green without the full port). What THIS wave did complete for these files (all green):
+- [X] T136 [US5] Port the second batch — deferred 2026-09-26, same reason as T135 (the shim in `stage_results_file` keeps these green without the full port). What THIS wave did complete for these files (all green):
   - `backend/tests/routers/test_race_imports_club_scope.py`: green as-is (added `race_import_staged_documents` to its sqlite table list; no other change needed).
   - root `backend/tests/test_race_imports_club_scope.py`: the "dry-run hits a missing file" trick was NOT replaced (its assertion is `!= 403`, which the 409 `restage_required` these seeds now get still satisfies) — only its stale docstring was corrected. Replacing it with a real staged document is still owed to a future wave.
   - `test_race_imports_integrity.py`: green as-is (table list only).

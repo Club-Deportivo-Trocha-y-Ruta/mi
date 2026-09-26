@@ -1,5 +1,11 @@
 # Implementation Workflow — Copa Valle PDF Upload UI
 
+> **Superseded 2026-09-26 (feature 044 amendment).** This is the implementation plan for the
+> upload route and wizard step 1 that `upload-design.md` designed — both are gone (see the
+> banner at the top of that document). Results loading now runs through
+> `.claude/skills/race-results-load/SKILL.md`, never an HTTP upload. Kept as a historical
+> record of how the (now removed) upload surface was originally built; not a plan to follow.
+
 **Source:** `docs/10-race-results/upload-design.md` (920 lines, 23 closed decisions) + `docs/10-race-results/upload-research.md`
 **Strategy:** Systematic
 **Depth:** Deep

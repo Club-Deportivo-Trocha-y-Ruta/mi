@@ -514,13 +514,77 @@ down an owner and a "before what" for each, so the debt has a trigger, not just 
 
 ## 11. References
 
-- `specs/044-race-history-backfill/spec.md`, `plan.md`, `research.md` (R-01…R-16),
-  `data-model.md`, `contracts/*.md`, `quickstart.md`, `privacy-audit.md`, `ux-review.md`,
-  `tasks.md`.
-- `docs/10-race-results/upload-design.md` — the original Phase 1.7 import pipeline this
-  feature extends rather than replaces (FR-023).
+- `specs/044-race-history-backfill/spec.md`, `plan.md`, `research.md` (R-01…R-16, then
+  R-17…R-31 for the amendment — see §12), `data-model.md` §11, `contracts/*.md` (including
+  the amendment's four new contracts: `masked-view.md`, `reading-profile.md`,
+  `results-skill-cli.md`, `revision-via-skill.md`), `quickstart.md` §9,
+  `privacy-audit.md`, `ux-review.md`, `tasks.md`.
+- `.claude/skills/race-results-load/SKILL.md` and its `references/` — the operator-facing
+  procedure the amendment ships; this design doc's §12 is its short technical rationale, not
+  a substitute for reading the skill itself.
+- `docs/10-race-results/upload-design.md` and `upload-workflow.md` — the original Phase 1.7
+  import pipeline. **Superseded by this amendment** for anything about loading a results
+  file (see the banner at the top of each); still correct for identity, corrections and
+  commit mechanics that this amendment did not change.
 - `docs/10-race-results/course-profile-design.md` — feature 043, per-válida course/speed
   figures (`derive_figures`); untouched by this feature after `history.py` stopped using
   `avg_speed_kmh` (2026-09-22).
 - `docs/implementation-status.md` — phase-by-phase status of this feature.
 - `docs/technical-notes.md` — dated changelog entries.
+
+## 12. Amendment 2026-09-26 — skill-only loading (R-17…R-31)
+
+Everything in §1–§10 above describes the upload wizard's own reading, staging and correction
+logic as it stood through feature 044's first close (2026-09-22). This amendment does not
+change any of that logic — the ingestor, the identity resolver, the third-party lock, the
+category vocabulary work and the progression/family sections above are unchanged. What
+changes is **how a file's rows reach the database at all**: there is no longer an upload
+route. `specs/044-race-history-backfill/research.md` R-17…R-31 is the authoritative record;
+this is the short version, kept here because §1–§10 above are the design doc readers already
+know to check for "how does loading work."
+
+- **R-17 — the masked view.** `mask` turns an official file into a deterministic layout view
+  (geometry, token classes, no rider data) — the only file content an LLM session ever reads.
+  A closed vocabulary decides which words may appear verbatim; a leak check after `apply`
+  extracts real rows is the backstop, not the primary control.
+- **R-18/R-19 — reading profiles retire the fixed parsers.** The LLM's only output is a
+  reading profile (a reviewed, no-rider-data JSON file); one tested engine
+  (`app/services/race/results_skill/`) applies it. `pdf_parser.py`/`csv_parser.py` are gone;
+  the band/run primitives that used to live there moved into the engine, proven against the
+  same synthetic parity fixtures the retired parser used to satisfy.
+- **R-20 — staged rows live in the database.** A new 1:1 table,
+  `race_import_staged_documents`, holds a staged import's rows as JSON. Every review route
+  reads from it — the server never re-reads the uploaded file, which closes the privacy-audit
+  finding (A, §2 of `privacy-audit.md`) about unfiltered rows sitting in a process-local cache.
+- **R-21/R-22 — target and actor.** `stage` resolves exactly one of two targets (local by
+  default, production only with `--target production --confirm produccion`, each with its own
+  refusal rules) and requires an active admin/coach `--user-id` for attribution and club-scope
+  parity with the removed HTTP route.
+- **R-23 — evidence.** The original file still goes to SFTP (or the local fallback), validated
+  by magic bytes before anything else runs, in the same storage-path scheme the removed route
+  used.
+- **R-24 — corrections are revisions, for real.** A different reading of an already-committed
+  válida is detected and staged as a revision; `compute_diff` is rewritten to match by
+  `(category, competitor_id)` through the same identity resolution the ingestor uses, not by
+  name string alone, because two competitors can now share a name (044's own signatures work).
+  This also closes R-27's legacy partial commits — re-staging one produces a revision whose
+  diff creates exactly the missing categories.
+- **R-25/R-26 — narrower surface.** The GENERAL/cumulative sheet is retired everywhere (it
+  never created results); the upload route, its helpers, the settings it alone used, and
+  `scripts/stage_race_history.py` are deleted, with structural tests (an OpenAPI route-table
+  walk, a denied-path test, a frontend "no file input" sweep) that fail if any of it comes
+  back.
+- **R-28 — real fixtures removed.** The two real Válida IV PDF fixtures are deleted once
+  nothing still reads them by that name (`privacy-audit.md` §4); they remain in git history,
+  which purging is an owner decision this amendment does not make.
+- **R-29 — the skill itself.** `.claude/skills/race-results-load/SKILL.md` plus three
+  references (masked view, reading profile, manifest) is the operator's whole interface;
+  `backend/scripts/race_results.py` is the only code path in; `.claude/settings.json` denies
+  reading the run folder's `private/` half as defence in depth.
+- **R-30 — the local-first loop.** `mask` → profile (LLM) → `apply` → optional `compare` →
+  `stage` local → review/commit locally → `stage` production (only on explicit request) →
+  review/commit in production. `compare` is also the FR-007 read-only check against válidas
+  already loaded.
+- **R-31 — what left the wizard.** Válida metadata and race conditions move to the manifest
+  and to the válida's own *Condiciones* tab, respectively; nothing is inferred from the file
+  any more (there never was inference to begin with — FR-025 predates this amendment).

@@ -33,6 +33,15 @@
 > Hostinger Shared has an IP allowlist on some plans; if the
 > connection fails with `Host '...' is not allowed`, the coach must add
 > the outgoing IP from hPanel → MySQL Remote.
+>
+> **Since the skill-only loading amendment (feature 044), this is not only a debugging note.**
+> `python -m scripts.race_results stage --target production` connects to Hostinger MySQL
+> directly from wherever the operator runs the skill — their own machine, not Render — the
+> same way a direct `mysql` client connection does. Before the first production `stage`, the
+> operator's own outgoing IP (not Render's) must be added under hPanel → MySQL Remote, or the
+> connection is refused before the CLI's own target checks (§12.2) even run. A residential or
+> mobile-carrier IP that changes between sessions means re-adding it each time; ask the
+> operator for a static IP or a VPN with one if this becomes routine.
 
 ### 1.3 Render — login
 
@@ -804,12 +813,22 @@ between them. That is now blocked instead of guessed:
 ## 12. Real-load runbook — Copa Valle 2024–2025 history (feature 044)
 
 > Scope: loading the fifteen historical válidas (2024: 7, 2025: 8) with the real official
-> files. Owner-only steps (`specs/044-race-history-backfill/tasks.md` T105–T107) — this
-> section exists so the owner (or an operator acting on the owner's behalf) has the checklist
-> in one place. Design detail: `docs/10-race-results/history-backfill-design.md`. This is
-> **not** section §11 in the feature's own planning documents (`plan.md`, `quickstart.md`
-> §8 reference "§11") — that number was already taken by the multi-cup hotfix above by the
-> time this section was written, so the real-load runbook lives at §12 instead.
+> files. Owner-only steps (`specs/044-race-history-backfill/tasks.md` T105–T107, then
+> amended by T191–T192) — this section exists so the owner (or an operator acting on the
+> owner's behalf) has the checklist in one place. Design detail:
+> `docs/10-race-results/history-backfill-design.md`. This is **not** section §11 in the
+> feature's own planning documents (`plan.md`, `quickstart.md` §8 reference "§11") — that
+> number was already taken by the multi-cup hotfix above by the time this section was
+> written, so the real-load runbook lives at §12 instead.
+>
+> **Amendment 2026-09-26 (skill-only loading)**: the upload wizard's step 1 (`POST
+> /imports/parse`) and `scripts/stage_race_history.py` no longer exist. Loading now goes
+> through `.claude/skills/race-results-load/SKILL.md`, which drives
+> `python -m scripts.race_results` (`mask` → `profile-check` → `apply` → `stage`), local
+> first, production only when the owner explicitly asks in that session. §12.2 and §12.3
+> below describe the current flow; `quickstart.md` §9.6 is the short version. §12.4–§12.6
+> (identity review, committing, spot-check and publish) are **unchanged** — they still
+> happen in the coach web app, regardless of how the import was staged.
 
 ### 12.1 Pre-deploy checklist (T097)
 
@@ -840,6 +859,25 @@ about the deploy itself, not yet about staging real files (that's §12.2).
         UPSERT by `code`; safe to re-run.
       - `python -m scripts.seed_race_points_schemes` — the two descriptive, non-official rows
         (`copa_valle_2024`, `copa_valle_2025`). Idempotent UPSERT by `code`; safe to re-run.
+- [ ] **The amendment's own migration**: `c9d0e1f2a3b4` (`race_import_staged_documents`) is
+      the migration that ships the skill-only flow — it must also be the single head printed
+      above. It adds one table (11.1 of `data-model.md` §11) and no enum value to an existing
+      column; no seed follows it.
+- [ ] **Legacy-import count, before this deploy** (`quickstart.md` §9.6 step 1): every import
+      still open when this deploy lands loses the code path that resumes it (the upload
+      wizard's step 1 and its resume routes are gone). Count them first:
+
+  ```sql
+  SELECT status, COUNT(*) FROM race_imports
+  WHERE status = 'pending' OR JSON_LENGTH(parse_meta_json->'$.pending_categories') > 0
+  GROUP BY status;
+  ```
+
+  Each one must be discarded before the deploy, or re-staged with the skill after it — a
+  `committed` import with `pending_categories` comes back through `stage` as a **revision**
+  (§12.7), not a fresh import; a `pending` legacy import with no staged document has no
+  `document_json` to resume from at all and can only be discarded and re-staged from the
+  original file.
 
 ### 12.2 Pre-load checklist
 
@@ -863,27 +901,48 @@ Do not stage a single real file until every line below is true:
 - [ ] **Fresh MySQL backup** of production taken immediately before the first stage, and
       again before each season's commit — the rollback in §12.7 and the migration downgrade
       both assume one exists.
-- [ ] **Reminder, not a check-box**: a local backend pointed at the production `MYSQL_*`
-      variables is exactly as real as Render — a `stage`/`commit` run from a developer's
-      laptop against the production database writes to production. `scripts/stage_race_history.py`
-      only ever stages; commit happens from the UI, so the audit trail names a real person —
-      never run a commit-equivalent script action.
+- [ ] **The CLI's own target guard replaces the old reminder.** A local backend pointed at the
+      production `MYSQL_*` variables used to be exactly as real as Render, with nothing in the
+      tooling to stop it — that used to be only a written reminder here; it is now enforced in
+      code. `python -m scripts.race_results stage` resolves one of exactly two targets
+      (`contracts/results-skill-cli.md` § Target rules):
+      - **local** (no `--target`, or `--target local`): reads `backend/.env` and refuses to
+        run at all if `MYSQL_HOST` is not one of `localhost`, `127.0.0.1`, `::1`, `mysql`,
+        `host.docker.internal`; if `APP_ENV=production`; or if `(MYSQL_HOST, MYSQL_DB)` equals
+        the pair in `backend/.env.production` — the exact laptop-pointed-at-prod case this
+        reminder used to warn about.
+      - **production** (`--target production --confirm produccion`): reads only
+        `MYSQL_*`/`HOSTINGER_SFTP_*`/`HOSTINGER_PUBLIC_BASE_URL` from `backend/.env.production`,
+        refuses without SFTP fully configured, refuses on an Alembic head mismatch, and
+        refuses without the exact `--confirm produccion` flag.
 
-### 12.3 Staging the fifteen files
+      `stage` only ever stages, on either target — commit still happens from the UI, so the
+      audit trail names a real person. No environment value from either file is ever printed;
+      an error is scrubbed of every value loaded from them.
+
+### 12.3 Staging the fifteen files, with the skill
+
+`scripts/stage_race_history.py` no longer exists. Loading now runs entirely through
+`.claude/skills/race-results-load/SKILL.md`, one válida at a time — there is no
+multi-file batch mode any more, by design (a problem in one file cannot silently affect
+another the coach hasn't looked at yet).
 
 1. Obtain the fifteen official RESULTADOS files (not the organiser's GENERAL/cumulative
-   files — those are never ingested, FR-024) and write a manifest — season, válida number,
-   date, venue, file path — **outside the repository**. Neither the manifest nor the files
-   are ever committed (Ley 1581; a real file also fails the "synthetic fixtures only" rule
-   that governs this repo's test data).
-2. Dry-run the manifest first: `python scripts/stage_race_history.py --manifest
-   /path/outside/repo/manifest.json --dry` lists what would be staged without writing
-   anything.
-3. Stage for real, ideally one season at a time so a problem in the second season doesn't
-   block review of the first: `python scripts/stage_race_history.py --manifest
-   /path/outside/repo/manifest.json`. The script stages through the same service function
-   the `/parse` endpoint uses (`import_staging.py`) — there is no separate, less-audited
-   path.
+   files — those are never ingested, FR-024) and, for each one, a manifest —
+   `references/manifest.md` of the skill has both accepted shapes. Files and manifests stay
+   **outside the repository**; neither is ever committed (Ley 1581; a real file also fails
+   the "synthetic fixtures only" rule that governs this repo's test data).
+2. For each válida, ask Claude Code to run the skill against that one file. It works through
+   `mask` → `profile-check`/`apply` (reusing `copa-valle-results-pdf` unless the layout truly
+   differs) → `stage --target local`, reading only `masked/` and `report.json` — never the
+   official file itself. It never opens `backend/.env.production` and never prints a value
+   from it.
+3. Review each staged import in the **local** app before moving to the next válida — this
+   replaces the old dry-run step, and it means the coach has already seen every válida once
+   before any of them touches production.
+4. Only when the owner explicitly asks, for one válida at a time: `stage --target production
+   --confirm produccion` (§9.6 step 4 of `quickstart.md`). The skill shows the exact command
+   first; nothing from `.env.production` is ever in that command's output.
 
 ### 12.4 Resolving what the preview flags
 
@@ -943,28 +1002,45 @@ results disappear from every parent account until someone notices and updates th
 Treat "publish a new privacy-policy version" and "bump `RACE_HISTORY_FAMILY_POLICY_VERSION`"
 as one atomic operational step, not two.
 
-### 12.7 If a season needs to be rolled back
+### 12.7 If a season needs to be rolled back — staged documents and revisions
 
-Reviewed by the data lead (T096, 2026-09-22). Only `race_results` carries
-`imported_from_id`; competitors, signatures, events and series do **not**, so "delete by
-`imported_from_id`" alone leaves debris that the next identity rebuild would treat as real
-people. Do it in this order, inside one transaction, on a database you have just backed up
-(§12.2), and only after confirming no parent has been shown the season (family gate closed or
-the season is post-registration):
+Reviewed by the data lead (T096, 2026-09-22; extended 2026-09-26 for staged documents and
+revisions). Only `race_results` carries `imported_from_id`; competitors, signatures, events
+and series do **not**, so "delete by `imported_from_id`" alone leaves debris that the next
+identity rebuild would treat as real people. Do it in this order, inside one transaction, on
+a database you have just backed up (§12.2), and only after confirming no parent has been
+shown the season (family gate closed or the season is post-registration):
 
-1. Record the import ids of the bad season (`race_imports` rows of that series).
-2. Delete their results: `race_results` where `imported_from_id IN (…)`.
-3. Delete identity candidates whose snapshots only reference competitors left without any
+1. Record the import ids of the bad season (`race_imports` rows of that series). **Follow
+   `parent_import_id` in both directions first** — an import staged with the skill against an
+   already-committed válida is a *revision* (`data-model.md` §11.4), and rolling back the
+   original without also rolling back every revision chained onto it (or the reverse) leaves
+   the season in a state no single import id fully describes.
+2. Delete their results: `race_results` where `imported_from_id IN (…)`. For a rolled-back
+   revision specifically, also delete the `race_result_revisions` rows that `commit_revision`
+   wrote for it (one row per changed result) — they reference results you are about to delete,
+   and leaving them behind misrepresents the season's edit history to anyone who reads it
+   later.
+3. **Staged documents don't usually need cleanup here** — `race_import_staged_documents` is
+   deleted automatically the moment an import finishes committing (with no pending categories
+   left) or is discarded (`data-model.md` §11.4's lifecycle diagram). It only still exists for
+   an import you are rolling back if that import is still `pending` or still has
+   `pending_categories` — in that case, deleting the `race_imports` row in step 6 below
+   cascades to its `race_import_staged_documents` row (`ON DELETE CASCADE`); no separate
+   delete statement is needed, but confirm the row is actually gone afterward rather than
+   assuming the cascade fired.
+4. Delete identity candidates whose snapshots only reference competitors left without any
    result — or simply every candidate still `pending`; decided candidates that still involve a
    surviving competitor stay (their decision remains valid).
-4. Delete competitors that now have **zero** results **and** no `athlete_id` (never delete a
+5. Delete competitors that now have **zero** results **and** no `athlete_id` (never delete a
    linked competitor — unlink first, as a separate, deliberate step), together with their
    `race_competitor_signatures`. Competitors that raced in another season keep their
    signatures; a widened `first_season`/`last_season` may now be too wide — harmless for
    resolution, but note it.
-5. Delete `race_events` of that series with no remaining results, then the series if empty.
-6. Set the imports' status back so they can be re-staged, or delete them.
-7. Run `POST /race-identity/rebuild` and confirm `pending` is what you expect; re-run the
+6. Delete `race_events` of that series with no remaining results, then the series if empty.
+7. Set the imports' status back so they can be re-staged, or delete them (see step 3 on the
+   cascade this triggers for a still-`pending`/still-`pending_categories` import).
+8. Run `POST /race-identity/rebuild` and confirm `pending` is what you expect; re-run the
    third-party lock test on the deployed commit.
 
 There is no one-click "undo a season" by design. Write the SQL against a restored copy first,
