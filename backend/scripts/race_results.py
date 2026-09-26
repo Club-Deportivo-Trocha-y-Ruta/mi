@@ -86,7 +86,10 @@ ENGINE_VERSION = "results_skill/1"
 #: distinta de una válida ya commiteada NO se stagea — el commit de esa
 #: revisión hoy solo agregaría filas, nunca actualizaría ni borraría
 #: (revision-via-skill.md, "Current state"). T175 pone esto en ``False``.
-REVISION_STAGING_AVAILABLE = False
+#: T175 (amendment 2026-09-26): fase de revisiones ya implementada
+#: (compute_diff identity-aware + commit_revision wired, T173/T174) — el
+#: guardia ``revision_not_available`` (exit 12) queda apagado.
+REVISION_STAGING_AVAILABLE = True
 
 _RUN_META_FILENAME = "run.json"
 

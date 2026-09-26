@@ -457,7 +457,7 @@ class TestDuplicates:
 
 
 class TestRevisionGuard:
-    def test_different_reading_of_committed_valida_exits_12(
+    def test_different_reading_of_committed_valida_stages_a_revision(
         self, tmp_path, capsys, db_session_factory
     ):
         import asyncio
@@ -499,8 +499,9 @@ class TestRevisionGuard:
                 )
                 session.add(parent_import)
                 await session.commit()
+                return parent_import.id
 
-        asyncio.run(_seed_committed_valida())
+        parent_import_id = asyncio.run(_seed_committed_valida())
 
         pdf_path = _build_pdf(tmp_path, name="revision", valida_num=12)
         manifest_path = _write_manifest(tmp_path, valida_num=12, name="revision-manifest")
@@ -509,15 +510,21 @@ class TestRevisionGuard:
         cli.main(["apply", "--run", str(run_dir), "--profile", "copa-valle-results-pdf"])
         capsys.readouterr()
 
+        # T175 (amendment 2026-09-26): la fase de revisiones ya existe
+        # (T173/T174) — el guardia `revision_not_available` se apagó. Una
+        # lectura distinta de una válida ya commiteada se stagea como
+        # revisión (exit 0), lista para dry-run/commit en la app.
         exit_code = cli.main(
             ["stage", "--run", str(run_dir), "--manifest", str(manifest_path), "--user-id", "10"]
         )
         out = capsys.readouterr()
-        assert exit_code == 12
-        assert "revision_not_available" in out.out
+        assert exit_code == 0
+        assert "status: pending" in out.out
+        assert f"revisión de la importación #{parent_import_id}" in out.out
+        assert "revision_not_available" not in out.out
 
         n_imports = asyncio.run(_count(db_session_factory, RaceImport))
-        assert n_imports == 1  # solo el padre sembrado; nada nuevo se creó.
+        assert n_imports == 2  # el padre sembrado + la revisión recién stageada.
 
 
 # ---------------------------------------------------------------------------
