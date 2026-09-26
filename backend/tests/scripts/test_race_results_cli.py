@@ -13,9 +13,15 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.pool import NullPool
 
+import scripts.race_results as cli
 from app.models import Base
 from app.models.race_event import RaceEvent
 from app.models.race_import import RaceImport, RaceImportKind, RaceImportStatus
@@ -23,9 +29,11 @@ from app.models.race_series import RaceSeries, RaceSeriesKind, RaceSeriesLevel
 from app.models.user import User, UserRole
 from tests.helpers.audit_tables import AUDIT_TABLES
 from tests.helpers.name_sweep import assert_no_fake_names
-from tests.helpers.results_pdf_builder import FakeNameGenerator, build_results_pdf, sequential_category
-
-import scripts.race_results as cli
+from tests.helpers.results_pdf_builder import (
+    FakeNameGenerator,
+    build_results_pdf,
+    sequential_category,
+)
 
 _TABLES = (
     "users",
@@ -597,3 +605,32 @@ class TestStdoutSweep:
         if report_path.exists():
             assert_no_fake_names(report_path.read_text(encoding="utf-8"), gen)
         _ = json_module  # placeholder si se necesita inspeccionar el JSON a futuro
+
+
+class TestApplyReportNeverPrintsHeaderText:
+    """B1 (privacy-audit.md §4): a too-broad header rule can turn a rider row into a
+    'category header'. Its text must never reach the apply stdout the LLM reads."""
+
+    def test_unrecognised_and_recognised_headers_are_not_printed(self):
+        from app.services.race.staged_document import (
+            ParsedCategory,
+            ParsedResults,
+            ResultsRow,
+        )
+
+        gen = FakeNameGenerator(seed=7)
+        rider = gen.next_name()
+        row = ResultsRow(position=1, bib="101", name=gen.next_name(), city="Ciudad Ficticia",
+                         club="Club Ficticio Uno", time_raw="1:02:03", points=150)
+        document = ParsedResults(categories=[
+            ParsedCategory(header_raw=rider, code=None, rows=[row]),
+            ParsedCategory(header_raw="PREJUVENIL A DAMAS", code="PJUV_A_F", rows=[row]),
+        ])
+
+        text = "\n".join(cli._document_report_lines(document))
+
+        assert rider not in text
+        assert "PREJUVENIL A DAMAS" not in text
+        assert "⟨no reconocida #1⟩" in text
+        assert "code=PJUV_A_F" in text
+        assert_no_fake_names(text, gen)

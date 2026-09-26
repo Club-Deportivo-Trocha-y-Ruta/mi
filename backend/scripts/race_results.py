@@ -267,7 +267,9 @@ def _document_report_lines(document) -> list[str]:
                 key = "finished"
             status_counts[key] = status_counts.get(key, 0) + 1
 
-        label = category.header_raw if category.code is None else f"<estructural #{index}>"
+        # Nunca se imprime header_raw: con una regla de encabezado demasiado amplia
+        # puede ser el nombre, club o ciudad de un corredor, y el LLM lee esta salida.
+        label = f"⟨no reconocida #{index}⟩" if category.code is None else f"⟨reconocida #{index}⟩"
         code = category.code or "—"
         if report.status == "ok":
             completeness_txt = "ok"

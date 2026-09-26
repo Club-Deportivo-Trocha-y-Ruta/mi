@@ -6,10 +6,8 @@ parsea nada — recibe un ``ParsedResults`` ya extraído — así que estos test
 llaman el servicio DIRECTAMENTE con documentos sintéticos
 (``tests/helpers/staging.py::stage_for_test``), sin PDF/WeasyPrint ni HTTP.
 
-``stage_results_file`` (el flujo legado detrás de ``POST /parse``, aún vivo
-para no romper el wizard de temporada corriente) sigue teniendo su propia
-cobertura en los tests de router — este archivo es ahora exclusivamente de
-``stage_extracted_results``.
+``stage_results_file`` (el flujo legado detrás de ``POST /parse``) se retiró en
+T152 junto con el endpoint; este archivo cubre solo ``stage_extracted_results``.
 
 Privacidad: todos los nombres son sintéticos (``FakeNameGenerator``); ningún
 archivo real de la Federación se usa ni se genera aquí.
