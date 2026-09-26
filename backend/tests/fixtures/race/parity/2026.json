@@ -1,0 +1,80 @@
+{
+  "categories": [
+    {
+      "header_raw": "INFANTIL A",
+      "code": "INF_A",
+      "rows": [
+        {
+          "position": 1,
+          "bib": "100",
+          "name": "Camila Generico Referencial",
+          "city": "Municipio Ejemplo",
+          "club": "Club Ejemplo",
+          "time_raw": "0:40:07",
+          "points": 50
+        },
+        {
+          "position": 2,
+          "bib": "101",
+          "name": "Isabella Demostrativo Ejemplar",
+          "city": "Municipio Ejemplo",
+          "club": "Asociacion Ficticia Comunitaria del Sur",
+          "time_raw": "0:41:14",
+          "points": 49
+        },
+        {
+          "position": 3,
+          "bib": "102",
+          "name": "Valentina Ejemplar Sintetico",
+          "city": "Villa Demostrativa",
+          "club": "Modelo FC",
+          "time_raw": "0:42:21",
+          "points": 48
+        },
+        {
+          "position": 3,
+          "bib": "103",
+          "name": "Emiliano Simulado Generico",
+          "city": "Ciudad Ficticia Dos",
+          "club": "Ficticio FC",
+          "time_raw": "0:44:35",
+          "points": 46
+        }
+      ]
+    },
+    {
+      "header_raw": "PREJUVENIL A DAMAS",
+      "code": "PJUV_A_F",
+      "rows": [
+        {
+          "position": 1,
+          "bib": "104",
+          "name": "Martina Prototipo Muestra",
+          "city": "Municipio Ejemplo",
+          "club": "Club Ejemplo",
+          "time_raw": "",
+          "points": 50
+        },
+        {
+          "position": 2,
+          "bib": "105",
+          "name": "Santiago Muestra Simulado",
+          "city": "Ciudad Ficticia Dos",
+          "club": "Simulado FC",
+          "time_raw": "0:41:14",
+          "points": 49
+        },
+        {
+          "position": 3,
+          "bib": "106",
+          "name": "Sofia Generico Simulado",
+          "city": "Ciudad Ficticia Dos",
+          "club": "Club Ejemplo",
+          "time_raw": "0:42:21",
+          "points": 48
+        }
+      ]
+    }
+  ],
+  "unreadable_rows": []
+}

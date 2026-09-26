@@ -54,15 +54,21 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
-from typing import Optional, Sequence
 
 import pdfplumber
 
 from app.services.race.normalizer import LAP_WORD_PATTERN, parse_category_header
-from app.services.race.staged_document import (  # noqa: F401 — re-export temporal, T113/T153
+from app.services.race.results_skill.pdf_runs import band_runs as _band_runs
+from app.services.race.results_skill.pdf_runs import (
+    band_text as _band_text,  # noqa: F401 — re-export temporal, T124/T153 (test_band_reader.py)
+)
+from app.services.race.results_skill.pdf_runs import cells_from_runs as _cells_from_runs
+from app.services.race.results_skill.pdf_runs import chars_by_band as _chars_by_band
+from app.services.race.staged_document import (
     ParsedCategory,
     ParsedResults,
     ResultsRow,
@@ -263,7 +269,7 @@ def _is_discardable_line(line: str) -> bool:
 
 
 def _build_table_index(
-    tables: list[list[list[Optional[str]]]],
+    tables: list[list[list[str | None]]],
 ) -> dict[tuple[str, str], tuple[str, str, str]]:
     """Mapea ``(pos, bib)`` → ``(name, city, club)`` desde las tablas extraídas.
 
@@ -303,134 +309,21 @@ def _split_body_fallback(body: str) -> tuple[str, str, str]:
 
 # ---------------------------------------------------------------------------
 # Lector por banda (research R-01)
+#
+# ``_band_text``/``_band_runs``/``_cells_from_runs``/``_chars_by_band`` vivían
+# aquí; la amendment 2026-09-26 (T124) los mueve, sin cambios de
+# comportamiento, a ``results_skill.pdf_runs`` — el motor de lectura offline
+# de la fase 13 los necesita igual que este parser. Se importan arriba con
+# alias (``_band_text = pdf_runs.band_text``, etc.) para que ningún caller
+# existente de este módulo (ni los tests que los ejercitan por su nombre
+# viejo) se rompa; T153 retira este re-export junto con el resto del módulo.
 # ---------------------------------------------------------------------------
-
-
-def _band_text(chars: Sequence[dict], bbox: tuple[float, float, float, float]) -> str:
-    """Reconstruye el texto de una banda de fila leyendo ``chars`` en orden de flujo.
-
-    ``bbox`` es ``(x0, top, x1, bottom)`` — la convención de pdfplumber en
-    ``Page.crop`` y ``Table.rows[i].bbox``.
-
-    El filtrado es **solo vertical** (``top``/``bottom`` del char dentro de la
-    banda): el ancho de ``bbox`` no recorta nada, porque el propósito mismo de
-    la lectura por banda es capturar el texto que se desborda horizontalmente
-    fuera de su columna nominal.
-
-    Los caracteres se recorren en el orden en que el PDF los dibuja, **nunca
-    ordenados por ``x``**. Se inserta un espacio cuando el hueco con el
-    carácter anterior supera ``_BAND_GAP_PT`` o cuando ``x`` salta hacia atrás
-    (el arranque del texto de la celda siguiente, que es lo que ocurre cuando
-    un club largo se imprime encima de la columna ``Tiempo``).
-
-    La función no inventa un espacio cuando el club queda pegado al tiempo sin
-    hueco: reproduce el texto tal cual. La garantía de que el regex no se
-    trague la hora vive en el lookbehind de ``_RESULTS_ROW_RE``, no aquí.
-    """
-    return " ".join(text for _, text in _band_runs(chars, bbox))
-
-
-def _band_runs(
-    chars: Sequence[dict], bbox: tuple[float, float, float, float]
-) -> list[tuple[float, str]]:
-    """Parte la banda en *runs* de texto: ``(x0 donde arranca, texto)``.
-
-    Un run es una tirada de caracteres contiguos en el flujo del PDF. El corte
-    es exactamente el mismo criterio con el que ``_band_text`` inserta un
-    espacio (hueco > ``_BAND_GAP_PT`` o salto de ``x`` hacia atrás), así que
-    ``_band_text`` es literalmente los runs unidos por un espacio y ambas
-    funciones no pueden divergir.
-
-    Medido sobre los archivos oficiales: **cada celda de la fila produce su
-    propio run**, y el run de una celda siempre arranca dentro del rango
-    horizontal de esa celda aunque la celda anterior se haya desbordado encima
-    (el desborde va hacia la derecha, nunca mueve el arranque de la siguiente).
-    Eso es lo que permite recuperar nombre, ciudad y club limpios sin confiar
-    en el texto de las celdas — ver ``_cells_from_runs``.
-    """
-    _, top, _, bottom = bbox
-    runs: list[tuple[float, str]] = []
-    pieces: list[str] = []
-    start_x = 0.0
-    prev: Optional[dict] = None
-    for char in chars:
-        if not (char["top"] >= top and char["bottom"] <= bottom):
-            continue
-        if prev is None or (
-            char["x0"] - prev["x1"] > _BAND_GAP_PT or char["x0"] < prev["x0"]
-        ):
-            if pieces:
-                runs.append((start_x, "".join(pieces).strip()))
-            pieces = []
-            start_x = char["x0"]
-        pieces.append(char["text"])
-        prev = char
-    if pieces:
-        runs.append((start_x, "".join(pieces).strip()))
-    return [(x, text) for x, text in runs if text]
-
-
-def _cells_from_runs(
-    runs: Sequence[tuple[float, str]],
-    cell_boxes: Sequence[Optional[tuple[float, float, float, float]]],
-) -> Optional[list[str]]:
-    """Asigna cada run a su celda por el ``x`` donde **arranca**.
-
-    Es la lectura correcta del defecto de R-01: cuando una celda se desborda,
-    su texto invade la columna siguiente, pero la celda invadida sigue
-    dibujando su propio texto desde su propio borde izquierdo. Por eso el
-    arranque del run identifica la celda sin ambigüedad, mientras que el texto
-    que ``table.extract()`` devuelve para esa celda ya viene contaminado.
-
-    Medido sobre la válida IV de 2026: ``table.extract()`` entrega la ciudad
-    truncada (``SANTANDER DE QUILICHAO`` → ``SANTANDER DE``) y el club como
-    texto intercalado con el desborde vecino, en decenas de filas. Los runs
-    los devuelven íntegros.
-
-    Devuelve ``None`` si algún run arranca fuera de toda celda — señal de que
-    el supuesto no se cumple en esa fila y hay que conservar lo que diga la
-    tabla.
-    """
-    out = [""] * len(cell_boxes)
-    for start_x, text in runs:
-        index = next(
-            (
-                i
-                for i, box in enumerate(cell_boxes)
-                if box is not None and box[0] <= start_x < box[2]
-            ),
-            None,
-        )
-        if index is None:
-            return None
-        out[index] = f"{out[index]} {text}" if out[index] else text
-    return out
-
-
-def _chars_by_band(
-    chars: Sequence[dict], bboxes: Sequence[tuple[float, float, float, float]]
-) -> list[list[dict]]:
-    """Reparte los chars de la página entre las bandas, en orden de flujo.
-
-    Una sola pasada sobre ``page.chars`` en vez de una por banda; el orden
-    relativo dentro de cada banda es el del content stream, que es justo lo
-    que ``_band_text`` necesita.
-    """
-    buckets: list[list[dict]] = [[] for _ in bboxes]
-    for char in chars:
-        char_top = char["top"]
-        char_bottom = char["bottom"]
-        for idx, (_, top, _, bottom) in enumerate(bboxes):
-            if char_top >= top and char_bottom <= bottom:
-                buckets[idx].append(char)
-                break
-    return buckets
 
 
 def _band_cells(
     runs: Sequence[tuple[float, str]],
-    cell_boxes: Sequence[Optional[tuple[float, float, float, float]]],
-) -> Optional[tuple[str, str, str]]:
+    cell_boxes: Sequence[tuple[float, float, float, float] | None],
+) -> tuple[str, str, str] | None:
     """``(name, city, club)`` de una banda a partir de sus runs, o ``None``."""
     texts = _cells_from_runs(runs, cell_boxes)
     if texts is None or len(texts) <= _RES_COL_CLUB:
@@ -446,7 +339,7 @@ def _row_from_match(
     match: re.Match,
     time_raw: str,
     table_idx: dict[tuple[str, str], tuple[str, str, str]],
-    band_cells: Optional[tuple[str, str, str]] = None,
+    band_cells: tuple[str, str, str] | None = None,
 ) -> ResultsRow:
     """Arma un ``ResultsRow`` desde un match de fila + los campos de texto.
 
@@ -488,7 +381,7 @@ def _row_from_match(
     )
 
 
-def _match_row_text(text: str) -> tuple[Optional[re.Match], str]:
+def _match_row_text(text: str) -> tuple[re.Match | None, str]:
     """Intenta interpretar el texto de una banda/línea como fila de resultados.
 
     Devuelve ``(match, time_raw)``; ``(None, "")`` si no es una fila. Una fila
@@ -504,7 +397,7 @@ def _match_row_text(text: str) -> tuple[Optional[re.Match], str]:
     return None, ""
 
 
-def _category_header_of(text: str) -> Optional[str]:
+def _category_header_of(text: str) -> str | None:
     """Devuelve el ``header_raw`` de una línea ``CAT: <NOMBRE>``, o ``None``.
 
     Tolera un prefijo espurio antes del ``CAT:`` — mismo criterio que el
@@ -525,7 +418,7 @@ def _category_header_of(text: str) -> Optional[str]:
 def _parse_page(
     page,
     page_no: int,
-    state: "_DocState",
+    state: _DocState,
 ) -> None:
     """Procesa una página: intercala encabezados ``CAT:`` y bandas de fila."""
     text = page.extract_text() or ""
@@ -544,12 +437,12 @@ def _parse_page(
     _parse_page_by_bands(page, text, tables, page_no, state)
 
 
-def _parse_page_by_bands(page, text: str, tables, page_no: int, state: "_DocState") -> None:
+def _parse_page_by_bands(page, text: str, tables, page_no: int, state: _DocState) -> None:
     """Camino principal: una banda por fila, chars en orden de flujo."""
     table_idx = _build_table_index([table.extract() for table in tables])
 
     bboxes: list[tuple[float, float, float, float]] = []
-    cell_ordinals: list[Optional[int]] = []
+    cell_ordinals: list[int | None] = []
     cell_boxes: list[list] = []
     for table in tables:
         extracted = table.extract()
@@ -606,7 +499,7 @@ def _parse_page_by_bands(page, text: str, tables, page_no: int, state: "_DocStat
     _warn_on_path_mismatch(text, band_keys, page_no)
 
 
-def _parse_page_by_lines(text: str, page_no: int, state: "_DocState") -> None:
+def _parse_page_by_lines(text: str, page_no: int, state: _DocState) -> None:
     """Respaldo por líneas de texto (comportamiento previo a la feature 044)."""
     for line in text.splitlines():
         stripped = line.strip()
@@ -658,7 +551,7 @@ class _DocState:
 
     categories: list[ParsedCategory] = field(default_factory=list)
     unreadable: list[UnreadableRow] = field(default_factory=list)
-    current: Optional[ParsedCategory] = None
+    current: ParsedCategory | None = None
     unknown_headers: set[str] = field(default_factory=set)
 
     def start_category(self, header_raw: str) -> None:
@@ -776,7 +669,7 @@ def parse_general_pdf(path: Path) -> dict[str, list[GeneralRow]]:
         raise FileNotFoundError(f"PDF no encontrado: {path}")
 
     out: dict[str, list[GeneralRow]] = {}
-    current_cat: Optional[str] = None
+    current_cat: str | None = None
 
     with pdfplumber.open(path) as pdf:
         num_validas = _detect_general_columns(pdf)
@@ -870,7 +763,7 @@ def parse_general_pdf(path: Path) -> dict[str, list[GeneralRow]]:
 # ---------------------------------------------------------------------------
 
 
-def parse_event_header(path: Path) -> Optional[EventHeader]:
+def parse_event_header(path: Path) -> EventHeader | None:
     """Detecta y parsea el header de evento del PDF.
 
     Busca línea ``VALIDA <NUM> <LOCATION> <MONTH> <DAY> DE <YEAR>`` en las

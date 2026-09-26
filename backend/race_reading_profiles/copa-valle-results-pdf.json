@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "profile_id": "copa-valle-results-pdf",
+  "description": "Copa Valle XCO, resultados por valida, diseno 2024-2026",
+  "format": "pdf",
+  "pdf": {
+    "rows": "table_bands",
+    "run_gap_pt": 1.0,
+    "columns": [
+      {"field": "position", "x_from": 0.0, "x_to": 62.9},
+      {"field": "bib", "x_from": 62.9, "x_to": 92.9},
+      {"field": "name", "x_from": 92.9, "x_to": 265.4},
+      {"field": "city", "x_from": 265.4, "x_to": 362.9},
+      {"field": "club", "x_from": 362.9, "x_to": 437.9},
+      {"field": "time_or_status", "x_from": 437.9, "x_to": 505.4},
+      {"field": "points", "x_from": 505.4, "x_to": 620.0}
+    ],
+    "category_header": {"prefix": "CAT:"},
+    "skip_structural_lines_starting_with": ["ORD", "RESULTADOS"]
+  },
+  "category_aliases": {},
+  "name_parts_separator": " "
+}

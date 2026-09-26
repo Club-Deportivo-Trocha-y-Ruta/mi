@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "profile_id": "fictional-unruled",
+  "description": "Layout ficticio sin rulings, apellidos y nombres en columnas separadas",
+  "format": "pdf",
+  "pdf": {
+    "rows": "baselines",
+    "run_gap_pt": 1.0,
+    "columns": [
+      {"field": "position", "x_from": 0.0, "x_to": 60.0},
+      {"field": "name", "x_from": 60.0, "x_to": 245.0},
+      {"field": "club", "x_from": 245.0, "x_to": 320.0},
+      {"field": "city", "x_from": 320.0, "x_to": 415.0},
+      {"field": "time_or_status", "x_from": 415.0, "x_to": 485.0},
+      {"field": "points", "x_from": 485.0, "x_to": 620.0}
+    ],
+    "category_header": {"prefix": "CAT:"},
+    "skip_structural_lines_starting_with": ["ORD", "VALIDA"]
+  },
+  "category_aliases": {},
+  "name_parts_separator": " "
+}
