@@ -120,6 +120,7 @@ async def sqlite_engine() -> AsyncEngine:
             "race_series",
             "race_events",
             "race_imports",
+            "race_import_staged_documents",
             "race_categories",
             "race_competitors",
             "race_results",
@@ -264,7 +265,7 @@ async def _keys_of_import(db_session_factory, parse_id: int) -> list[str]:
     """Claves de registro de las filas que la carga aún tiene por ingestar
     (feature 045, R-08): el candado de identidad solo mira candidatos que
     las involucran. Las filas llevan nombres generados, así que se leen del
-    archivo almacenado en vez de adivinarlos."""
+    documento stageado (amendment 2026-09-26) en vez de adivinarlos."""
     from app.routers import race_imports as router_mod
     from app.services.race import identity_review
 
@@ -272,8 +273,8 @@ async def _keys_of_import(db_session_factory, parse_id: int) -> list[str]:
         imp = (
             await db.execute(select(RaceImport).where(RaceImport.id == parse_id))
         ).scalar_one()
-    loaded = await router_mod.load_identity_rows(imp)
-    return sorted(identity_review.import_record_keys(loaded.results, loaded.general))
+        loaded = await router_mod.load_identity_rows(db, imp)
+    return sorted(identity_review.import_record_keys(loaded.results))
 
 
 # ===========================================================================
@@ -553,53 +554,13 @@ class TestStandingsIsCalculated:
         assert r.json()["is_calculated"] is True
 
 
-# ===========================================================================
-# G4 mitigation — un segundo rebuild no vuelve a descargar/parsear (plan.md
-# Complexity Tracking)
-# ===========================================================================
-
-
-class TestG4CacheAvoidsReparseOnSecondRebuild:
-    @pytest.mark.asyncio
-    async def test_second_rebuild_does_not_redownload_or_reparse(
-        self, coach_client, tmp_path, monkeypatch
-    ):
-        from app.services.training import storage_sftp
-
-        # Dos válidas en staging (pending) — nunca se commitean, para que
-        # sigan formando parte del universo de identidad en ambos rebuilds.
-        for i in range(2):
-            cat = _external_category("MASTER B1", 2, 1000 + i * 10)
-            await _parse(
-                coach_client, tmp_path, [cat],
-                valida_num=str(i + 1), event_name=f"VALIDA {i + 1}",
-            )
-
-        real_download = storage_sftp.download_to_tempfile
-        download_calls = {"n": 0}
-
-        async def counting_download(*args, **kwargs):
-            download_calls["n"] += 1
-            return await real_download(*args, **kwargs)
-
-        monkeypatch.setattr(storage_sftp, "download_to_tempfile", counting_download)
-
-        r = await coach_client.post("/api/race-identity/rebuild")
-        assert r.status_code == 200, r.text
-        first_run_calls = download_calls["n"]
-        assert first_run_calls >= 2, (
-            "el primer rebuild debe descargar cada uno de los 2 imports en "
-            "staging al menos una vez"
-        )
-
-        download_calls["n"] = 0
-        r = await coach_client.post("/api/race-identity/rebuild")
-        assert r.status_code == 200, r.text
-        assert download_calls["n"] == 0, (
-            "un segundo rebuild con la misma revisión de correcciones no debe "
-            "volver a descargar/parsear ningún import (caché G4, "
-            "routers/race_imports.py::_reload_results_document)"
-        )
+# (retirada — amendment 2026-09-26, T136/T138): ``TestG4CacheAvoidsReparse
+# OnSecondRebuild`` probaba las cachés LRU de proceso que evitaban
+# re-descargar/re-parsear desde storage en cada rebuild (G4). El rebuild ya
+# no toca storage en absoluto — lee el documento stageado en la base de
+# datos (``staged_document.load``, contracts/staged-import.md) — así que ni
+# las cachés ni este test tienen sentido (0 llamadas a
+# ``download_to_tempfile`` en cualquier rebuild, no solo en el segundo).
 
 
 # ===========================================================================

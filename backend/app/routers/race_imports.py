@@ -45,16 +45,15 @@ Privacidad (CLAUDE.md):
 """
 from __future__ import annotations
 
+import functools
 import hashlib
 import logging
-import os
 import re
-from collections import OrderedDict
 from collections.abc import Mapping, Sequence
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path as PathLib
-from typing import Annotated, Any, Optional
+from typing import Annotated, Optional
 
 from fastapi import (
     APIRouter,
@@ -77,13 +76,15 @@ from app.models.athlete import Athlete
 from app.models.audit_log import AuditAction
 from app.models.club import ClubMember, ClubRole
 from app.models.race_category import RaceCategory
+from app.models.race_event import RaceEvent
 from app.models.race_identity_candidate import RaceIdentityCandidate
 from app.models.race_import import RaceImport, RaceImportKind, RaceImportStatus
-from app.models.race_event import RaceEvent
+from app.models.race_import_staged_document import RaceImportStagedDocument
 from app.models.race_series import RaceSeries, RaceSeriesKind, RaceSeriesLevel
 from app.models.user import User, UserRole
 from app.schemas.race import EventMeta
 from app.schemas.race_imports import (
+    REVISION_REASON_LABELS,
     AcknowledgeIn,
     AcknowledgeReasonOption,
     AcknowledgeReasonsResponse,
@@ -101,7 +102,6 @@ from app.schemas.race_imports import (
     MatchPreview,
     ParseWarning,
     RaceEventDiffResponse,
-    REVISION_REASON_LABELS,
     RevisionReasonCode,
     RevisionReasonOption,
     RevisionReasonsResponse,
@@ -111,6 +111,7 @@ from app.schemas.race_imports import (
 )
 from app.services.audit import AuditEntityType, record_audit
 from app.services.permissions import coach_club_ids, ensure_import_club_access
+from app.services.race import identity_review, staged_document
 from app.services.race.completeness import (
     ACKNOWLEDGE_REASON_LABELS,
     AcknowledgeReasonCode,
@@ -119,24 +120,29 @@ from app.services.race.completeness import (
     apply_corrections,
     check_category,
 )
-from app.services.race import identity_review
 from app.services.race.import_staging import (
     _category_headers_raw,
     _legacy_results_by_category,
-    _parse_general_with_timeout,
-    _parse_results_with_timeout,
+    # Amendment 2026-09-26: dry-run/commit/commit-pending ya no llaman a
+    # estas dos (leen el documento stageado — T138). Se conservan re-
+    # exportadas para no romper con AttributeError los tests aún no
+    # portados que hacen ``monkeypatch.setattr(router_mod, "_parse_..."
+    # , ...)`` (T135/T136); su parche ya no tiene efecto en el código real.
+    _parse_general_with_timeout,  # noqa: F401
+    _parse_results_with_timeout,  # noqa: F401
     stage_results_file,
 )
 from app.services.race.ingestor import RaceIngestor
 from app.services.race.matcher import match_athletes
+from app.services.race.revision import detect_revision
+from app.services.race.revision_diff_view import build_event_diff_view
+from app.services.race.run_staleness import invalidate_runs_for_event
 from app.services.race.staged_document import (
     ParsedCategory,
     ParsedResults,
     ResultsRow,
+    StagedDocumentMissing,
 )
-from app.services.race.revision import detect_revision
-from app.services.race.revision_diff_view import build_event_diff_view
-from app.services.race.run_staleness import invalidate_runs_for_event
 from app.services.request_context import AuditContext, get_request_context
 from app.services.training import storage_sftp
 
@@ -699,190 +705,60 @@ async def _load_correctable_import(
 
 
 # ---------------------------------------------------------------------------
-# G4 mitigation (plan.md Complexity Tracking, nota sobre T060/T061):
-# ``load_identity_rows`` re-descarga y re-parsea cada import en staging en
-# CADA ``/rebuild`` y en cada gate de commit (que hace un rebuild primero) —
-# medido en 0.60 s/archivo de 229 filas, ≈9 s para las quince válidas
-# históricas más latencia SFTP. Dos cachés LRU acotadas y locales al proceso
-# (el filesystem de Render es efímero — no hay nada que persistir entre
-# deploys, así que un dict en memoria basta):
+# Documento stageado (amendment 2026-09-26, T138, contracts/staged-import.md)
 #
-# - ``_RAW_PARSE_CACHE`` — el parseo crudo (sin correcciones), por
-#   ``sha256``. El archivo almacenado nunca cambia para un import ya creado
-#   (una revisión sube un import NUEVO con su propio sha), así que esta
-#   entrada nunca se invalida — solo se desaloja por LRU.
-# - ``_CORRECTED_CATEGORIES_CACHE`` — categorías con correcciones ya
-#   aplicadas, por ``(sha256, corrections_revision)``. ``corrections`` en
-#   ``parse_meta_json`` solo crece por *append* (nunca se edita/borra una ya
-#   guardada — ver ``add_correction``), así que ``len(corrections)`` es una
-#   revisión válida y barata: una corrección nueva cambia la clave y la
-#   entrada vieja simplemente deja de pedirse (invalidación implícita, sin
-#   lógica extra).
-#
-# Ambas cachés son puramente de lectura para sus consumidores (el ingestor,
-# ``_categories_read``, ``check_category`` no mutan lo que reciben;
-# ``apply_corrections`` hace ``copy.deepcopy`` antes de tocar nada), así que
-# reusar el mismo objeto entre llamadas es seguro.
+# Las rutas de revisión ya no vuelven a tocar SFTP ni a reparsear: leen la
+# fila ``race_import_staged_documents`` (``staged_document.load``) y
+# reaplican las correcciones guardadas en ``parse_meta_json["corrections"]``
+# — exactamente lo que antes hacían ``_reload_results_document``/
+# ``_reload_parsed_from_storage`` sobre el archivo redescargado, con las
+# mismas dos cachés LRU (retiradas: ya no hace falta cachear una lectura de
+# storage que no vuelve a ocurrir). Un import legado (staged por el flujo de
+# subida anterior a esta amendment, sin fila de documento) responde ``409
+# restage_required`` — el coach debe volver a subir el archivo por el CLI/
+# skill de lectura.
 # ---------------------------------------------------------------------------
 
-_PARSED_CACHE_MAX_ENTRIES = 32
 
-# PRIVACIDAD (auditoría T090, 2026-09-22): estas dos cachés guardan la
-# parrilla COMPLETA sin filtrar — nombre, club y ciudad de cada fila, incluidos
-# cientos de menores ajenos al club. Son seguras solo porque todos sus
-# llamadores (dry-run, commit, commit-pending, corrections, acknowledge y el
-# rebuild de identidad vía ``load_identity_rows``) exigen
-# ``require_role([admin, coach])``. Un llamador nuevo DEBE tener el mismo
-# guard; nunca sirvas su contenido a un padre, a un atleta ni a un log.
-_RAW_PARSE_CACHE: "OrderedDict[str, ParsedResults]" = OrderedDict()
-_CORRECTED_CATEGORIES_CACHE: "OrderedDict[tuple[str, int], list[ParsedCategory]]" = (
-    OrderedDict()
-)
+def _restage_required_response(import_id: int) -> JSONResponse:
+    """``409 restage_required`` (contracts/staged-import.md §"API deltas").
+    Cuerpo plano — igual patrón que ``_identity_pending_response``."""
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content={"detail": "restage_required", "import_id": import_id},
+    )
 
 
-def _lru_get(cache: "OrderedDict", key):
-    value = cache.get(key)
-    if value is not None:
-        cache.move_to_end(key)
-    return value
-
-
-def _lru_put(cache: "OrderedDict", key, value) -> None:
-    cache[key] = value
-    cache.move_to_end(key)
-    while len(cache) > _PARSED_CACHE_MAX_ENTRIES:
-        cache.popitem(last=False)
-
-
-def clear_parsed_rows_caches() -> None:
-    """Vacía ambas cachés — usado por tests para aislar casos entre sí."""
-    _RAW_PARSE_CACHE.clear()
-    _CORRECTED_CATEGORIES_CACHE.clear()
-
-
-async def _reload_results_document(imp: RaceImport) -> ParsedResults:
-    """Descarga + parsea solo RESULTADOS desde storage, SIN aplicar las
-    correcciones guardadas (research R-05). Building block de
-    ``_reload_parsed_from_storage`` y de los endpoints de corrección /
-    reconocimiento (T019), que necesitan un parseo fresco del acta tal como
-    quedó impresa para validar una corrección nueva contra el estado real.
-
-    En producción (SFTP configurado) el ``storage_path`` es un path remoto
-    Hostinger que no existe en el disco del contenedor. Se descarga vía FTPS
-    a un archivo temporal, se parsea y se borra en el finally.
-
-    G4: cacheado por ``sha256`` (ver comentario arriba) — un import pending
-    referencia siempre el mismo archivo, así que el segundo llamador en
-    adelante (otra corrección, otro rebuild) no vuelve a tocar SFTP.
+async def _load_staged_categories(
+    db: AsyncSession, imp: RaceImport
+) -> list[ParsedCategory] | JSONResponse:
+    """Categorías del documento stageado, con las correcciones guardadas ya
+    reaplicadas (research R-05) — sucesor de ``_reload_parsed_from_storage``.
+    Devuelve el 409 ``restage_required`` en vez de lanzar cuando el import es
+    legado; el caller debe comprobar ``isinstance(..., JSONResponse)`` y
+    devolverlo tal cual.
     """
-    if imp.sha256:
-        cached = _lru_get(_RAW_PARSE_CACHE, imp.sha256)
-        if cached is not None:
-            return cached
-
-    meta = imp.parse_meta_json or {}
-    results_ext = meta.get("results_ext", "pdf")
-
     try:
-        results_tmp_path = await storage_sftp.download_to_tempfile(
-            imp.storage_path or "", suffix=f".{results_ext}"
-        )
-    except FileNotFoundError:
-        raise HTTPException(
-            status_code=status.HTTP_410_GONE,
-            detail=(
-                f"PDF RESULTADOS no encontrado en storage "
-                f"(path={imp.storage_path}). Re-suba el archivo."
-            ),
-        )
+        parsed_doc = await staged_document.load(db, imp)
+    except StagedDocumentMissing:
+        return _restage_required_response(imp.id)
+    corrections = (imp.parse_meta_json or {}).get("corrections") or []
+    if corrections:
+        parsed_doc = apply_corrections(parsed_doc, corrections)
+    return parsed_doc.categories
 
-    # ¿Es el path un temporal nuevo (SFTP) o el mismo local ya existente?
-    results_is_tmp = str(results_tmp_path) != str(imp.storage_path or "")
+
+async def _load_fresh_document(
+    db: AsyncSession, imp: RaceImport
+) -> ParsedResults | JSONResponse:
+    """Documento stageado SIN reaplicar correcciones (research R-05) —
+    building block de ``add_correction``/``acknowledge_category``, que
+    necesitan el acta tal como quedó impresa/extraída para validar una
+    corrección nueva contra el estado real."""
     try:
-        parsed = await _parse_results_with_timeout(results_tmp_path, results_ext)
-    finally:
-        if results_is_tmp:
-            try:
-                os.unlink(results_tmp_path)
-            except OSError:
-                pass
-    if imp.sha256:
-        _lru_put(_RAW_PARSE_CACHE, imp.sha256, parsed)
-    return parsed
-
-
-async def _reload_parsed_from_storage(
-    imp: RaceImport,
-) -> tuple[
-    dict[str, list], Optional[dict[str, list]], str, dict[str, str], list[ParsedCategory]
-]:
-    """Re-carga RESULTADOS (+ GENERAL opcional) desde el storage path persistido
-    durante /parse. Retorna ``(results, general, results_ext,
-    category_headers_raw, categories)``.
-
-    Necesario para dry-run/commit: el bytes original ya está en SFTP/local; lo
-    descargamos a tmp, parseamos, descartamos.
-
-    Feature 044 (US1, research R-05): las correcciones manuales guardadas en
-    ``parse_meta_json["corrections"]`` se reaplican aquí, ANTES de que el
-    resultado llegue al ingestor — las filas parseadas se re-derivan del
-    archivo almacenado en cada dry-run/commit, así que una corrección que no
-    se reaplicara en este punto se perdería en silencio.
-
-    Feature 044 (US5, T060/T061): también se retorna ``categories`` (la lista
-    completa, incluidas las de encabezado no reconocido) — el commit la usa
-    para decidir qué categorías son elegibles y cuáles quedan en
-    ``pending_categories``, algo que ``parsed_results`` (que ya excluye las de
-    ``code=None``) no puede responder por sí solo.
-
-    G4: cacheado por ``(sha256, corrections_revision)`` — ver comentario
-    sobre ``_CORRECTED_CATEGORIES_CACHE`` más arriba.
-    """
-    meta = imp.parse_meta_json or {}
-    results_ext = meta.get("results_ext", "pdf")
-    corrections = meta.get("corrections") or []
-
-    categories: Optional[list[ParsedCategory]] = None
-    cache_key = (imp.sha256, len(corrections)) if imp.sha256 else None
-    if cache_key is not None:
-        categories = _lru_get(_CORRECTED_CATEGORIES_CACHE, cache_key)
-    if categories is None:
-        parsed_doc = await _reload_results_document(imp)
-        if corrections:
-            parsed_doc = apply_corrections(parsed_doc, corrections)
-        categories = parsed_doc.categories
-        if cache_key is not None:
-            _lru_put(_CORRECTED_CATEGORIES_CACHE, cache_key, categories)
-
-    categories_doc = ParsedResults(categories=categories, unreadable_rows=[])
-    category_headers_raw = _category_headers_raw(categories_doc)
-    parsed_results = _legacy_results_by_category(categories_doc)
-
-    # --- GENERAL (opcional) ---
-    parsed_general: Optional[dict[str, list]] = None
-    if imp.general_storage_path:
-        try:
-            general_tmp_path = await storage_sftp.download_to_tempfile(
-                imp.general_storage_path, suffix=".pdf"
-            )
-            general_is_tmp = str(general_tmp_path) != str(imp.general_storage_path)
-            try:
-                parsed_general = await _parse_general_with_timeout(general_tmp_path)
-            finally:
-                if general_is_tmp:
-                    try:
-                        os.unlink(general_tmp_path)
-                    except OSError:
-                        pass
-        except FileNotFoundError:
-            # GENERAL es opcional; si no está en storage, continuamos sin él.
-            logger.warning(
-                "_reload_parsed_from_storage: GENERAL no encontrado en storage "
-                "(parse_id implícito). Continuando sin GENERAL."
-            )
-            parsed_general = None
-
-    return parsed_results, parsed_general, results_ext, category_headers_raw, categories
+        return await staged_document.load(db, imp)
+    except StagedDocumentMissing:
+        return _restage_required_response(imp.id)
 
 
 #: Presupuesto del contrato (``identity-review-api.md`` §Rebuild): trabajo
@@ -974,7 +850,6 @@ async def _identity_gate(
     db: AsyncSession,
     imp: RaceImport,
     rows_by_category: Mapping[str, Sequence[ResultsRow]],
-    general_by_category: Optional[Mapping[str, Sequence[Any]]] = None,
     *,
     operation: str,
 ) -> Optional[JSONResponse]:
@@ -985,11 +860,11 @@ async def _identity_gate(
     también mira las correcciones de esta carga; ``identity_review.rebuild``
     es idempotente y nunca pisa una decisión) y bloquea únicamente con los
     candidatos ``pending`` cuyas claves pertenecen a las filas que ESTE
-    commit va a ingestar: ``rows_by_category`` (RESULTADOS de las categorías
-    elegibles) y ``general_by_category`` (GENERAL completo — el ingestor
-    resuelve competidores desde TODAS sus categorías). Devuelve ``None`` si
-    puede seguir, o la respuesta ``409 identity_pending``.
-    ``503`` si el recálculo excede ``IDENTITY_REBUILD_TIMEOUT_S``.
+    commit va a ingestar (``rows_by_category``, RESULTADOS de las categorías
+    elegibles — GENERAL retirement, amendment 2026-09-26: ya no hay GENERAL
+    que preguntar). Devuelve ``None`` si puede seguir, o la respuesta ``409
+    identity_pending``. ``503`` si el recálculo excede
+    ``IDENTITY_REBUILD_TIMEOUT_S``.
 
     Cierra la transacción (``commit``) antes de volver: el llamador sigue con
     SFTP/parseo/ingesta y no debe conservar la conexión MySQL abierta.
@@ -1001,7 +876,7 @@ async def _identity_gate(
         ):
             await identity_review.rebuild(
                 db,
-                rows_loader=load_identity_rows,
+                rows_loader=functools.partial(load_identity_rows, db),
                 timeout_s=IDENTITY_REBUILD_TIMEOUT_S,
             )
     except TimeoutError:
@@ -1016,7 +891,7 @@ async def _identity_gate(
             },
         )
     blocking = await identity_review.pending_candidates_for_import(
-        db, identity_review.import_record_keys(rows_by_category, general_by_category)
+        db, identity_review.import_record_keys(rows_by_category)
     )
     await db.commit()
     if not blocking:
@@ -1030,30 +905,41 @@ async def _identity_gate(
     return _identity_pending_response(parse_id, len(blocking))
 
 
-async def load_identity_rows(imp: RaceImport) -> identity_review.ImportRows:
+async def load_identity_rows(
+    db: AsyncSession, imp: RaceImport
+) -> identity_review.ImportRows:
     """``RowsLoader`` de ``identity_review.rebuild`` (feature 044, T050/T049).
 
-    Adapta ``_reload_parsed_from_storage`` — descarta los metadatos que el
-    universo de identidad no usa y conserva RESULTADOS con las correcciones ya
-    reaplicadas más, en una carga en staging, su GENERAL (feature 045, R-08:
-    el ingestor crea competidores desde GENERAL en todas las categorías, así
-    que el commit debe poder preguntar por ellos). Vive en este router, no en
-    el servicio, porque reutiliza su descarga SFTP + reparseo; el servicio de
+    Amendment 2026-09-26 (T139, contracts/staged-import.md): lee el
+    documento stageado (``staged_document.load``) en vez de redescargar y
+    reparsear desde storage. Un import legado (``StagedDocumentMissing``, sin
+    fila de documento) se propaga tal cual — ``load_universe`` ya captura
+    cualquier excepción de un ``rows_loader`` y lo reporta en
+    ``imports_unreadable``, igual que un archivo ilegible antes de esta
+    amendment. GENERAL ya no se carga (GENERAL retirement, R-25): el
+    ingestor no lo ingesta más, así que tampoco entra al universo de
+    identidad. Vive en este router, no en el servicio, porque el servicio de
     identidad no debe importar el router (contrato §Resolver, docstring de
     ``identity_review.load_universe``).
     """
-    parsed_results, parsed_general, _ext, _headers, cats = await _reload_parsed_from_storage(imp)
+    parsed_doc = await staged_document.load(db, imp)
+    corrections = (imp.parse_meta_json or {}).get("corrections") or []
+    if corrections:
+        parsed_doc = apply_corrections(parsed_doc, corrections)
     if imp.status == RaceImportStatus.committed:
         # Import confirmado a medias: solo sus categorías pendientes siguen
-        # en el universo de identidad; las ya ingestadas son resultados, y
-        # su GENERAL ya se resolvió en el primer commit (esos competidores
-        # ya existen y entran por su firma).
+        # en el universo de identidad; las ya ingestadas son resultados.
         pending = set((imp.parse_meta_json or {}).get("pending_categories") or [])
-        pending_codes = {c.code for c in cats if c.header_raw in pending and c.code}
-        return identity_review.ImportRows(
-            results={code: rows for code, rows in parsed_results.items() if code in pending_codes}
+        pending_codes = {
+            c.code for c in parsed_doc.categories if c.header_raw in pending and c.code
+        }
+        results = _legacy_results_by_category(
+            ParsedResults(categories=parsed_doc.categories, unreadable_rows=[])
         )
-    return identity_review.ImportRows(results=parsed_results, general=parsed_general or {})
+        return identity_review.ImportRows(
+            results={code: rows for code, rows in results.items() if code in pending_codes}
+        )
+    return identity_review.ImportRows(results=_legacy_results_by_category(parsed_doc))
 
 
 def _build_event_meta_from_parse_meta(
@@ -1119,18 +1005,17 @@ async def dry_run_import(
     parse_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
-) -> ImportDryRunResponse:
+) -> ImportDryRunResponse | JSONResponse:
     """Endpoint 2 wizard (dry-run) — ejecuta ingest sin commit + retorna matches."""
     imp = await _load_pending_import(db, parse_id, current_user)
     parse_meta = imp.parse_meta_json or {}
 
-    # Liberar conexión MySQL antes de SFTP download + pdfplumber parse.
-    # expire_on_commit=False mantiene los atributos de `imp` accesibles tras commit.
-    await db.commit()
-
-    parsed_results, parsed_general, _, category_headers_raw, _categories = (
-        await _reload_parsed_from_storage(imp)
-    )
+    categories = await _load_staged_categories(db, imp)
+    if isinstance(categories, JSONResponse):
+        return categories
+    categories_doc = ParsedResults(categories=categories, unreadable_rows=[])
+    category_headers_raw = _category_headers_raw(categories_doc)
+    parsed_results = _legacy_results_by_category(categories_doc)
 
     # Construir EventMeta desde parse_meta (incluye condiciones de carrera si las hay)
     try:
@@ -1145,7 +1030,6 @@ async def dry_run_import(
     # misma session, lo que expira el ORM `imp` (MissingGreenlet en lazy-load).
     imp_id = imp.id
     imp_sha256 = imp.sha256
-    imp_general_sha256 = imp.general_sha256
     imp_uploader_user_id = imp.imported_by_user_id
     imp_series_id = imp.series_id  # BUG-1 fix: honor series resolved at /parse
 
@@ -1155,9 +1039,7 @@ async def dry_run_import(
         report = await ingestor.ingest_event(
             meta=meta_obj,
             results_by_category=parsed_results,
-            general_by_category=parsed_general,
             pdf_results_sha256=imp_sha256,
-            pdf_general_sha256=imp_general_sha256,
             ingested_by_user_id=current_user.id,
             dry_run=True,
             series_id=imp_series_id,
@@ -1291,13 +1173,12 @@ async def commit_import(
     imp = await _load_pending_import(db, parse_id, current_user, for_update=True)
     parse_meta = imp.parse_meta_json or {}
 
-    # Liberar conexión MySQL antes de SFTP download + pdfplumber parse.
-    # expire_on_commit=False mantiene los atributos de `imp` accesibles tras commit.
-    await db.commit()
-
-    parsed_results, parsed_general, _, category_headers_raw, categories = (
-        await _reload_parsed_from_storage(imp)
-    )
+    categories = await _load_staged_categories(db, imp)
+    if isinstance(categories, JSONResponse):
+        return categories
+    categories_doc = ParsedResults(categories=categories, unreadable_rows=[])
+    category_headers_raw = _category_headers_raw(categories_doc)
+    parsed_results = _legacy_results_by_category(categories_doc)
 
     # Feature 044 (US5, T060/T061): categorías elegibles para ESTE commit
     # (consistentes o reconocidas) vs. las que quedan `pending_categories`
@@ -1321,7 +1202,6 @@ async def commit_import(
         db,
         imp,
         {code: rows for code, rows in parsed_results.items() if code in eligible_codes},
-        parsed_general,
         operation="commit",
     )
     if blocked is not None:
@@ -1368,16 +1248,17 @@ async def commit_import(
         if bib is not None:
             match_decisions[bib] = rm.athlete_id
 
-    # Re-adquirir el lock y re-verificar status justo antes de mutar:
-    # el commit temprano (liberar conexión durante SFTP+parse) soltó el lock
-    # de la carga inicial. Si otro commit ganó la carrera durante el parse,
-    # esta re-verificación lanza 404 (ya no está pending).
+    # Re-adquirir el lock justo antes de mutar: ``_identity_gate`` hace su
+    # propio ``commit()`` internamente (para persistir un rebuild antes de
+    # decidir), lo que suelta el lock tomado arriba. Si otro commit ganó la
+    # carrera mientras tanto, esta re-verificación lanza 404 (ya no está
+    # pending). Amendment 2026-09-26 (T138): ya no hay SFTP de por medio —
+    # solo la lectura del documento stageado, que no toca storage.
     imp = await _load_pending_import(db, parse_id, current_user, for_update=True)
 
     # Snapshot attrs antes del ingest: el ingestor hace commit/rollback sobre la
     # misma session, lo que expira el ORM `imp` (MissingGreenlet en lazy-load).
     imp_sha256 = imp.sha256
-    imp_general_sha256 = imp.general_sha256
     imp_series_id = imp.series_id  # BUG-1 fix: honor series resolved at /parse
 
     # Ejecutar commit (dry_run=False) — promueve pending → committed
@@ -1386,10 +1267,8 @@ async def commit_import(
         report = await ingestor.ingest_event(
             meta=meta_obj,
             results_by_category=parsed_results,
-            general_by_category=parsed_general,
             match_decisions=match_decisions,
             pdf_results_sha256=imp_sha256,
-            pdf_general_sha256=imp_general_sha256,
             ingested_by_user_id=current_user.id,
             dry_run=False,
             series_id=imp_series_id,
@@ -1470,6 +1349,10 @@ async def commit_import(
         imp.parse_meta_json = new_meta
     else:
         imp.parse_meta_json = None
+        # Amendment 2026-09-26 (T138, contracts/staged-import.md): commit
+        # completo (sin categorías pendientes) — el documento stageado ya
+        # no hace falta, se borra igual que el meta.
+        await staged_document.delete(db, imp.id)
     # PR4: persistir el motivo de revisión (catálogo cerrado) si se envió.
     # Pydantic ya validó que sea un RevisionReasonCode válido. Guardamos el
     # code (string) — nunca texto libre.
@@ -1566,12 +1449,12 @@ async def commit_pending_import(
     )
     parse_meta = imp.parse_meta_json or {}
 
-    # Liberar conexión MySQL antes de SFTP download + pdfplumber parse.
-    await db.commit()
-
-    parsed_results, parsed_general, _, category_headers_raw, categories = (
-        await _reload_parsed_from_storage(imp)
-    )
+    categories = await _load_staged_categories(db, imp)
+    if isinstance(categories, JSONResponse):
+        return categories
+    categories_doc = ParsedResults(categories=categories, unreadable_rows=[])
+    category_headers_raw = _category_headers_raw(categories_doc)
+    parsed_results = _legacy_results_by_category(categories_doc)
 
     # Categorías que este commit-pending ingesta ahora: las pendientes que ya
     # son consistentes o reconocidas. Su conjunto de filas es el alcance del
@@ -1585,7 +1468,6 @@ async def commit_pending_import(
         db,
         imp,
         {code: rows for code, rows in parsed_results.items() if code in eligible_codes},
-        parsed_general,
         operation="commit-pending",
     )
     if blocked is not None:
@@ -1641,7 +1523,6 @@ async def commit_pending_import(
         db, parse_id, current_user, for_update=True
     )
     imp_sha256 = imp.sha256
-    imp_general_sha256 = imp.general_sha256
     imp_series_id = imp.series_id
 
     ingestor = RaceIngestor(db)
@@ -1649,10 +1530,8 @@ async def commit_pending_import(
         report = await ingestor.ingest_event(
             meta=meta_obj,
             results_by_category=parsed_results,
-            general_by_category=parsed_general,
             match_decisions=match_decisions,
             pdf_results_sha256=imp_sha256,
-            pdf_general_sha256=imp_general_sha256,
             ingested_by_user_id=current_user.id,
             dry_run=False,
             series_id=imp_series_id,
@@ -1684,6 +1563,9 @@ async def commit_pending_import(
         imp.parse_meta_json = new_meta
     else:
         imp.parse_meta_json = None
+        # Amendment 2026-09-26 (T138): ya no queda nada pendiente — el
+        # documento stageado se borra, igual que en un commit completo.
+        await staged_document.delete(db, imp.id)
     await db.flush()
 
     await record_audit(
@@ -1750,7 +1632,7 @@ async def add_correction(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
     ctx: AuditContext = Depends(get_request_context),
-) -> CategoryCompletenessResponse:
+) -> CategoryCompletenessResponse | JSONResponse:
     """``POST /{parse_id}/corrections`` (research R-05).
 
     Privacidad: ``body.row`` trae nombre/ciudad/club de un menor — nunca se
@@ -1761,11 +1643,6 @@ async def add_correction(
     imp = await _load_correctable_import(db, parse_id, current_user)
     meta = dict(imp.parse_meta_json or {})
 
-    # Liberar conexión MySQL antes de SFTP download + pdfplumber parse:
-    # Hostinger cierra la conexión inactiva antes de que termine el parse y
-    # el flush de abajo reventaría con el socket muerto.
-    await db.commit()
-
     existing_corrections = list(meta.get("corrections") or [])
     new_correction = {
         "op": body.op,
@@ -1774,7 +1651,9 @@ async def add_correction(
         "row": body.row.model_dump() if body.row is not None else None,
     }
 
-    fresh = await _reload_results_document(imp)
+    fresh = await _load_fresh_document(db, imp)
+    if isinstance(fresh, JSONResponse):
+        return fresh
     try:
         corrected = apply_corrections(fresh, [*existing_corrections, new_correction])
     except CorrectionError as exc:
@@ -1844,7 +1723,7 @@ async def acknowledge_category(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
     ctx: AuditContext = Depends(get_request_context),
-) -> CategoryCompletenessResponse:
+) -> CategoryCompletenessResponse | JSONResponse:
     """``POST /{parse_id}/acknowledge`` (research R-05).
 
     El gate de commit que consume este reconocimiento (bloquear solo la
@@ -1854,12 +1733,10 @@ async def acknowledge_category(
     imp = await _load_correctable_import(db, parse_id, current_user)
     meta = dict(imp.parse_meta_json or {})
 
-    # Liberar conexión MySQL antes de SFTP download + pdfplumber parse
-    # (mismo motivo que ``add_correction``).
-    await db.commit()
-
     corrections = meta.get("corrections") or []
-    fresh = await _reload_results_document(imp)
+    fresh = await _load_fresh_document(db, imp)
+    if isinstance(fresh, JSONResponse):
+        return fresh
     corrected = apply_corrections(fresh, corrections) if corrections else fresh
     category = next(
         (c for c in corrected.categories if c.header_raw == body.category_header),
@@ -2058,6 +1935,10 @@ async def list_imports(
         for event_id, seq, season_year, series_name in rows.all():
             event_header_by_id[event_id] = (season_year, seq, series_name)
 
+    # Amendment 2026-09-26 (T140): un solo SELECT batched para toda la
+    # página — nunca N+1, nunca carga el documento.
+    restage_map = await _restage_required_map(db, imports)
+
     items: list[ImportListItem] = []
     for imp in imports:
         u = users_by_id.get(imp.imported_by_user_id)
@@ -2100,6 +1981,7 @@ async def list_imports(
                 season=season,
                 valida_num=valida_num,
                 series_name=series_name,
+                restage_required=restage_map.get(imp.id, False),
             )
         )
 
@@ -2254,8 +2136,51 @@ async def _import_parent_committed_at(
     return revision.parent_committed_at if revision is not None else None
 
 
+def _restage_required_candidate_ids(imports: Sequence[RaceImport]) -> list[int]:
+    """IDs de ``imports`` que necesitan un documento stageado para no
+    requerir restage (T140, contracts/staged-import.md): ``pending``, o
+    ``committed`` con ``pending_categories``. Un import en cualquier otro
+    estado (``dry_run``, ``failed``, ``discarded``, o ``committed`` sin nada
+    pendiente) nunca lo requiere — no hace falta ni preguntar por su
+    documento."""
+    out: list[int] = []
+    for imp in imports:
+        if imp.status == RaceImportStatus.pending:
+            out.append(imp.id)
+        elif imp.status == RaceImportStatus.committed and (
+            imp.parse_meta_json or {}
+        ).get("pending_categories"):
+            out.append(imp.id)
+    return out
+
+
+async def _restage_required_map(
+    db: AsyncSession, imports: Sequence[RaceImport]
+) -> dict[int, bool]:
+    """``{import_id: restage_required}`` para ``imports``, con un solo
+    ``SELECT`` batched (nunca N+1, nunca carga el documento) — T140."""
+    candidate_ids = _restage_required_candidate_ids(imports)
+    if not candidate_ids:
+        return {}
+    has_document_ids = set(
+        (
+            await db.execute(
+                select(RaceImportStagedDocument.import_id).where(
+                    RaceImportStagedDocument.import_id.in_(candidate_ids)
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {
+        import_id: import_id not in has_document_ids for import_id in candidate_ids
+    }
+
+
 async def _import_detail(db: AsyncSession, imp: RaceImport) -> ImportDetailRead:
     meta = imp.parse_meta_json
+    restage_map = await _restage_required_map(db, [imp])
     return ImportDetailRead(
         id=imp.id,
         status=imp.status.value,
@@ -2269,6 +2194,7 @@ async def _import_detail(db: AsyncSession, imp: RaceImport) -> ImportDetailRead:
         event_id=imp.event_id,
         season=await _import_season(db, imp),
         parent_committed_at=await _import_parent_committed_at(db, imp),
+        restage_required=restage_map.get(imp.id, False),
     )
 
 
@@ -2336,6 +2262,10 @@ async def discard_import(
 
     previous = imp.status
     imp.status = RaceImportStatus.discarded
+    # Amendment 2026-09-26 (T138, contracts/staged-import.md): un discard
+    # también borra el documento stageado — no hay vuelta atrás desde
+    # ``discarded`` (el mismo archivo se re-stagea desde cero si se necesita).
+    await staged_document.delete(db, imp.id)
     await db.flush()
     await record_audit(
         db,

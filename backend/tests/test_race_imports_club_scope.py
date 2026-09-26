@@ -111,6 +111,7 @@ async def sqlite_engine() -> AsyncEngine:
             "race_series",
             "race_events",
             "race_imports",
+            "race_import_staged_documents",
             "race_categories",
             "race_competitors",
             "race_results",
@@ -262,8 +263,9 @@ async def test_coach_same_club_can_act_on_import_from_another_coach(client_facto
     """La regla de club (no el creator-lock) decide: coach B, coach del club
     1 igual que el uploader (coach A), puede iniciar el dry-run.
 
-    El dry-run en sí falla después por falta de PDF real en storage — lo que
-    prueba este test es que el chequeo de club (ownership) NO devuelve 403.
+    El dry-run en sí falla después con ``409 restage_required`` (el seed no
+    tiene documento stageado — amendment 2026-09-26) — lo que prueba este
+    test es que el chequeo de club (ownership) NO devuelve 403.
     """
     coach_b = _make_user(UserRole.coach, COACH_B_ID, club_ids=((1, ClubRole.coach),))
     async with client_factory(coach_b) as ac:

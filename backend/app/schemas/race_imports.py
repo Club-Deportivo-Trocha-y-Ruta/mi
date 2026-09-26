@@ -30,7 +30,6 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.models.race_event import SurfaceCondition
 from app.services.race.completeness import AcknowledgeReasonCode
 
-
 # ---------------------------------------------------------------------------
 # Catálogo CERRADO de motivos de revisión (PR4 unificación /competitions)
 # ---------------------------------------------------------------------------
@@ -541,6 +540,12 @@ class ImportListItem(BaseModel):
     season: Optional[int] = None
     valida_num: Optional[int] = None
     series_name: Optional[str] = None
+    # Amendment 2026-09-26 (T140, contracts/staged-import.md): ``True`` para
+    # un import legado que necesita volver a subirse antes de poder
+    # revisarse — ``pending`` sin documento stageado, o ``committed`` con
+    # `pending_categories` sin documento. Calculado con un `EXISTS` batched
+    # por página (nunca carga el documento).
+    restage_required: bool = False
 
 
 class ImportDetailRead(BaseModel):
@@ -572,6 +577,8 @@ class ImportDetailRead(BaseModel):
     event_id: Optional[int] = None
     season: Optional[int] = None
     parent_committed_at: Optional[datetime] = None
+    # Amendment 2026-09-26 (T140) — ver ``ImportListItem.restage_required``.
+    restage_required: bool = False
 
 
 class ImportListResponse(BaseModel):

@@ -30,6 +30,7 @@ only, nunca a un padre.
 """
 from __future__ import annotations
 
+import functools
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -100,7 +101,9 @@ async def rebuild_identity_candidates(
     """
     try:
         result = await identity_review.rebuild(
-            db, rows_loader=load_identity_rows, timeout_s=IDENTITY_REBUILD_TIMEOUT_S
+            db,
+            rows_loader=functools.partial(load_identity_rows, db),
+            timeout_s=IDENTITY_REBUILD_TIMEOUT_S,
         )
     except TimeoutError:
         raise HTTPException(

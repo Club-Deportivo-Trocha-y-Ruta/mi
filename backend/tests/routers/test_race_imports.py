@@ -143,6 +143,7 @@ async def sqlite_engine() -> AsyncEngine:
             "race_series",
             "race_events",
             "race_imports",
+            "race_import_staged_documents",
             "race_categories",
             "race_competitors",
             "race_results",
@@ -1270,43 +1271,6 @@ class TestFullFlowWithStubIngestor:
         assert detail["missing_count"] >= 1
 
     @pytest.mark.asyncio
-    async def test_dry_run_410_when_storage_file_missing(
-        self, coach_client, stub_parsers, db_session_factory
-    ):
-        """Si parse persistió un storage_path pero el archivo no existe en disk
-        (caso fallback local efímero post-restart), dry-run retorna 410."""
-        async with db_session_factory() as session:
-            imp = RaceImport(
-                filename="x.pdf",
-                sha256="f0" * 32,
-                series_id=1,
-                status=RaceImportStatus.pending,
-                stats_json={},
-                imported_by_user_id=10,
-                imported_at=datetime.now(timezone.utc),
-                kind=RaceImportKind.resultados,
-                parse_meta_json={
-                    "header": {
-                        "season": 2026,
-                        "valida_num": 4,
-                        "event_name": "X",
-                        "event_date": "2026-05-17",
-                        "location": "Cali",
-                    },
-                    "results_ext": "pdf",
-                },
-                storage_path="/nonexistent-test-path/r.pdf",
-            )
-            session.add(imp)
-            await session.commit()
-            pid = imp.id
-
-        r = await coach_client.post(
-            f"/api/race-analysis/imports/{pid}/dry-run"
-        )
-        assert r.status_code == 410
-        assert "storage" in r.json()["detail"].lower()
-
     @pytest.mark.asyncio
     async def test_parse_results_with_timeout_helper_raises_422_on_timeout(
         self, monkeypatch
@@ -1358,87 +1322,6 @@ class TestFullFlowWithStubIngestor:
         assert "GENERAL" in exc_info.value.detail
 
     @pytest.mark.asyncio
-    async def test_dry_run_sftp_remote_path_does_not_return_410(
-        self,
-        coach_client,
-        stub_parsers,
-        stub_ingestor,
-        db_session_factory,
-        monkeypatch,
-    ):
-        """Regresión: storage_path remoto SFTP (no existe en disco local) debe
-        ser descargado vía download_to_tempfile y NO retornar HTTP 410.
-
-        Simula producción donde ``HOSTINGER_SFTP_*`` está configurado y el
-        storage_path es un path absoluto del servidor FTPS que no existe en el
-        disco del contenedor Render.
-        """
-        from app.services.training import storage_sftp
-        from app.config import settings
-
-        # Activar modo SFTP (sin conexión real)
-        monkeypatch.setattr(settings, "hostinger_sftp_host", "ftps.example.com")
-        monkeypatch.setattr(settings, "hostinger_sftp_user", "user")
-        monkeypatch.setattr(settings, "hostinger_sftp_pass", "pass")
-        monkeypatch.setattr(settings, "hostinger_sftp_remote_dir", "/public_html")
-        monkeypatch.setattr(
-            settings, "hostinger_public_base_url", "https://cdn.example.com"
-        )
-
-        # Stub de download_to_tempfile que crea un tmp válido con magic bytes PDF
-        import tempfile
-        from pathlib import Path
-
-        async def fake_download(storage_path: str, suffix: str = "") -> Path:
-            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
-            tmp.write(b"%PDF-1.4\nfake pdf content for sftp test")
-            tmp.close()
-            return Path(tmp.name)
-
-        monkeypatch.setattr(storage_sftp, "download_to_tempfile", fake_download)
-
-        # Crear un RaceImport pending con storage_path "remoto" (no existe localmente)
-        remote_path = "/public_html/mi/media/race-imports/pending/abc123/resultados.pdf"
-        async with db_session_factory() as session:
-            imp = RaceImport(
-                filename="resultados.pdf",
-                original_filename="RESULTADOS_VALIDA_IV.pdf",
-                sha256="e1" * 32,
-                series_id=1,
-                status=RaceImportStatus.pending,
-                stats_json={},
-                imported_by_user_id=10,
-                imported_at=datetime(2026, 5, 17, tzinfo=timezone.utc),
-                kind=RaceImportKind.resultados,
-                storage_path=remote_path,
-                storage_url="https://cdn.example.com/mi/media/race-imports/pending/abc123/resultados.pdf",
-                parse_meta_json={
-                    "header": {
-                        "season": 2026,
-                        "valida_num": 4,
-                        "event_name": "VALIDA IV CALI",
-                        "event_date": "2026-05-17",
-                        "location": "Cali",
-                    },
-                    "results_ext": "pdf",
-                    "parse_uuid": "abc123",
-                },
-            )
-            session.add(imp)
-            await session.commit()
-            pid = imp.id
-
-        r = await coach_client.post(
-            f"/api/race-analysis/imports/{pid}/dry-run"
-        )
-        # No debe retornar 410 (PDF no encontrado en storage)
-        assert r.status_code != 410, (
-            f"Regresión: dry-run retornó 410 con storage_path remoto SFTP. "
-            f"Detalle: {r.json()}"
-        )
-        # Con stub_parsers en lugar devuelve 200
-        assert r.status_code == 200, r.text
-
     @pytest.mark.asyncio
     async def test_download_to_tempfile_fallback_local_raises_fnf_on_missing(
         self, monkeypatch
@@ -1455,80 +1338,6 @@ class TestFullFlowWithStubIngestor:
             await storage_sftp.download_to_tempfile("/nonexistent/path/r.pdf", suffix=".pdf")
 
     @pytest.mark.asyncio
-    async def test_dry_run_general_sftp_missing_continues_without_general(
-        self,
-        coach_client,
-        stub_parsers,
-        stub_ingestor,
-        db_session_factory,
-        monkeypatch,
-    ):
-        """Si el GENERAL no está en SFTP, dry-run continúa sin él (no 4xx).
-
-        GENERAL es opcional; su ausencia en storage no debe romper el flow.
-        """
-        from app.services.training import storage_sftp
-        from app.config import settings
-        import tempfile
-        from pathlib import Path
-
-        monkeypatch.setattr(settings, "hostinger_sftp_host", "ftps.example.com")
-        monkeypatch.setattr(settings, "hostinger_sftp_user", "user")
-        monkeypatch.setattr(settings, "hostinger_sftp_pass", "pass")
-        monkeypatch.setattr(settings, "hostinger_sftp_remote_dir", "/public_html")
-        monkeypatch.setattr(
-            settings, "hostinger_public_base_url", "https://cdn.example.com"
-        )
-
-        remote_results = "/public_html/race-imports/pending/def456/resultados.pdf"
-        remote_general = "/public_html/race-imports/pending/def456/general.pdf"
-
-        async def fake_download(storage_path: str, suffix: str = "") -> Path:
-            if "general" in storage_path:
-                raise FileNotFoundError(storage_path)
-            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
-            tmp.write(b"%PDF-1.4\nfake results")
-            tmp.close()
-            return Path(tmp.name)
-
-        monkeypatch.setattr(storage_sftp, "download_to_tempfile", fake_download)
-
-        async with db_session_factory() as session:
-            imp = RaceImport(
-                filename="resultados.pdf",
-                original_filename="RESULTADOS_VALIDA_III.pdf",
-                sha256="f2" * 32,
-                series_id=1,
-                status=RaceImportStatus.pending,
-                stats_json={},
-                imported_by_user_id=10,
-                imported_at=datetime(2026, 4, 19, tzinfo=timezone.utc),
-                kind=RaceImportKind.both,
-                storage_path=remote_results,
-                general_storage_path=remote_general,
-                parse_meta_json={
-                    "header": {
-                        "season": 2026,
-                        "valida_num": 3,
-                        "event_name": "VALIDA III",
-                        "event_date": "2026-04-19",
-                        "location": "La Cumbre",
-                    },
-                    "results_ext": "pdf",
-                    "parse_uuid": "def456",
-                },
-            )
-            session.add(imp)
-            await session.commit()
-            pid = imp.id
-
-        r = await coach_client.post(
-            f"/api/race-analysis/imports/{pid}/dry-run"
-        )
-        assert r.status_code == 200, (
-            f"dry-run debe continuar sin GENERAL ausente. Detalle: {r.json()}"
-        )
-
     @pytest.mark.asyncio
     async def test_dry_run_returns_zero_matches_when_no_tyr(
         self, coach_client, monkeypatch, stub_ingestor, db_session_factory
@@ -2540,7 +2349,7 @@ class TestGetImportEndpoint:
         body = r.json()
         assert set(body) == {
             "id", "status", "source_filename", "parse_meta", "created_at", "event_id", "season",
-            "parent_committed_at",
+            "parent_committed_at", "restage_required",
         }
         assert body["id"] == import_id
         assert body["status"] == "pending"

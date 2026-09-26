@@ -136,23 +136,16 @@ _PUBLIC_RECORD_FIELDS = (
 
 _STAGED_STATUSES = (RaceImportStatus.pending, RaceImportStatus.dry_run)
 
-#: ``valida_num`` de la aparición que aporta GENERAL. GENERAL es el acumulado
-#: de la temporada, no una válida: con un número real ``_shared_valida``
-#: trataría a la variante de GENERAL y a la atleta que corrió esa válida como
-#: dos personas distintas y apagaría justo el candidato que el candado busca.
-#: Ninguna válida real usa 0 (regulares 1..7, CD 99).
-GENERAL_VALIDA_NUM = 0
-
 
 @dataclass(frozen=True)
 class ImportRows:
     """Filas de una carga que ``load_universe`` incorpora al universo:
-    ``results`` (RESULTADOS por código de categoría) y ``general`` (GENERAL por
-    código de categoría, si la carga lo trae).
+    ``results`` (RESULTADOS por código de categoría).
 
-    El ingestor crea/actualiza competidores desde GENERAL en todas las
-    categorías (research R-08, nota 1 del G2), así que sus ternas también son
-    parte de lo que el coach debe poder revisar antes del commit.
+    ``general`` se conserva por compatibilidad de firma pero ya no se llena
+    ni se usa — GENERAL retirement (amendment 2026-09-26, contracts/
+    staged-import.md, R-25): GENERAL ya no se stagea ni entra al universo de
+    identidad.
     """
 
     results: Mapping[str, Sequence[Any]]
@@ -670,19 +663,12 @@ async def load_universe(db: AsyncSession, rows_loader: RowsLoader) -> Universe:
     pendientes de un import confirmado a medias (``pending_categories``).
 
     ``rows_loader(import)`` devuelve ``{code: [ResultsRow, ...]}`` con las
-    correcciones ya aplicadas (el router pasa su propio recargador del
-    archivo almacenado), o un ``ImportRows`` si además trae GENERAL. Un
-    import cuyo archivo falla se reporta en ``imports_unreadable`` y no
-    aporta filas.
-
-    GENERAL (feature 045, R-08): una terna que solo aparece en GENERAL y no
-    corresponde a ningún competidor ni a otras filas en staging es un
-    competidor que el commit CREARÍA sin que nadie lo revisara; entra al
-    universo con una sola aparición (categoría de GENERAL, válida
-    ``GENERAL_VALIDA_NUM``) para poder levantar candidatos contra los
-    atletas del club. Las ternas que ya están por RESULTADOS o por firma no
-    reciben una aparición extra: ya están representadas y una categoría
-    distinta las partiría en dos personas.
+    correcciones ya aplicadas (el router lee el documento stageado —
+    ``staged_document.load`` — en vez de reparsear el archivo almacenado),
+    o un ``ImportRows`` (su campo ``general`` ya no se llena — GENERAL
+    retirement, amendment 2026-09-26, R-25). Un import legado sin documento
+    (``StagedDocumentMissing``) se reporta en ``imports_unreadable`` y no
+    aporta filas, igual que un archivo ilegible antes de esta amendment.
 
     Separación por categoría (decisión 2026-09-21): las apariciones de una
     misma terna se agrupan con ``split_by_category``; si forman más de un
@@ -747,9 +733,6 @@ async def load_universe(db: AsyncSession, rows_loader: RowsLoader) -> Universe:
     # Filas en staging, por terna.
     staged: dict[Triple, list[Appearance]] = defaultdict(list)
     printed: dict[Triple, _Printed] = {}
-    # Ternas que solo trae GENERAL: se fusionan a `staged` tras leer todos los
-    # imports, para no depender del orden en que aparezcan.
-    general_staged: dict[Triple, tuple[Appearance, _Printed]] = {}
     committed_shas = set(
         (
             await db.execute(
@@ -810,9 +793,10 @@ async def load_universe(db: AsyncSession, rows_loader: RowsLoader) -> Universe:
             unreadable.append(imp.id)
             continue
         scanned += 1
-        by_category, general_rows = (
-            (loaded.results, loaded.general) if isinstance(loaded, ImportRows) else (loaded, {})
-        )
+        # GENERAL retirement (amendment 2026-09-26, R-25): un `rows_loader`
+        # ya solo devuelve RESULTADOS — ``ImportRows.general`` nunca se
+        # llena más allá de su default y se ignora aquí.
+        by_category = loaded.results if isinstance(loaded, ImportRows) else loaded
         event_key = (imp.series_id, valida_num)
         for code, parsed_rows in by_category.items():
             ap = appearance(by_code.get(code), code, event_key, season)
@@ -829,27 +813,6 @@ async def load_universe(db: AsyncSession, rows_loader: RowsLoader) -> Universe:
                         (row.city or "").strip() if triple[2] else "",
                     ),
                 )
-        general_event_key = (imp.series_id, GENERAL_VALIDA_NUM)
-        for code in sorted(general_rows):
-            ap = appearance(by_code.get(code), code, general_event_key, season)
-            for row in general_rows[code]:
-                triple = row_triple(row)
-                if triple is None or triple in general_staged:
-                    continue
-                general_staged[triple] = (
-                    ap,
-                    _Printed(
-                        row.name.strip(),
-                        (row.club or "").strip() if triple[1] else "",
-                        (row.city or "").strip() if triple[2] else "",
-                    ),
-                )
-
-    for triple, (ap, shown) in general_staged.items():
-        if triple in staged or triple in sigs_by_triple:
-            continue
-        staged[triple].append(ap)
-        printed.setdefault(triple, shown)
 
     def labels_of(apps: Iterable[Appearance]) -> tuple[str, ...]:
         return tuple(
