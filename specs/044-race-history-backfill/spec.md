@@ -17,6 +17,7 @@ Owner directive that opened this session: reading results from uploaded PDF or C
 - Q: When the skill reads an official results file, may the LLM see the riders' names (almost all minors, most of them from other clubs)? → A: No. The LLM never sees real rows: a local script replaces every name, club and city with a placeholder token before any file content reaches the LLM; the LLM works out how to read that organiser's layout (columns, category headers) on the masked version, and the script applies that reading to the real file without the LLM.
 - Q: Once the skill has validated a válida locally, how do its results reach the production database? → A: Direct load. The same script targets the local database by default and writes to production only when explicitly asked (explicit flag plus confirmation); the extracted data stays in a git-ignored folder on the operator's computer. No Alembic data migration, because it would commit minors' names to the repository.
 - Q: Once the skill has written a válida to the database, where is it reviewed and committed — in the web app or inside the skill session? → A: In the web app. The skill leaves the válida pending in the target database; the coach reviews it there (category mapping, incomplete categories, identity candidates) and commits it with the existing screens. The web app loses only the file-upload step.
+- Q: If the skill tries to load a válida that is already committed (the organiser published a correction, or the reading was wrong), what happens? → A: It is refused and nothing is written. Single rows are corrected in the web app through the existing audited result-revision flow; a full reload requires the documented rollback procedure first.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -115,6 +116,7 @@ With reading, categories, the privacy guarantee and the identity review in place
 4. **Given** a season fully loaded, **When** its standings are shown, **Then** they are calculated from the loaded results and labelled as calculated by the platform.
 5. **Given** a file whose season, válida number or venue cannot be read from its header, **When** the skill reads it, **Then** the operator is asked to supply them and nothing is assumed.
 6. **Given** the historical seasons are loaded, **When** any 2026 view is opened, **Then** it shows exactly what it showed before the load.
+7. **Given** a válida that is already committed, **When** the skill tries to stage a different file or a different reading of that same válida, **Then** nothing is written and the operator is told the válida is already loaded; single rows are corrected in the web app through the result-revision flow.
 
 ---
 
@@ -178,6 +180,7 @@ A parent opens their child's results and sees the complete history, including v�
 - The organiser applied a discard rule to final standings that the files do not state: the platform's calculated standings may differ from the official final table, which is why they are labelled as calculated.
 - A historical válida later receives a course profile through the existing course-profile flow: its average speed appears in the series from then on, with no reload of results.
 - The same file is provided under a different name: duplicate protection recognises it by content.
+- The organiser publishes corrected results after a válida is committed: the skill refuses to stage it again; the coach fixes the affected rows through the result-revision flow, or the documented rollback is run before a full reload.
 - A results file is scanned rather than text: the skill rejects it with a clear message, because its content cannot be masked before the LLM sees it; reading images is out of scope.
 - A new organiser prints a layout never seen before: the LLM defines a new reading on the masked file; nothing about the platform changes.
 - A válida staged by the skill is never committed: it stays pending and the coach can discard it from the web app, as today.
@@ -227,7 +230,7 @@ A parent opens their child's results and sees the complete history, including v�
 - **FR-024**: Only the per-válida results file is ingested; the organiser's cumulative standings files MUST NOT be loaded.
 - **FR-025**: Each historical season MUST appear as a season of the same cup with its válidas, dates and venues; when the header of a file does not yield season, válida number, date or venue, the operator running the skill MUST be asked and nothing is assumed.
 - **FR-026**: The points printed in each file MUST be kept as the points awarded; season standings MUST be calculated from loaded results and labelled as calculated by the platform.
-- **FR-027**: Loading a file that was already loaded MUST create nothing new; an interrupted load MUST be resumable without redoing the válidas already committed.
+- **FR-027**: Loading a file that was already loaded MUST create nothing new; an interrupted load MUST be resumable without redoing the válidas already committed. The skill MUST refuse to stage a válida of the cup whose season and válida number are already committed — whether the file is identical or a different reading — and write nothing; single rows of a committed válida are corrected only through the existing audited result-revision flow in the web app, and a full reload requires the documented rollback procedure first.
 - **FR-028**: The full start list of every category of every historical válida MUST be loaded, including categories where no club athlete raced.
 - **FR-029**: Loading the historical seasons MUST NOT change anything displayed for the 2026 season.
 
@@ -284,7 +287,7 @@ A parent opens their child's results and sees the complete history, including v�
 - **SC-003**: 100 % of identity candidates have an audited coach decision before the first historical válida is committed, and 0 competitors are created or merged by an automatic name match when a homonym signal was present.
 - **SC-004**: A request for the progression of a competitor not linked to a club athlete is refused in 100 % of attempts, for all four roles.
 - **SC-005**: An inspection of every log line, trace, AI prompt, newsletter and family-facing response produced during the historical load and a subsequent analysis run finds 0 third-party names.
-- **SC-006**: Loading a file that is already loaded creates 0 new válidas, competitors or results.
+- **SC-006**: Loading a file that is already loaded creates 0 new válidas, competitors or results, and staging any reading of an already committed válida writes 0 rows.
 - **SC-007**: Every view of the 2026 season renders identically before and after the historical load.
 - **SC-008**: From a single view and in under one minute, the coach can say whether a given athlete improved between 2024 and 2026 and point to the válida where the category changed.
 - **SC-009**: The coach resolves an identity candidate in one action and under 15 seconds on average, and can stop and resume the review without losing a decision.
