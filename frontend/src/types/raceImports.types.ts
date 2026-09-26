@@ -286,6 +286,9 @@ export interface DiffRow {
   after?: ResultSnapshot | null;
   /** ID del RaceResult persistido — null en `create`. */
   result_id?: number | null;
+  /** true si el match vino del fallback fuzzy (warning UI) — amendment
+   * 2026-09-26 (T173/T174), nunca presente en un match exacto. */
+  fuzzy_matched?: boolean;
 }
 
 export interface DiffSummary {
