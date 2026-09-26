@@ -1,4 +1,9 @@
 {
+  "permissions": {
+    "deny": [
+      "Read(./output/race-results/**/private/**)"
+    ]
+  },
   "hooks": {
   }
 }
