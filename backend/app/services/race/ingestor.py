@@ -219,13 +219,13 @@ class RaceIngestor:
                 con ``dry_run=False`` y el mismo ``pdf_results_sha256`` pueda
                 promoverlo. Default ``False`` (backward compat con CLI F1.7).
             category_headers_raw: (feature 044, US2) ``{code: header_raw}`` —
-                el encabezado tal como venía impreso en el PDF/CSV para cada
-                categoría (ej. ``{"ELITE_M": "ELITE HOMBRES"}``). Punto de
-                extensión para cuando ``pdf_parser.parse_results_document``
-                exponga ``ParsedCategory.header_raw`` (en desarrollo en
-                paralelo); el caller arma este dict a partir de esa lista.
-                Opcional y retrocompatible: si no se pasa (o el code no está
-                presente), ``category_label_raw`` congela la etiqueta VIGENTE
+                el encabezado tal como venía impreso en el documento para
+                cada categoría (ej. ``{"ELITE_M": "ELITE HOMBRES"}``), leído
+                de ``ParsedCategory.header_raw`` (el lector band-first de
+                ``results_skill``); el caller arma este dict a partir de esa
+                lista. Opcional y retrocompatible: si no se pasa (o el code
+                no está presente), ``category_label_raw`` congela la
+                etiqueta VIGENTE
                 del catálogo (``category.label``) en el momento del insert en
                 vez del header crudo — sigue siendo una congelación válida,
                 solo que la fuente es el catálogo y no el PDF.

@@ -29,8 +29,8 @@ from app.models.race_event import SurfaceCondition
 # ---------------------------------------------------------------------------
 
 
-#: Mayor número de válida regular admitido — igual al numeral más alto que
-#: lee ``pdf_parser`` (XII, research R-02).
+#: Mayor número de válida regular admitido — igual al numeral romano más
+#: alto que el lector de PDFs reconoce (XII, research R-02).
 MAX_REGULAR_VALIDA = 12
 
 

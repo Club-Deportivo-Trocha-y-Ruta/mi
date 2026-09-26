@@ -1,14 +1,14 @@
-"""Router ``/api/race-analysis/imports/*`` — wizard upload UI race PDFs (F-UP3).
+"""Router ``/api/race-analysis/imports/*`` — el coach revisa y comitea (F-UP3).
+
+Amendment 2026-09-26 (contracts/staged-import.md, FR-044): la web app YA NO
+sube archivos de resultados — ``POST /parse`` se retiró (T152). El único
+camino de entrada es ahora ``app.services.race.results_skill`` (motor de
+lectura offline del CLI/skill) → ``stage_extracted_results`` (ver
+``import_staging.py``), que deja el ``RaceImport`` pending listo. Este router
+solo revisa y comitea lo que ya está staged.
 
 Endpoints (docs/10-race-results/upload-design.md §4):
 
-- ``POST /parse``              — multipart upload (RESULTADOS + GENERAL opcional).
-                                   Valida magic bytes / tamaño / sanitiza filename,
-                                   sube PDFs a SFTP path
-                                   ``race-imports/pending/{uuid}/...``, parsea
-                                   con pdfplumber (timeout ``RACE_PARSE_TIMEOUT_SECONDS``),
-                                   crea ``RaceImport`` status=pending, retorna
-                                   ``parse_id`` + header detectado + conteos.
 - ``POST /{parse_id}/dry-run`` — ejecuta ``RaceIngestor.ingest_event(dry_run=True)``
                                    con los datos del parse persistido. Devuelve
                                    ``matches`` con resolución HITL pendiente.
@@ -18,9 +18,9 @@ Endpoints (docs/10-race-results/upload-design.md §4):
                                    ``race-imports/committed/{uuid}/``.
 - ``GET /``                    — histórico paginado. RBAC: coach + admin.
 
-Feature 044 (US1, research R-05, ``contracts/reading-integrity.md``): además,
-``POST /parse`` gana ``categories[]``/``unreadable_rows[]`` (lector por banda
-de ``pdf_parser.parse_results_document``), y tres rutas nuevas:
+Feature 044 (US1, research R-05, ``contracts/reading-integrity.md``): la
+respuesta trae ``categories[]``/``unreadable_rows[]`` (lector por banda,
+ahora vía ``results_skill``), y tres rutas nuevas:
 
 - ``POST /{parse_id}/corrections``  — parcha una fila (add/edit/remove) de
                                         una categoría; se persiste en
@@ -32,9 +32,6 @@ de ``pdf_parser.parse_results_document``), y tres rutas nuevas:
 
 Convenciones:
 - RBAC ``require_role([coach, admin])`` — padres bloqueados.
-- Magic bytes obligatorios: ``%PDF-`` para PDF, primera línea con delimitador
-  CSV-like para .csv.
-- Cap tamaño desde ``settings.race_max_pdf_mb`` (default 8 MB).
 - Path en storage: ``race-imports/{pending|committed}/{uuid}/{resultados|general}.{ext}``
   — UUID server-side evita path traversal en filename original.
 
@@ -46,23 +43,16 @@ Privacidad (CLAUDE.md):
 from __future__ import annotations
 
 import functools
-import hashlib
 import logging
-import re
 from collections.abc import Mapping, Sequence
 from datetime import date, datetime, timezone
-from decimal import Decimal
-from pathlib import Path as PathLib
 from typing import Annotated, Optional
 
 from fastapi import (
     APIRouter,
     Depends,
-    File,
-    Form,
     HTTPException,
     Query,
-    UploadFile,
     status,
 )
 from fastapi.responses import JSONResponse
@@ -70,7 +60,6 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
 from app.dependencies import get_db, require_role
 from app.models.athlete import Athlete
 from app.models.audit_log import AuditAction
@@ -97,8 +86,6 @@ from app.schemas.race_imports import (
     ImportDryRunResponse,
     ImportListItem,
     ImportListResponse,
-    ImportParseRequestFields,
-    ImportParseResponse,
     MatchPreview,
     ParseWarning,
     RaceEventDiffResponse,
@@ -123,14 +110,6 @@ from app.services.race.completeness import (
 from app.services.race.import_staging import (
     _category_headers_raw,
     _legacy_results_by_category,
-    # Amendment 2026-09-26: dry-run/commit/commit-pending ya no llaman a
-    # estas dos (leen el documento stageado — T138). Se conservan re-
-    # exportadas para no romper con AttributeError los tests aún no
-    # portados que hacen ``monkeypatch.setattr(router_mod, "_parse_..."
-    # , ...)`` (T135/T136); su parche ya no tiene efecto en el código real.
-    _parse_general_with_timeout,  # noqa: F401
-    _parse_results_with_timeout,  # noqa: F401
-    stage_results_file,
 )
 from app.services.race.ingestor import RaceIngestor
 from app.services.race.matcher import match_athletes
@@ -152,123 +131,14 @@ router = APIRouter()
 
 
 # ---------------------------------------------------------------------------
-# Constantes y helpers de validación
-# ---------------------------------------------------------------------------
-
-_PDF_MAGIC = b"%PDF-"
-
-#: Sanitización filename: keep alnum, dash, underscore, dot. Strip path-traversal.
-_FILENAME_SAFE_RE = re.compile(r"[^a-zA-Z0-9_.\-]")
-
-#: Cabecera CSV Copa Valle. Heurística: cualquier línea con coma/punto-coma/tab
-#: que contenga las palabras clave esperadas. Si no matchea, 415.
-_CSV_DELIMITERS = (",", ";", "\t")
-
-def _sanitize_filename(raw: Optional[str]) -> str:
-    """Devuelve un filename seguro para preservar en BD. Cero path traversal."""
-    if not raw:
-        return "upload.pdf"
-    # Nos quedamos solo con el basename (Windows + Unix)
-    base = PathLib(raw.replace("\\", "/")).name
-    safe = _FILENAME_SAFE_RE.sub("_", base)
-    # Cap a 200 chars (columna filename) y prevenir empty
-    safe = safe[:200] or "upload.pdf"
-    return safe
-
-
-def _is_pdf(content: bytes) -> bool:
-    return len(content) >= 5 and content[:5] == _PDF_MAGIC
-
-
-def _is_csv_like(content: bytes) -> bool:
-    """Acepta CSV si decodifica UTF-8 y la primera línea contiene delimitador."""
-    try:
-        head = content[:4096].decode("utf-8", errors="strict")
-    except UnicodeDecodeError:
-        return False
-    first_line = head.splitlines()[0] if head else ""
-    return any(d in first_line for d in _CSV_DELIMITERS)
-
-
-def _compute_sha256(content: bytes) -> str:
-    return hashlib.sha256(content).hexdigest()
-
-
-async def _read_with_cap(file: UploadFile, max_mb: int) -> bytes:
-    """Lee el archivo subido con cap defensivo (max_mb + 1 byte para detectar exceso)."""
-    max_bytes = max_mb * 1024 * 1024
-    raw = await file.read(max_bytes + 1)
-    if len(raw) > max_bytes:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=(
-                f"Archivo '{file.filename}' supera el límite ({max_mb} MB). "
-                f"PDFs Federación típicos = 250 KB."
-            ),
-        )
-    if not raw:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Archivo '{file.filename}' está vacío.",
-        )
-    return raw
-
-
-def _validate_results_magic(content: bytes, filename: str) -> str:
-    """Valida que el RESULTADOS sea PDF o CSV reconocible. Retorna extensión normalizada."""
-    fname_lower = (filename or "").lower()
-    if fname_lower.endswith(".pdf"):
-        if not _is_pdf(content):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="El archivo no es un PDF válido (magic bytes '%PDF-' ausentes).",
-            )
-        return "pdf"
-    if fname_lower.endswith((".csv", ".tsv", ".txt")):
-        if not _is_csv_like(content):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="El archivo no es un CSV válido (UTF-8 + delimitador requerido).",
-            )
-        return "csv"
-    raise HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail=(
-            "Formato no soportado. RESULTADOS acepta .pdf, .csv, .tsv, .txt."
-        ),
-    )
-
-
-def _validate_general_magic(content: bytes, filename: str) -> None:
-    """GENERAL solo acepta PDF (Federación nunca publica GENERAL en CSV)."""
-    if not (filename or "").lower().endswith(".pdf"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="GENERAL solo acepta .pdf.",
-        )
-    if not _is_pdf(content):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="GENERAL no es un PDF válido (magic bytes '%PDF-' ausentes).",
-        )
-
-
-# ---------------------------------------------------------------------------
-# Helpers internos — series + parsing
+# Helpers internos — series + lectura de categorías
 #
-# Feature 044 (US5, T059): ``_get_or_create_series``, ``_parse_results_with_
-# timeout``, ``_parse_general_with_timeout``, ``_legacy_results_by_category``,
-# ``_category_headers_raw``, ``_categories_read``, ``_categories_meta`` y
-# ``_unreadable_rows_meta`` se extrajeron a
+# Feature 044 (US5, T059): ``_get_or_create_series``, ``_legacy_results_by_
+# category``, ``_category_headers_raw``, ``_categories_read``,
+# ``_categories_meta`` y ``_unreadable_rows_meta`` viven en
 # ``app.services.race.import_staging`` (contracts/historical-load.md
-# §"Staging service") y se re-importan arriba — el script de carga
-# histórica los reutiliza sin pasar por FastAPI, y este router queda como
-# llamador delgado. La re-exportación mantiene los tests existentes que
-# hacen ``monkeypatch.setattr(router_mod, "_parse_..._with_timeout", ...)``
-# funcionando para el camino dry-run/commit (que sigue viviendo aquí); los
-# tests que ejercitan ``POST /parse`` parchan además
-# ``app.services.race.import_staging`` (única copia que ``stage_results_
-# file`` usa internamente).
+# §"Staging service") y se re-importan arriba — este router queda como
+# llamador delgado del camino dry-run/commit.
 # ---------------------------------------------------------------------------
 
 
@@ -306,204 +176,6 @@ def _update_category_cache(
         }
     )
     return updated
-
-
-# ---------------------------------------------------------------------------
-# Endpoint 1: POST /parse
-# ---------------------------------------------------------------------------
-
-
-@router.post("/parse", response_model=ImportParseResponse)
-async def parse_import(
-    resultados_pdf: Annotated[
-        UploadFile, File(description="PDF/CSV RESULTADOS (requerido)")
-    ],
-    series_name: Annotated[str, Form(min_length=1, max_length=100)],
-    season: Annotated[int, Form(ge=2020, le=2100)],
-    valida_num: Annotated[int, Form(ge=1, le=99)],
-    event_name: Annotated[str, Form(min_length=1, max_length=200)],
-    event_date: Annotated[str, Form(description="ISO date YYYY-MM-DD")],
-    location: Annotated[str, Form(min_length=1, max_length=150)],
-    general_pdf: Annotated[
-        Optional[UploadFile], File(description="PDF GENERAL (opcional)")
-    ] = None,
-    kind: Annotated[Optional[str], Form()] = None,  # 'resultados'|'general'|'both'
-    series_kind: Annotated[
-        Optional[str],
-        Form(description="Tipo de serie: 'cup' (default) o 'championship'. Retrocompatible."),
-    ] = None,
-    series_level: Annotated[
-        Optional[str],
-        Form(
-            description="Ámbito del campeonato: 'departmental' (default) o 'national'. Retrocompatible."
-        ),
-    ] = None,
-    # --- Condiciones de carrera (opcionales — no están en el PDF) ---
-    climate: Annotated[
-        Optional[str],
-        Form(description="Descripción libre del clima (máx 60 chars)."),
-    ] = None,
-    temperature_c: Annotated[
-        Optional[Decimal],
-        Form(description="Temperatura en °C (0-50, un decimal)."),
-    ] = None,
-    surface_condition: Annotated[
-        Optional[str],
-        Form(description="seca | humeda | barro | lluvia | mixta"),
-    ] = None,
-    altitude_msnm: Annotated[
-        Optional[int],
-        Form(description="Altitud msnm (0-5000)."),
-    ] = None,
-    weather_notes: Annotated[
-        Optional[str],
-        Form(description="Notas climatológicas adicionales (máx 2000 chars)."),
-    ] = None,
-    # ---------------------------------------------------------------
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.admin, UserRole.coach])),
-    ctx: AuditContext = Depends(get_request_context),
-) -> ImportParseResponse:
-    """Endpoint 1 wizard (parse) — sube PDFs, valida, parsea, crea pending.
-
-    Los campos de condiciones de carrera (climate, temperature_c, etc.) son
-    opcionales y retrocompatibles: parse sin ellos funciona exactamente igual.
-    Se validan vía ``ImportParseRequestFields`` antes de persistir en
-    ``parse_meta_json`` para garantizar invariantes (rangos, longitudes).
-
-    El campo ``series_kind`` (default 'cup') indica si los resultados corresponden
-    a una copa con rondas o a un campeonato anual. Retrocompatible: clientes que
-    no envían el campo reciben el comportamiento de copa (existente).
-
-    El campo ``series_level`` (default 'departmental', spec 023) indica el
-    ámbito territorial de un campeonato nuevo (departmental | national). Solo
-    se consulta cuando ``_get_or_create_series`` crea una serie de tipo
-    ``championship``; el organizer "Liga Vallecaucana de Ciclismo" NO se
-    aplica a campeonatos nuevos (D5).
-
-    Feature 044 (US5, T059): el cuerpo de este endpoint vive ahora en
-    ``app.services.race.import_staging.stage_results_file`` — este handler
-    solo valida el multipart/Form (magic bytes, tamaño, enums crudos, fecha
-    ISO) y delega. ``contracts/historical-load.md`` §"Staging service".
-    """
-    # Validar y resolver series_kind
-    resolved_series_kind: RaceSeriesKind = RaceSeriesKind.cup
-    if series_kind is not None:
-        try:
-            resolved_series_kind = RaceSeriesKind(series_kind)
-        except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=(
-                    f"series_kind inválido: '{series_kind}'. "
-                    "Valores permitidos: cup, championship."
-                ),
-            )
-
-    # Validar y resolver series_level (spec 023)
-    resolved_series_level: RaceSeriesLevel = RaceSeriesLevel.departmental
-    if series_level is not None:
-        try:
-            resolved_series_level = RaceSeriesLevel(series_level)
-        except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=(
-                    f"series_level inválido: '{series_level}'. "
-                    "Valores permitidos: departmental, national."
-                ),
-            )
-
-    # Validar campos de condiciones mediante el schema Pydantic
-    # (FastAPI no aplica validación Pydantic a Form() individuales)
-    from pydantic import ValidationError as PydanticValidationError
-
-    from app.models.race_event import SurfaceCondition as _SurfaceCondition
-
-    surface_condition_enum: Optional[_SurfaceCondition] = None
-    if surface_condition is not None:
-        try:
-            surface_condition_enum = _SurfaceCondition(surface_condition)
-        except ValueError:
-            values = [e.value for e in _SurfaceCondition]
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"surface_condition inválido: '{surface_condition}'. Valores permitidos: {values}.",
-            )
-
-    try:
-        conditions_fields = ImportParseRequestFields(
-            climate=climate,
-            temperature_c=temperature_c,
-            surface_condition=surface_condition_enum,
-            altitude_msnm=altitude_msnm,
-            weather_notes=weather_notes,
-        )
-    except PydanticValidationError as exc:
-        # `exc.errors()` puede contener `input=Decimal(...)` cuando el campo
-        # inválido es `temperature_c`; Decimal NO es JSON-serializable y
-        # rompería la respuesta 422 con HTTP 500. Pasamos por `jsonable_encoder`
-        # para forzar conversión Decimal -> str antes de serializar el body.
-        from fastapi.encoders import jsonable_encoder
-
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=jsonable_encoder(exc.errors(include_url=False)),
-        )
-
-    # Validar fecha ISO — antes solo se validaba al re-construir EventMeta en
-    # dry-run (`_build_event_meta_from_parse_meta`); feature 044 la valida ya
-    # en /parse porque ``stage_results_file`` la recibe tipada (``date``).
-    try:
-        event_date_obj = date.fromisoformat(event_date)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"event_date inválido: '{event_date}'. Formato esperado YYYY-MM-DD.",
-        )
-
-    # Leer + validar magic bytes RESULTADOS
-    resultados_bytes = await _read_with_cap(resultados_pdf, settings.race_max_pdf_mb)
-    results_ext = _validate_results_magic(
-        resultados_bytes, resultados_pdf.filename or "upload.pdf"
-    )
-
-    # (Opcional) GENERAL — solo PDF
-    general_bytes: Optional[bytes] = None
-    if general_pdf is not None and (general_pdf.filename or ""):
-        general_bytes = await _read_with_cap(general_pdf, settings.race_max_pdf_mb)
-        _validate_general_magic(general_bytes, general_pdf.filename or "general.pdf")
-
-    # Determinar override de `kind` (auto-detección vive en el service)
-    kind_override: Optional[RaceImportKind] = None
-    if kind is not None:
-        try:
-            kind_override = RaceImportKind(kind)
-        except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"kind inválido: {kind}. Permitidos: resultados, general, both.",
-            )
-
-    return await stage_results_file(
-        db,
-        file_bytes=resultados_bytes,
-        original_filename=resultados_pdf.filename or "upload.pdf",
-        results_ext=results_ext,
-        series_name=series_name,
-        season=season,
-        valida_num=valida_num,
-        event_name=event_name,
-        event_date=event_date_obj,
-        location=location,
-        series_kind=resolved_series_kind,
-        series_level=resolved_series_level,
-        conditions=conditions_fields,
-        general_bytes=general_bytes,
-        kind_override=kind_override,
-        actor=current_user,
-        ctx=ctx,
-    )
 
 
 # ---------------------------------------------------------------------------

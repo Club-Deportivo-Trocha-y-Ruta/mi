@@ -1,13 +1,15 @@
 """Pydantic v2 schemas para los endpoints `/api/race-analysis/imports/*`.
 
-Cubre los DTOs del wizard upload UI (F-UP3, docs/10-race-results/upload-design.md §4):
+Cubre los DTOs del wizard de revisión/commit (F-UP3, docs/10-race-results/upload-design.md §4).
+Amendment 2026-09-26 (contracts/staged-import.md): la web app ya no sube
+archivos — ``ImportParseResponse``/``ParseHeaderInfo``/``ImportParseRequestFields``
+(el DTO del extinto paso 1 "parse") se retiraron en T152 junto con
+``POST /parse``.
 
-- ``ImportParseResponse``      — output del paso 1 (parse).
 - ``ImportDryRunResponse``     — output del paso 2 (dry-run preview).
 - ``ImportCommitRequest``      — body del paso 3 (commit con resolved matches).
 - ``ImportCommitResponse``     — output del paso 3 (post-ingest).
 - ``ImportListResponse``       — output del histórico GET /.
-- ``ImportParseRequestFields`` — campos de condiciones de carrera para el wizard.
 - ``RaceEventConditionsRead``  — respuesta del PATCH condiciones (B3).
 - ``RaceEventConditionsUpdate``— body del PATCH condiciones (B3).
 
@@ -144,11 +146,12 @@ class DryRunCounts(BaseModel):
 class ParsedResultsRowRead(BaseModel):
     """Una fila cruda del acta tal como la interpretó el parser.
 
-    Espejo de ``pdf_parser.ResultsRow`` para el wizard de importación — el
-    coach ya vio estos mismos datos en el PDF/CSV que acaba de subir, así
-    que mostrarlos aquí no expone nada nuevo (misma base que
-    ``MatchPreview.competitor_name``). ``time_raw == ""`` significa
-    "clasificada sin tiempo" (research R-01 punto 4), no ``DNF``/``DSQ``.
+    Espejo de ``ResultsRow`` (``app.services.race.staged_document``) para el
+    wizard de revisión — el coach ya vio estos mismos datos en el
+    documento que el CLI/skill staguea, así que mostrarlos aquí no expone
+    nada nuevo (misma base que ``MatchPreview.competitor_name``).
+    ``time_raw == ""`` significa "clasificada sin tiempo" (research R-01
+    punto 4), no ``DNF``/``DSQ``.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -295,53 +298,6 @@ class AcknowledgeReasonsResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     options: list[AcknowledgeReasonOption]
-
-
-# ---------------------------------------------------------------------------
-# Parse response
-# ---------------------------------------------------------------------------
-
-
-class ParseHeaderInfo(BaseModel):
-    """Header expuesto al cliente (combina series + event)."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    series_name: str
-    season: int
-    valida_num: int
-    event_name: str
-
-
-class ImportParseResponse(BaseModel):
-    """Respuesta del endpoint POST /imports/parse (F-UP3 §4.1 + F-UP-REV2).
-
-    F-UP-REV2: campos opcionales ``will_be_revision`` y metadatos del parent
-    cuando el sistema detecta que la `(series, valida)` ya está committed
-    (revision-design.md §1.3). Todos los campos extra son opcionales para
-    preservar backward compat con clientes F-UP.
-    """
-
-    model_config = ConfigDict(from_attributes=True)
-
-    parse_id: int  # = RaceImport.id (status='pending')
-    sha256: str  # SHA del PDF RESULTADOS (64 hex chars)
-    header: ParseHeaderInfo
-    n_rows_resultados: int
-    n_rows_general: Optional[int] = None
-    warnings: list[ParseWarning] = Field(default_factory=list)
-
-    # Feature 044 (US1): integridad de lectura — contracts/reading-integrity.md.
-    # Aditivo: default vacío, un cliente previo sigue deserializando igual.
-    categories: list[ParsedCategoryRead] = Field(default_factory=list)
-    unreadable_rows: list[UnreadableRowRead] = Field(default_factory=list)
-
-    # F-UP-REV2: detección de revisión post-parse
-    will_be_revision: bool = False
-    parent_event_id: Optional[int] = None
-    parent_import_id: Optional[int] = None
-    parent_committed_at: Optional[datetime] = None
-    parent_n_results: Optional[int] = None
 
 
 # ---------------------------------------------------------------------------
@@ -588,51 +544,6 @@ class ImportListResponse(BaseModel):
 
     items: list[ImportListItem]
     total: int
-
-
-# ---------------------------------------------------------------------------
-# Campos de condiciones de carrera — wizard upload (B1)
-# ---------------------------------------------------------------------------
-
-
-class ImportParseRequestFields(BaseModel):
-    """Campos opcionales de condiciones de carrera para el wizard de ingesta.
-
-    Se validan dentro del handler POST /parse después de extraer los valores
-    de los ``Form()`` params (FastAPI no aplica Pydantic automáticamente a
-    campos multipart individuales). La construcción explícita del modelo
-    en el handler garantiza que la validación sea idéntica a la del PATCH B3.
-    """
-
-    model_config = ConfigDict(str_strip_whitespace=True)
-
-    climate: Optional[str] = Field(
-        default=None,
-        max_length=60,
-        description="Descripción libre del clima (ej: 'Soleado con viento moderado').",
-    )
-    temperature_c: Optional[Decimal] = Field(
-        default=None,
-        ge=0,
-        le=50,
-        decimal_places=1,
-        description="Temperatura en grados Celsius (0-50). Un decimal.",
-    )
-    surface_condition: Optional[SurfaceCondition] = Field(
-        default=None,
-        description="Condición del trazado: seca | humeda | barro | lluvia | mixta.",
-    )
-    altitude_msnm: Optional[int] = Field(
-        default=None,
-        ge=0,
-        le=5000,
-        description="Altitud en metros sobre el nivel del mar (0-5000).",
-    )
-    weather_notes: Optional[str] = Field(
-        default=None,
-        max_length=2000,
-        description="Notas adicionales de condiciones climatológicas.",
-    )
 
 
 # ---------------------------------------------------------------------------

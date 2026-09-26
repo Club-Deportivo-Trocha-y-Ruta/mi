@@ -3,13 +3,12 @@
 Dos responsabilidades:
 
 1. **Tipos neutros** — ``ResultsRow``, ``ParsedCategory``, ``ParsedResults``
-   y ``UnreadableRow``, movidos aquí sin cambios desde ``pdf_parser.py``
-   (T113). Antes de esta migración solo el parser oficial de PDFs los
-   producía; ahora también los produce ``results_skill.apply_profile``
-   (el motor de lectura offline de la fase 13), así que el nombre del
-   módulo deja de sugerir "solo viene de un PDF". ``pdf_parser.py``
-   mantiene un re-export temporal para no romper a sus importadores
-   existentes; ``T153`` lo retira junto con el parser fijo.
+   y ``UnreadableRow``, movidos aquí sin cambios desde el parser de PDFs
+   oficial retirado en T153 (T113 los movió antes de eso). Antes de esa
+   migración solo ese parser los producía; ahora los produce
+   ``results_skill.apply_profile`` (el motor de lectura offline de la
+   fase 13), así que el nombre del módulo deja de sugerir "solo viene de
+   un PDF".
 
 2. **Persistencia** — ``save``/``load``/``delete`` sobre
    ``race_import_staged_documents`` (data-model.md §11.1): la fila 1:1 con
@@ -44,7 +43,7 @@ SCHEMA_VERSION = 1
 
 
 # ---------------------------------------------------------------------------
-# Tipos neutros (movidos desde pdf_parser.py, T113 — sin cambios)
+# Tipos neutros (movidos desde el parser de PDFs retirado, T113 — sin cambios)
 # ---------------------------------------------------------------------------
 
 

@@ -1111,9 +1111,6 @@ _RACE_RESULTS: dict[tuple[str, str], AuditPolicy] = {
         "PATCH",
         "/api/race-analysis/race-series/{series_id}",
     ): Audited(frozenset({AuditEntityType.race_series})),
-    ("POST", "/api/race-analysis/imports/parse"): Audited(
-        frozenset({AuditEntityType.race_import})
-    ),
     # Única ruta que sigue pendiente, y **no** por olvido: el contrato §4.10 la
     # describe como `race_import`·`update` con `status` → `dry_run`, pero ese
     # cambio de estado no ocurre. `dry_run_import`

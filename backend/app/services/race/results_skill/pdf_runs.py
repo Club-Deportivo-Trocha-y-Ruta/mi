@@ -1,12 +1,12 @@
 """Primitivas de lectura de bandas y *runs* de un PDF (amendment 2026-09-26, T124).
 
-Movidas sin cambio de comportamiento desde ``app.services.race.pdf_parser``
-(``_band_text``/``_band_runs``/``_chars_by_band``/``_cells_from_runs``,
-research R-01): leen los caracteres de una banda vertical de la página **en
-orden de flujo del PDF** (nunca ordenados por ``x``), porque un
-``Club/Patrocinador`` largo se desborda visualmente sobre la columna
-``Tiempo`` y ordenar por ``x`` intercalaría letras del club con dígitos del
-tiempo.
+Movidas sin cambio de comportamiento desde el parser de PDFs oficial
+retirado en T153 (``_band_text``/``_band_runs``/``_chars_by_band``/
+``_cells_from_runs``, research R-01): leen los caracteres de una banda
+vertical de la página **en orden de flujo del PDF** (nunca ordenados por
+``x``), porque un ``Club/Patrocinador`` largo se desborda visualmente sobre
+la columna ``Tiempo`` y ordenar por ``x`` intercalaría letras del club con
+dígitos del tiempo.
 
 ``table_bands``/``baseline_bands`` son nuevos en la fase 13 (contracts/
 reading-profile.md § Engine, punto 1): dan la lista de bandas (bbox) por
@@ -23,8 +23,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 #: Gap horizontal (pt) por defecto que abre un run nuevo cuando el perfil no
-#: da un ``run_gap_pt`` explícito (paridad con el valor histórico de
-#: ``pdf_parser._BAND_GAP_PT``).
+#: da un ``run_gap_pt`` explícito (paridad con el valor histórico del
+#: parser retirado, ``_BAND_GAP_PT``).
 DEFAULT_RUN_GAP_PT: float = 1.0
 
 
@@ -120,7 +120,8 @@ def cells_from_runs(
 
 
 #: Settings de ``find_tables`` compartidos por el motor de perfiles — igual
-#: que ``pdf_parser._TABLE_SETTINGS``, calibrados contra los PDFs oficiales.
+#: que ``_TABLE_SETTINGS`` del parser retirado, calibrados contra los PDFs
+#: oficiales.
 TABLE_SETTINGS: dict = {
     "vertical_strategy": "lines",
     "horizontal_strategy": "lines",
