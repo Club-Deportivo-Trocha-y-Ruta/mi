@@ -15,18 +15,17 @@ Cubre:
     (legacy F1.7 con event_id NULL) → `will_be_revision=false`.
 
 Reusa fixtures del test_race_imports.py existente (coach_client, seed_test_data,
-stub_parsers, override_storage) — los duplicamos aquí para evitar acoplamiento.
+override_storage) — los duplicamos aquí para evitar acoplamiento. Amendment
+2026-09-26 (contracts/staged-import.md): ``POST /parse`` se retiró — el
+staging ahora se hace directamente vía ``stage_extracted_results``
+(``_stage`` helper de este módulo), sin HTTP ni parser real.
 """
 from __future__ import annotations
 
-import hashlib
 from datetime import datetime, timezone
-from types import SimpleNamespace
-from typing import Any
 
 import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -35,8 +34,6 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.config import settings
-from app.dependencies import get_db, get_current_user
-from app.main import app
 from app.models import Base
 from app.models.race_event import RaceEvent, RaceEventStatus
 from app.models.race_import import RaceImport, RaceImportKind, RaceImportStatus
@@ -49,19 +46,6 @@ from tests.helpers.audit_tables import AUDIT_TABLES
 # ---------------------------------------------------------------------------
 # Fixtures locales
 # ---------------------------------------------------------------------------
-
-
-def _make_user(role: UserRole, user_id: int = 10) -> SimpleNamespace:
-    return SimpleNamespace(
-        id=user_id,
-        first_name="Test",
-        last_name="User",
-        email=f"{role.value}@test.local",
-        role=role,
-        can_login=True,
-        is_active=True,
-        club_memberships=[],
-    )
 
 
 @pytest_asyncio.fixture
@@ -146,81 +130,81 @@ def override_storage(monkeypatch, tmp_path):
     yield fake_base
 
 
-@pytest.fixture
-def stub_parsers(monkeypatch):
-    from app.routers import race_imports as router_mod
-    from app.services.race.pdf_parser import (
+_PDF_HEADER = b"%PDF-1.4\n"
+
+
+async def _stage(
+    db_session_factory,
+    *,
+    marker: bytes = b"content",
+    valida_num: int = 4,
+    series_name: str = "Copa Valle de Ciclomontañismo",
+):
+    """Sucesor de ``POST /parse`` (retirado, amendment 2026-09-26) — staguea
+    un documento sintético directamente vía ``stage_extracted_results`` y
+    devuelve el ``StageResult`` (``is_revision``/``parent_import_id``).
+    ``parent_event_id``/``parent_committed_at``/``parent_n_results`` no
+    sobreviven a este servicio (solo estaban en la respuesta HTTP de
+    ``ImportParseResponse``) — esa metadata sigue probada directamente contra
+    ``detect_revision`` en ``TestDetectRevisionUnit``."""
+    from datetime import date
+
+    from app.models.race_series import RaceSeriesKind, RaceSeriesLevel
+    from app.services.race.import_staging import StageHeader, stage_extracted_results
+    from app.services.race.staged_document import (
         ParsedCategory,
         ParsedResults,
         ResultsRow,
+        StagedProfileMeta,
     )
+    from app.services.request_context import AuditContext
 
-    async def fake_results(path, ext):  # noqa: ARG001
-        # Feature 044 (US1): `_parse_results_with_timeout` devuelve
-        # `ParsedResults`, no el dict legado — el stub imita esa forma.
-        return ParsedResults(
-            categories=[
-                ParsedCategory(
-                    header_raw="TETEROS CON PEDALES",
-                    code="TET_CP",
-                    rows=[
-                        ResultsRow(
-                            position=1, bib="550", name="Sebastian Yule Mendoza",
-                            city="Yumbo", club="Club Trocha y Ruta",
-                            time_raw="0:03:38", points=40,
-                        ),
-                    ],
-                ),
-            ],
-            unreadable_rows=[],
+    document = ParsedResults(
+        categories=[
+            ParsedCategory(
+                header_raw="TETEROS CON PEDALES",
+                code="TET_CP",
+                rows=[
+                    ResultsRow(
+                        position=1, bib="550", name="Sebastian Yule Mendoza",
+                        city="Yumbo", club="Club Trocha y Ruta",
+                        time_raw="0:03:38", points=40,
+                    ),
+                ],
+            ),
+        ],
+        unreadable_rows=[],
+    )
+    header = StageHeader(
+        series_name=series_name,
+        series_kind=RaceSeriesKind.cup,
+        series_level=RaceSeriesLevel.departmental,
+        season=2026,
+        valida_num=valida_num,
+        event_name="VALIDA IV CALI",
+        event_date=date(2026, 5, 17),
+        location="CALI",
+    )
+    profile = StagedProfileMeta(
+        profile_id="test-race-imports-revision",
+        profile_sha256="3" * 64,
+        engine_version="test-helper",
+    )
+    async with db_session_factory() as session:
+        actor = await session.get(User, 10)
+        result = await stage_extracted_results(
+            session,
+            document=document,
+            profile=profile,
+            file_bytes=_PDF_HEADER + marker,
+            original_filename="resultados.pdf",
+            results_ext="pdf",
+            header=header,
+            actor=actor,
+            ctx=AuditContext.for_user(actor, request_id="test-stage-revision"),
         )
-
-    async def fake_general(path):  # noqa: ARG001
-        return {}
-
-    monkeypatch.setattr(router_mod, "_parse_results_with_timeout", fake_results)
-    monkeypatch.setattr(router_mod, "_parse_general_with_timeout", fake_general)
-    from app.services.race import import_staging as import_staging_mod
-    monkeypatch.setattr(import_staging_mod, "_parse_results_with_timeout", fake_results)
-    monkeypatch.setattr(import_staging_mod, "_parse_general_with_timeout", fake_general)
-
-
-@pytest_asyncio.fixture
-async def coach_client(sqlite_engine, db_session_factory, seed_data, override_storage):
-    async def _override_db():
-        async with db_session_factory() as session:
-            try:
-                yield session
-                await session.commit()
-            except Exception:
-                await session.rollback()
-                raise
-
-    app.dependency_overrides[get_db] = _override_db
-    app.dependency_overrides[get_current_user] = lambda: _make_user(
-        UserRole.coach, user_id=10
-    )
-
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
-    app.dependency_overrides.clear()
-
-
-def _parse_form(**overrides) -> dict[str, str]:
-    form = {
-        "series_name": "Copa Valle",
-        "season": "2026",
-        "valida_num": "4",
-        "event_name": "VALIDA IV CALI",
-        "event_date": "2026-05-17",
-        "location": "CALI",
-    }
-    form.update({k: str(v) for k, v in overrides.items()})
-    return form
-
-
-_PDF_HEADER = b"%PDF-1.4\n"
+        await session.commit()
+        return result
 
 
 # ---------------------------------------------------------------------------
@@ -421,32 +405,28 @@ class TestDetectRevisionUnit:
 # ---------------------------------------------------------------------------
 
 
-class TestParseEndpointRevisionDetection:
-    @pytest.mark.asyncio
-    async def test_parse_first_upload_returns_will_be_revision_false(
-        self, coach_client, stub_parsers
-    ):
-        """PDF nuevo sin previo committed → will_be_revision=false."""
-        files = {"resultados_pdf": ("r.pdf", _PDF_HEADER + b"first content xyz", "application/pdf")}
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse",
-            data=_parse_form(), files=files,
-        )
-        assert r.status_code == 200, r.text
-        data = r.json()
-        assert data["will_be_revision"] is False
-        assert data["parent_event_id"] is None
-        assert data["parent_import_id"] is None
-        assert data["parent_committed_at"] is None
-        assert data["parent_n_results"] is None
+class TestStagingRevisionDetection:
+    """Sucesor de ``TestParseEndpointRevisionDetection`` (amendment
+    2026-09-26): ``POST /parse`` se retiró — ``stage_extracted_results`` se
+    llama directamente. Solo expone ``is_revision``/``parent_import_id`` (no
+    ``parent_event_id``/``parent_committed_at``/``parent_n_results`` — esos
+    siguen probados contra ``detect_revision`` en ``TestDetectRevisionUnit``).
+    El caso de dedupe por sha byte-exacto committed vive en
+    ``tests/services/race/test_import_staging.py`` (T131)."""
 
     @pytest.mark.asyncio
-    async def test_parse_revision_detection_when_committed_exists(
-        self, coach_client, stub_parsers, db_session_factory
+    async def test_first_upload_is_not_a_revision(self, seed_data, db_session_factory, override_storage):
+        """Documento nuevo sin previo committed → is_revision=false."""
+        result = await _stage(db_session_factory, marker=b"first content xyz")
+        assert result.is_revision is False
+        assert result.parent_import_id is None
+
+    @pytest.mark.asyncio
+    async def test_revision_detection_when_committed_exists(
+        self, seed_data, db_session_factory, override_storage
     ):
         """Si ya existe RaceEvent + committed import para (series, valida),
-        un parse con SHA distinto retorna 200 + will_be_revision=true."""
-        # Seed: event + import committed para valida 4
+        un documento con SHA distinto marca is_revision=true."""
         async with db_session_factory() as session:
             event = RaceEvent(
                 series_id=1,
@@ -459,7 +439,6 @@ class TestParseEndpointRevisionDetection:
             )
             session.add(event)
             await session.commit()
-            event_id = event.id
 
             committed = RaceImport(
                 filename="prev.pdf",
@@ -470,72 +449,27 @@ class TestParseEndpointRevisionDetection:
                 imported_by_user_id=10,
                 imported_at=datetime.now(timezone.utc),
                 kind=RaceImportKind.resultados,
-                event_id=event_id,
+                event_id=event.id,
             )
             session.add(committed)
             await session.commit()
             prev_id = committed.id
 
-        # Parse con SHA distinto (contenido único).
-        # series_name debe coincidir con el seed para que _get_or_create_series
-        # resuelva la serie id=1 y detect_revision encuentre el committed previo.
-        files = {"resultados_pdf": ("r2.pdf", _PDF_HEADER + b"REVISED CONTENT XYZ 123", "application/pdf")}
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse",
-            data=_parse_form(valida_num=4, series_name="Copa Valle de Ciclomontañismo"), files=files,
+        result = await _stage(
+            db_session_factory,
+            marker=b"REVISED CONTENT XYZ 123",
+            valida_num=4,
+            series_name="Copa Valle de Ciclomontañismo",
         )
-        assert r.status_code == 200, r.text
-        data = r.json()
-        assert data["will_be_revision"] is True
-        assert data["parent_event_id"] == event_id
-        assert data["parent_import_id"] == prev_id
-        assert data["parent_committed_at"] is not None
-        # 0 results en seed (no creamos RaceResult)
-        assert data["parent_n_results"] == 0
+        assert result.is_revision is True
+        assert result.parent_import_id == prev_id
 
     @pytest.mark.asyncio
-    async def test_parse_byte_exact_sha_still_returns_409(
-        self, coach_client, stub_parsers, db_session_factory
+    async def test_revision_detection_for_different_valida(
+        self, seed_data, db_session_factory, override_storage
     ):
-        """SHA byte-exacto duplicado en committed → 409 (sin cambio F-UP base).
-
-        Política: una revisión REAL exige PDF distinto (al menos 1 byte). Si el
-        coach intenta subir el mismo PDF byte-exacto, es un re-upload genuino
-        (no aporta info nueva) → seguimos bloqueando.
-        """
-        # Calcular SHA del payload que vamos a enviar
-        payload = _PDF_HEADER + b"identical content for sha test"
-        sha = hashlib.sha256(payload).hexdigest()
-
-        # Seed: committed con MISMO sha
-        async with db_session_factory() as session:
-            committed = RaceImport(
-                filename="prev.pdf",
-                sha256=sha,
-                series_id=1,
-                status=RaceImportStatus.committed,
-                stats_json={},
-                imported_by_user_id=10,
-                imported_at=datetime.now(timezone.utc),
-                kind=RaceImportKind.resultados,
-            )
-            session.add(committed)
-            await session.commit()
-
-        files = {"resultados_pdf": ("r.pdf", payload, "application/pdf")}
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse",
-            data=_parse_form(), files=files,
-        )
-        assert r.status_code == 409
-        assert "commiteado" in r.json()["detail"].lower()
-
-    @pytest.mark.asyncio
-    async def test_parse_revision_detection_for_different_valida(
-        self, coach_client, stub_parsers, db_session_factory
-    ):
-        """Committed previo en valida=3, ahora parse para valida=5 → no revisión.
-        La detección debe matchear EXACTAMENTE el sequence_number."""
+        """Committed previo en valida=3, ahora un documento para valida=5 →
+        no revisión. La detección debe matchear EXACTAMENTE el sequence_number."""
         async with db_session_factory() as session:
             event = RaceEvent(
                 series_id=1, sequence_number=3,  # otro valida
@@ -545,37 +479,26 @@ class TestParseEndpointRevisionDetection:
             )
             session.add(event)
             await session.commit()
-            event_id = event.id
 
             committed = RaceImport(
                 filename="v3.pdf", sha256="v3" * 32, series_id=1,
                 status=RaceImportStatus.committed, stats_json={},
                 imported_by_user_id=10,
                 imported_at=datetime.now(timezone.utc),
-                kind=RaceImportKind.resultados, event_id=event_id,
+                kind=RaceImportKind.resultados, event_id=event.id,
             )
             session.add(committed)
             await session.commit()
 
-        # Parse para valida=5 (distinta a la commiteada=3)
-        files = {"resultados_pdf": ("r5.pdf", _PDF_HEADER + b"valida 5 content", "application/pdf")}
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse",
-            data=_parse_form(valida_num=5), files=files,
-        )
-        assert r.status_code == 200
-        data = r.json()
-        assert data["will_be_revision"] is False
-        assert data["parent_event_id"] is None
+        result = await _stage(db_session_factory, marker=b"valida 5 content", valida_num=5)
+        assert result.is_revision is False
 
     @pytest.mark.asyncio
-    async def test_parse_revision_ignores_pending_imports(
-        self, coach_client, stub_parsers, db_session_factory
-    ):
+    async def test_revision_ignores_pending_imports(self, seed_data, db_session_factory, override_storage):
         """Si hay event + pending (no committed), NO se considera revisión.
 
         Razón: el pending puede ser un wizard abandonado del mismo coach. Hasta
-        que no haya committed, todo nuevo parse es "primer commit" lógico.
+        que no haya committed, todo nuevo staging es "primer commit" lógico.
         """
         async with db_session_factory() as session:
             event = RaceEvent(
@@ -586,48 +509,30 @@ class TestParseEndpointRevisionDetection:
             )
             session.add(event)
             await session.commit()
-            event_id = event.id
 
             pending = RaceImport(
                 filename="pend.pdf", sha256="pp" * 32, series_id=1,
                 status=RaceImportStatus.pending, stats_json={},
                 imported_by_user_id=10,
                 imported_at=datetime.now(timezone.utc),
-                kind=RaceImportKind.resultados, event_id=event_id,
+                kind=RaceImportKind.resultados, event_id=event.id,
             )
             session.add(pending)
             await session.commit()
 
-        files = {"resultados_pdf": ("r.pdf", _PDF_HEADER + b"new pending content", "application/pdf")}
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse",
-            data=_parse_form(), files=files,
-        )
-        assert r.status_code == 200
-        data = r.json()
-        assert data["will_be_revision"] is False
+        result = await _stage(db_session_factory, marker=b"new pending content")
+        assert result.is_revision is False
 
     @pytest.mark.asyncio
-    async def test_parse_revision_succeeds_concurrent_uploads_gracefully(
-        self, coach_client, stub_parsers, db_session_factory
+    async def test_revision_succeeds_concurrent_uploads_gracefully(
+        self, seed_data, db_session_factory, override_storage
     ):
-        """Dos parses consecutivos sobre misma `(series, valida)` cuando ambos
-        previo+actual son pending (ninguno committed) NO suben 409. Validamos
-        que el segundo simplemente no se considera revisión.
-        """
-        files1 = {"resultados_pdf": ("r1.pdf", _PDF_HEADER + b"first parse a", "application/pdf")}
-        r1 = await coach_client.post(
-            "/api/race-analysis/imports/parse",
-            data=_parse_form(), files=files1,
-        )
-        assert r1.status_code == 200
-        assert r1.json()["will_be_revision"] is False
+        """Dos staging consecutivos sobre misma `(series, valida)` cuando
+        ambos previo+actual son pending (ninguno committed) no revientan.
+        Validamos que el segundo simplemente no se considera revisión."""
+        result1 = await _stage(db_session_factory, marker=b"first parse a")
+        assert result1.is_revision is False
 
-        files2 = {"resultados_pdf": ("r2.pdf", _PDF_HEADER + b"second parse b", "application/pdf")}
-        r2 = await coach_client.post(
-            "/api/race-analysis/imports/parse",
-            data=_parse_form(), files=files2,
-        )
-        # Aún sin committed previo, el 2do parse tampoco es revisión.
-        assert r2.status_code == 200
-        assert r2.json()["will_be_revision"] is False
+        result2 = await _stage(db_session_factory, marker=b"second parse b")
+        # Aún sin committed previo, el 2do staging tampoco es revisión.
+        assert result2.is_revision is False

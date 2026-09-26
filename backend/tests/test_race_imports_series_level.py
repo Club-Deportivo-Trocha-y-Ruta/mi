@@ -1,35 +1,26 @@
 """Tests backend spec 023 — National Championship Level (T015).
 
-Cubre el flujo de import (`POST /api/race-analysis/imports/parse`, que resuelve
-la serie vía `_get_or_create_series`) con el nuevo Form field `series_level`:
+Cubre ``_get_or_create_series``/``stage_extracted_results`` con
+``series_level``:
 
-  (1) Crear una serie NUEVA de campeonato con `series_level="national"` ->
-      `series.level == national` y `organizer is None` (NO se aplica el
+  (1) Crear una serie NUEVA de campeonato con ``series_level=national`` ->
+      ``series.level == national`` y ``organizer is None`` (NO se aplica el
       default "Liga Vallecaucana de Ciclismo" — decisión D5 del plan 023 /
       research R5).
-  (2) Crear una serie NUEVA de copa (sin `series_level`, o `series_level`
-      omitido) -> `organizer == "Liga Vallecaucana de Ciclismo"` sin cambios
-      (byte-identical al comportamiento pre-023).
-  (3) `series_level` inválido -> 422 a nivel de endpoint, y `ValueError` a
-      nivel del helper `_get_or_create_series` (llamada directa).
+  (2) Crear una serie NUEVA de copa (``series_level`` por defecto,
+      departmental) -> ``organizer == "Liga Vallecaucana de Ciclismo"`` sin
+      cambios (byte-identical al comportamiento pre-023).
+  (3) ``series_level`` inválido -> ``ValueError`` en el helper
+      ``_get_or_create_series`` (llamada directa).
 
-Estado esperado (pre-T020): `_get_or_create_series` todavía NO acepta el
-parámetro `level`/`series_level` y el router todavía NO declara el Form field
-`series_level`. Por lo tanto:
-  - (1) FALLA porque el organizer sigue siendo "Liga Vallecaucana de Ciclismo"
-    (el kwarg `series_level` es ignorado silenciosamente por FastAPI al no
-    estar declarado como Form field) y `series.level` no existe con el valor
-    esperado (queda en el default `departmental` del modelo).
-  - (2) PASA hoy (comportamiento no tocado), sirve de regresión.
-  - (3) FALLA: el endpoint no valida `series_level` (sigue devolviendo 200) y
-    la llamada directa al helper con `level=` lanza `TypeError` (kwarg
-    inexistente) en vez de `ValueError`.
-Se espera que (1) y (3) FALLEN hasta que T020 aterrice el fix en
-`app/routers/race_imports.py`.
+Amendment 2026-09-26 (contracts/staged-import.md): ``POST /parse`` se retiró
+— (1) y (2) staguean directamente vía ``stage_extracted_results`` (helper
+``_stage`` de este módulo), sin HTTP ni parser real; la validación de
+``series_level`` sobre input externo (manifest JSON) vive ahora en
+``scripts/race_results.py``, cubierta en
+``tests/scripts/test_race_results_cli.py``.
 
-Estrategia: SQLite async in-memory + StaticPool; overrides de `get_db` /
-`get_current_user`, calcado de `backend/tests/routers/test_race_imports.py`
-(mismos fixtures, reducidos a lo necesario para `/parse`).
+Estrategia: SQLite async in-memory + StaticPool.
 
 Privacidad invariante: no se usan datos ficticios de menores; race_series /
 race_imports son metadata pública de federación.
@@ -37,11 +28,9 @@ race_imports son metadata pública de federación.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -52,25 +41,10 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.pool import StaticPool
 
 from app.config import settings
-from app.dependencies import get_current_user, get_db
-from app.main import app
 from app.models import Base
 from app.models.race_series import RaceSeries, RaceSeriesKind, RaceSeriesLevel
 from app.models.user import User, UserRole
 from tests.helpers.audit_tables import AUDIT_TABLES
-
-
-def _make_user(role: UserRole, user_id: int = 10) -> SimpleNamespace:
-    return SimpleNamespace(
-        id=user_id,
-        first_name="Test",
-        last_name="User",
-        email=f"{role.value}@test.local",
-        role=role,
-        can_login=True,
-        is_active=True,
-        club_memberships=[],
-    )
 
 
 @pytest_asyncio.fixture
@@ -155,97 +129,81 @@ def override_storage(monkeypatch, tmp_path):
     yield fake_base
 
 
-@pytest.fixture
-def stub_parsers(monkeypatch):
-    """Stub de pdf_parser para evitar dependencia de PDFs reales."""
-    from app.routers import race_imports as router_mod
-
-    async def fake_parse_results(path, ext):  # noqa: ARG001
-        # Feature 044 (US1): `_parse_results_with_timeout` devuelve
-        # `ParsedResults`, no el dict legado — el stub imita esa forma.
-        from app.services.race.pdf_parser import (
-            ParsedCategory,
-            ParsedResults,
-            ResultsRow,
-        )
-        return ParsedResults(
-            categories=[
-                ParsedCategory(
-                    header_raw="TETEROS CON PEDALES",
-                    code="TET_CP",
-                    rows=[
-                        ResultsRow(
-                            position=1, bib="550", name="Sebastian Yule Mendoza",
-                            city="Yumbo", club="Club Trocha y Ruta",
-                            time_raw="0:03:38", points=40,
-                        ),
-                    ],
-                ),
-            ],
-            unreadable_rows=[],
-        )
-
-    async def fake_parse_general(path):  # noqa: ARG001
-        return {}
-
-    monkeypatch.setattr(
-        router_mod, "_parse_results_with_timeout", fake_parse_results
-    )
-    monkeypatch.setattr(
-        router_mod, "_parse_general_with_timeout", fake_parse_general
-    )
-    from app.services.race import import_staging as import_staging_mod
-    monkeypatch.setattr(import_staging_mod, "_parse_results_with_timeout", fake_parse_results)
-    monkeypatch.setattr(import_staging_mod, "_parse_general_with_timeout", fake_parse_general)
-
-
-@pytest_asyncio.fixture
-async def coach_client(
-    sqlite_engine, db_session_factory, seed_test_data, override_storage
-):
-    """Cliente HTTP autenticado como coach id=10."""
-    async def _override_db():
-        async with db_session_factory() as session:
-            try:
-                yield session
-                await session.commit()
-            except Exception:
-                await session.rollback()
-                raise
-
-    app.dependency_overrides[get_db] = _override_db
-    app.dependency_overrides[get_current_user] = lambda: _make_user(
-        UserRole.coach, user_id=10
-    )
-
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
-    app.dependency_overrides.clear()
 
 
 # ---------------------------------------------------------------------------
 # Helpers de payload
 # ---------------------------------------------------------------------------
 
-_PDF_HEADER = b"%PDF-1.4\n"
+async def _stage(
+    db_session_factory,
+    *,
+    series_name: str,
+    series_kind: RaceSeriesKind = RaceSeriesKind.cup,
+    series_level: RaceSeriesLevel = RaceSeriesLevel.departmental,
+    marker: bytes = b"contenido",
+    actor_id: int = 10,
+):
+    """Sucesor de ``POST /parse`` (retirado, amendment 2026-09-26) — staguea
+    un documento sintético directamente vía ``stage_extracted_results``, sin
+    HTTP ni parser real."""
+    from datetime import date
 
+    from app.services.race.import_staging import StageHeader, stage_extracted_results
+    from app.services.race.staged_document import (
+        ParsedCategory,
+        ParsedResults,
+        ResultsRow,
+        StagedProfileMeta,
+    )
+    from app.services.request_context import AuditContext
 
-def _parse_form(**overrides):
-    form = {
-        "series_name": "Serie Test 023",
-        "season": "2026",
-        "valida_num": "1",
-        "event_name": "EVENTO TEST",
-        "event_date": "2026-07-18",
-        "location": "PEREIRA",
-    }
-    form.update({k: str(v) for k, v in overrides.items()})
-    return form
-
-
-def _pdf_file(content_extra: bytes = b"") -> tuple[str, bytes, str]:
-    return ("resultados.pdf", _PDF_HEADER + content_extra, "application/pdf")
+    document = ParsedResults(
+        categories=[
+            ParsedCategory(
+                header_raw="TETEROS CON PEDALES",
+                code="TET_CP",
+                rows=[
+                    ResultsRow(
+                        position=1, bib="550", name="Sebastian Yule Mendoza",
+                        city="Yumbo", club="Club Trocha y Ruta",
+                        time_raw="0:03:38", points=40,
+                    ),
+                ],
+            ),
+        ],
+        unreadable_rows=[],
+    )
+    header = StageHeader(
+        series_name=series_name,
+        series_kind=series_kind,
+        series_level=series_level,
+        season=2026,
+        valida_num=1,
+        event_name="EVENTO TEST",
+        event_date=date(2026, 7, 18),
+        location="PEREIRA",
+    )
+    profile = StagedProfileMeta(
+        profile_id="test-race-imports-series-level",
+        profile_sha256="6" * 64,
+        engine_version="test-helper",
+    )
+    async with db_session_factory() as session:
+        actor = await session.get(User, actor_id)
+        result = await stage_extracted_results(
+            session,
+            document=document,
+            profile=profile,
+            file_bytes=marker,
+            original_filename="resultados.pdf",
+            results_ext="pdf",
+            header=header,
+            actor=actor,
+            ctx=AuditContext.for_user(actor, request_id="test-stage-series-level"),
+        )
+        await session.commit()
+        return result
 
 
 # ===========================================================================
@@ -256,27 +214,16 @@ def _pdf_file(content_extra: bytes = b"") -> tuple[str, bytes, str]:
 class TestSeriesLevelOnNewSeries:
     @pytest.mark.asyncio
     async def test_new_national_championship_series_has_no_valle_organizer(
-        self, coach_client, stub_parsers, db_session_factory
+        self, seed_test_data, override_storage, db_session_factory
     ):
-        """FR-006 / D5: campeonato nacional NUEVO -> organizer None, level=national.
-
-        Pre-T020: `series_level` es un Form field inexistente (ignorado) y
-        `_get_or_create_series` no acepta `level`, así que la serie creada
-        sigue teniendo `organizer == "Liga Vallecaucana de Ciclismo"` y
-        `level == departmental` (default del modelo). Este test debe FALLAR
-        hasta que T020 aterrice.
-        """
-        files = {"resultados_pdf": _pdf_file(b"contenido nacional")}
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse",
-            data=_parse_form(
-                series_name="Campeonato Nacional MTB 2026",
-                series_kind="championship",
-                series_level="national",
-            ),
-            files=files,
+        """FR-006 / D5: campeonato nacional NUEVO -> organizer None, level=national."""
+        await _stage(
+            db_session_factory,
+            series_name="Campeonato Nacional MTB 2026",
+            series_kind=RaceSeriesKind.championship,
+            series_level=RaceSeriesLevel.national,
+            marker=b"contenido nacional",
         )
-        assert r.status_code == 200, r.text
 
         async with db_session_factory() as session:
             result = await session.execute(
@@ -296,18 +243,16 @@ class TestSeriesLevelOnNewSeries:
 
     @pytest.mark.asyncio
     async def test_new_cup_series_keeps_valle_organizer_default_unchanged(
-        self, coach_client, stub_parsers, db_session_factory
+        self, seed_test_data, override_storage, db_session_factory
     ):
         """Regresión: crear una copa NUEVA (sin series_level) mantiene el
         default de organizer byte-identical al comportamiento pre-023.
         """
-        files = {"resultados_pdf": _pdf_file(b"contenido copa")}
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse",
-            data=_parse_form(series_name="Copa Valle 023 Regresion"),
-            files=files,
+        await _stage(
+            db_session_factory,
+            series_name="Copa Valle 023 Regresion",
+            marker=b"contenido copa",
         )
-        assert r.status_code == 200, r.text
 
         async with db_session_factory() as session:
             result = await session.execute(
@@ -324,31 +269,18 @@ class TestSeriesLevelOnNewSeries:
 
 
 # ===========================================================================
-# (3) series_level inválido -> 422 (endpoint) / ValueError (helper)
+# (3) series_level inválido -> ValueError (helper)
 # ===========================================================================
+#
+# Amendment 2026-09-26 (contracts/staged-import.md): ``POST /parse`` se
+# retiró — no hay Form field HTTP que validar. La validación de
+# ``series_level`` sobre input externo (manifest JSON) vive ahora en
+# ``scripts/race_results.py`` (T146-149, cubierta en
+# ``tests/scripts/test_race_results_cli.py``); aquí solo queda la prueba
+# directa del helper.
 
 
 class TestSeriesLevelInvalid:
-    @pytest.mark.asyncio
-    async def test_parse_rejects_invalid_series_level(
-        self, coach_client, stub_parsers
-    ):
-        """Pre-T020: `series_level` no está declarado como Form field, así que
-        FastAPI lo ignora silenciosamente y el endpoint responde 200 en vez
-        de 422. Este test debe FALLAR hasta que T020 valide `series_level`.
-        """
-        files = {"resultados_pdf": _pdf_file(b"contenido invalido")}
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse",
-            data=_parse_form(
-                series_name="Serie Nivel Invalido",
-                series_kind="championship",
-                series_level="galactic",
-            ),
-            files=files,
-        )
-        assert r.status_code == 422, r.text
-
     @pytest.mark.asyncio
     async def test_get_or_create_series_helper_rejects_invalid_level(
         self, db_session_factory

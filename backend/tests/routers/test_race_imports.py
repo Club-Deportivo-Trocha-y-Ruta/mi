@@ -3,16 +3,21 @@
 Estrategia: stub mínimo del service layer + DB SQLite in-memory para los
 endpoints `/dry-run`, `/commit`, `/` y un stub-storage in-memory para los PDFs.
 
-Cubre los códigos HTTP del contrato (upload-design.md §4):
-- 200 happy path parse / dry-run / commit / list
-- 400 magic bytes / archivo vacío / formato no soportado
+Amendment 2026-09-26 (contracts/staged-import.md): ``POST /parse`` se retiró
+— la web app solo revisa y comitea, nunca sube (FR-044). Un ``RaceImport``
+pending para dry-run/commit se staguea ahora vía ``stage_extracted_results``
+(``tests/helpers/staging.py::stage_for_test`` / ``_stage_pending_import``),
+sin HTTP ni parser real. La cobertura de mecánica de upload (magic bytes,
+tamaño, extensión, dedupe de sha) vive en
+``tests/services/race/test_import_staging.py``; ``tests/privacy/
+test_no_results_upload.py`` prueba el 404 estructural.
+
+Cubre los códigos HTTP del contrato (upload-design.md §4) que sí sobreviven:
+- 200 happy path dry-run / commit / list
 - 401 sin auth (anon)
 - 403 rol parent
 - 403 coach de otro club (parse_id de un cargue ajeno al club)
 - 404 parse_id inexistente / ya committed
-- 409 sha duplicado (committed previo con mismo sha)
-- 413 archivo > RACE_MAX_PDF_MB
-- 422 PDF/CSV inválido o parser sin resultados
 - 409 matches_unresolved (resolved_matches incompletos, feature 044 US5)
 - list paginado + filter status
 """
@@ -20,15 +25,13 @@ from __future__ import annotations
 
 import io
 import json
-from datetime import datetime, timezone
-from pathlib import Path
+from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
 import pytest_asyncio
-from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.ext.asyncio import (
@@ -45,7 +48,10 @@ from app.models import Base
 from app.models.race_import import RaceImport, RaceImportKind, RaceImportStatus
 from app.models.race_series import RaceSeries
 from app.models.user import User, UserRole
+from app.services.race.import_staging import StageHeader
+from app.services.race.staged_document import ParsedCategory, ParsedResults, ResultsRow
 from tests.helpers.audit_tables import AUDIT_TABLES
+from tests.helpers.staging import stage_for_test
 
 
 # ---------------------------------------------------------------------------
@@ -216,80 +222,6 @@ def override_storage(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "hostinger_sftp_remote_dir", "")
     monkeypatch.setattr(settings, "hostinger_public_base_url", "")
     yield fake_base
-
-
-@pytest.fixture
-def stub_parsers(monkeypatch):
-    """Stub de pdf_parser / csv_parser para evitar dependencia de PDFs reales."""
-    from app.routers import race_imports as router_mod
-
-    async def fake_parse_results(path, ext):  # noqa: ARG001
-        # Devolver 2 filas para que n_rows_resultados > 0. Feature 044 (US1):
-        # `_parse_results_with_timeout` devuelve `ParsedResults`, no el dict
-        # legado — el stub imita esa forma.
-        from app.services.race.pdf_parser import (
-            ParsedCategory,
-            ParsedResults,
-            ResultsRow,
-        )
-        return ParsedResults(
-            categories=[
-                ParsedCategory(
-                    header_raw="TETEROS CON PEDALES",
-                    code="TET_CP",
-                    rows=[
-                        ResultsRow(
-                            position=1, bib="550", name="Sebastian Yule Mendoza",
-                            city="Yumbo", club="Club Trocha y Ruta",
-                            time_raw="0:03:38", points=40,
-                        ),
-                        ResultsRow(
-                            position=2, bib="551", name="Otro Tetero",
-                            city="Cali", club="Club X",
-                            time_raw="0:04:00", points=36,
-                        ),
-                    ],
-                ),
-            ],
-            unreadable_rows=[],
-        )
-
-    async def fake_parse_general(path):  # noqa: ARG001
-        return {}
-
-    monkeypatch.setattr(
-        router_mod, "_parse_results_with_timeout", fake_parse_results
-    )
-    monkeypatch.setattr(
-        router_mod, "_parse_general_with_timeout", fake_parse_general
-    )
-    from app.services.race import import_staging as import_staging_mod
-    monkeypatch.setattr(import_staging_mod, "_parse_results_with_timeout", fake_parse_results)
-    monkeypatch.setattr(import_staging_mod, "_parse_general_with_timeout", fake_parse_general)
-
-
-@pytest.fixture
-def stub_parsers_empty(monkeypatch):
-    """Stub que retorna 0 filas — usado para test 422 'parser sin resultados'."""
-    from app.routers import race_imports as router_mod
-
-    async def fake_empty(path, ext):  # noqa: ARG001
-        from app.services.race.pdf_parser import ParsedResults
-
-        return ParsedResults(categories=[], unreadable_rows=[])
-
-    async def fake_general_empty(path):  # noqa: ARG001
-        return {}
-
-    monkeypatch.setattr(
-        router_mod, "_parse_results_with_timeout", fake_empty
-    )
-    monkeypatch.setattr(
-        router_mod, "_parse_general_with_timeout", fake_general_empty
-    )
-    from app.services.race import import_staging as import_staging_mod
-    monkeypatch.setattr(import_staging_mod, "_parse_results_with_timeout", fake_empty)
-    monkeypatch.setattr(import_staging_mod, "_parse_general_with_timeout", fake_general_empty)
 
 
 @pytest.fixture
@@ -517,26 +449,85 @@ async def anon_client(sqlite_engine, db_session_factory, override_storage):
 # ---------------------------------------------------------------------------
 
 
-_PDF_HEADER = b"%PDF-1.4\n"
-_CSV_HEADER = b"POS,BIB,NAME,CLUB,TIME,POINTS\n1,550,Sebas,Club,03:38,40\n"
+#: Amendment 2026-09-26 (contracts/staged-import.md): ``POST /parse`` se
+#: retiró — los tests que antes subían un PDF por multipart para dejar un
+#: ``RaceImport`` pending listo para dry-run/commit ahora staguean un
+#: documento ya extraído directamente vía ``stage_extracted_results``
+#: (``tests/helpers/staging.py::stage_for_test``), sin tocar HTTP/parser.
 
 
-def _parse_form(extra_files=None, **overrides):
-    """Construye form payload base + files para multipart upload."""
-    form = {
-        "series_name": "Copa Valle",
-        "season": "2026",
-        "valida_num": "4",
+from app.services.race.staged_document import StagedProfileMeta as _StagedProfileMeta
+
+_TEST_PROFILE = _StagedProfileMeta(
+    profile_id="test-race-imports-router",
+    profile_sha256="1" * 64,
+    engine_version="test-helper",
+)
+
+
+def _stub_document() -> ParsedResults:
+    """Documento equivalente al que devolvía el viejo ``stub_parsers``
+    (monkeypatch de ``_parse_results_with_timeout``) — mismas filas, para no
+    alterar las aserciones de matcher/ingest ya existentes."""
+    return ParsedResults(
+        categories=[
+            ParsedCategory(
+                header_raw="TETEROS CON PEDALES",
+                code="TET_CP",
+                rows=[
+                    ResultsRow(
+                        position=1, bib="550", name="Sebastian Yule Mendoza",
+                        city="Yumbo", club="Club Trocha y Ruta",
+                        time_raw="0:03:38", points=40,
+                    ),
+                    ResultsRow(
+                        position=2, bib="551", name="Otro Tetero",
+                        city="Cali", club="Club X",
+                        time_raw="0:04:00", points=36,
+                    ),
+                ],
+            ),
+        ],
+        unreadable_rows=[],
+    )
+
+
+def _default_header(**overrides) -> StageHeader:
+    from app.models.race_series import RaceSeriesKind, RaceSeriesLevel
+
+    fields = {
+        "series_name": "Copa Valle de Ciclomontañismo",
+        "series_kind": RaceSeriesKind.cup,
+        "series_level": RaceSeriesLevel.departmental,
+        "season": 2026,
+        "valida_num": 4,
         "event_name": "VALIDA IV CALI",
-        "event_date": "2026-05-17",
+        "event_date": date(2026, 5, 17),
         "location": "CALI",
     }
-    form.update({k: str(v) for k, v in overrides.items()})
-    return form
+    fields.update(overrides)
+    return StageHeader(**fields)
 
 
-def _pdf_file(content_extra: bytes = b"") -> tuple[str, bytes, str]:
-    return ("resultados.pdf", _PDF_HEADER + content_extra, "application/pdf")
+async def _stage_pending_import(
+    db_session_factory,
+    *,
+    document: ParsedResults | None = None,
+    header: StageHeader | None = None,
+    actor_id: int = 10,
+) -> int:
+    """Reemplaza el viejo flujo ``POST /parse`` para dejar un ``RaceImport``
+    pending listo para dry-run/commit — sin HTTP ni parser real."""
+    async with db_session_factory() as session:
+        actor = await session.get(User, actor_id)
+        result = await stage_for_test(
+            session,
+            document=document if document is not None else _stub_document(),
+            header=header,
+            actor=actor,
+        )
+        await session.commit()
+        return result.import_id
 
 
 # ===========================================================================
@@ -557,16 +548,6 @@ class TestAuthRbac:
         assert r.status_code == 403
 
     @pytest.mark.asyncio
-    async def test_parent_forbidden_on_parse(self, parent_client, stub_parsers):
-        files = {
-            "resultados_pdf": _pdf_file(b"content"),
-        }
-        r = await parent_client.post(
-            "/api/race-analysis/imports/parse", data=_parse_form(), files=files
-        )
-        assert r.status_code == 403
-
-    @pytest.mark.asyncio
     async def test_coach_ok_on_list_empty(self, coach_client):
         r = await coach_client.get("/api/race-analysis/imports/")
         assert r.status_code == 200
@@ -576,178 +557,49 @@ class TestAuthRbac:
 
 
 # ===========================================================================
-# POST /parse — happy path + validaciones
+# Staging (sucesor de POST /parse, retirado) — mecánica de sanitización
 # ===========================================================================
 
 
-class TestParseEndpoint:
-    @pytest.mark.asyncio
-    async def test_parse_happy_path_pdf(self, coach_client, stub_parsers):
-        files = {
-            "resultados_pdf": _pdf_file(b"dummy results content"),
-        }
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse", data=_parse_form(), files=files
-        )
-        assert r.status_code == 200, r.text
-        data = r.json()
-        assert "parse_id" in data
-        assert len(data["sha256"]) == 64
-        assert data["header"]["valida_num"] == 4
-        assert data["n_rows_resultados"] == 2
-        assert data["n_rows_general"] is None
+class TestStagingSanitizesFilename:
+    """El upload por multipart (``POST /parse``) se retiró (amendment
+    2026-09-26, contracts/staged-import.md) — la web app solo revisa y
+    comitea, nunca sube. La cobertura de mecánica de upload (magic bytes,
+    tamaño, extensión, filas cero, dedupe de sha committed) vive ahora en
+    ``tests/services/race/test_import_staging.py`` (T131) contra
+    ``stage_extracted_results`` directamente; ``_sanitize_filename`` sigue
+    viva en ese mismo servicio (no era upload-only) y se prueba aquí contra
+    la llamada directa, sin HTTP."""
 
     @pytest.mark.asyncio
-    async def test_parse_with_general_pdf(self, coach_client, stub_parsers):
-        files = {
-            "resultados_pdf": _pdf_file(b"results content"),
-            "general_pdf": ("general.pdf", _PDF_HEADER + b"general content", "application/pdf"),
-        }
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse", data=_parse_form(), files=files
-        )
-        assert r.status_code == 200, r.text
-        data = r.json()
-        assert data["n_rows_general"] == 0  # stub_parsers retorna {} para general
-
-    @pytest.mark.asyncio
-    async def test_parse_with_csv_results(self, coach_client, stub_parsers):
-        files = {
-            "resultados_pdf": ("resultados.csv", _CSV_HEADER, "text/csv"),
-        }
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse", data=_parse_form(), files=files
-        )
-        assert r.status_code == 200, r.text
-
-    @pytest.mark.asyncio
-    async def test_parse_rejects_pdf_without_magic_bytes(
-        self, coach_client, stub_parsers
-    ):
-        """400: archivo .pdf cuyo contenido no es PDF (sin %PDF-)."""
-        files = {
-            "resultados_pdf": (
-                "fake.pdf", b"<html>not a pdf</html>", "application/pdf"
-            ),
-        }
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse", data=_parse_form(), files=files
-        )
-        assert r.status_code == 400
-        assert "magic bytes" in r.json()["detail"].lower()
-
-    @pytest.mark.asyncio
-    async def test_parse_rejects_unknown_extension(
-        self, coach_client, stub_parsers
-    ):
-        files = {
-            "resultados_pdf": ("file.exe", b"binary", "application/octet-stream"),
-        }
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse", data=_parse_form(), files=files
-        )
-        assert r.status_code == 400
-        assert "no soportado" in r.json()["detail"].lower()
-
-    @pytest.mark.asyncio
-    async def test_parse_rejects_empty_file(self, coach_client, stub_parsers):
-        files = {
-            "resultados_pdf": ("resultados.pdf", b"", "application/pdf"),
-        }
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse", data=_parse_form(), files=files
-        )
-        assert r.status_code == 400
-        assert "vacío" in r.json()["detail"]
-
-    @pytest.mark.asyncio
-    async def test_parse_rejects_oversized_file(
-        self, coach_client, stub_parsers, monkeypatch
-    ):
-        """413: tamaño > RACE_MAX_PDF_MB."""
-        # Bajamos el cap a 1 MB para no inflar memoria
-        monkeypatch.setattr(settings, "race_max_pdf_mb", 1)
-        oversized = _PDF_HEADER + (b"a" * (2 * 1024 * 1024))  # 2 MB
-        files = {
-            "resultados_pdf": ("resultados.pdf", oversized, "application/pdf"),
-        }
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse", data=_parse_form(), files=files
-        )
-        assert r.status_code == 413
-        assert "límite" in r.json()["detail"]
-
-    @pytest.mark.asyncio
-    async def test_parse_rejects_when_parser_returns_zero_rows(
-        self, coach_client, stub_parsers_empty
-    ):
-        """422: PDF parseable pero sin filas reconocidas."""
-        files = {
-            "resultados_pdf": _pdf_file(b"valid pdf bytes"),
-        }
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse", data=_parse_form(), files=files
-        )
-        assert r.status_code == 422
-        assert "ninguna fila" in r.json()["detail"].lower()
-
-    @pytest.mark.asyncio
-    async def test_parse_409_on_committed_sha_duplicate(
-        self, coach_client, stub_parsers, db_session_factory
-    ):
-        """Pre-seedeamos un RaceImport committed con cierto sha; un parse con
-        bytes que tengan el mismo sha debe retornar 409."""
-        # Calculamos sha de un payload conocido y lo seedeamos
-        import hashlib
-
-        payload = _PDF_HEADER + b"unique content xyz"
-        sha = hashlib.sha256(payload).hexdigest()
-
-        async with db_session_factory() as session:
-            existing = RaceImport(
-                filename="existing.pdf",
-                sha256=sha,
-                series_id=1,
-                status=RaceImportStatus.committed,
-                stats_json={"results_inserted": 100},
-                imported_by_user_id=10,
-                imported_at=datetime.now(timezone.utc),
-                kind=RaceImportKind.resultados,
-            )
-            session.add(existing)
-            await session.commit()
-
-        files = {
-            "resultados_pdf": ("resultados.pdf", payload, "application/pdf"),
-        }
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse", data=_parse_form(), files=files
-        )
-        assert r.status_code == 409
-        assert "commiteado" in r.json()["detail"].lower()
-
-    @pytest.mark.asyncio
-    async def test_parse_sanitizes_path_traversal_filename(
-        self, coach_client, stub_parsers, db_session_factory
+    async def test_stage_sanitizes_path_traversal_filename(
+        self, db_session_factory, seed_test_data, override_storage
     ):
         """El filename ../../etc/passwd.pdf debe ser sanitizado en BD."""
-        files = {
-            "resultados_pdf": (
-                "../../etc/passwd.pdf", _PDF_HEADER + b"content", "application/pdf"
-            ),
-        }
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse", data=_parse_form(), files=files
-        )
-        assert r.status_code == 200
-        parse_id = r.json()["parse_id"]
+        from app.services.race.import_staging import stage_extracted_results
+        from app.services.request_context import AuditContext
 
         async with db_session_factory() as session:
+            actor = await session.get(User, 10)
+            result = await stage_extracted_results(
+                session,
+                document=_stub_document(),
+                profile=_TEST_PROFILE,
+                file_bytes=b"content for path traversal test",
+                original_filename="../../etc/passwd.pdf",
+                results_ext="pdf",
+                header=_default_header(),
+                actor=actor,
+                ctx=AuditContext.for_user(actor, request_id="test-sanitize"),
+            )
+            await session.commit()
+            parse_id = result.import_id
+
             from sqlalchemy import select as _sel
             imp = (await session.execute(
                 _sel(RaceImport).where(RaceImport.id == parse_id)
             )).scalar_one()
-            # Sanitizado: no debe contener "/" ni "..\"
+            # Sanitizado: no debe contener "/" ni ".."
             assert "/" not in imp.filename
             assert ".." not in imp.filename
             # Original preservado para UI
@@ -1029,66 +881,6 @@ class TestListEndpoint:
 # ===========================================================================
 
 
-class TestParseValidation:
-    @pytest.mark.asyncio
-    async def test_parse_form_missing_required_fields_422(
-        self, coach_client, stub_parsers
-    ):
-        """Faltan campos del form (valida_num, season, ...) → 422 Pydantic."""
-        files = {"resultados_pdf": _pdf_file(b"content")}
-        # data sin valida_num
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse",
-            data={"series_name": "x", "season": "2026", "event_name": "n",
-                  "event_date": "2026-05-17", "location": "Cali"},
-            files=files,
-        )
-        assert r.status_code == 422
-
-    @pytest.mark.asyncio
-    async def test_parse_valida_num_out_of_range(self, coach_client, stub_parsers):
-        """valida_num=100 → 422."""
-        files = {"resultados_pdf": _pdf_file(b"content")}
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse",
-            data=_parse_form(valida_num=100), files=files,
-        )
-        assert r.status_code == 422
-
-    @pytest.mark.asyncio
-    async def test_parse_results_and_general_same_sha_rejected(
-        self, coach_client, stub_parsers
-    ):
-        """Si resultados y general tienen mismo SHA, 400 (cliente confundido)."""
-        identical = _PDF_HEADER + b"same content"
-        files = {
-            "resultados_pdf": ("r.pdf", identical, "application/pdf"),
-            "general_pdf": ("g.pdf", identical, "application/pdf"),
-        }
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse",
-            data=_parse_form(), files=files,
-        )
-        assert r.status_code == 400
-        assert "mismo" in r.json()["detail"].lower()
-
-    @pytest.mark.asyncio
-    async def test_parse_general_only_pdf_accepted(
-        self, coach_client, stub_parsers
-    ):
-        """general como .csv → 400 (GENERAL solo PDF, design §1.3)."""
-        files = {
-            "resultados_pdf": _pdf_file(b"r content"),
-            "general_pdf": ("g.csv", _CSV_HEADER, "text/csv"),
-        }
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse",
-            data=_parse_form(), files=files,
-        )
-        assert r.status_code == 400
-        assert ".pdf" in r.json()["detail"]
-
-
 class TestCommitValidation:
     @pytest.mark.asyncio
     async def test_commit_404_on_dry_run_status(
@@ -1126,16 +918,11 @@ class TestFullFlowWithStubIngestor:
 
     @pytest.mark.asyncio
     async def test_full_flow_parse_dryrun_commit(
-        self, coach_client, stub_parsers, stub_ingestor, db_session_factory
+        self, coach_client, stub_ingestor, db_session_factory
     ):
-        # 1. Parse
-        files = {"resultados_pdf": _pdf_file(b"flow content xyz")}
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse",
-            data=_parse_form(), files=files,
-        )
-        assert r.status_code == 200, r.text
-        parse_id = r.json()["parse_id"]
+        # 1. Stage (reemplaza el viejo POST /parse, retirado — amendment
+        # 2026-09-26)
+        parse_id = await _stage_pending_import(db_session_factory)
 
         # 2. Dry-run (el storage_path debe existir gracias al fallback local)
         r = await coach_client.post(
@@ -1180,7 +967,7 @@ class TestFullFlowWithStubIngestor:
 
     @pytest.mark.asyncio
     async def test_dry_run_matcher_returns_real_confidence_and_autoconfirms(
-        self, coach_client, stub_parsers, stub_ingestor, db_session_factory
+        self, coach_client, stub_ingestor, db_session_factory
     ):
         """Cuando hay roster cargado del club del coach, el dry-run corre el
         matcher real y devuelve ``confidence > 0`` para los TyR que matchean.
@@ -1215,13 +1002,7 @@ class TestFullFlowWithStubIngestor:
             ))
             await session.commit()
 
-        files = {"resultados_pdf": _pdf_file(b"matcher confidence flow")}
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse",
-            data=_parse_form(), files=files,
-        )
-        assert r.status_code == 200, r.text
-        parse_id = r.json()["parse_id"]
+        parse_id = await _stage_pending_import(db_session_factory)
 
         r = await coach_client.post(
             f"/api/race-analysis/imports/{parse_id}/dry-run"
@@ -1241,7 +1022,7 @@ class TestFullFlowWithStubIngestor:
 
     @pytest.mark.asyncio
     async def test_commit_missing_resolved_matches_409(
-        self, coach_client, stub_parsers, stub_ingestor, db_session_factory
+        self, coach_client, stub_ingestor, db_session_factory
     ):
         """Si el TyR detectado no tiene resolved_match → 409 matches_unresolved.
 
@@ -1251,14 +1032,7 @@ class TestFullFlowWithStubIngestor:
         `identity_review_pending`/`nothing_pending` para mandar al coach al
         Import Wizard).
         """
-        # Parse para crear el pending
-        files = {"resultados_pdf": _pdf_file(b"flow content missing matches")}
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse",
-            data=_parse_form(), files=files,
-        )
-        assert r.status_code == 200
-        parse_id = r.json()["parse_id"]
+        parse_id = await _stage_pending_import(db_session_factory)
 
         # Commit con resolved_matches vacíos
         r = await coach_client.post(
@@ -1270,58 +1044,6 @@ class TestFullFlowWithStubIngestor:
         assert detail["code"] == "matches_unresolved"
         assert detail["missing_count"] >= 1
 
-    @pytest.mark.asyncio
-    @pytest.mark.asyncio
-    async def test_parse_results_with_timeout_helper_raises_422_on_timeout(
-        self, monkeypatch
-    ):
-        """Test directo del helper: si asyncio.wait_for lanza TimeoutError → 422."""
-        from app.routers import race_imports as router_mod
-        from app.services.race import import_staging as import_staging_mod
-        from app.services.race.pdf_parser import parse_results_pdf
-
-        async def fake_wait_for(coro, timeout):
-            # Cancelamos el coroutine creada para no leaks (best-effort)
-            try:
-                coro.close()
-            except Exception:  # noqa: BLE001
-                pass
-            import asyncio
-            raise asyncio.TimeoutError()
-
-        # Feature 044 (US5, T059): el helper vive ahora en `import_staging` —
-        # `wait_for` se resuelve en el namespace de ESE módulo, no en el del
-        # router (que solo re-exporta la función para retrocompatibilidad).
-        monkeypatch.setattr(import_staging_mod, "wait_for", fake_wait_for)
-
-        with pytest.raises(HTTPException) as exc_info:
-            await router_mod._parse_results_with_timeout(Path("/x.pdf"), "pdf")
-        assert exc_info.value.status_code == 422
-        assert "complejo" in exc_info.value.detail.lower()
-
-    @pytest.mark.asyncio
-    async def test_parse_general_with_timeout_helper_raises_422_on_exception(
-        self, monkeypatch
-    ):
-        """Helper general: cualquier excepción del parser → 422."""
-        from app.routers import race_imports as router_mod
-        from app.services.race import import_staging as import_staging_mod
-
-        async def fake_wait_for(coro, timeout):
-            try:
-                coro.close()
-            except Exception:  # noqa: BLE001
-                pass
-            raise ValueError("simulated parse failure")
-
-        monkeypatch.setattr(import_staging_mod, "wait_for", fake_wait_for)
-
-        with pytest.raises(HTTPException) as exc_info:
-            await router_mod._parse_general_with_timeout(Path("/x.pdf"))
-        assert exc_info.value.status_code == 422
-        assert "GENERAL" in exc_info.value.detail
-
-    @pytest.mark.asyncio
     @pytest.mark.asyncio
     async def test_download_to_tempfile_fallback_local_raises_fnf_on_missing(
         self, monkeypatch
@@ -1338,57 +1060,27 @@ class TestFullFlowWithStubIngestor:
             await storage_sftp.download_to_tempfile("/nonexistent/path/r.pdf", suffix=".pdf")
 
     @pytest.mark.asyncio
-    @pytest.mark.asyncio
     async def test_dry_run_returns_zero_matches_when_no_tyr(
-        self, coach_client, monkeypatch, stub_ingestor, db_session_factory
+        self, coach_client, stub_ingestor, db_session_factory
     ):
         """PDF sin atletas TyR (todos clubes externos) → 0 matches."""
-        from app.routers import race_imports as router_mod
-        from app.services.race.pdf_parser import (
-            ParsedCategory,
-            ParsedResults,
-            ResultsRow,
+        no_tyr_doc = ParsedResults(
+            categories=[
+                ParsedCategory(
+                    header_raw="TETEROS CON PEDALES",
+                    code="TET_CP",
+                    rows=[
+                        ResultsRow(
+                            position=1, bib="999", name="External Rider",
+                            city="Bogotá", club="Club Externo",
+                            time_raw="0:05:00", points=30,
+                        ),
+                    ],
+                ),
+            ],
+            unreadable_rows=[],
         )
-
-        async def fake_no_tyr(path, ext):  # noqa: ARG001
-            return ParsedResults(
-                categories=[
-                    ParsedCategory(
-                        header_raw="TETEROS CON PEDALES",
-                        code="TET_CP",
-                        rows=[
-                            ResultsRow(
-                                position=1, bib="999", name="External Rider",
-                                city="Bogotá", club="Club Externo",
-                                time_raw="0:05:00", points=30,
-                            ),
-                        ],
-                    ),
-                ],
-                unreadable_rows=[],
-            )
-
-        async def fake_g(path):  # noqa: ARG001
-            return {}
-
-        monkeypatch.setattr(
-            router_mod, "_parse_results_with_timeout", fake_no_tyr
-        )
-        monkeypatch.setattr(
-            router_mod, "_parse_general_with_timeout", fake_g
-        )
-        from app.services.race import import_staging as import_staging_mod
-        monkeypatch.setattr(import_staging_mod, "_parse_results_with_timeout", fake_no_tyr)
-        monkeypatch.setattr(import_staging_mod, "_parse_general_with_timeout", fake_g)
-
-        # Parse
-        files = {"resultados_pdf": _pdf_file(b"no tyr content")}
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse",
-            data=_parse_form(), files=files,
-        )
-        assert r.status_code == 200
-        parse_id = r.json()["parse_id"]
+        parse_id = await _stage_pending_import(db_session_factory, document=no_tyr_doc)
 
         # Dry-run
         r = await coach_client.post(
@@ -1407,43 +1099,25 @@ class TestFullFlowWithStubIngestor:
         Regresión: antes del fix el ingestor propagaba ValueError sin handler
         y FastAPI devolvía HTTP 500 sin body (bug producción 2026-05-26).
         """
-        from app.routers import race_imports as router_mod
         from app.services.race import ingestor as ingestor_mod
-        from app.services.race.pdf_parser import (
-            ParsedCategory,
-            ParsedResults,
-            ResultsRow,
-        )
 
-        # Stub parser devuelve una categoría inexistente en DB
         _FAKE_CODE = "XYZ_FAKE"
-
-        async def fake_unknown_cat(path, ext):  # noqa: ARG001
-            return ParsedResults(
-                categories=[
-                    ParsedCategory(
-                        header_raw=_FAKE_CODE,
-                        code=_FAKE_CODE,
-                        rows=[
-                            ResultsRow(
-                                position=1, bib="001", name="Ciclista Fantasma",
-                                city="Cali", club="Club Trocha y Ruta",
-                                time_raw="0:04:00", points=40,
-                            ),
-                        ],
-                    ),
-                ],
-                unreadable_rows=[],
-            )
-
-        async def fake_g(path):  # noqa: ARG001
-            return {}
-
-        monkeypatch.setattr(router_mod, "_parse_results_with_timeout", fake_unknown_cat)
-        monkeypatch.setattr(router_mod, "_parse_general_with_timeout", fake_g)
-        from app.services.race import import_staging as import_staging_mod
-        monkeypatch.setattr(import_staging_mod, "_parse_results_with_timeout", fake_unknown_cat)
-        monkeypatch.setattr(import_staging_mod, "_parse_general_with_timeout", fake_g)
+        unknown_cat_doc = ParsedResults(
+            categories=[
+                ParsedCategory(
+                    header_raw=_FAKE_CODE,
+                    code=_FAKE_CODE,
+                    rows=[
+                        ResultsRow(
+                            position=1, bib="001", name="Ciclista Fantasma",
+                            city="Cali", club="Club Trocha y Ruta",
+                            time_raw="0:04:00", points=40,
+                        ),
+                    ],
+                ),
+            ],
+            unreadable_rows=[],
+        )
 
         # El ingestor real lanza ValueError cuando no encuentra la categoría.
         # Lo replicamos con un stub que no toca la DB pero reproduce el error.
@@ -1455,15 +1129,7 @@ class TestFullFlowWithStubIngestor:
 
         monkeypatch.setattr(ingestor_mod.RaceIngestor, "ingest_event", fake_ingest_raises)
 
-        # 1. Parse (necesitamos un parse_id válido en DB)
-        files = {"resultados_pdf": _pdf_file(b"unknown cat content")}
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse",
-            data=_parse_form(),
-            files=files,
-        )
-        assert r.status_code == 200, r.text
-        parse_id = r.json()["parse_id"]
+        parse_id = await _stage_pending_import(db_session_factory, document=unknown_cat_doc)
 
         # 2. Dry-run — debe devolver 422, no 500
         r = await coach_client.post(f"/api/race-analysis/imports/{parse_id}/dry-run")
@@ -1480,7 +1146,7 @@ class TestFullFlowWithStubIngestor:
 
     @pytest.mark.asyncio
     async def test_dry_run_session_rollback_does_not_break_response(
-        self, coach_client, stub_parsers, db_session_factory, monkeypatch
+        self, coach_client, db_session_factory, monkeypatch
     ):
         """Regresión: el ingestor real hace `await self.db.rollback()` en
         dry_run. Esto expira todos los ORM objects de la session compartida
@@ -1512,15 +1178,7 @@ class TestFullFlowWithStubIngestor:
             ingestor_mod.RaceIngestor, "ingest_event", fake_ingest_with_rollback
         )
 
-        # 1. Parse para obtener un parse_id válido.
-        files = {"resultados_pdf": _pdf_file(b"rollback regression content")}
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse",
-            data=_parse_form(),
-            files=files,
-        )
-        assert r.status_code == 200, r.text
-        parse_id = r.json()["parse_id"]
+        parse_id = await _stage_pending_import(db_session_factory)
 
         # 2. Dry-run con rollback interno — NO debe romper con MissingGreenlet/500.
         r = await coach_client.post(f"/api/race-analysis/imports/{parse_id}/dry-run")
@@ -1536,430 +1194,12 @@ class TestFullFlowWithStubIngestor:
 
 
 # ===========================================================================
-# B2 — Condiciones de carrera vía POST /parse
-# ===========================================================================
-#
-# Cobertura del flujo de captura de condiciones desde el wizard upload:
-# - Persistencia en ``parse_meta_json["conditions"]`` con serialización correcta.
-# - Subset / sin condiciones (regresión backward-compat).
-# - Validaciones de rango (temperature_c, altitude_msnm, climate length).
-# - Flujo full /parse → /commit con todos los campos llegando a ``race_events``.
-
-
-class TestParseConditions:
-    """Tests del input opcional de condiciones de carrera en POST /parse."""
-
-    @pytest.mark.asyncio
-    async def test_parse_with_all_five_conditions_persists_correctly(
-        self, coach_client, stub_parsers, db_session_factory
-    ):
-        """Parse con los 5 campos → parse_meta_json['conditions'] correcto.
-
-        - temperature_c: se serializa como string (preserva Decimal).
-        - surface_condition: se serializa como el valor del enum ('seca'|...).
-        - altitude_msnm: int.
-        - climate, weather_notes: str.
-        """
-        form = _parse_form()
-        form.update({
-            "climate": "Soleado con viento moderado",
-            "temperature_c": "23.5",
-            "surface_condition": "seca",
-            "altitude_msnm": "1200",
-            "weather_notes": "Viento del NE 12 km/h, humedad 55%",
-        })
-        files = {"resultados_pdf": _pdf_file(b"content with conditions")}
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse", data=form, files=files
-        )
-        assert r.status_code == 200, r.text
-        parse_id = r.json()["parse_id"]
-
-        async with db_session_factory() as session:
-            from sqlalchemy import select as _sel
-            imp = (await session.execute(
-                _sel(RaceImport).where(RaceImport.id == parse_id)
-            )).scalar_one()
-            conditions = imp.parse_meta_json.get("conditions") or {}
-            assert conditions["climate"] == "Soleado con viento moderado"
-            assert conditions["temperature_c"] == "23.5"
-            assert conditions["surface_condition"] == "seca"
-            assert conditions["altitude_msnm"] == 1200
-            assert conditions["weather_notes"] == "Viento del NE 12 km/h, humedad 55%"
-
-    @pytest.mark.asyncio
-    async def test_parse_with_subset_only_climate_and_temperature(
-        self, coach_client, stub_parsers, db_session_factory
-    ):
-        """Subset: enviamos climate + temperature_c → el resto queda None."""
-        form = _parse_form()
-        form.update({
-            "climate": "Soleado",
-            "temperature_c": "20.0",
-        })
-        files = {"resultados_pdf": _pdf_file(b"subset content")}
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse", data=form, files=files
-        )
-        assert r.status_code == 200, r.text
-        parse_id = r.json()["parse_id"]
-
-        async with db_session_factory() as session:
-            from sqlalchemy import select as _sel
-            imp = (await session.execute(
-                _sel(RaceImport).where(RaceImport.id == parse_id)
-            )).scalar_one()
-            conditions = imp.parse_meta_json.get("conditions") or {}
-            assert conditions["climate"] == "Soleado"
-            assert conditions["temperature_c"] == "20.0"
-            # Resto debe estar explícitamente en None (no faltante)
-            assert conditions["surface_condition"] is None
-            assert conditions["altitude_msnm"] is None
-            assert conditions["weather_notes"] is None
-
-    @pytest.mark.asyncio
-    async def test_parse_without_any_conditions_backwards_compat(
-        self, coach_client, stub_parsers, db_session_factory
-    ):
-        """Regresión: parse sin ningún campo de condiciones funciona igual que antes.
-
-        La clave 'conditions' DEBE existir con los 5 valores en None (contrato B2).
-        """
-        files = {"resultados_pdf": _pdf_file(b"no conditions at all")}
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse", data=_parse_form(), files=files
-        )
-        assert r.status_code == 200, r.text
-        parse_id = r.json()["parse_id"]
-
-        async with db_session_factory() as session:
-            from sqlalchemy import select as _sel
-            imp = (await session.execute(
-                _sel(RaceImport).where(RaceImport.id == parse_id)
-            )).scalar_one()
-            conditions = imp.parse_meta_json.get("conditions")
-            assert conditions is not None, (
-                "La clave 'conditions' debe existir incluso sin captura"
-            )
-            assert conditions == {
-                "climate": None,
-                "temperature_c": None,
-                "surface_condition": None,
-                "altitude_msnm": None,
-                "weather_notes": None,
-            }
-
-    @pytest.mark.asyncio
-    async def test_parse_then_commit_without_conditions_creates_valida_with_nulls(
-        self, coach_client, stub_parsers, db_session_factory, monkeypatch
-    ):
-        """End-to-end: /parse SIN condiciones → /commit → race_events con NULLs.
-
-        Usamos un stub_ingestor especializado que sí persiste el RaceEvent
-        para verificar que la falta de condiciones se propaga como NULL en BD.
-        """
-        from app.models.race_event import RaceEvent, RaceEventStatus
-        from app.schemas.race import IngestReport
-        from app.services.race import ingestor as ingestor_mod
-
-        captured: dict = {}
-
-        async def fake_ingest_persists(self, meta, results_by_category, **kwargs):
-            captured["meta_climate"] = meta.climate
-            captured["meta_temperature_c"] = meta.temperature_c
-            captured["meta_surface_condition"] = meta.surface_condition
-            captured["meta_altitude_msnm"] = meta.altitude_msnm
-            captured["meta_weather_notes"] = meta.weather_notes
-            # Crear el RaceEvent realmente en la DB para verificar persistencia
-            event = RaceEvent(
-                series_id=1,
-                sequence_number=meta.valida_num,
-                name=meta.name,
-                event_date=meta.event_date,
-                location=meta.location,
-                is_championship=False,
-                status=RaceEventStatus.COMPLETED,
-                created_by_user_id=kwargs.get("ingested_by_user_id") or 10,
-                climate=meta.climate,
-                temperature_c=meta.temperature_c,
-                surface_condition=meta.surface_condition,
-                altitude_msnm=meta.altitude_msnm,
-                weather_notes=meta.weather_notes,
-            )
-            self.db.add(event)
-            await self.db.flush()
-            # Promover el pending → committed (como hace el ingestor real)
-            sha = kwargs.get("pdf_results_sha256")
-            if sha:
-                from sqlalchemy import select as _sel
-                result = await self.db.execute(
-                    _sel(RaceImport).where(
-                        RaceImport.sha256 == sha,
-                        RaceImport.status == RaceImportStatus.pending,
-                    )
-                )
-                pending = result.scalar_one_or_none()
-                if pending is not None:
-                    pending.status = RaceImportStatus.committed
-                    pending.event_id = event.id
-                    pending.stats_json = {"results_inserted": 2, "tyr_count": 1}
-                    await self.db.flush()
-            captured["event_id"] = event.id
-            return IngestReport(
-                event_id=event.id,
-                series_id=1,
-                competitors_created=0,
-                competitors_updated=0,
-                results_inserted=2,
-                results_skipped=0,
-                tyr_count=1,
-                warnings=[],
-            )
-
-        monkeypatch.setattr(
-            ingestor_mod.RaceIngestor, "ingest_event", fake_ingest_persists
-        )
-
-        # 1) /parse SIN condiciones
-        files = {"resultados_pdf": _pdf_file(b"e2e no conditions xyz")}
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse", data=_parse_form(), files=files
-        )
-        assert r.status_code == 200, r.text
-        parse_id = r.json()["parse_id"]
-
-        # 2) /commit con resolved_matches del TyR detectado por el stub
-        from app.services.race.normalizer import normalize_name
-        match_norm = normalize_name("Sebastian Yule Mendoza")
-        r = await coach_client.post(
-            f"/api/race-analysis/imports/{parse_id}/commit",
-            json={
-                "resolved_matches": [
-                    {"competitor_normalized_name": match_norm, "athlete_id": None}
-                ]
-            },
-        )
-        assert r.status_code == 200, r.text
-
-        # 3) Verificar que el meta llegó con todos None y la BD también
-        assert captured["meta_climate"] is None
-        assert captured["meta_temperature_c"] is None
-        assert captured["meta_surface_condition"] is None
-        assert captured["meta_altitude_msnm"] is None
-        assert captured["meta_weather_notes"] is None
-
-        async with db_session_factory() as session:
-            from sqlalchemy import select as _sel
-            event = (await session.execute(
-                _sel(RaceEvent).where(RaceEvent.id == captured["event_id"])
-            )).scalar_one()
-            assert event.climate is None
-            assert event.temperature_c is None
-            assert event.surface_condition is None
-            assert event.altitude_msnm is None
-            assert event.weather_notes is None
-
-    @pytest.mark.asyncio
-    async def test_parse_then_commit_with_all_conditions_persists_in_race_events(
-        self, coach_client, stub_parsers, db_session_factory, monkeypatch
-    ):
-        """End-to-end full: /parse con 5 condiciones → /commit → race_events row.
-
-        Verifica que el flujo completo (form → parse_meta_json → EventMeta →
-        RaceIngestor → race_events) propaga los 5 valores sin pérdida.
-        """
-        from decimal import Decimal as _D
-        from app.models.race_event import RaceEvent, RaceEventStatus, SurfaceCondition as _SC
-        from app.schemas.race import IngestReport
-        from app.services.race import ingestor as ingestor_mod
-
-        captured: dict = {}
-
-        async def fake_ingest_persists(self, meta, results_by_category, **kwargs):
-            event = RaceEvent(
-                series_id=1,
-                sequence_number=meta.valida_num,
-                name=meta.name,
-                event_date=meta.event_date,
-                location=meta.location,
-                is_championship=False,
-                status=RaceEventStatus.COMPLETED,
-                created_by_user_id=kwargs.get("ingested_by_user_id") or 10,
-                climate=meta.climate,
-                temperature_c=meta.temperature_c,
-                surface_condition=meta.surface_condition,
-                altitude_msnm=meta.altitude_msnm,
-                weather_notes=meta.weather_notes,
-            )
-            self.db.add(event)
-            await self.db.flush()
-            sha = kwargs.get("pdf_results_sha256")
-            if sha:
-                from sqlalchemy import select as _sel
-                result = await self.db.execute(
-                    _sel(RaceImport).where(
-                        RaceImport.sha256 == sha,
-                        RaceImport.status == RaceImportStatus.pending,
-                    )
-                )
-                pending = result.scalar_one_or_none()
-                if pending is not None:
-                    pending.status = RaceImportStatus.committed
-                    pending.event_id = event.id
-                    pending.stats_json = {"results_inserted": 2, "tyr_count": 1}
-                    await self.db.flush()
-            captured["event_id"] = event.id
-            return IngestReport(
-                event_id=event.id,
-                series_id=1,
-                competitors_created=0,
-                competitors_updated=0,
-                results_inserted=2,
-                results_skipped=0,
-                tyr_count=1,
-                warnings=[],
-            )
-
-        monkeypatch.setattr(
-            ingestor_mod.RaceIngestor, "ingest_event", fake_ingest_persists
-        )
-
-        # 1) /parse con TODOS los 5 campos
-        form = _parse_form()
-        form.update({
-            "climate": "Lluvioso",
-            "temperature_c": "16.3",
-            "surface_condition": "barro",
-            "altitude_msnm": "1800",
-            "weather_notes": "Llovió toda la noche; pista resbaladiza",
-        })
-        files = {"resultados_pdf": _pdf_file(b"e2e full conditions abc")}
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse", data=form, files=files
-        )
-        assert r.status_code == 200, r.text
-        parse_id = r.json()["parse_id"]
-
-        # 2) /commit
-        from app.services.race.normalizer import normalize_name
-        match_norm = normalize_name("Sebastian Yule Mendoza")
-        r = await coach_client.post(
-            f"/api/race-analysis/imports/{parse_id}/commit",
-            json={
-                "resolved_matches": [
-                    {"competitor_normalized_name": match_norm, "athlete_id": None}
-                ]
-            },
-        )
-        assert r.status_code == 200, r.text
-
-        # 3) Verificar que los 5 campos llegan a race_events
-        async with db_session_factory() as session:
-            from sqlalchemy import select as _sel
-            event = (await session.execute(
-                _sel(RaceEvent).where(RaceEvent.id == captured["event_id"])
-            )).scalar_one()
-            assert event.climate == "Lluvioso"
-            assert event.temperature_c == _D("16.3")
-            assert event.surface_condition == _SC.barro
-            assert event.altitude_msnm == 1800
-            assert event.weather_notes == "Llovió toda la noche; pista resbaladiza"
-
-
-class TestParseConditionsValidation:
-    """Tests de las validaciones de rango/enum para los Form() params.
-
-    El handler combina las validaciones nativas de FastAPI/Form con un re-check
-    Pydantic vía ``ImportParseRequestFields``. Ambos caminos retornan 422.
-    """
-
-    @pytest.mark.asyncio
-    async def test_parse_temperature_above_max_returns_422(
-        self, coach_client, stub_parsers
-    ):
-        """Regresión del bug Decimal-not-serializable.
-
-        Antes del fix (uso de ``jsonable_encoder`` sobre ``exc.errors()``), un
-        ``temperature_c=51`` rompía la respuesta 422 con HTTP 500 porque el
-        ``input`` del error era ``Decimal('51')`` y FastAPI no lo serializaba.
-        """
-        form = _parse_form()
-        form["temperature_c"] = "51"
-        files = {"resultados_pdf": _pdf_file(b"temp out of range")}
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse", data=form, files=files
-        )
-        assert r.status_code == 422
-        # El body 422 debe ser JSON válido (no HTML 500)
-        body = r.json()
-        assert "detail" in body
-
-    @pytest.mark.asyncio
-    async def test_parse_temperature_below_min_returns_422(
-        self, coach_client, stub_parsers
-    ):
-        """Mismo bug Decimal-not-serializable con valor negativo."""
-        form = _parse_form()
-        form["temperature_c"] = "-1"
-        files = {"resultados_pdf": _pdf_file(b"temp negative")}
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse", data=form, files=files
-        )
-        assert r.status_code == 422
-        body = r.json()
-        assert "detail" in body
-
-    @pytest.mark.asyncio
-    async def test_parse_surface_condition_invalid_value_returns_422(
-        self, coach_client, stub_parsers
-    ):
-        form = _parse_form()
-        form["surface_condition"] = "invalida"
-        files = {"resultados_pdf": _pdf_file(b"invalid surface")}
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse", data=form, files=files
-        )
-        assert r.status_code == 422
-
-    @pytest.mark.asyncio
-    async def test_parse_altitude_negative_returns_422(
-        self, coach_client, stub_parsers
-    ):
-        form = _parse_form()
-        form["altitude_msnm"] = "-1"
-        files = {"resultados_pdf": _pdf_file(b"altitude negative")}
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse", data=form, files=files
-        )
-        assert r.status_code == 422
-
-    @pytest.mark.asyncio
-    async def test_parse_altitude_above_max_returns_422(
-        self, coach_client, stub_parsers
-    ):
-        form = _parse_form()
-        form["altitude_msnm"] = "6000"
-        files = {"resultados_pdf": _pdf_file(b"altitude over max")}
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse", data=form, files=files
-        )
-        assert r.status_code == 422
-
-    @pytest.mark.asyncio
-    async def test_parse_climate_over_60_chars_returns_422(
-        self, coach_client, stub_parsers
-    ):
-        form = _parse_form()
-        form["climate"] = "a" * 61
-        files = {"resultados_pdf": _pdf_file(b"climate too long")}
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse", data=form, files=files
-        )
-        assert r.status_code == 422
-
-
-# ===========================================================================
-# Plan 002 — SELECT FOR UPDATE locking on commit path
+# Amendment 2026-09-26: las condiciones de carrera (climate/temperature_c/
+# surface_condition/altitude_msnm/weather_notes) dejaron de ser un input del
+# wizard — ``stage_extracted_results`` no las acepta (contracts/staged-
+# import.md: "No conditions. parse_meta_json['conditions'] se escribe con
+# cada campo null"). Los tests que cubrían su persistencia y validación se
+# retiraron junto con ``POST /parse``.
 # ===========================================================================
 
 
@@ -1981,7 +1221,7 @@ class TestCommitLocking:
 
     @pytest.mark.asyncio
     async def test_commit_locks_import_row(
-        self, coach_client, stub_parsers, stub_ingestor, monkeypatch
+        self, coach_client, stub_ingestor, monkeypatch, db_session_factory
     ):
         """commit_import debe llamar _load_pending_import con for_update=True DOS veces.
 
@@ -1996,14 +1236,7 @@ class TestCommitLocking:
         from app.routers import race_imports as router_mod
         from app.services.race.normalizer import normalize_name
 
-        # Crear el pending import via parse
-        files = {"resultados_pdf": _pdf_file(b"lock test content")}
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse",
-            data=_parse_form(), files=files,
-        )
-        assert r.status_code == 200, r.text
-        parse_id = r.json()["parse_id"]
+        parse_id = await _stage_pending_import(db_session_factory)
 
         # Spy: wrap _load_pending_import para capturar el kwarg for_update
         calls: list[dict] = []
@@ -2031,7 +1264,7 @@ class TestCommitLocking:
 
     @pytest.mark.asyncio
     async def test_dry_run_does_not_lock(
-        self, coach_client, stub_parsers, stub_ingestor, monkeypatch
+        self, coach_client, stub_ingestor, monkeypatch, db_session_factory
     ):
         """dry_run_import NO debe solicitar el lock (for_update=False).
 
@@ -2040,14 +1273,7 @@ class TestCommitLocking:
         """
         from app.routers import race_imports as router_mod
 
-        # Crear el pending import via parse
-        files = {"resultados_pdf": _pdf_file(b"dry-run lock test content")}
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse",
-            data=_parse_form(), files=files,
-        )
-        assert r.status_code == 200, r.text
-        parse_id = r.json()["parse_id"]
+        parse_id = await _stage_pending_import(db_session_factory)
 
         calls: list[dict] = []
         _original = router_mod._load_pending_import
@@ -2069,7 +1295,7 @@ class TestCommitLocking:
 
     @pytest.mark.asyncio
     async def test_commit_integrity_error_returns_409(
-        self, coach_client, stub_parsers, monkeypatch, db_session_factory
+        self, coach_client, monkeypatch, db_session_factory
     ):
         """Se ingest_event lanza IntegrityError, commit_import debe retornar 409
         con el mensaje de conflicto en español.
@@ -2080,14 +1306,7 @@ class TestCommitLocking:
         from sqlalchemy.exc import IntegrityError as SAIntegrityError
         from app.services.race import ingestor as ingestor_mod
 
-        # Crear el pending import via parse
-        files = {"resultados_pdf": _pdf_file(b"integrity error test")}
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse",
-            data=_parse_form(), files=files,
-        )
-        assert r.status_code == 200, r.text
-        parse_id = r.json()["parse_id"]
+        parse_id = await _stage_pending_import(db_session_factory)
 
         # Monkeypatch ingestor para lanzar IntegrityError
         async def _raise_integrity(self, meta, results_by_category, **kwargs):
@@ -2115,7 +1334,7 @@ class TestCommitLocking:
 
     @pytest.mark.asyncio
     async def test_second_commit_after_committed_is_rejected(
-        self, coach_client, stub_parsers, stub_ingestor, db_session_factory
+        self, coach_client, stub_ingestor, db_session_factory
     ):
         """Un segundo commit sobre el mismo parse_id (ya committed) debe
         retornar 404 con el mensaje 'no está en estado pending'.
@@ -2126,14 +1345,7 @@ class TestCommitLocking:
         """
         from app.services.race.normalizer import normalize_name
 
-        # 1. Parse
-        files = {"resultados_pdf": _pdf_file(b"second commit test")}
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse",
-            data=_parse_form(), files=files,
-        )
-        assert r.status_code == 200, r.text
-        parse_id = r.json()["parse_id"]
+        parse_id = await _stage_pending_import(db_session_factory)
 
         match_norm = normalize_name("Sebastian Yule Mendoza")
         commit_body = {
@@ -2162,7 +1374,7 @@ class TestCommitLocking:
 
     @pytest.mark.asyncio
     async def test_commit_recheck_rejects_when_no_longer_pending(
-        self, coach_client, stub_parsers, monkeypatch, db_session_factory
+        self, coach_client, monkeypatch, db_session_factory
     ):
         """La re-verificación two-phase rechaza el commit si el import ya no es pending.
 
@@ -2177,14 +1389,7 @@ class TestCommitLocking:
         from app.services.race import ingestor as ingestor_mod
         from app.services.race.normalizer import normalize_name
 
-        # 1. Parse
-        files = {"resultados_pdf": _pdf_file(b"recheck reject test")}
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse",
-            data=_parse_form(), files=files,
-        )
-        assert r.status_code == 200, r.text
-        parse_id = r.json()["parse_id"]
+        parse_id = await _stage_pending_import(db_session_factory)
 
         # 2. Spy: on the SECOND call (re-check), flip status to committed so
         #    _load_pending_import raises 404 (no longer pending).
@@ -2620,21 +1825,20 @@ class TestDiscardEndpoint:
 
     @pytest.mark.asyncio
     async def test_the_same_file_can_be_uploaded_again_after_discarding_it(
-        self, coach_client, stub_parsers
+        self, coach_client, db_session_factory
     ):
-        """``discarded`` no cuenta como staging: subir el mismo PDF crea una
-        carga nueva en vez de devolver la abandonada (FR-027 solo reusa
-        ``pending``/``dry_run``)."""
-        files = {"resultados_pdf": _pdf_file(b"content")}
-        first = await coach_client.post(f"{_IMPORTS}/parse", data=_parse_form(), files=files)
-        assert first.status_code == 200, first.text
-        first_id = first.json()["parse_id"]
+        """``discarded`` no cuenta como staging: re-staguear el mismo archivo
+        crea una carga nueva en vez de devolver la abandonada (FR-027 solo
+        reusa ``pending``/``dry_run``)."""
+        first_id = await _stage_pending_import(db_session_factory)
 
         assert (await coach_client.post(f"{_IMPORTS}/{first_id}/discard")).status_code == 200
-        again = await coach_client.post(f"{_IMPORTS}/parse", data=_parse_form(), files=files)
 
-        assert again.status_code == 200, again.text
-        assert again.json()["parse_id"] != first_id
+        # Mismo documento + header → mismo sha256 (fingerprint determinístico
+        # de ``stage_for_test``) — el import descartado no debe deduplicar.
+        second_id = await _stage_pending_import(db_session_factory)
+
+        assert second_id != first_id
 
 
 class TestListHidesDiscardedByDefault:

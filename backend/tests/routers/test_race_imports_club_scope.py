@@ -62,6 +62,16 @@ CATEGORY_CODE = "TET_CP"
 
 _PDF_HEADER = b"%PDF-1.4\n"
 
+
+def _test_profile():
+    from app.services.race.staged_document import StagedProfileMeta
+
+    return StagedProfileMeta(
+        profile_id="test-race-imports-club-scope",
+        profile_sha256="2" * 64,
+        engine_version="test-helper",
+    )
+
 #: ``(user_id, rol, clubes, nombre, apellido)``
 _ACTORS: dict[str, tuple[int, UserRole, tuple[int, ...], str, str]] = {
     "admin": (ADMIN_ID, UserRole.admin, (CLUB_ID,), "Admin", "Ficticio"),
@@ -242,55 +252,6 @@ def override_storage(monkeypatch, tmp_path):
     yield fake_base
 
 
-@pytest.fixture
-def stub_parsers(monkeypatch):
-    """Stub de los parsers de PDF — una fila TyR y una ajena, sin tocar disco."""
-    from app.routers import race_imports as router_mod
-    from app.services.race.pdf_parser import ParsedCategory, ParsedResults, ResultsRow
-
-    async def _fake_results(path, ext):
-        # Feature 044 (US1): `_parse_results_with_timeout` devuelve
-        # `ParsedResults`, no el dict legado — el stub imita esa forma.
-        return ParsedResults(
-            categories=[
-                ParsedCategory(
-                    header_raw="TETEROS CON PEDALES",
-                    code=CATEGORY_CODE,
-                    rows=[
-                        ResultsRow(
-                            position=1,
-                            bib="550",
-                            name=TYR_ATHLETE_NAME,
-                            city="Yumbo",
-                            club="Club Trocha y Ruta",
-                            time_raw="0:03:38",
-                            points=40,
-                        ),
-                        ResultsRow(
-                            position=2,
-                            bib="551",
-                            name="Competidora Ficticia Externa",
-                            city="Cali",
-                            club="Club Ficticio Dos",
-                            time_raw="0:04:00",
-                            points=36,
-                        ),
-                    ],
-                ),
-            ],
-            unreadable_rows=[],
-        )
-
-    async def _fake_general(path):
-        return {}
-
-    monkeypatch.setattr(router_mod, "_parse_results_with_timeout", _fake_results)
-    monkeypatch.setattr(router_mod, "_parse_general_with_timeout", _fake_general)
-    from app.services.race import import_staging as import_staging_mod
-    monkeypatch.setattr(import_staging_mod, "_parse_results_with_timeout", _fake_results)
-    monkeypatch.setattr(import_staging_mod, "_parse_general_with_timeout", _fake_general)
-
-
 @pytest_asyncio.fixture
 async def client_factory(db_session_factory, seed, override_storage):
     """``await client_factory("coach_b")`` → ``AsyncClient`` autenticado."""
@@ -318,25 +279,87 @@ async def client_factory(db_session_factory, seed, override_storage):
 # ---------------------------------------------------------------------------
 
 
-def _parse_form() -> dict[str, str]:
-    return {
-        "series_name": "Copa Valle",
-        "season": "2026",
-        "valida_num": "4",
-        "event_name": "VALIDA IV FICTICIA",
-        "event_date": "2026-05-17",
-        "location": "CALI",
-    }
-
-
-async def _parse_as(client: AsyncClient, marker: bytes = b"contenido") -> int:
-    """Sube un PDF sintético y devuelve el ``parse_id`` resultante."""
-    files = {"resultados_pdf": ("resultados.pdf", _PDF_HEADER + marker, "application/pdf")}
-    resp = await client.post(
-        "/api/race-analysis/imports/parse", data=_parse_form(), files=files
+def _staging_document() -> "ParsedResults":
+    """Documento equivalente al que devolvía el viejo ``stub_parsers`` — una
+    fila TyR y una ajena, sin tocar disco (amendment 2026-09-26: ``POST
+    /parse`` se retiró, contracts/staged-import.md)."""
+    from app.services.race.staged_document import (
+        ParsedCategory,
+        ParsedResults,
+        ResultsRow,
     )
-    assert resp.status_code == 200, resp.text
-    return int(resp.json()["parse_id"])
+
+    return ParsedResults(
+        categories=[
+            ParsedCategory(
+                header_raw="TETEROS CON PEDALES",
+                code=CATEGORY_CODE,
+                rows=[
+                    ResultsRow(
+                        position=1,
+                        bib="550",
+                        name=TYR_ATHLETE_NAME,
+                        city="Yumbo",
+                        club="Club Trocha y Ruta",
+                        time_raw="0:03:38",
+                        points=40,
+                    ),
+                    ResultsRow(
+                        position=2,
+                        bib="551",
+                        name="Competidora Ficticia Externa",
+                        city="Cali",
+                        club="Club Ficticio Dos",
+                        time_raw="0:04:00",
+                        points=36,
+                    ),
+                ],
+            ),
+        ],
+        unreadable_rows=[],
+    )
+
+
+async def _stage_as(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    actor: str,
+    marker: bytes = b"contenido",
+) -> int:
+    """Staguea el documento sintético como si ``actor`` lo hubiera cargado —
+    sucesor de ``POST /parse`` (retirado), sin HTTP ni parser real."""
+    from datetime import date
+
+    from app.models.race_series import RaceSeriesKind, RaceSeriesLevel
+    from app.models.user import User
+    from app.services.race.import_staging import StageHeader, stage_extracted_results
+    from app.services.request_context import AuditContext
+
+    header = StageHeader(
+        series_name="Copa Valle",
+        series_kind=RaceSeriesKind.cup,
+        series_level=RaceSeriesLevel.departmental,
+        season=2026,
+        valida_num=4,
+        event_name="VALIDA IV FICTICIA",
+        event_date=date(2026, 5, 17),
+        location="CALI",
+    )
+    uid = _ACTORS[actor][0]
+    async with db_session_factory() as session:
+        user = await session.get(User, uid)
+        result = await stage_extracted_results(
+            session,
+            document=_staging_document(),
+            profile=_test_profile(),
+            file_bytes=_PDF_HEADER + marker,
+            original_filename="resultados.pdf",
+            results_ext="pdf",
+            header=header,
+            actor=user,
+            ctx=AuditContext.for_user(user, request_id="test-stage-as"),
+        )
+        await session.commit()
+        return result.import_id
 
 
 def _commit_body() -> dict:
@@ -367,15 +390,14 @@ async def _fetch_import(
 
 
 async def test_coach_b_commitea_el_parse_del_coach_a(
-    client_factory, db_session_factory, stub_parsers
+    client_factory, db_session_factory
 ):
     """§11.1-11: 200, y la fila conserva a los dos actores.
 
     ``imported_by_user_id`` nunca se sobrescribe (§6.2): el parse sigue siendo
     del coach A aunque haya sido el coach B quien confirmó.
     """
-    async with await client_factory("coach_a") as client_a:
-        parse_id = await _parse_as(client_a)
+    parse_id = await _stage_as(db_session_factory, "coach_a")
 
     imp = await _fetch_import(db_session_factory, parse_id)
     assert imp.imported_by_user_id == COACH_A_ID
@@ -398,11 +420,10 @@ async def test_coach_b_commitea_el_parse_del_coach_a(
 
 
 async def test_coach_b_hace_dry_run_del_parse_del_coach_a(
-    client_factory, stub_parsers
+    client_factory, db_session_factory
 ):
     """El paso previo del asistente también es del club, no del autor."""
-    async with await client_factory("coach_a") as client_a:
-        parse_id = await _parse_as(client_a)
+    parse_id = await _stage_as(db_session_factory, "coach_a")
 
     async with await client_factory("coach_b") as client_b:
         resp = await client_b.post(f"/api/race-analysis/imports/{parse_id}/dry-run")
@@ -416,10 +437,9 @@ async def test_coach_b_hace_dry_run_del_parse_del_coach_a(
 # ===========================================================================
 
 
-async def test_coach_de_otro_club_403_en_dry_run(client_factory, stub_parsers):
+async def test_coach_de_otro_club_403_en_dry_run(client_factory, db_session_factory):
     """§11.1-12: 403 con la copia en español del contrato (§6.1)."""
-    async with await client_factory("coach_a") as client_a:
-        parse_id = await _parse_as(client_a)
+    parse_id = await _stage_as(db_session_factory, "coach_a")
 
     async with await client_factory("coach_c") as client_c:
         resp = await client_c.post(f"/api/race-analysis/imports/{parse_id}/dry-run")
@@ -431,11 +451,10 @@ async def test_coach_de_otro_club_403_en_dry_run(client_factory, stub_parsers):
 
 
 async def test_coach_de_otro_club_403_en_commit(
-    client_factory, db_session_factory, stub_parsers
+    client_factory, db_session_factory
 ):
     """El mismo muro en el commit: la fila no se promueve."""
-    async with await client_factory("coach_a") as client_a:
-        parse_id = await _parse_as(client_a)
+    parse_id = await _stage_as(db_session_factory, "coach_a")
 
     async with await client_factory("coach_c") as client_c:
         resp = await client_c.post(
@@ -448,10 +467,9 @@ async def test_coach_de_otro_club_403_en_commit(
     assert imp.committed_by_user_id is None
 
 
-async def test_parent_403_en_dry_run(client_factory, stub_parsers):
+async def test_parent_403_en_dry_run(client_factory, db_session_factory):
     """El gate de rol sigue delante del chequeo de club (§1.4)."""
-    async with await client_factory("coach_a") as client_a:
-        parse_id = await _parse_as(client_a)
+    parse_id = await _stage_as(db_session_factory, "coach_a")
 
     async with await client_factory("parent") as client_p:
         resp = await client_p.post(f"/api/race-analysis/imports/{parse_id}/dry-run")
@@ -459,10 +477,9 @@ async def test_parent_403_en_dry_run(client_factory, stub_parsers):
     assert resp.status_code == 403
 
 
-async def test_admin_no_recibe_403(client_factory, stub_parsers):
+async def test_admin_no_recibe_403(client_factory, db_session_factory):
     """§11.1-13: el bypass de admin no cambió."""
-    async with await client_factory("coach_a") as client_a:
-        parse_id = await _parse_as(client_a)
+    parse_id = await _stage_as(db_session_factory, "coach_a")
 
     async with await client_factory("admin") as client_admin:
         resp = await client_admin.post(f"/api/race-analysis/imports/{parse_id}/dry-run")
@@ -475,13 +492,12 @@ async def test_admin_no_recibe_403(client_factory, stub_parsers):
 # ===========================================================================
 
 
-async def test_listado_filtrado_por_club_no_por_autor(client_factory, stub_parsers):
+async def test_listado_filtrado_por_club_no_por_autor(client_factory, db_session_factory):
     """§11.1-14 / §6.3: ``GET /imports/`` nunca estuvo filtrado por autor —
     coach A y coach B (mismo club) siguen viendo el mismo histórico — pero el
     alcance por club (H4) sí lo filtra: el coach de otro club no lo ve.
     """
-    async with await client_factory("coach_a") as client_a:
-        parse_id = await _parse_as(client_a)
+    parse_id = await _stage_as(db_session_factory, "coach_a")
 
     cuerpos = {}
     for actor in ("coach_a", "coach_b", "coach_c"):
@@ -503,13 +519,12 @@ async def test_listado_filtrado_por_club_no_por_autor(client_factory, stub_parse
 
 
 async def test_listado_muestra_al_cargador_no_al_que_commitea(
-    client_factory, stub_parsers
+    client_factory, db_session_factory
 ):
     """Tras el commit del coach B, el histórico sigue nombrando al coach A:
     ``UploadUserRef`` es el cargador (§6.3), y el commit no lo reescribe.
     """
-    async with await client_factory("coach_a") as client_a:
-        parse_id = await _parse_as(client_a)
+    parse_id = await _stage_as(db_session_factory, "coach_a")
 
     async with await client_factory("coach_b") as client_b:
         resp = await client_b.post(

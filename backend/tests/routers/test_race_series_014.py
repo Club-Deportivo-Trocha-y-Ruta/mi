@@ -26,7 +26,6 @@ Privacidad invariante:
 """
 from __future__ import annotations
 
-import io
 from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from typing import AsyncGenerator
@@ -232,51 +231,6 @@ def stub_storage(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "hostinger_sftp_remote_dir", "")
     monkeypatch.setattr(settings, "hostinger_public_base_url", "")
     yield fake_base
-
-
-@pytest.fixture
-def stub_parsers(monkeypatch):
-    """Stub _parse_results_with_timeout con 2 filas ficticias."""
-    from app.routers import race_imports as router_mod
-    from app.services.race.pdf_parser import (
-        ParsedCategory,
-        ParsedResults,
-        ResultsRow,
-    )
-
-    async def fake_parse_results(path, ext):  # noqa: ARG001
-        # Feature 044 (US1): `_parse_results_with_timeout` devuelve
-        # `ParsedResults`, no el dict legado — el stub imita esa forma.
-        return ParsedResults(
-            categories=[
-                ParsedCategory(
-                    header_raw="TETEROS CON PEDALES",
-                    code="TET_CP",
-                    rows=[
-                        ResultsRow(
-                            position=1, bib="550", name="Juan Pérez Ficticio",
-                            city="Yumbo", club="Club Trocha y Ruta",
-                            time_raw="0:03:38", points=40,
-                        ),
-                        ResultsRow(
-                            position=2, bib="551", name="Pedro Rodríguez Ficticio",
-                            city="Cali", club="Otro Club",
-                            time_raw="0:04:00", points=36,
-                        ),
-                    ],
-                ),
-            ],
-            unreadable_rows=[],
-        )
-
-    async def fake_parse_general(path):  # noqa: ARG001
-        return {}
-
-    monkeypatch.setattr(router_mod, "_parse_results_with_timeout", fake_parse_results)
-    monkeypatch.setattr(router_mod, "_parse_general_with_timeout", fake_parse_general)
-    from app.services.race import import_staging as import_staging_mod
-    monkeypatch.setattr(import_staging_mod, "_parse_results_with_timeout", fake_parse_results)
-    monkeypatch.setattr(import_staging_mod, "_parse_general_with_timeout", fake_parse_general)
 
 
 def _make_fake_pdf() -> bytes:
@@ -973,60 +927,110 @@ class TestChampionshipEventGuardT010:
 # ---------------------------------------------------------------------------
 
 
-_PARSE_URL = "/api/race-analysis/imports/parse"
-
-
 class TestImportChampionshipT018:
-    """T018: import a campeonato crea serie con kind=championship; /parse preserva
-    el valida_num en parse_meta_json; _get_or_create_series honra series_name enviado;
-    re-ingesta mismo SHA en campeonato: guard SHA se dispara antes (no guard campeonato).
+    """T018: staging a campeonato crea serie con kind=championship; el
+    documento preserva el valida_num en parse_meta_json;
+    _get_or_create_series honra series_name enviado; re-staguear mismo SHA en
+    campeonato dedupe estructuralmente (``already_committed``), nunca
+    alcanza el guard de evento único del ingestor.
+
+    Amendment 2026-09-26 (contracts/staged-import.md): ``POST /parse`` se
+    retiró — el staging se hace directamente vía ``stage_extracted_results``
+    (``_stage`` helper), sin HTTP ni parser real.
     """
 
-    def _parse_form(
-        self,
+    @staticmethod
+    async def _stage(
+        db_factory,
         *,
         series_name: str = "Copa Valle de Ciclomontanismo",
         season: int = 2026,
         valida_num: int = 1,
         event_name: str = "Valida I Ficticia",
-        event_date: str = "2026-01-31",
+        event_date_str: str = "2026-01-31",
         location: str = "Sevilla",
-        series_kind=None,
-        pdf_content=None,
+        series_kind: str = "cup",
+        pdf_content: bytes | None = None,
+        actor_id: int = 10,
     ):
-        fields = {
-            "series_name": series_name,
-            "season": str(season),
-            "valida_num": str(valida_num),
-            "event_name": event_name,
-            "event_date": event_date,
-            "location": location,
-        }
-        if series_kind is not None:
-            fields["series_kind"] = series_kind
+        from app.services.race.import_staging import StageHeader, stage_extracted_results
+        from app.services.race.staged_document import (
+            ParsedCategory,
+            ParsedResults,
+            ResultsRow,
+            StagedProfileMeta,
+        )
+        from app.services.request_context import AuditContext
+
+        document = ParsedResults(
+            categories=[
+                ParsedCategory(
+                    header_raw="TETEROS CON PEDALES",
+                    code="TET_CP",
+                    rows=[
+                        ResultsRow(
+                            position=1, bib="550", name="Juan Pérez Ficticio",
+                            city="Yumbo", club="Club Trocha y Ruta",
+                            time_raw="0:03:38", points=40,
+                        ),
+                        ResultsRow(
+                            position=2, bib="551", name="Pedro Rodríguez Ficticio",
+                            city="Cali", club="Otro Club",
+                            time_raw="0:04:00", points=36,
+                        ),
+                    ],
+                ),
+            ],
+            unreadable_rows=[],
+        )
+        header = StageHeader(
+            series_name=series_name,
+            series_kind=RaceSeriesKind(series_kind),
+            series_level=RaceSeriesLevel.departmental,
+            season=season,
+            valida_num=valida_num,
+            event_name=event_name,
+            event_date=date.fromisoformat(event_date_str),
+            location=location,
+        )
+        profile = StagedProfileMeta(
+            profile_id="test-race-series-014",
+            profile_sha256="4" * 64,
+            engine_version="test-helper",
+        )
         content = pdf_content or b"%PDF-1.4 fake"
-        files = {
-            "resultados_pdf": ("resultados.pdf", io.BytesIO(content), "application/pdf"),
-        }
-        return {"data": fields, "files": files}
+        async with db_factory() as s:
+            actor = await s.get(User, actor_id)
+            result = await stage_extracted_results(
+                s,
+                document=document,
+                profile=profile,
+                file_bytes=content,
+                original_filename="resultados.pdf",
+                results_ext="pdf",
+                header=header,
+                actor=actor,
+                ctx=AuditContext.for_user(actor, request_id="test-stage-014"),
+            )
+            await s.commit()
+            return result
 
     @pytest.mark.asyncio
     async def test_import_championship_crea_serie_kind_championship(
-        self, coach_client, db_factory, stub_storage, stub_parsers
+        self, db_factory, stub_storage
     ):
-        """/parse con series_kind=championship crea RaceSeries con kind=championship."""
+        """Staging con series_kind=championship crea RaceSeries con kind=championship."""
         async with db_factory() as s:
             await _seed_base_users(s)
             await s.commit()
 
-        form = self._parse_form(
+        await self._stage(
+            db_factory,
             series_name="Campeonato Dptal Ficticio 2026",
             valida_num=99,
             series_kind="championship",
             event_name="Campeonato Ficticio 2026",
         )
-        r = await coach_client.post(_PARSE_URL, data=form["data"], files=form["files"])
-        assert r.status_code == 200, r.text
 
         async with db_factory() as s:
             result = await s.execute(
@@ -1040,45 +1044,40 @@ class TestImportChampionshipT018:
 
     @pytest.mark.asyncio
     async def test_import_championship_parse_meta_preserva_valida_num(
-        self, coach_client, db_factory, stub_storage, stub_parsers
+        self, db_factory, stub_storage
     ):
-        """/parse preserva valida_num en parse_meta_json para uso posterior del ingestor."""
+        """El staging preserva valida_num en parse_meta_json para uso posterior del ingestor."""
         async with db_factory() as s:
             await _seed_base_users(s)
             await s.commit()
 
-        form = self._parse_form(
+        stage_result = await self._stage(
+            db_factory,
             series_name="Campeonato Dptal Ficticio 2026",
             valida_num=99,
             series_kind="championship",
             event_name="Campeonato Ficticio 2026",
         )
-        r = await coach_client.post(_PARSE_URL, data=form["data"], files=form["files"])
-        assert r.status_code == 200, r.text
-        parse_id = r.json()["parse_id"]
 
         async with db_factory() as s:
-            imp = await s.get(RaceImport, parse_id)
+            imp = await s.get(RaceImport, stage_result.import_id)
         assert imp is not None
         meta = imp.parse_meta_json or {}
         assert meta.get("header", {}).get("valida_num") == 99
 
     @pytest.mark.asyncio
-    async def test_import_cup_regresion_kind_cup(
-        self, coach_client, db_factory, stub_storage, stub_parsers
-    ):
+    async def test_import_cup_regresion_kind_cup(self, db_factory, stub_storage):
         """Regresion: import copa crea serie con kind=cup y parse_meta_json con valida_num."""
         async with db_factory() as s:
             await _seed_base_users(s)
             await s.commit()
 
-        form = self._parse_form(
+        await self._stage(
+            db_factory,
             series_name="Copa Ficticia 2026",
             valida_num=3,
             series_kind="cup",
         )
-        r = await coach_client.post(_PARSE_URL, data=form["data"], files=form["files"])
-        assert r.status_code == 200, r.text
 
         async with db_factory() as s:
             result = await s.execute(
@@ -1089,22 +1088,19 @@ class TestImportChampionshipT018:
         assert series.kind == RaceSeriesKind.cup
 
     @pytest.mark.asyncio
-    async def test_get_or_create_series_honra_series_name(
-        self, coach_client, db_factory, stub_storage, stub_parsers
-    ):
+    async def test_get_or_create_series_honra_series_name(self, db_factory, stub_storage):
         """Bug fix T017: _get_or_create_series usa el series_name enviado, no el hardcoded."""
         async with db_factory() as s:
             await _seed_base_users(s)
             await s.commit()
 
         custom_name = "Liga Boyacense Ficticia 2026"
-        form = self._parse_form(
+        await self._stage(
+            db_factory,
             series_name=custom_name,
             valida_num=1,
             series_kind="cup",
         )
-        r = await coach_client.post(_PARSE_URL, data=form["data"], files=form["files"])
-        assert r.status_code == 200, r.text
 
         async with db_factory() as s:
             result = await s.execute(select(RaceSeries))
@@ -1115,15 +1111,18 @@ class TestImportChampionshipT018:
 
     @pytest.mark.asyncio
     async def test_desviacion2_reingesta_mismo_sha_no_dispara_guard_campeonato(
-        self, coach_client, db_factory, stub_storage, stub_parsers
+        self, db_factory, stub_storage
     ):
-        """Desviacion #2: re-ingesta del MISMO PDF (mismo SHA) en campeonato con evento existente
-        debe disparar el guard de SHA duplicado (409 sobre sha256/commiteado),
-        NO el guard de campeonato unico.
+        """Desviacion #2: re-staguear el MISMO PDF (mismo SHA) en campeonato
+        con evento existente debe dedupe estructuralmente
+        (``status="already_committed"``), NO disparar el guard de campeonato
+        único del ingestor — el staging nunca llega a llamarlo para un sha ya
+        commiteado.
 
-        Si el guard de campeonato se activa ANTES del guard de SHA en /parse, la
-        re-ingesta del mismo archivo devolveria 409 con mensaje de campeonato unico
-        en lugar de mensaje SHA -> BUG BLOCKING (falso positivo).
+        Si el guard de campeonato se activara antes del dedupe de SHA, el
+        segundo staging del mismo archivo terminaría creando un segundo
+        import o event -> BUG BLOCKING (falso positivo). Aquí verificamos
+        que devuelve el import committed original, sin crear nada nuevo.
         """
         fixed_pdf = b"%PDF-1.4 fixed-content"
         series_name = "Campeonato Dptal Ficticio 2026"
@@ -1132,17 +1131,16 @@ class TestImportChampionshipT018:
             await _seed_base_users(s)
             await s.commit()
 
-        # Primer import
-        form1 = self._parse_form(
+        # Primer staging
+        stage_result1 = await self._stage(
+            db_factory,
             series_name=series_name,
             valida_num=99,
             series_kind="championship",
             event_name="Campeonato Ficticio 2026",
             pdf_content=fixed_pdf,
         )
-        r1 = await coach_client.post(_PARSE_URL, data=form1["data"], files=form1["files"])
-        assert r1.status_code == 200, f"Primer import fallo: {r1.text}"
-        parse_id = r1.json()["parse_id"]
+        parse_id = stage_result1.import_id
 
         # Simular: import commiteado + evento ya creado
         async with db_factory() as s:
@@ -1163,37 +1161,23 @@ class TestImportChampionshipT018:
                 ))
             await s.commit()
 
-        # Re-ingesta del MISMO PDF (mismo SHA)
-        form2 = self._parse_form(
+        # Re-staguear el MISMO PDF (mismo SHA)
+        stage_result2 = await self._stage(
+            db_factory,
             series_name=series_name,
             valida_num=99,
             series_kind="championship",
             event_name="Campeonato Re-ingesta",
             pdf_content=fixed_pdf,
         )
-        r2 = await coach_client.post(_PARSE_URL, data=form2["data"], files=form2["files"])
 
-        assert r2.status_code == 409, (
-            f"Esperado 409 (SHA duplicado), obtenido {r2.status_code}: {r2.text}"
+        assert stage_result2.status == "already_committed", (
+            "DESVIACION #2: el re-staging del mismo SHA debe dedupe "
+            f"estructuralmente, no disparar otro guard. Obtenido: {stage_result2}"
         )
-        detail = r2.json()["detail"].lower()
-
-        # Verificar: el 409 es por SHA, NO por campeonato unico
-        if "campeonato" in detail and ("nico" in detail or "ya tiene" in detail):
-            pytest.fail(
-                "DESVIACION #2 CONFIRMADA (BUG BLOCKING): "
-                "Re-ingesta mismo SHA en campeonato disparo el guard de evento unico "
-                "en lugar del guard de SHA duplicado. "
-                f"Detail recibido: {r2.json()['detail']}"
-            )
-
-        # El 409 debe mencionar SHA
-        assert (
-            "sha256" in detail
-            or "sha" in detail
-            or "commiteado" in detail
-        ), (
-            f"409 obtenido pero el detail no menciona SHA duplicado: {r2.json()['detail']}"
+        assert stage_result2.already_committed is True
+        assert stage_result2.import_id == parse_id, (
+            "El dedupe debe devolver el import committed original, no crear uno nuevo."
         )
 
 

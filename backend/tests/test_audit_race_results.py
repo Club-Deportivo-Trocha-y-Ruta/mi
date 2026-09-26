@@ -43,9 +43,6 @@ from app.models.race_series import RaceSeries
 from app.models.user import User, UserRole
 from tests.helpers.audit_tables import AUDIT_TABLES
 
-_PDF_HEADER = b"%PDF-1.4\n"
-
-
 def _make_user(role: UserRole, user_id: int = 10) -> SimpleNamespace:
     memberships = []
     if role == UserRole.coach:
@@ -64,21 +61,6 @@ def _make_user(role: UserRole, user_id: int = 10) -> SimpleNamespace:
     )
 
 
-def _pdf_file(content_extra: bytes = b"") -> tuple[str, bytes, str]:
-    return ("resultados.pdf", _PDF_HEADER + content_extra, "application/pdf")
-
-
-def _parse_form(**overrides) -> dict:
-    form = {
-        "series_name": "Copa Valle",
-        "season": "2026",
-        "valida_num": "4",
-        "event_name": "VALIDA IV CALI",
-        "event_date": "2026-05-17",
-        "location": "CALI",
-    }
-    form.update({k: str(v) for k, v in overrides.items()})
-    return form
 
 
 # ---------------------------------------------------------------------------
@@ -197,43 +179,69 @@ def override_storage(monkeypatch, tmp_path):
     yield fake_base
 
 
-@pytest.fixture
-def stub_parsers(monkeypatch):
-    from app.routers import race_imports as router_mod
+async def _stage_pending_import(db_session_factory, *, actor_id: int = 10) -> int:
+    """Sucesor de ``POST /parse`` (retirado, amendment 2026-09-26) — staguea
+    un documento sintético directamente vía ``stage_extracted_results``, sin
+    HTTP ni parser real."""
+    from datetime import date
 
-    async def fake_parse_results(path, ext):  # noqa: ARG001
-        # Feature 044 (US1): `_parse_results_with_timeout` devuelve
-        # `ParsedResults`, no el dict legado — el stub imita esa forma.
-        from app.services.race.pdf_parser import (
-            ParsedCategory,
-            ParsedResults,
-            ResultsRow,
+    from app.models.race_series import RaceSeriesKind, RaceSeriesLevel
+    from app.models.user import User
+    from app.services.race.import_staging import StageHeader, stage_extracted_results
+    from app.services.race.staged_document import (
+        ParsedCategory,
+        ParsedResults,
+        ResultsRow,
+        StagedProfileMeta,
+    )
+    from app.services.request_context import AuditContext
+
+    document = ParsedResults(
+        categories=[
+            ParsedCategory(
+                header_raw="TETEROS CON PEDALES",
+                code="TET_CP",
+                rows=[
+                    ResultsRow(
+                        position=1, bib="550", name="Sebastian Yule Mendoza",
+                        city="Yumbo", club="Club Trocha y Ruta",
+                        time_raw="0:03:38", points=40,
+                    ),
+                ],
+            ),
+        ],
+        unreadable_rows=[],
+    )
+    header = StageHeader(
+        series_name="Copa Valle de Ciclomontañismo",
+        series_kind=RaceSeriesKind.cup,
+        series_level=RaceSeriesLevel.departmental,
+        season=2026,
+        valida_num=4,
+        event_name="VALIDA IV CALI",
+        event_date=date(2026, 5, 17),
+        location="CALI",
+    )
+    profile = StagedProfileMeta(
+        profile_id="test-audit-race-results",
+        profile_sha256="5" * 64,
+        engine_version="test-helper",
+    )
+    async with db_session_factory() as session:
+        actor = await session.get(User, actor_id)
+        result = await stage_extracted_results(
+            session,
+            document=document,
+            profile=profile,
+            file_bytes=b"contenido de prueba",
+            original_filename="resultados.pdf",
+            results_ext="pdf",
+            header=header,
+            actor=actor,
+            ctx=AuditContext.for_user(actor, request_id="test-stage-audit"),
         )
-        return ParsedResults(
-            categories=[
-                ParsedCategory(
-                    header_raw="TETEROS CON PEDALES",
-                    code="TET_CP",
-                    rows=[
-                        ResultsRow(
-                            position=1, bib="550", name="Sebastian Yule Mendoza",
-                            city="Yumbo", club="Club Trocha y Ruta",
-                            time_raw="0:03:38", points=40,
-                        ),
-                    ],
-                ),
-            ],
-            unreadable_rows=[],
-        )
-
-    async def fake_parse_general(path):  # noqa: ARG001
-        return {}
-
-    monkeypatch.setattr(router_mod, "_parse_results_with_timeout", fake_parse_results)
-    monkeypatch.setattr(router_mod, "_parse_general_with_timeout", fake_parse_general)
-    from app.services.race import import_staging as import_staging_mod
-    monkeypatch.setattr(import_staging_mod, "_parse_results_with_timeout", fake_parse_results)
-    monkeypatch.setattr(import_staging_mod, "_parse_general_with_timeout", fake_parse_general)
+        await session.commit()
+        return result.import_id
 
 
 @pytest.fixture
@@ -488,14 +496,9 @@ class TestRaceEventAudit:
 class TestRaceImportAudit:
     @pytest.mark.asyncio
     async def test_parse_records_create_audit_row(
-        self, coach_client, db_session_factory, stub_parsers
+        self, coach_client, db_session_factory
     ):
-        files = {"resultados_pdf": _pdf_file(b"contenido de prueba")}
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse", data=_parse_form(), files=files
-        )
-        assert r.status_code == 200, r.text
-        parse_id = r.json()["parse_id"]
+        parse_id = await _stage_pending_import(db_session_factory)
 
         rows = await _audit_rows(db_session_factory, "race_import")
         assert len(rows) == 1
@@ -504,13 +507,9 @@ class TestRaceImportAudit:
 
     @pytest.mark.asyncio
     async def test_commit_records_execute_audit_row_with_meta(
-        self, coach_client, db_session_factory, stub_parsers, stub_ingestor
+        self, coach_client, db_session_factory, stub_ingestor
     ):
-        files = {"resultados_pdf": _pdf_file(b"contenido de flujo completo")}
-        r = await coach_client.post(
-            "/api/race-analysis/imports/parse", data=_parse_form(), files=files
-        )
-        parse_id = r.json()["parse_id"]
+        parse_id = await _stage_pending_import(db_session_factory)
 
         r = await coach_client.post(f"/api/race-analysis/imports/{parse_id}/dry-run")
         assert r.status_code == 200, r.text
