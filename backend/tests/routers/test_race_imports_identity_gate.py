@@ -59,7 +59,6 @@ from app.models.race_result import RaceResult
 from app.models.user import User, UserRole
 from app.services.race import identity_review as ir
 from app.services.race.identity_resolver import signature_triple
-from app.services.race.pdf_parser import GeneralRow
 from tests.helpers.audit_tables import AUDIT_TABLES
 from tests.helpers.results_pdf_builder import (
     CategorySpec,
@@ -86,8 +85,6 @@ OUTSIDER = "Gina Ejemplo Cuatro"
 #: las cargas puede levantar un candidato contra ella.
 CLUB_ATHLETE = "Mateo Nunca Igual"
 NEAR_DUPLICATE = "Mateo Nunca Igual Dos"
-#: Fila que solo trae el GENERAL de la carga.
-GENERAL_ONLY = "Zoe General Solo"
 
 
 # ---------------------------------------------------------------------------
@@ -146,6 +143,7 @@ async def sqlite_engine() -> AsyncEngine:
             "race_series",
             "race_events",
             "race_imports",
+            "race_import_staged_documents",
             "race_categories",
             "race_competitors",
             "race_results",
@@ -360,30 +358,6 @@ def _identity_pending_body(parse_id: int, n: int) -> dict:
         "pending_for_import": n,
         "review_path": f"/competitions/imports?seccion=identidades&import={parse_id}",
     }
-
-
-@pytest.fixture
-def general_rows(monkeypatch) -> dict[str, list[GeneralRow]]:
-    """Filas que devuelve el parser de GENERAL (sustituido), por código de
-    categoría: el PDF adjunto solo importa para que la carga tenga GENERAL."""
-    from app.routers import race_imports as router_mod
-    from app.services.race import import_staging as import_staging_mod
-
-    rows: dict[str, list[GeneralRow]] = {}
-
-    async def fake_parse_general(path):  # noqa: ARG001
-        return rows
-
-    monkeypatch.setattr(router_mod, "_parse_general_with_timeout", fake_parse_general)
-    monkeypatch.setattr(import_staging_mod, "_parse_general_with_timeout", fake_parse_general)
-    return rows
-
-
-def _general_row(name: str, position: int = 1) -> GeneralRow:
-    return GeneralRow(
-        overall_position=position, bib=str(900 + position), name=name, city=CITY,
-        club=CLUB, points_per_valida=[10], total_points=10,
-    )
 
 
 async def _seed_club_athlete(db_session_factory, name: str = CLUB_ATHLETE) -> None:
@@ -632,104 +606,10 @@ class TestCommitPendingGateIsPerImport:
 # ===========================================================================
 
 
-class TestGateSeesGeneralRows:
-    """Nota 1: el ingestor crea/actualiza competidores desde las filas de
-    GENERAL en TODAS las categorías; sus ternas también cuentan."""
-
-    @pytest.mark.asyncio
-    async def test_candidate_about_a_general_only_row_blocks_commit(
-        self, coach_client, tmp_path, db_session_factory, general_rows
-    ):
-        general_rows["INF_B"] = [_general_row(GENERAL_ONLY)]  # otra categoría que RESULTADOS
-        parse_a = await _stage(
-            coach_client, tmp_path, [_category("INFANTIL A", A_NAMES, 100)], 3, with_general=True
-        )
-        await _seed_candidate(
-            db_session_factory,
-            _snapshot(GENERAL_ONLY, competitor_id=None),
-            _snapshot(OUTSIDER, competitor_id=12345),
-        )
-
-        r = await coach_client.post(
-            f"{_IMPORTS_URL}/{parse_a}/commit", json={"resolved_matches": []}
-        )
-
-        assert r.status_code == 409, r.text
-        assert r.json() == _identity_pending_body(parse_a, 1)
-        await _assert_not_committed(db_session_factory, parse_a)
-
-    @pytest.mark.asyncio
-    async def test_the_same_candidate_does_not_block_an_import_without_that_general_row(
-        self, coach_client, tmp_path, db_session_factory, general_rows
-    ):
-        """Control: lo que frena es la fila de GENERAL, no el candidato."""
-        general_rows["INF_B"] = [_general_row("Otra General Solo")]
-        parse_a = await _stage(
-            coach_client, tmp_path, [_category("INFANTIL A", A_NAMES, 100)], 3, with_general=True
-        )
-        await _seed_candidate(
-            db_session_factory,
-            _snapshot(GENERAL_ONLY, competitor_id=None),
-            _snapshot(OUTSIDER, competitor_id=12345),
-        )
-
-        r = await coach_client.post(
-            f"{_IMPORTS_URL}/{parse_a}/commit", json={"resolved_matches": []}
-        )
-
-        assert r.status_code == 200, r.text
-
-    @pytest.mark.asyncio
-    async def test_commit_pending_gate_sees_general_rows_too(
-        self, coach_client, tmp_path, db_session_factory, general_rows
-    ):
-        """``/commit-pending`` vuelve a pasar GENERAL al ingestor: mismo candado."""
-        general_rows["INF_B"] = [_general_row(GENERAL_ONLY)]
-        ok_cat = _category("MASTER B1", ("Hugo Sano Uno", "Iris Sana Dos"), 300)
-        gap_cat = _category("MASTER C1", A_NAMES, 100, gap=True)
-        parse_a = await _stage(coach_client, tmp_path, [ok_cat, gap_cat], 3, with_general=True)
-        await _first_commit_and_acknowledge(coach_client, parse_a)
-        await _seed_candidate(
-            db_session_factory,
-            _snapshot(GENERAL_ONLY, competitor_id=None),
-            _snapshot(OUTSIDER, competitor_id=12345),
-        )
-
-        r = await coach_client.post(
-            f"{_IMPORTS_URL}/{parse_a}/commit-pending", json={"resolved_matches": []}
-        )
-
-        assert r.status_code == 409, r.text
-        assert r.json() == _identity_pending_body(parse_a, 1)
-
-    @pytest.mark.asyncio
-    async def test_general_only_near_duplicate_of_a_club_athlete_blocks_until_decided(
-        self, coach_client, tmp_path, db_session_factory, general_rows
-    ):
-        """De punta a punta, sin sembrar candidatos: la cola se recalcula con
-        GENERAL en el universo, así que el casi-duplicado que solo trae GENERAL
-        levanta la pregunta (antes el commit lo habría creado sin preguntar)."""
-        await _seed_club_athlete(db_session_factory)
-        general_rows["INF_A"] = [_general_row(NEAR_DUPLICATE)]
-        parse_a = await _stage(
-            coach_client, tmp_path, [_category("INFANTIL A", A_NAMES, 100)], 3, with_general=True
-        )
-
-        blocked = await coach_client.post(
-            f"{_IMPORTS_URL}/{parse_a}/commit", json={"resolved_matches": []}
-        )
-
-        assert blocked.status_code == 409, blocked.text
-        assert blocked.json() == _identity_pending_body(parse_a, 1)
-        await _assert_not_committed(db_session_factory, parse_a, baseline_results=1)
-        (candidate_id,) = await _pending_candidate_ids(db_session_factory)
-        await _decide(coach_client, candidate_id)
-
-        r = await coach_client.post(
-            f"{_IMPORTS_URL}/{parse_a}/commit", json={"resolved_matches": []}
-        )
-
-        assert r.status_code == 200, r.text
+# (retirada — GENERAL retirement, amendment 2026-09-26, R-25):
+# ``TestGateSeesGeneralRows`` probaba que el candado de identidad veía las
+# filas de GENERAL del ingestor; GENERAL ya no se stagea ni se ingesta, así
+# que el candado tampoco lo ve (contracts/staged-import.md).
 
 
 class TestGateWithARealRebuild:

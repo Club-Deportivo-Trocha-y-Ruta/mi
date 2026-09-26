@@ -23,9 +23,7 @@ from app.models.race_import import RaceImport, RaceImportStatus
 from app.schemas.race import EventMeta
 from app.services.race.ingestor import RaceIngestor
 from app.services.race.pdf_parser import (
-    GeneralRow,
     ResultsRow,
-    parse_general_pdf,
     parse_results_pdf,
 )
 
@@ -114,43 +112,10 @@ class TestDryRunDoesNotCommit:
         assert any("DRY_RUN" in w for w in report.warnings)
         assert any("no se persistieron cambios" in w for w in report.warnings)
 
-    @pytest.mark.asyncio
-    async def test_dry_run_with_general_pdf_no_competitors_persisted(
-        self, fake_session
-    ):
-        """dry_run=True con GENERAL+RESULTADOS: ningún competitor del general
-        queda persistido tampoco."""
-        results = {
-            "TET_CP": [
-                _row(1, "550", "Sebastian Yule Mendoza", "Club Caña y Trapiche", "0:03:38", 40),
-            ],
-        }
-        general = {
-            "TET_CP": [
-                GeneralRow(
-                    overall_position=1, bib="550",
-                    name="Sebastian Yule Mendoza", city="Yumbo",
-                    club="Club Caña y Trapiche",
-                    points_per_valida=[0, 0, 0, 40], total_points=40,
-                ),
-                GeneralRow(
-                    overall_position=2, bib="1411",
-                    name="Otro Tetero", city="Cali",
-                    club="Club Y",
-                    points_per_valida=[30, 25, 20, 0], total_points=75,
-                ),
-            ],
-        }
-        ingestor = RaceIngestor(fake_session)
-        await ingestor.ingest_event(
-            meta=_meta_v4(),
-            results_by_category=results,
-            general_by_category=general,
-            ingested_by_user_id=1,
-            dry_run=True,
-        )
-
-        assert len(fake_session.store.competitors) == 0
+    # (retirada — GENERAL retirement, amendment 2026-09-26, R-25):
+    # ``test_dry_run_with_general_pdf_no_competitors_persisted`` probaba que
+    # un dry_run con GENERAL no persistía sus competidores; ``ingest_event``
+    # ya no acepta ``general_by_category`` — GENERAL no se ingesta más.
 
 
 # ===========================================================================

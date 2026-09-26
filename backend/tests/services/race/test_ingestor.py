@@ -105,13 +105,11 @@ class TestIngestFromFullPdf:
     ):
         """Ingestar V-IV completo desde PDFs reales — verificar conteos."""
         results = parse_results_pdf(valida_iv_resultados_pdf)
-        general = parse_general_pdf(valida_iv_general_pdf)
 
         ingestor = RaceIngestor(fake_session)
         report = await ingestor.ingest_event(
             meta=_meta_v4(),
             results_by_category=results,
-            general_by_category=general,
             ingested_by_user_id=999,
         )
 
@@ -148,14 +146,12 @@ class TestIngestFromFullPdf:
         import time as _time
 
         results = parse_results_pdf(valida_iv_resultados_pdf)
-        general = parse_general_pdf(valida_iv_general_pdf)
 
         ingestor = RaceIngestor(fake_session)
         t0 = _time.monotonic()
         await ingestor.ingest_event(
             meta=_meta_v4(),
             results_by_category=results,
-            general_by_category=general,
             ingested_by_user_id=999,
         )
         elapsed = _time.monotonic() - t0
@@ -475,52 +471,11 @@ class TestRowsWithoutRecognisableTime:
 
 
 # ===========================================================================
-# 5. GENERAL primero — competidores pre-cargados sin race_result
+# 5. (retirada — GENERAL retirement, amendment 2026-09-26, R-25):
+# ``TestGeneralFirst`` probaba el paso "GENERAL primero"
+# (``_upsert_competitor_from_general``) que ``ingest_event`` ya no tiene —
+# GENERAL no se stagea ni se ingesta más (contracts/staged-import.md).
 # ===========================================================================
-
-
-class TestGeneralFirst:
-    @pytest.mark.asyncio
-    async def test_general_creates_competitor_without_result(self, fake_session):
-        """Bib 1411 (Dulce Maria Herrera) aparece en GENERAL pero NO en
-        RESULTADOS — el ingestor crea el competitor pero NO race_result V-IV."""
-        results = {
-            "TET_SP": [
-                _row(1, "1400", "Otro Tetero", "Club X", "0:03:30", 40),
-            ],
-        }
-        general = {
-            "TET_SP": [
-                _g_row("1411", "Dulce Maria Herrera", "Club Súper Amigos Bike", [0, 0, 27, 0]),
-            ],
-        }
-        ingestor = RaceIngestor(fake_session)
-        report = await ingestor.ingest_event(
-            meta=_meta_v4(),
-            results_by_category=results,
-            general_by_category=general,
-            ingested_by_user_id=1,
-        )
-
-        # 1 competitor creado por RESULTADOS + 1 por GENERAL = 2 competitors
-        assert report.competitors_created == 2
-        # Solo 1 race_result (el de RESULTADOS)
-        assert report.results_inserted == 1
-        # Verificar que el competitor de 1411 existe pero no tiene race_result
-        comp_1411 = next(
-            (
-                c for c in fake_session.store.competitors.values()
-                if normalize_name("Dulce Maria Herrera") == c.normalized_name
-            ),
-            None,
-        )
-        assert comp_1411 is not None
-        # No hay race_result asociado a comp_1411
-        results_for_comp = [
-            r for r in fake_session.store.results.values()
-            if r.competitor_id == comp_1411.id
-        ]
-        assert results_for_comp == []
 
 
 # ===========================================================================

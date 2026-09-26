@@ -71,22 +71,10 @@ class TestUnknownCategories:
                 ingested_by_user_id=1,
             )
 
-    @pytest.mark.asyncio
-    async def test_general_unknown_code_only_warns(self, fake_session):
-        """GENERAL con code desconocido → warning + skip, NO crash."""
-        ingestor = RaceIngestor(fake_session)
-        report = await ingestor.ingest_event(
-            meta=_meta(),
-            results_by_category={},
-            general_by_category={
-                "UNKNOWN_GENERAL_CODE": [_g_row("99", "X", "Club X", [0, 0, 0, 0])],
-            },
-            ingested_by_user_id=1,
-        )
-        assert any("categoria_desconocida_general" in w for w in report.warnings)
-        # El evento sí se creó (no crash)
-        assert report.event_id is not None
-
+    # (retirada — GENERAL retirement, amendment 2026-09-26, R-25):
+    # ``test_general_unknown_code_only_warns`` probaba el warning
+    # ``categoria_desconocida_general`` del paso "GENERAL primero", que
+    # ``ingest_event`` ya no tiene.
 
 # ===========================================================================
 # 2. Nombre vacío
@@ -109,21 +97,9 @@ class TestEmptyName:
                 ingested_by_user_id=1,
             )
 
-    @pytest.mark.asyncio
-    async def test_general_empty_name_skipped(self, fake_session):
-        """En GENERAL, nombre vacío se ignora sin crash (sólo no se upserta)."""
-        ingestor = RaceIngestor(fake_session)
-        report = await ingestor.ingest_event(
-            meta=_meta(),
-            results_by_category={},
-            general_by_category={
-                "TET_SP": [_g_row("99", ".;", "Club X", [0, 0, 0, 0])],
-            },
-            ingested_by_user_id=1,
-        )
-        # Sin competitor creado por el GENERAL inválido
-        assert report.competitors_created == 0
-
+    # (retirada — GENERAL retirement, amendment 2026-09-26, R-25):
+    # ``test_general_empty_name_skipped`` probaba el mismo caso sobre
+    # GENERAL, ya retirado de ``ingest_event``.
 
 # ===========================================================================
 # 3. Update in-place de evento existente

@@ -70,7 +70,6 @@ from app.services.race.series_rules import derive_event_fields_for_series
 
 if TYPE_CHECKING:
     from app.services.race.identity_resolver import Resolution
-    from app.services.race.pdf_parser import GeneralRow
     from app.services.race.staged_document import ResultsRow
 
 logger = logging.getLogger(__name__)
@@ -166,7 +165,6 @@ class RaceIngestor:
     report = await ingestor.ingest_event(
         meta=event_meta,
         results_by_category=parsed_results,
-        general_by_category=parsed_general,
         match_decisions={"553": athlete_id_thiago, "10": athlete_id_juan},
         pdf_results_sha256="abc...",
         ingested_by_user_id=coach_user.id,
@@ -189,11 +187,9 @@ class RaceIngestor:
         self,
         meta: EventMeta,
         results_by_category: dict[str, list["ResultsRow"]],
-        general_by_category: Optional[dict[str, list["GeneralRow"]]] = None,
         match_decisions: Optional[dict[str, Optional[int]]] = None,
         *,
         pdf_results_sha256: Optional[str] = None,
-        pdf_general_sha256: Optional[str] = None,
         ingested_by_user_id: int,
         dry_run: bool = False,
         series_id: Optional[int] = None,
@@ -205,16 +201,12 @@ class RaceIngestor:
         Args:
             meta: Metadata del evento (capturada CLI). Se aplica vía upsert.
             results_by_category: Output de ``parse_results_pdf``.
-            general_by_category: Output de ``parse_general_pdf``. Opcional —
-                si se provee, pre-llena competidores del catálogo histórico.
             match_decisions: ``{bib: athlete_id|None}`` — solo se aplican
                 cuando ``is_trocha_y_ruta(row.club)``. ``None`` significa
                 "skip" / "new_athlete" → ``athlete_id`` queda NULL.
             pdf_results_sha256: Si se pasa y ya existe un ``RaceImport``
                 ``committed`` con el mismo hash, la ingesta aborta idempotente
                 (retorna IngestReport con ``results_inserted=0``).
-            pdf_general_sha256: Igual lógica para el GENERAL (solo se loggea,
-                no aborta porque GENERAL no genera ``race_results``).
             ingested_by_user_id: FK NOT NULL en ``RaceResult.created_by_user_id``
                 y ``RaceImport.imported_by_user_id``.
             dry_run: (F-UP2) Si True, ejecuta todo el flujo en una transacción
@@ -363,26 +355,13 @@ class RaceIngestor:
             # --- 4. Catálogo de categorías cacheado (un lookup por code) -
             category_cache: dict[str, RaceCategory] = await self._load_category_cache()
 
-            # --- 5. GENERAL primero — upsert competidores acumulados ----
-            if general_by_category:
-                for code, rows in general_by_category.items():
-                    category = category_cache.get(code)
-                    if category is None:
-                        # Code desconocido (no en seed). No bloqueamos GENERAL pero loggeamos.
-                        warnings.append(
-                            f"categoria_desconocida_general code={code} rows={len(rows)}"
-                        )
-                        continue
-                    for row in rows:
-                        created = await self._upsert_competitor_from_general(
-                            row, category, resolver, meta.season
-                        )
-                        if created:
-                            competitors_created += 1
-                        else:
-                            competitors_updated += 1
-
-            # --- 6. RESULTADOS — upsert competidor + insert race_result -
+            # --- 5. RESULTADOS — upsert competidor + insert race_result -
+            # GENERAL retirement (amendment 2026-09-26, R-25, contracts/
+            # staged-import.md): el paso "GENERAL primero" que pre-llenaba el
+            # catálogo histórico de competidores se retiró junto con
+            # ``general_by_category`` — GENERAL ya no se stagea ni se ingesta
+            # (solo se conserva ``RaceImportKind.general``/``both`` y las
+            # columnas ``general_*`` para imports legados).
             # Feature 044 (decisión 2026-09-22): dos filas con la misma terna
             # en esta válida reciben un discriminador cada una, calculado
             # sobre el archivo completo (no solo `only_categories`) para que
@@ -865,7 +844,7 @@ class RaceIngestor:
     async def _resolve_competitor(
         self,
         resolver: IdentityResolver,
-        row: "ResultsRow | GeneralRow",
+        row: "ResultsRow",
         category: RaceCategory,
         season: int,
         *,
@@ -901,23 +880,6 @@ class RaceIngestor:
             if competitor.sex is None and sex_from_code is not None:
                 competitor.sex = sex_from_code
         return resolution
-
-    async def _upsert_competitor_from_general(
-        self,
-        row: "GeneralRow",
-        category: RaceCategory,
-        resolver: IdentityResolver,
-        season: int,
-    ) -> bool:
-        """Resuelve desde GENERAL. No retorna el objeto — solo informa si creó.
-
-        Razón: el GENERAL no genera ``race_results``; solo nos interesa
-        pre-llenar el catálogo histórico de competidores (edge-cases §4.12).
-        """
-        if not signature_triple(row.name, row.club, row.city)[0]:
-            return False
-        resolution = await self._resolve_competitor(resolver, row, category, season)
-        return resolution.created
 
     # -------------------------------------------------------------------
     # Helpers internos — parsing defensivo
