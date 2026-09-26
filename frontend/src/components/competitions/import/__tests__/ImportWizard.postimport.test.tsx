@@ -1,5 +1,8 @@
 /**
  * T020 — ImportWizard post-commit: "Analizar con IA ahora" button (FR-004).
+ * Amendment 2026-09-26 (T159): la app ya no sube archivos — el wizard
+ * arranca desde `?import=<id>` con MSW (patrón de
+ * `ImportWizard.resume.test.tsx`) en vez de llenar el paso 1.
  *
  * Tests:
  *  - Button rendered in success panel
@@ -9,26 +12,14 @@
  *  - 429 error → concurrency copy shown
  *  - 422 error → no results copy shown
  *  - other error → generic copy shown
- *
- * Rendering strategy: drives the full wizard through steps 1-3 using the
- * same `fillStep1AndSubmit` helper pattern as ImportWizard.test.tsx. This
- * avoids duplicating component logic and keeps mocking consistent.
+ *  - Panel "Circuito (opcional)" tras commit exitoso (feature 043)
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import {
-  render,
-  screen,
-  waitFor,
-  fireEvent,
-} from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter } from "react-router-dom";
-import { createElement, type ReactNode } from "react";
-
-// ---------------------------------------------------------------------------
-// Mocks — must be declared before any dynamic imports
-// ---------------------------------------------------------------------------
+import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { http, HttpResponse } from "msw";
 
 const mockNavigate = vi.fn();
 
@@ -36,20 +27,6 @@ vi.mock("react-router-dom", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router-dom")>();
   return { ...actual, useNavigate: () => mockNavigate };
 });
-
-vi.mock("@/api/raceImports", () => ({
-  parseRaceImport: vi.fn(),
-  dryRunRaceImport: vi.fn(),
-  commitRaceImport: vi.fn(),
-  listRaceImports: vi.fn(),
-  getRevisionReasons: vi.fn(),
-  getRaceEventDiff: vi.fn(),
-}));
-
-vi.mock("@/api/athletes", () => ({
-  getAthletes: vi.fn(),
-  getAthlete: vi.fn(),
-}));
 
 vi.mock("@/api/raceAnalysis", () => ({
   launchGroupAnalysis: vi.fn(),
@@ -60,38 +37,17 @@ vi.mock("@/store/auth.store", () => ({
     selector({ accessToken: "test-token" }),
 }));
 
-// ---------------------------------------------------------------------------
-// Deferred imports (after vi.mock declarations)
-// ---------------------------------------------------------------------------
-
-import * as importsApi from "@/api/raceImports";
-import * as athletesApi from "@/api/athletes";
 import * as raceAnalysisApi from "@/api/raceAnalysis";
 import { ImportWizard } from "@/components/competitions/import/ImportWizard";
-import { Sex } from "@/types/enums";
 import { mswServer } from "@/test/setup";
+import { makeImportDetail } from "@/test/msw/raceImportsHistoryHandlers";
 import { raceCourseEmptyHandler } from "@/test/msw/raceCourseHandlers";
+import type { ImportDryRunMatchesResponse } from "@/types/raceImports.types";
 
-// ---------------------------------------------------------------------------
-// Fixtures
-// ---------------------------------------------------------------------------
+const BASE = "*/api/race-analysis/imports";
 
-const PARSE_RESPONSE = {
-  parse_id: "p-ai-1",
-  sha256: "abcd1234",
-  header: {
-    series_name: "Copa Valle",
-    season: 2026,
-    valida_num: 4,
-    event_name: "IV — Cali",
-  },
-  n_rows_resultados: 50,
-  n_rows_general: 0,
-  warnings: [],
-};
-
-const DRY_RUN_CONFIRMED = {
-  parse_id: "p-ai-1",
+const DRY_RUN_CONFIRMED: ImportDryRunMatchesResponse = {
+  parse_id: "7",
   matches: [
     {
       competitor_normalized_name: "juan perez",
@@ -106,7 +62,7 @@ const DRY_RUN_CONFIRMED = {
 };
 
 const COMMIT_RESPONSE = {
-  parse_id: "p-ai-1",
+  parse_id: "7",
   race_event_id: 7,
   n_results_inserted: 50,
   n_competitors_created: 49,
@@ -122,11 +78,7 @@ const LAUNCH_SUCCESS_RESPONSE = {
   items: [],
 };
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function wrap(ui: ReactNode) {
+function renderAt() {
   const qc = new QueryClient({
     defaultOptions: {
       queries: { retry: false, gcTime: 0 },
@@ -134,55 +86,25 @@ function wrap(ui: ReactNode) {
     },
   });
   return render(
-    createElement(
-      QueryClientProvider,
-      { client: qc },
-      createElement(MemoryRouter, null, ui),
-    ),
+    <QueryClientProvider client={qc}>
+      <MemoryRouter initialEntries={["/competitions/import?import=7"]}>
+        <Routes>
+          <Route path="/competitions/import" element={<ImportWizard />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
-}
-
-function makeValidPdf(name = "resultados.pdf"): File {
-  const header = new TextEncoder().encode("%PDF-1.4\n");
-  return new File([header, new Uint8Array(512)], name, {
-    type: "application/pdf",
-  });
-}
-
-/** Fills step 1 fields and submits — mirrors ImportWizard.test.tsx pattern. */
-async function fillStep1AndSubmit(user: ReturnType<typeof userEvent.setup>) {
-  // Spec 014: series_name y valida_num son requeridos para copa (default).
-  await user.type(screen.getByTestId("wizard-series-name"), "Copa Valle");
-  fireEvent.change(screen.getByTestId("wizard-valida-num"), {
-    target: { value: "4" },
-  });
-
-  await user.type(screen.getByTestId("wizard-event-name"), "Válida IV — Cali");
-  fireEvent.change(screen.getByTestId("wizard-event-date"), {
-    target: { value: "2026-05-17" },
-  });
-  await user.type(screen.getByTestId("wizard-location"), "Cali");
-
-  const input = screen.getByTestId(
-    "race-upload-resultados-input",
-  ) as HTMLInputElement;
-  const pdf = makeValidPdf();
-  Object.defineProperty(input, "files", { value: [pdf] });
-  fireEvent.change(input);
-
-  await waitFor(() =>
-    expect(
-      screen.getByTestId("race-upload-resultados-preview"),
-    ).toBeInTheDocument(),
-  );
-
-  await user.click(screen.getByTestId("wizard-step1-submit"));
 }
 
 /** Drives wizard to the post-commit success panel. */
-async function reachSuccessPanel(user: ReturnType<typeof userEvent.setup>) {
-  wrap(<ImportWizard />);
-  await fillStep1AndSubmit(user);
+async function reachSuccessPanel() {
+  mswServer.use(
+    http.get(`${BASE}/7`, () => HttpResponse.json(makeImportDetail({ id: 7 }))),
+    http.post(`${BASE}/7/dry-run`, () => HttpResponse.json(DRY_RUN_CONFIRMED)),
+    http.post(`${BASE}/7/commit`, () => HttpResponse.json(COMMIT_RESPONSE)),
+  );
+  const user = userEvent.setup();
+  renderAt();
 
   await waitFor(() =>
     expect(screen.getByTestId("wizard-step2-confirm")).toBeEnabled(),
@@ -192,64 +114,31 @@ async function reachSuccessPanel(user: ReturnType<typeof userEvent.setup>) {
   await waitFor(() =>
     expect(screen.getByTestId("wizard-step3-success")).toBeInTheDocument(),
   );
+  return user;
 }
-
-// ---------------------------------------------------------------------------
-// Setup
-// ---------------------------------------------------------------------------
 
 beforeEach(() => {
   vi.resetAllMocks();
   mockNavigate.mockReset();
-
-  vi.mocked(importsApi.parseRaceImport).mockResolvedValue(PARSE_RESPONSE as any);
-  vi.mocked(importsApi.dryRunRaceImport).mockResolvedValue(DRY_RUN_CONFIRMED as any);
-  vi.mocked(importsApi.commitRaceImport).mockResolvedValue(COMMIT_RESPONSE as any);
-  vi.mocked(importsApi.getRevisionReasons).mockResolvedValue({
-    reasons: [],
-  } as any);
-  vi.mocked(athletesApi.getAthletes).mockResolvedValue({
-    items: [
-      {
-        id: 1,
-        first_name: "Juan",
-        last_name: "Pérez",
-        sex: Sex.M,
-        category: "PJUV-B-M",
-        club_id: 1,
-        is_active: true,
-        user_id: null,
-      },
-    ] as any,
-    total: 1,
-  } as any);
 });
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 describe("ImportWizard — post-commit AI button (T020)", () => {
   it("renders 'Analizar con IA ahora' button in the success panel", async () => {
-    const user = userEvent.setup();
-    await reachSuccessPanel(user);
+    await reachSuccessPanel();
 
-    expect(
-      screen.getByTestId("wizard-step3-launch-ai"),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByTestId("wizard-step3-launch-ai"),
-    ).toHaveTextContent(/Analizar con IA ahora/i);
+    expect(screen.getByTestId("wizard-step3-launch-ai")).toBeInTheDocument();
+    expect(screen.getByTestId("wizard-step3-launch-ai")).toHaveTextContent(
+      /Analizar con IA ahora/i,
+    );
   });
 
   it("clicking the button calls launchGroupAnalysis with race_event_id and navigates to insights tab", async () => {
     vi.mocked(raceAnalysisApi.launchGroupAnalysis).mockResolvedValue(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       LAUNCH_SUCCESS_RESPONSE as any,
     );
 
-    const user = userEvent.setup();
-    await reachSuccessPanel(user);
-
+    const user = await reachSuccessPanel();
     await user.click(screen.getByTestId("wizard-step3-launch-ai"));
 
     await waitFor(() =>
@@ -267,26 +156,17 @@ describe("ImportWizard — post-commit AI button (T020)", () => {
   });
 
   it("not clicking the button → launchGroupAnalysis is never called", async () => {
-    const user = userEvent.setup();
-    await reachSuccessPanel(user);
+    await reachSuccessPanel();
 
-    // Interact with other buttons to confirm no accidental side-effects.
-    expect(
-      screen.getByTestId("wizard-step3-link-analysis"),
-    ).toBeInTheDocument();
-
+    expect(screen.getByTestId("wizard-step3-link-analysis")).toBeInTheDocument();
     expect(raceAnalysisApi.launchGroupAnalysis).not.toHaveBeenCalled();
   });
 
   it("503 error → shows budget-exhausted copy", async () => {
-    const err = Object.assign(new Error("budget"), {
-      response: { status: 503 },
-    });
+    const err = Object.assign(new Error("budget"), { response: { status: 503 } });
     vi.mocked(raceAnalysisApi.launchGroupAnalysis).mockRejectedValue(err);
 
-    const user = userEvent.setup();
-    await reachSuccessPanel(user);
-
+    const user = await reachSuccessPanel();
     await user.click(screen.getByTestId("wizard-step3-launch-ai"));
 
     await waitFor(() =>
@@ -298,14 +178,10 @@ describe("ImportWizard — post-commit AI button (T020)", () => {
   });
 
   it("429 error → shows concurrency-limit copy", async () => {
-    const err = Object.assign(new Error("concurrency"), {
-      response: { status: 429 },
-    });
+    const err = Object.assign(new Error("concurrency"), { response: { status: 429 } });
     vi.mocked(raceAnalysisApi.launchGroupAnalysis).mockRejectedValue(err);
 
-    const user = userEvent.setup();
-    await reachSuccessPanel(user);
-
+    const user = await reachSuccessPanel();
     await user.click(screen.getByTestId("wizard-step3-launch-ai"));
 
     await waitFor(() =>
@@ -317,14 +193,10 @@ describe("ImportWizard — post-commit AI button (T020)", () => {
   });
 
   it("422 error → shows no-results copy", async () => {
-    const err = Object.assign(new Error("no results"), {
-      response: { status: 422 },
-    });
+    const err = Object.assign(new Error("no results"), { response: { status: 422 } });
     vi.mocked(raceAnalysisApi.launchGroupAnalysis).mockRejectedValue(err);
 
-    const user = userEvent.setup();
-    await reachSuccessPanel(user);
-
+    const user = await reachSuccessPanel();
     await user.click(screen.getByTestId("wizard-step3-launch-ai"));
 
     await waitFor(() =>
@@ -340,9 +212,7 @@ describe("ImportWizard — post-commit AI button (T020)", () => {
       new Error("network failure"),
     );
 
-    const user = userEvent.setup();
-    await reachSuccessPanel(user);
-
+    const user = await reachSuccessPanel();
     await user.click(screen.getByTestId("wizard-step3-launch-ai"));
 
     await waitFor(() =>
@@ -354,19 +224,10 @@ describe("ImportWizard — post-commit AI button (T020)", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Panel "Circuito (opcional)" (feature 043 — T029)
-// ---------------------------------------------------------------------------
-
 describe("ImportWizard — panel 'Circuito (opcional)' tras commit (feature 043)", () => {
   it("muestra el encabezado y el panel CourseTab tras un commit exitoso", async () => {
-    // Fixture sin datos de circuito — determinista y suficiente: solo nos
-    // interesa que el panel se monte, no su contenido interno (ya cubierto
-    // por CourseTab.test.tsx).
     mswServer.use(raceCourseEmptyHandler);
-
-    const user = userEvent.setup();
-    await reachSuccessPanel(user);
+    await reachSuccessPanel();
 
     expect(
       await screen.findByRole("heading", { name: "Circuito (opcional)" }),

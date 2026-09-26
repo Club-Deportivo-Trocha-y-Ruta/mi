@@ -2,9 +2,9 @@
  * DiscardImportDialog — confirmación para descartar una carga en curso
  * (feature 045, US3). Lo usan el wizard (paso 2) y el tablero de cargas.
  *
- * `POST /imports/{id}/discard`: `pending|dry_run` → `discarded`. El archivo no
- * se borra del servidor; la carga solo deja de figurar «en curso». Una carga
- * ya confirmada responde `409 import_not_discardable`.
+ * `POST /imports/{id}/discard`: `pending|dry_run` → `discarded`. El archivo
+ * original queda guardado como respaldo; la carga solo deja de figurar «en
+ * curso». Una carga ya confirmada responde `409 import_not_discardable`.
  */
 import { toast } from "sonner";
 
@@ -79,8 +79,9 @@ export function DiscardImportDialog({
           <AlertDialogTitle>¿Descartar esta carga?</AlertDialogTitle>
           <AlertDialogDescription>
             {filename ? `La carga de «${filename}» ` : "Esta carga "}
-            dejará de aparecer entre las cargas en curso. El archivo no se
-            borra: si lo necesitas, puedes subirlo de nuevo.
+            dejará de aparecer entre las cargas en curso. El archivo original
+            queda guardado como respaldo. Si descartas la carga, habrá que
+            prepararla de nuevo.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

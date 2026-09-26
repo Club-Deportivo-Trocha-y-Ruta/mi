@@ -73,12 +73,20 @@ describe("LoadsSection", () => {
     );
   });
 
-  it("vacío: sin cargues históricos ofrece cargar el primer archivo", async () => {
+  // Amendment 2026-09-26 — la app ya no sube archivos: el empty state ya no
+  // ofrece «Cargar archivo» (`contracts/ui-review-only.md`).
+  it("vacío: sin cargas por revisar muestra el copy de espera (sin CTA de carga)", async () => {
     mswServer.use(raceImportsHistoryEmptyHandler);
     renderSection();
     expect(
-      await screen.findByText("Todavía no hay cargues históricos"),
+      await screen.findByText("Todavía no hay cargas por revisar"),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Cuando se prepare la carga de una válida, aparecerá aquí para que la revises y la confirmes.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Cargar archivo/i)).not.toBeInTheDocument();
   });
 
   it("error: falla la carga y ofrece reintentar", async () => {
@@ -288,12 +296,14 @@ describe("LoadsSection", () => {
     );
   });
 
-  it("carga en curso: ofrece «Retomar» hacia el asistente con ?import=<id>", async () => {
+  // Amendment 2026-09-26 — «Retomar» pasó a «Revisar la carga» (mismo
+  // href), consistente con que la app ya no sube archivos.
+  it("carga en curso: ofrece «Revisar la carga» hacia la revisión con ?import=<id>", async () => {
     mswServer.use(raceIdentityEmptySummaryHandler);
     renderSection();
     const resume = await screen.findByTestId("resume-1");
     expect(resume).toHaveAttribute("href", "/competitions/import?import=1");
-    expect(resume).toHaveTextContent("Retomar");
+    expect(resume).toHaveTextContent("Revisar la carga");
   });
 
   it("carga en curso: «Descartar» pide confirmación y llama a POST /discard", async () => {

@@ -6,8 +6,14 @@
  * el mismo camino de confianza que un cargue de temporada vigente
  * (`contracts/historical-load.md`): preview → dry-run → commit, protección de
  * duplicados y candado de identidad. Ofrece, para una carga ya en `pending`:
- * confirmar el commit, completar un commit parcial (`commit-pending`), retomar
- * el asistente donde se dejó (`/competitions/import?import=<id>`) o descartarla.
+ * confirmar el commit, completar un commit parcial (`commit-pending`), revisar
+ * la carga (`/competitions/import?import=<id>`) o descartarla.
+ *
+ * Amendment 2026-09-26 (`contracts/ui-review-only.md`): la app ya no sube
+ * archivos — las cargas nuevas se preparan fuera de la app (skill/CLI de
+ * resultados) y aparecen aquí cuando están listas. Una carga legacy
+ * (`restage_required`, sin documento stageado) muestra un badge neutro
+ * «Preparar de nuevo» y solo ofrece *Descartar*.
  *
  * Candado de identidad POR CARGA (feature 045, R-08): el tablero ya no marca
  * todas las cargas como «Identidad por revisar» cuando la cola tiene
@@ -35,7 +41,6 @@ import {
   Loader2,
   PlayCircle,
   Trash2,
-  UploadCloud,
   UserCheck,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -66,7 +71,8 @@ type BoardState =
   | "identidad_por_revisar"
   | "listo"
   | "cargado"
-  | "error_lectura";
+  | "error_lectura"
+  | "preparar_de_nuevo";
 
 const BOARD_STATE_LABELS: Record<BoardState, string> = {
   categorias_por_revisar: "Categorías por revisar",
@@ -74,6 +80,7 @@ const BOARD_STATE_LABELS: Record<BoardState, string> = {
   listo: "Listo para cargar",
   cargado: "Cargado",
   error_lectura: "No se pudo leer",
+  preparar_de_nuevo: "Preparar de nuevo",
 };
 
 const BOARD_STATE_BADGE_VARIANT: Record<
@@ -85,12 +92,16 @@ const BOARD_STATE_BADGE_VARIANT: Record<
   listo: "info",
   cargado: "success",
   error_lectura: "destructive",
+  preparar_de_nuevo: "secondary",
 };
 
 function computeBoardState(
   item: ImportListItem,
   identityBlocked: boolean,
 ): BoardState {
+  // Amendment 2026-09-26 — carga legacy: ningún documento stageado, ninguna
+  // ruta de revisión puede leerla. Solo se puede descartar.
+  if (item.restage_required) return "preparar_de_nuevo";
   if (item.status === "committed") return "cargado";
   if (item.status === "failed") return "error_lectura";
   if (item.pending_categories_count > 0) return "categorias_por_revisar";
@@ -98,7 +109,7 @@ function computeBoardState(
   return "listo";
 }
 
-/** Una carga «en curso» se puede retomar y descartar (pending | dry_run). */
+/** Una carga «en curso» se puede revisar y descartar (pending | dry_run). */
 function isInProgress(item: ImportListItem): boolean {
   return item.status === "pending" || item.status === "dry_run";
 }
@@ -294,8 +305,11 @@ function ImportRow({ item }: { item: ImportListItem }) {
   }
 
   const inProgress = isInProgress(item);
-  const canCommit = boardState === "listo" || boardState === "identidad_por_revisar";
+  const isLegacy = boardState === "preparar_de_nuevo";
+  const canCommit =
+    !isLegacy && (boardState === "listo" || boardState === "identidad_por_revisar");
   const canCommitPending =
+    !isLegacy &&
     item.status !== "committed" &&
     item.pending_categories_count > 0 &&
     boardState !== "identidad_por_revisar";
@@ -344,7 +358,7 @@ function ImportRow({ item }: { item: ImportListItem }) {
                   className="font-medium underline underline-offset-2"
                   data-testid={`import-row-wizard-link-${item.id}`}
                 >
-                  Retomar en el asistente de importación
+                  Revisar la carga
                 </Link>
               )}
             </p>
@@ -391,7 +405,7 @@ function ImportRow({ item }: { item: ImportListItem }) {
               )}
             </Button>
           )}
-          {inProgress && (
+          {inProgress && !isLegacy && (
             <Link
               to={resumeHref(item)}
               className={buttonVariants({
@@ -402,7 +416,7 @@ function ImportRow({ item }: { item: ImportListItem }) {
               data-testid={`resume-${item.id}`}
             >
               <PlayCircle size={14} aria-hidden="true" className="mr-1.5" />
-              Retomar
+              Revisar la carga
             </Link>
           )}
           {inProgress && (
@@ -477,17 +491,10 @@ export function LoadsSection() {
     <div className="space-y-5" data-testid="loads-section">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-mid-gray">
-          Competencias cargadas por el mismo camino de confianza que la
-          temporada vigente. Retoma una carga en curso donde la dejaste, sin
-          volver a subir el archivo.
+          Aquí revisas y confirmas las cargas de resultados. Las cargas
+          nuevas se preparan fuera de la app y aparecen aquí cuando están
+          listas.
         </p>
-        <Link
-          to="/competitions/import"
-          className={buttonVariants({ variant: "outline", className: "min-h-12" })}
-        >
-          <UploadCloud size={14} aria-hidden="true" className="mr-1.5" />
-          Cargar archivo
-        </Link>
       </div>
 
       <IdentityBanner pending={identityPending} />
@@ -526,13 +533,8 @@ export function LoadsSection() {
       {!isLoading && !isError && items.length === 0 && (
         <EmptyState
           icon={FileWarning}
-          title="Todavía no hay cargues históricos"
-          description="Sube el primer archivo de una válida pasada desde el asistente de importación."
-          action={
-            <Link to="/competitions/import" className={buttonVariants()}>
-              Cargar archivo
-            </Link>
-          }
+          title="Todavía no hay cargas por revisar"
+          description="Cuando se prepare la carga de una válida, aparecerá aquí para que la revises y la confirmes."
         />
       )}
 

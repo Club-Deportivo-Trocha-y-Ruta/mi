@@ -1,14 +1,24 @@
 /**
- * CompetitionImportPage — página contenedora del wizard de importación.
+ * CompetitionImportPage — página contenedora de la revisión de una carga
+ * (amendment 2026-09-26, `contracts/ui-review-only.md`).
  *
- * Rutas:
- *   /competitions/:id/import  → importar para una válida existente
- *   /competitions/import      → crear nueva válida + ingestar (ingest-first)
+ * Rutas: `/competitions/:id/import` y `/competitions/import`.
+ *   - Con `?import=<id>`: renderiza el wizard de revisión (el asistente sin
+ *     el paso de subida).
+ *   - Sin `?import`: la app ya no sube archivos — redirige al tablero
+ *     (`/competitions/imports?seccion=cargas`), donde aparecen las cargas
+ *     preparadas fuera de la app.
  *
  * Post-commit: redirige a /competitions/{race_event_id}?tab=results con toast.
  */
 import { lazy, Suspense } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import {
+  Link,
+  Navigate,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
 import { ArrowLeft, Loader2 } from "lucide-react";
 
 import type { ImportCommitResponse } from "@/types/raceImports.types";
@@ -29,7 +39,7 @@ function WizardSkeleton() {
     >
       <div className="flex items-center justify-center gap-2 py-16 text-sm text-mid-gray">
         <Loader2 size={16} className="animate-spin" aria-hidden="true" />
-        Cargando wizard…
+        Abriendo la carga…
       </div>
     </div>
   );
@@ -38,9 +48,16 @@ function WizardSkeleton() {
 export function CompetitionImportPage() {
   const { id } = useParams<{ id?: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const raceEventId = id ? Number(id) : null;
   const hasExistingEvent = raceEventId != null && !Number.isNaN(raceEventId);
+
+  // Amendment 2026-09-26 — sin `?import=<id>` no hay nada que revisar: la
+  // app ya no sube archivos. Redirige al tablero de cargas.
+  if (!searchParams.get("import")) {
+    return <Navigate to="/competitions/imports?seccion=cargas" replace />;
+  }
 
   function handleCompleted(response: ImportCommitResponse) {
     const targetId = response.race_event_id ?? raceEventId;
@@ -68,21 +85,16 @@ export function CompetitionImportPage() {
         <h1
           className="font-display text-2xl text-charcoal"
         >
-          Importar resultados
+          Revisar carga de resultados
         </h1>
         <p className="mt-0.5 text-sm text-mid-gray">
-          {hasExistingEvent
-            ? "Carga el PDF oficial de resultados para esta válida."
-            : "Carga el PDF oficial y crea el registro de la válida al mismo tiempo."}
+          Revisa la lectura, resuelve lo pendiente y confirma.
         </p>
       </header>
 
       {/* ── Wizard ──────────────────────────────────────────────────── */}
       <Suspense fallback={<WizardSkeleton />}>
-        <ImportWizard
-          raceEventId={hasExistingEvent ? (raceEventId as number) : undefined}
-          onCompleted={handleCompleted}
-        />
+        <ImportWizard onCompleted={handleCompleted} />
       </Suspense>
     </div>
   );

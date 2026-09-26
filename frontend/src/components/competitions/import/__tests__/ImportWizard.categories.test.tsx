@@ -1,60 +1,41 @@
 /**
  * ImportWizard — integración con la integridad de lectura del acta
- * (feature 044, US1 + US2, T022/T023).
+ * (feature 044, US1 + US2). Amendment 2026-09-26 (T159): la app ya no sube
+ * archivos, así que el wizard arranca desde `?import=<id>` con MSW,
+ * siguiendo el patrón de `ImportWizard.resume.test.tsx`.
  *
  * Cubre los estados del wizard alrededor de `CategoryMappingTable`:
- *  - `parseResult.categories` se monta en step 2 con el aviso de filas
- *    ilegibles.
+ *  - `parseResult.categories` se monta en el paso de revisión con el aviso
+ *    de filas ilegibles.
  *  - El botón de confirmar muestra "Confirmar categorías completas (N de
- *    M)" cuando el parse trae categorías, y conserva el copy previo
- *    "Confirmar e ingestar" cuando no las trae (compatibilidad hacia atrás
- *    — aditivo, FR-… de `contracts/reading-integrity.md`).
+ *    M)" cuando el parse trae categorías, y conserva "Confirmar carga"
+ *    cuando no las trae.
  *  - Corregir la fila faltante desde el wizard actualiza el conteo N de M
- *    del botón sin bloquear la confirmación (el commit real deja las
- *    categorías no listas en `pending_categories`, no es esta pantalla la
- *    que bloquea).
- *
- * Mismo patrón de mocks que `ImportWizard.test.tsx` (mock de
- * `@/api/raceImports` y `@/api/athletes`, sin MSW — este módulo no está en
- * el registro global de handlers).
+ *    del botón sin bloquear la confirmación.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter } from "react-router-dom";
-import { createElement, type ReactNode } from "react";
-
-vi.mock("@/api/raceImports", () => ({
-  parseRaceImport: vi.fn(),
-  dryRunRaceImport: vi.fn(),
-  commitRaceImport: vi.fn(),
-  listRaceImports: vi.fn(),
-  getRevisionReasons: vi.fn(),
-  getRaceEventDiff: vi.fn(),
-  addRaceImportRowCorrection: vi.fn(),
-  acknowledgeRaceImportCategory: vi.fn(),
-  getAcknowledgeReasons: vi.fn(),
-}));
-
-vi.mock("@/api/athletes", () => ({
-  getAthletes: vi.fn(),
-  getAthlete: vi.fn(),
-}));
+import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { http, HttpResponse } from "msw";
 
 vi.mock("@/store/auth.store", () => ({
   useAuthStore: (selector: (s: { accessToken: string }) => unknown) =>
     selector({ accessToken: "test-token" }),
 }));
 
-import * as importsApi from "@/api/raceImports";
+import { mswServer } from "@/test/setup";
+import { makeImportDetail } from "@/test/msw/raceImportsHistoryHandlers";
 import { ImportWizard } from "@/components/competitions/import/ImportWizard";
 import type {
   ImportDryRunMatchesResponse,
-  ImportParseResponse,
+  ImportParseMeta,
 } from "@/types/raceImports.types";
 
-function wrap(ui: ReactNode) {
+const BASE = "*/api/race-analysis/imports";
+
+function renderAt(importId: string | number = "7") {
   const qc = new QueryClient({
     defaultOptions: {
       queries: { retry: false, gcTime: 0 },
@@ -62,50 +43,18 @@ function wrap(ui: ReactNode) {
     },
   });
   return render(
-    createElement(
-      QueryClientProvider,
-      { client: qc },
-      createElement(MemoryRouter, null, ui),
-    ),
+    <QueryClientProvider client={qc}>
+      <MemoryRouter initialEntries={[`/competitions/import?import=${importId}`]}>
+        <Routes>
+          <Route path="/competitions/import" element={<ImportWizard />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
-}
-
-function makeValidPdf(name = "ok.pdf"): File {
-  const header = new TextEncoder().encode("%PDF-1.4\n");
-  return new File([header, new Uint8Array(512)], name, {
-    type: "application/pdf",
-  });
-}
-
-async function fillStep1AndSubmit(user: ReturnType<typeof userEvent.setup>) {
-  await user.type(screen.getByTestId("wizard-series-name"), "Copa Valle");
-  fireEvent.change(screen.getByTestId("wizard-valida-num"), {
-    target: { value: "4" },
-  });
-  await user.type(screen.getByTestId("wizard-event-name"), "Válida IV — Cali");
-  fireEvent.change(screen.getByTestId("wizard-event-date"), {
-    target: { value: "2026-05-17" },
-  });
-  await user.type(screen.getByTestId("wizard-location"), "Cali");
-
-  const input = screen.getByTestId(
-    "race-upload-resultados-input",
-  ) as HTMLInputElement;
-  const pdf = makeValidPdf();
-  Object.defineProperty(input, "files", { value: [pdf] });
-  fireEvent.change(input);
-
-  await waitFor(() =>
-    expect(
-      screen.getByTestId("race-upload-resultados-preview"),
-    ).toBeInTheDocument(),
-  );
-
-  await user.click(screen.getByTestId("wizard-step1-submit"));
 }
 
 const DRY_RUN_CONFIRMED_ONLY: ImportDryRunMatchesResponse = {
-  parse_id: "p-1",
+  parse_id: "7",
   matches: [
     {
       competitor_normalized_name: "juan perez",
@@ -119,9 +68,7 @@ const DRY_RUN_CONFIRMED_ONLY: ImportDryRunMatchesResponse = {
   warnings: [],
 };
 
-const PARSE_RESPONSE_NO_CATEGORIES: ImportParseResponse = {
-  parse_id: "p-1",
-  sha256: "abcd",
+const META_NO_CATEGORIES: ImportParseMeta = {
   header: {
     series_name: "Copa Valle",
     season: 2026,
@@ -130,116 +77,84 @@ const PARSE_RESPONSE_NO_CATEGORIES: ImportParseResponse = {
   },
   n_rows_resultados: 200,
   n_rows_general: 0,
-  warnings: [],
 };
 
-const PARSE_RESPONSE_WITH_CATEGORIES: ImportParseResponse = {
-  ...PARSE_RESPONSE_NO_CATEGORIES,
+const META_WITH_CATEGORIES: ImportParseMeta = {
+  ...META_NO_CATEGORIES,
   categories: [
     {
       header_raw: "PREJUVENIL A DAMAS",
       code: "PREJ_A_F",
       mapping_kind: "exact",
-      rows: [
-        {
-          position: 1,
-          bib: "101",
-          name: "Corredora Uno",
-          city: "Cali",
-          club: "Club Ficticio",
-          time_raw: "00:40:00",
-          points: 0,
-        },
-      ],
+      rows: 1,
       completeness: { status: "ok", missing: [], duplicated: [] },
     },
     {
       header_raw: "INFANTIL A DAMAS",
       code: "INF_A_F",
       mapping_kind: "rename",
-      rows: [
-        { position: 1, bib: "1", name: "A", city: "", club: "", time_raw: "", points: 0 },
-        { position: 2, bib: "2", name: "B", city: "", club: "", time_raw: "", points: 0 },
-      ],
+      rows: 2,
       completeness: { status: "inconsistent", missing: [3], duplicated: [] },
     },
   ],
   unreadable_rows: [{ page: 5, ordinal: null }],
 };
 
+function useDetailAndDryRun(meta: ImportParseMeta) {
+  mswServer.use(
+    http.get(`${BASE}/7`, () =>
+      HttpResponse.json(makeImportDetail({ id: 7, parse_meta: meta })),
+    ),
+    http.post(`${BASE}/7/dry-run`, () =>
+      HttpResponse.json(DRY_RUN_CONFIRMED_ONLY),
+    ),
+  );
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
 describe("ImportWizard — categorías (feature 044)", () => {
-  it("sin categorías en el parse: mantiene el copy previo 'Confirmar e ingestar'", async () => {
-    vi.mocked(importsApi.parseRaceImport).mockResolvedValue(
-      PARSE_RESPONSE_NO_CATEGORIES,
-    );
-    vi.mocked(importsApi.dryRunRaceImport).mockResolvedValue(
-      DRY_RUN_CONFIRMED_ONLY,
-    );
-
-    const user = userEvent.setup();
-    wrap(<ImportWizard />);
-    await fillStep1AndSubmit(user);
+  it("sin categorías en el parse: mantiene el copy previo 'Confirmar carga'", async () => {
+    useDetailAndDryRun(META_NO_CATEGORIES);
+    renderAt();
 
     expect(await screen.findByTestId("wizard-step2-confirm-label")).toHaveTextContent(
-      "Confirmar e ingestar",
+      "Confirmar carga",
     );
     expect(screen.queryByTestId("category-mapping-table")).not.toBeInTheDocument();
   });
 
   it("con categorías: monta CategoryMappingTable y el aviso de filas ilegibles", async () => {
-    vi.mocked(importsApi.parseRaceImport).mockResolvedValue(
-      PARSE_RESPONSE_WITH_CATEGORIES,
-    );
-    vi.mocked(importsApi.dryRunRaceImport).mockResolvedValue(
-      DRY_RUN_CONFIRMED_ONLY,
-    );
-
-    const user = userEvent.setup();
-    wrap(<ImportWizard />);
-    await fillStep1AndSubmit(user);
+    useDetailAndDryRun(META_WITH_CATEGORIES);
+    renderAt();
 
     expect(await screen.findByTestId("category-mapping-table")).toBeInTheDocument();
-    expect(screen.getByTestId("unreadable-rows-notice")).toHaveTextContent(
-      /página 5/i,
-    );
+    expect(screen.getByTestId("unreadable-rows-notice")).toHaveTextContent(/página 5/i);
   });
 
   it("el botón de confirmar muestra 'Confirmar categorías completas (1 de 2)'", async () => {
-    vi.mocked(importsApi.parseRaceImport).mockResolvedValue(
-      PARSE_RESPONSE_WITH_CATEGORIES,
-    );
-    vi.mocked(importsApi.dryRunRaceImport).mockResolvedValue(
-      DRY_RUN_CONFIRMED_ONLY,
-    );
+    useDetailAndDryRun(META_WITH_CATEGORIES);
+    renderAt();
 
-    const user = userEvent.setup();
-    wrap(<ImportWizard />);
-    await fillStep1AndSubmit(user);
-
-    expect(
-      await screen.findByTestId("wizard-step2-confirm-label"),
-    ).toHaveTextContent("Confirmar categorías completas (1 de 2)");
+    expect(await screen.findByTestId("wizard-step2-confirm-label")).toHaveTextContent(
+      "Confirmar categorías completas (1 de 2)",
+    );
   });
 
   it("corregir la categoría inconsistente sube el conteo del botón a (2 de 2)", async () => {
-    vi.mocked(importsApi.parseRaceImport).mockResolvedValue(
-      PARSE_RESPONSE_WITH_CATEGORIES,
+    useDetailAndDryRun(META_WITH_CATEGORIES);
+    mswServer.use(
+      http.post(`${BASE}/7/corrections`, () =>
+        HttpResponse.json({
+          category_header: "INFANTIL A DAMAS",
+          completeness: { status: "ok", missing: [], duplicated: [] },
+        }),
+      ),
     );
-    vi.mocked(importsApi.dryRunRaceImport).mockResolvedValue(
-      DRY_RUN_CONFIRMED_ONLY,
-    );
-    vi.mocked(importsApi.addRaceImportRowCorrection).mockResolvedValue({
-      category_header: "INFANTIL A DAMAS",
-      completeness: { status: "ok", missing: [], duplicated: [] },
-    });
-
     const user = userEvent.setup();
-    wrap(<ImportWizard />);
-    await fillStep1AndSubmit(user);
+    renderAt();
 
     await screen.findByTestId("category-mapping-table");
     await user.click(screen.getByTestId("correct-row-INFANTIL A DAMAS"));

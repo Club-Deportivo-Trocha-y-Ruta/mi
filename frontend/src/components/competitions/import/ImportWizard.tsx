@@ -1,26 +1,28 @@
 /**
- * ImportWizard — wizard de 3 pasos para cargar resultados Copa Valle.
+ * ImportWizard — revisión y confirmación de una carga de resultados ya
+ * preparada (amendment 2026-09-26, `contracts/ui-review-only.md`).
  *
- * Step 1: form metadata (series, season, válida, fecha, ciudad) + upload
- *         resultados (PDF/CSV) + general opcional (PDF).
- * Step 2: dry-run preview con tabla de matches y resolución de ambiguos
- *         vía AthleteCombobox.
- * Step 3: resumen del commit + link al análisis.
+ * La carga se prepara FUERA de la app (skill de resultados / CLI, feature
+ * 044 amendment) y aparece en el tablero de «Cargas» (`LoadsSection`). El
+ * wizard ya no sube archivos: solo retoma la carga persistida desde
+ * `?import=<id>` y ofrece:
+ *   Paso "Revisar carga": dry-run (matches TyR o diff de revisión),
+ *     resolución de ambiguos, tabla de mapeo de categorías, motivo de
+ *     revisión, confirmar o descartar.
+ *   Paso "Resultado": resumen del commit + link al análisis + circuito.
  *
  * Privacidad: los nombres mostrados (display_name) son los publicados por
  * la Federación en los PDFs oficiales, ya son información pública.
  *
  * Diseño:
- *   - State local con useReducer-ish (varios useState por simplicidad).
- *   - No persiste en Zustand. Feature 045 (US3): la carga vive en el servidor
- *     (`race_imports`); el wizard escribe `?import=<id>` al parsear y, si llega
- *     con ese parámetro, retoma en el paso 2 sin volver a subir el archivo.
- *     Salir a resolver identidades ya no pierde la carga.
+ *   - State local con varios useState por simplicidad, sin Zustand.
+ *   - Toda carga vive en el servidor (`race_imports`); el wizard lee
+ *     `?import=<id>` y retoma en el paso "Revisar carga" — no hay upload.
+ *   - Sin `?import`, la ruta contenedora (`CompetitionImportPage`) ya
+ *     redirige al tablero antes de montar este componente.
  *   - Stepper visual = breadcrumbs simples con `aria-current`.
  */
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { useForm, Controller } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   AlertCircle,
@@ -28,20 +30,15 @@ import {
   ArrowRight,
   CheckCircle2,
   Loader2,
-  Lock,
-  Pencil,
   RefreshCw,
   Sparkles,
   Trash2,
 } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
-import { toast } from "sonner";
 import { launchGroupAnalysis } from "@/api/raceAnalysis";
-import { z } from "zod";
 
 import { AthleteCombobox } from "@/components/ai/AthleteCombobox";
 import { CategoryMappingTable } from "@/components/competitions/import/CategoryMappingTable";
-import { RaceUploadZone } from "@/components/competitions/import/RaceUploadZone";
 import { parseResultFromDetail } from "@/components/competitions/import/resumeFromDetail";
 import { DiscardImportDialog } from "@/components/competitions/imports/DiscardImportDialog";
 import {
@@ -50,14 +47,11 @@ import {
 } from "@/components/competitions/imports/ResumeStatusNotice";
 import { RaceConditionsCard } from "@/components/race/RaceConditionsCard";
 import { Stepper } from "@/components/shared/Stepper";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   useImportCommit,
   useImportDryRun,
-  useImportParse,
   useRaceImport,
 } from "@/hooks/ai/useRaceImports";
-import { useImportPrefill } from "@/hooks/race/useImportPrefill";
 import { useRevisionReasons } from "@/hooks/race/useRevisionReasons";
 import { formatDateTime } from "@/lib/datetime";
 import { getIdentityPendingInfo, identityGateMessage } from "@/lib/identityGate";
@@ -67,15 +61,12 @@ import type {
   ImportDryRunRevisionResponse,
   ImportMatchPreview,
   ImportParseResponse,
-  ImportPrefill,
   ImportResolvedMatch,
 } from "@/types/raceImports.types";
-import {
-  SURFACE_CONDITIONS,
-  SURFACE_CONDITION_LABELS,
-  VENUE_ALTITUDES,
-} from "@/types/raceEvents.types";
-import type { SurfaceCondition } from "@/types/raceEvents.types";
+
+// Ruta del tablero — «Volver», «Cargar otro», el aviso de retomar sin éxito
+// y un descarte exitoso navegan aquí (amendment 2026-09-26).
+const BOARD_PATH = "/competitions/imports?seccion=cargas";
 
 // DiffTable lazy → solo se descarga si el wizard detecta modo revisión.
 // Mantiene el chunk de ImportWizard cerca de la baseline F-UP (~18 KB).
@@ -83,7 +74,7 @@ const DiffTable = lazy(() =>
   import("@/components/competitions/import/DiffTable").then((m) => ({ default: m.DiffTable })),
 );
 
-// CourseTab lazy → panel "Circuito (opcional)" del step 3, feature 043.
+// CourseTab lazy → panel "Circuito (opcional)" del step final, feature 043.
 const CourseTab = lazy(() =>
   import("@/components/race/course/CourseTab").then((m) => ({ default: m.CourseTab })),
 );
@@ -124,98 +115,6 @@ function formatCommittedAt(iso: string | undefined | null): string {
 }
 
 // ---------------------------------------------------------------------------
-// Step 1 schema
-// ---------------------------------------------------------------------------
-
-const CURRENT_YEAR = new Date().getFullYear();
-
-const step1Schema = z
-  .object({
-    // Spec 014: tipo de serie (cup | championship). Determina si valida_num
-    // es requerido (copa) u omitido (campeonato).
-    series_kind: z.enum(["cup", "championship"] as const),
-    // Feature 023: nivel del campeonato (departamental|nacional). Solo se
-    // pide al crear una serie de campeonato nueva desde el wizard standalone
-    // (oculto para copas y para el flujo prefill de feature 015, donde la
-    // serie ya existe y el nivel queda bloqueado). Default "departmental"
-    // preserva compatibilidad con flujos que no lo tocan.
-    series_level: z.enum(["departmental", "national"] as const),
-    series_name: z.string().min(2, "Nombre de serie requerido"),
-    season: z
-      .number({ message: "Temporada requerida" })
-      .int()
-      .min(2020, "Temporada inválida")
-      .max(2100, "Temporada inválida"),
-    // valida_num: opcional en el schema base; la validación condicional se
-    // aplica en el refinement de abajo según series_kind. El input usa
-    // `setValueAs` (no `valueAsNumber`) para que un campo vacío sea `undefined`
-    // y no `NaN` — `.optional()` no atrapa `NaN`, así que en campeonato (campo
-    // oculto) el error quedaría invisible y "Continuar" no haría nada.
-    valida_num: z
-      .number()
-      .int()
-      .min(1, "Mínimo 1")
-      .max(9, "Máximo 9")
-      .optional(),
-    event_name: z.string().min(2, "Nombre del evento requerido"),
-    event_date: z
-      .string()
-      .min(1, "Fecha requerida")
-      .refine(
-        (v) => /^\d{4}-\d{2}-\d{2}$/.test(v),
-        "Formato YYYY-MM-DD",
-      ),
-    location: z.string().min(2, "Ciudad requerida"),
-    // F-COND — condiciones opcionales (NO bloquean avance)
-    temperature_c: z
-      .string()
-      .optional()
-      .refine(
-        (v) => {
-          if (!v || v.trim() === "") return true;
-          const n = parseFloat(v);
-          return !isNaN(n) && n >= 0 && n <= 50;
-        },
-        { message: "Debe estar entre 0 y 50 °C" },
-      ),
-    surface_condition: z
-      .enum(["seca", "humeda", "barro", "lluvia", "mixta"] as const)
-      .optional()
-      .nullable(),
-    altitude_msnm: z
-      .string()
-      .optional()
-      .refine(
-        (v) => {
-          if (!v || v.trim() === "") return true;
-          const n = parseFloat(v);
-          return !isNaN(n) && n >= 0 && n <= 5000;
-        },
-        { message: "Debe estar entre 0 y 5000 msnm" },
-      ),
-    climate: z
-      .string()
-      .max(60, "Máximo 60 caracteres")
-      .optional(),
-    weather_notes: z
-      .string()
-      .max(2000, "Máximo 2000 caracteres")
-      .optional(),
-  })
-  .superRefine((data, ctx) => {
-    // valida_num es requerido SOLO para copas (FR-008, spec 014)
-    if (data.series_kind === "cup" && (data.valida_num == null || isNaN(data.valida_num))) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Número de válida requerido",
-        path: ["valida_num"],
-      });
-    }
-  });
-
-type Step1Values = z.infer<typeof step1Schema>;
-
-// ---------------------------------------------------------------------------
 // Stepper visual — unified shared Stepper (@/components/shared/Stepper,
 // contract in specs/028-frontend-design-foundation/contracts/shared-components.md).
 // `Stepper.active` is 0-based; the `step` state below is 1-based, so render
@@ -223,14 +122,20 @@ type Step1Values = z.infer<typeof step1Schema>;
 // ---------------------------------------------------------------------------
 
 const STEPS: { label: string }[] = [
-  { label: "Archivos y datos" },
-  { label: "Validar matches" },
+  { label: "Revisar carga" },
   { label: "Resultado" },
 ];
 
 // ---------------------------------------------------------------------------
 // Helper para extraer mensaje del error axios
 // ---------------------------------------------------------------------------
+
+/** `true` cuando el error es el 409 plano `restage_required` (carga legacy). */
+function isRestageRequiredError(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const e = err as { response?: { data?: { detail?: unknown }; status?: number } };
+  return e.response?.status === 409 && e.response?.data?.detail === "restage_required";
+}
 
 function getErrMsg(err: unknown, fallback: string): string {
   if (typeof err === "object" && err !== null) {
@@ -255,16 +160,16 @@ function getErrMsg(err: unknown, fallback: string): string {
     ) {
       return (detail as { message: string }).message;
     }
+    // Amendment 2026-09-26 — 409 por código (`contracts/ui-review-only.md`
+    // §Copy): `already_committed` tiene copy propio; `restage_required` se
+    // resuelve en el render (aviso legacy), nunca aquí.
+    if (detail === "already_committed") {
+      return "Esta carga ya fue confirmada.";
+    }
     if (typeof detail === "string") return detail;
     if (Array.isArray(detail) && detail.length > 0) {
       const first = detail[0] as { msg?: string };
       if (first?.msg) return first.msg;
-    }
-    if (e.response?.status === 413) {
-      return "El archivo excede el tamaño permitido (máx 8 MB).";
-    }
-    if (e.response?.status === 409) {
-      return "Este PDF ya fue ingestado previamente.";
     }
     if (e.response?.status === 500) {
       return "Error interno al procesar la ingesta. Revisa el archivo o contacta soporte.";
@@ -293,7 +198,7 @@ function getErrMsg(err: unknown, fallback: string): string {
  *    reintentar ("Intenta de nuevo en unos minutos.").
  *
  * Cualquier otro error cae en `getErrMsg()` (prioriza `detail.message`,
- * luego status codes genéricos).
+ * código conocido, luego status codes genéricos).
  */
 function CommitErrorMessage({
   error,
@@ -353,173 +258,13 @@ function getLaunchGroupErrMsg(err: unknown): string {
 // Main component
 // ---------------------------------------------------------------------------
 
-interface ImportWizardProps {
+export interface ImportWizardProps {
   /** Callback opcional al completar commit. */
   onCompleted?: (response: ImportCommitResponse) => void;
-  /**
-   * Feature 015 — cuando se provee, el wizard corre en modo "prefill desde
-   * competencia": carga el evento + su serie, precarga y BLOQUEA los campos
-   * de identidad, deriva `series_kind` (no editable), oculta "Válida #" en
-   * campeonatos y bloquea con un escape hatch "Editar datos" si la
-   * serie/tipo no se puede determinar (FR-009). Sin él, el wizard se comporta
-   * exactamente como hoy (standalone) — FR-007.
-   */
-  raceEventId?: number;
-}
-
-// ---------------------------------------------------------------------------
-// Feature 015 — bloques de presentación del prefill (locked / loading / blocked)
-// ---------------------------------------------------------------------------
-
-/** Fila de un dato bloqueado del resumen read-only. */
-function LockedField({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <dt className="text-xs font-medium text-mid-gray">{label}</dt>
-      <dd className="mt-0.5 text-sm font-medium text-charcoal">{value}</dd>
-    </div>
-  );
 }
 
 /**
- * Resumen read-only de la identidad derivada de la competencia (FR-004/FR-005).
- *
- * Render como texto estático (no inputs `disabled`) para preservar
- * navegabilidad por teclado y lectura de screen-reader (R3, WCAG 2.1 AA).
- * Los valores reales viven en el estado de RHF (vía `reset`) para el submit.
- * "Válida #" se muestra SOLO para copa (oculto en campeonato — FR-008).
- */
-function PrefillLockedSummary({
-  values,
-  editMetadataHref,
-}: {
-  values: NonNullable<ImportPrefill["values"]>;
-  editMetadataHref: string;
-}) {
-  const isChampionship = values.series_kind === "championship";
-  return (
-    <div
-      className="rounded-lg border border-border-gray bg-light-gray/30 p-4"
-      data-testid="prefill-locked-summary"
-      aria-label="Datos de la competencia (bloqueados)"
-    >
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <Lock size={14} aria-hidden="true" className="text-mid-gray" />
-          <h3 className="text-sm font-semibold text-charcoal">
-            Datos de la competencia
-          </h3>
-          <span className="rounded-full bg-light-gray px-2 py-0.5 text-[11px] font-medium text-mid-gray">
-            Bloqueado
-          </span>
-        </div>
-        <Link
-          to={editMetadataHref}
-          className="inline-flex min-h-[44px] items-center gap-1 rounded-lg px-2 text-xs font-medium text-blue-700 hover:text-blue-800"
-          data-testid="prefill-edit-metadata"
-        >
-          <Pencil size={12} aria-hidden="true" />
-          Editar datos
-        </Link>
-      </div>
-      <dl className="grid gap-3 sm:grid-cols-2">
-        <LockedField
-          label="Tipo de competencia"
-          value={isChampionship ? "Campeonato" : "Copa"}
-        />
-        <LockedField label="Nombre de la serie" value={values.series_name} />
-        <LockedField label="Temporada" value={String(values.season)} />
-        {!isChampionship && values.valida_num != null && (
-          <LockedField label="Válida #" value={String(values.valida_num)} />
-        )}
-        <LockedField label="Nombre del evento" value={values.event_name} />
-        <LockedField label="Fecha del evento" value={values.event_date} />
-        <LockedField label="Ciudad" value={values.location} />
-      </dl>
-    </div>
-  );
-}
-
-/** Estado de carga del prefill — cold-start aware, sin spinner infinito (T011). */
-function PrefillLoadingState() {
-  return (
-    <div
-      className="space-y-3"
-      role="status"
-      aria-live="polite"
-      data-testid="prefill-loading"
-    >
-      <p className="text-sm text-mid-gray">
-        Cargando los datos de la competencia… Si el servidor estaba inactivo,
-        esto puede tardar unos segundos.
-      </p>
-      {Array.from({ length: 3 }).map((_, i) => (
-        <div
-          key={i}
-          className="h-12 animate-pulse rounded-lg bg-light-gray"
-          aria-hidden="true"
-        />
-      ))}
-    </div>
-  );
-}
-
-/** Estado bloqueado — serie/tipo indeterminable (FR-009), con escape hatch. */
-function PrefillBlockedState({
-  editMetadataHref,
-}: {
-  editMetadataHref: string;
-}) {
-  return (
-    <div
-      role="alert"
-      className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900"
-      data-testid="prefill-blocked"
-    >
-      <div className="flex items-start gap-2">
-        <AlertCircle size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
-        <div>
-          <p className="font-semibold">No se puede importar todavía</p>
-          <p className="mt-1 text-xs">
-            Esta competencia no tiene una serie o tipo definidos, así que no es
-            posible vincular los resultados con seguridad. Asigna la serie/tipo
-            en los datos de la competencia y vuelve a intentar.
-          </p>
-        </div>
-      </div>
-      <Link
-        to={editMetadataHref}
-        className="inline-flex min-h-[44px] items-center gap-1 rounded-lg bg-charcoal px-3 py-2 text-xs font-semibold text-surface hover:opacity-90"
-        data-testid="prefill-blocked-edit-metadata"
-      >
-        <Pencil size={12} aria-hidden="true" />
-        Editar datos
-      </Link>
-    </div>
-  );
-}
-
-/** Estado de error del prefill — el evento no se pudo cargar (404 u otro). */
-function PrefillErrorState() {
-  return (
-    <div
-      role="alert"
-      className="rounded-lg border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-800"
-      data-testid="prefill-error"
-    >
-      <div className="flex items-start gap-2">
-        <AlertCircle size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
-        <span>
-          No se pudo cargar la competencia. Verifica que exista y vuelve a
-          intentar.
-        </span>
-      </div>
-    </div>
-  );
-}
-
-/**
- * Resolución explícita de una fila del paso 2.
+ * Resolución explícita de una fila del paso de revisión.
  *
  * Bug #3: el state previo era `Record<string, number | null>`, donde `null`
  * cubría DOS estados distintos:
@@ -539,18 +284,12 @@ type MatchResolution =
   | { decision: "match"; athleteId: number }
   | { decision: "no_match"; athleteId: null };
 
-export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
+export function ImportWizard({ onCompleted }: ImportWizardProps) {
   const navigate = useNavigate();
-  // Feature 015 — modo prefill cuando el wizard se lanza desde una competencia.
-  const isPrefilled = raceEventId != null;
-  const prefill = useImportPrefill(raceEventId ?? null);
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<1 | 2>(1);
   // Feature 028 (T051) — step-focus management contract documented in
   // `@/components/shared/Stepper`: ref + tabIndex={-1} on the step heading +
-  // a useEffect keyed on the active step index. A single effect (rather than
-  // a `.focus()` call at each `setStep(...)` site) guarantees every
-  // transition is covered regardless of which call site changed `step`
-  // (Continuar, Volver, Reintentar, reset/"Cargar otro").
+  // a useEffect keyed on the active step index.
   const stepHeadingRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     stepHeadingRef.current?.focus();
@@ -558,32 +297,29 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
   const [parseResult, setParseResult] = useState<ImportParseResponse | null>(
     null,
   );
-  // Feature 045 (US3) — retomar una carga persistida desde `?import=<id>`.
+  // `?import=<id>` — única forma de llegar al wizard (amendment 2026-09-26).
   const [searchParams, setSearchParams] = useSearchParams();
   const resumeImportId = searchParams.get("import");
-  // Id que el coach ya descartó / reinició: no se vuelve a consultar aunque
-  // el parámetro tarde un render en desaparecer de la URL.
-  const [dismissedImportId, setDismissedImportId] = useState<string | null>(
-    null,
-  );
   const [resumed, setResumed] = useState<{
     filename: string | null;
     status: "pending" | "dry_run";
   } | null>(null);
   const [discardOpen, setDiscardOpen] = useState(false);
   const hydratedIdRef = useRef<string | null>(null);
-  // Solo se consulta mientras NO haya parse en memoria (tras parsear, la URL
-  // gana el `import` y esa query quedaría redundante).
-  const activeResumeId =
-    parseResult || !resumeImportId || resumeImportId === dismissedImportId
-      ? null
-      : resumeImportId;
+  // `goToBoard()` navega y desmonta el wizard antes de que haya que volver a
+  // consultar nada, así que basta con el parámetro y el parse en memoria.
+  const activeResumeId = parseResult || !resumeImportId ? null : resumeImportId;
   const resumeQuery = useRaceImport(activeResumeId);
   const resumeDetail = resumeQuery.data;
   const resumeIsResumable =
     !!resumeDetail &&
     (resumeDetail.status === "pending" || resumeDetail.status === "dry_run") &&
-    resumeDetail.parse_meta != null;
+    resumeDetail.parse_meta != null &&
+    !resumeDetail.restage_required;
+  // Amendment 2026-09-26 — carga legacy (`restage_required`): el detalle
+  // existe pero no se puede retomar por este camino. Muestra el aviso legacy
+  // (solo *Descartar*), nunca el asistente.
+  const isLegacy = !!resumeDetail && resumeDetail.restage_required === true;
   const showResumeLoading =
     activeResumeId != null &&
     (resumeQuery.isPending || (resumeIsResumable && !parseResult));
@@ -591,6 +327,10 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
     activeResumeId != null &&
     !showResumeLoading &&
     (resumeQuery.isError || (!!resumeDetail && !resumeIsResumable));
+  // Amendment 2026-09-26 — un 409 `restage_required` en dry-run/commit (carga
+  // legacy detectada tarde, ej. entre el detalle y el dry-run) también cae al
+  // aviso legacy, sin necesidad de recargar el detalle.
+  const [legacyFromAction, setLegacyFromAction] = useState(false);
 
   /** Escribe/borra `?import=<id>` sin apilar historial. */
   function setImportParam(id: string | null) {
@@ -606,7 +346,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
   }
 
   // Hidrata el wizard desde el detalle: `pending` → revisión, `dry_run` →
-  // confirmación. Ambos viven en el paso 2 (el dry-run se recalcula solo).
+  // confirmación.
   useEffect(() => {
     if (!resumeDetail || parseResult) return;
     if (!resumeIsResumable) return;
@@ -617,18 +357,14 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
       filename: resumeDetail.source_filename,
       status: resumeDetail.status === "dry_run" ? "dry_run" : "pending",
     });
-    setStep(2);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resumeDetail, resumeIsResumable, parseResult]);
-  const [resultadosPdf, setResultadosPdf] = useState<File | null>(null);
-  const [generalPdf, setGeneralPdf] = useState<File | null>(null);
   // Resoluciones por competitor_normalized_name. Clave AUSENTE = pendiente.
   // Cualquier `MatchResolution` presente = decisión explícita del coach.
   const [resolutions, setResolutions] = useState<
     Record<string, MatchResolution>
   >({});
   const [onlyPending, setOnlyPending] = useState(false);
-  const [step1Error, setStep1Error] = useState<string | null>(null);
   // Feature 044 (US1) — cuántas categorías del acta quedan listas para
   // confirmar (ok/acknowledged y reconocidas) vs. el total, para el copy
   // del botón de confirmar. Lo reporta `CategoryMappingTable`.
@@ -642,7 +378,6 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
   const [revisionReasonTouched, setRevisionReasonTouched] = useState(false);
   const revisionReasonsQuery = useRevisionReasons();
 
-  const parseMutation = useImportParse();
   const dryRunMutation = useImportDryRun();
   const commitMutation = useImportCommit();
 
@@ -655,166 +390,9 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
     },
   });
 
-  // ---------------- Step 1 form
-  const {
-    register,
-    handleSubmit,
-    control,
-    setValue,
-    watch,
-    reset: resetForm,
-    formState: { errors },
-  } = useForm<Step1Values>({
-    resolver: zodResolver(step1Schema),
-    defaultValues: {
-      // Spec 014: sin default de Copa Valle — el coach selecciona explícitamente
-      series_kind: "cup" as const,
-      // Feature 023: default departamental (backward compatible)
-      series_level: "departmental" as const,
-      series_name: "",
-      season: CURRENT_YEAR,
-      valida_num: undefined,
-      event_name: "",
-      event_date: "",
-      location: "",
-      // F-COND — condiciones opcionales
-      temperature_c: "",
-      surface_condition: null,
-      altitude_msnm: "",
-      climate: "",
-      weather_notes: "",
-    },
-  });
-
-  // Spec 014: tipo de serie — determina si valida_num se muestra/requiere
-  const watchedSeriesKind = watch("series_kind");
-  const isChampionship = watchedSeriesKind === "championship";
-
-  // F-COND: Auto-rellena altitud cuando location coincide con catálogo Copa Valle.
-  // Solo si altitude_msnm está vacío (shouldDirty: false para no marcar dirty).
-  const watchedLocation = watch("location");
-  const watchedAltitude = watch("altitude_msnm");
+  // ---------------- Revisar carga — auto-trigger dry-run al entrar
   useEffect(() => {
-    if (!watchedLocation) return;
-    const matched = VENUE_ALTITUDES[watchedLocation];
-    if (matched != null && (!watchedAltitude || watchedAltitude.trim() === "")) {
-      setValue("altitude_msnm", String(matched), { shouldDirty: false });
-    }
-  }, [watchedLocation, watchedAltitude, setValue]);
-
-  // Feature 015 — al resolver el prefill (ready), precarga el form de RHF con
-  // los valores derivados. La identidad se muestra bloqueada (read-only) pero
-  // los valores viven en el estado de RHF para que el submit a /parse resuelva
-  // la MISMA competencia (FR-003). Las condiciones quedan editables.
-  const prefillValues = prefill?.status === "ready" ? prefill.values : undefined;
-  useEffect(() => {
-    if (!prefillValues) return;
-    resetForm({
-      series_kind: prefillValues.series_kind,
-      // Feature 023: prefill (serie ya existente) no expone selector de
-      // nivel; se mantiene el default — el backend lo ignora al resolver
-      // una serie ya creada (ver contracts/api-delta.md §3).
-      series_level: "departmental",
-      series_name: prefillValues.series_name,
-      season: prefillValues.season,
-      // Campeonato: valida_num null → undefined (el superRefine no lo exige).
-      valida_num: prefillValues.valida_num ?? undefined,
-      event_name: prefillValues.event_name,
-      event_date: prefillValues.event_date,
-      location: prefillValues.location,
-      temperature_c:
-        prefillValues.conditions?.temperature_c != null
-          ? String(prefillValues.conditions.temperature_c)
-          : "",
-      surface_condition: prefillValues.conditions?.surface_condition ?? null,
-      altitude_msnm:
-        prefillValues.conditions?.altitude_msnm != null
-          ? String(prefillValues.conditions.altitude_msnm)
-          : "",
-      climate: prefillValues.conditions?.climate ?? "",
-      weather_notes: prefillValues.conditions?.weather_notes ?? "",
-    });
-  }, [prefillValues, resetForm]);
-
-  const submitStep1 = async (values: Step1Values) => {
-    if (!resultadosPdf) {
-      setStep1Error("Debes adjuntar el archivo de resultados.");
-      return;
-    }
-    setStep1Error(null);
-
-    // F-COND: detecta si el coach avanzó sin llenar ninguna condición.
-    const hasAnyCondition =
-      (values.temperature_c && values.temperature_c.trim() !== "") ||
-      values.surface_condition != null ||
-      (values.altitude_msnm && values.altitude_msnm.trim() !== "") ||
-      (values.climate && values.climate.trim() !== "") ||
-      (values.weather_notes && values.weather_notes.trim() !== "");
-    if (!hasAnyCondition) {
-      // F-COND: toast neutral cuando el coach avanza sin llenar condiciones.
-      toast(
-        "Condiciones sin registrar — podrás agregarlas después desde el evento.",
-      );
-    }
-
-    // Normalizar campos de condiciones: string vacío → null
-    const tempC = values.temperature_c && values.temperature_c.trim() !== ""
-      ? values.temperature_c
-      : null;
-    const altMsnm = values.altitude_msnm && values.altitude_msnm.trim() !== ""
-      ? parseFloat(values.altitude_msnm)
-      : null;
-    const climateVal = values.climate && values.climate.trim() !== ""
-      ? values.climate.trim()
-      : null;
-    const weatherNotes = values.weather_notes && values.weather_notes.trim() !== ""
-      ? values.weather_notes.trim()
-      : null;
-
-    try {
-      const result = await parseMutation.mutateAsync({
-        fields: {
-          series_name: values.series_name,
-          season: values.season,
-          // Spec 014: valida_num solo para copa; campeonato omite el campo
-          // (el backend lo ignora y fuerza sequence_number=1)
-          valida_num: values.series_kind === "cup" ? (values.valida_num ?? 1) : 1,
-          event_name: values.event_name,
-          event_date: values.event_date,
-          location: values.location,
-          kind: generalPdf ? "both" : "resultados",
-          // Spec 014: enviar el kind de serie para que el backend resuelva
-          // la serie correctamente (no hardcodea Copa Valle)
-          series_kind: values.series_kind,
-          // Feature 023: nivel del campeonato — solo consultado por el backend
-          // al CREAR una serie de campeonato nueva; ignorado si la serie ya
-          // existe (prefill feature 015, series_id explícito).
-          series_level: values.series_level,
-          // F-COND — condiciones opcionales
-          climate: climateVal,
-          temperature_c: tempC,
-          surface_condition: values.surface_condition ?? null,
-          altitude_msnm: isNaN(altMsnm as number) ? null : altMsnm,
-          weather_notes: weatherNotes,
-        },
-        files: {
-          resultadosPdf,
-          generalPdf,
-        },
-      });
-      setParseResult(result);
-      setStep(2);
-      // La carga ya vive en el servidor: si el coach sale a resolver
-      // identidades, `?import=<id>` la retoma sin volver a subir el archivo.
-      setImportParam(result.parse_id);
-    } catch (err) {
-      setStep1Error(getErrMsg(err, "No se pudo procesar el archivo."));
-    }
-  };
-
-  // ---------------- Step 2 — auto-trigger dry-run al entrar
-  useEffect(() => {
-    if (step !== 2 || !parseResult) return;
+    if (step !== 1 || !parseResult) return;
     dryRunMutation.mutate(
       { parseId: parseResult.parse_id },
       {
@@ -839,6 +417,9 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
             }
           }
           setResolutions(initial);
+        },
+        onError: (err) => {
+          if (isRestageRequiredError(err)) setLegacyFromAction(true);
         },
       },
     );
@@ -903,10 +484,11 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
           },
         });
         setImportParam(null);
-        setStep(3);
+        setStep(2);
         onCompleted?.(result);
-      } catch {
-        setStep(3);
+      } catch (err) {
+        if (isRestageRequiredError(err)) setLegacyFromAction(true);
+        setStep(2);
       }
       return;
     }
@@ -915,8 +497,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
     // del objeto `MatchResolution` cuando existe. Si la clave está ausente
     // (no debería llegar aquí por el guard `canCommit`, pero por defensa),
     // se envía `null` — el backend ya acepta `athlete_id=null` como "sin
-    // match" persistido como contexto de carrera sin atleta TyR (ver
-    // `backend/app/routers/race_imports.py::commit_import`, línea ~766).
+    // match" persistido como contexto de carrera sin atleta TyR.
     if (!matchesData) return;
     const resolved_matches: ImportResolvedMatch[] = matchesData.matches.map(
       (m) => {
@@ -933,40 +514,56 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
         body: { resolved_matches },
       });
       setImportParam(null);
-      setStep(3);
+      setStep(2);
       onCompleted?.(result);
-    } catch {
-      // El error se muestra en el render (step queda en 2 con commitMutation.isError).
-      // La carga NO se pierde: sigue en el servidor y en `?import=<id>`.
-      setStep(3);
+    } catch (err) {
+      if (isRestageRequiredError(err)) setLegacyFromAction(true);
+      // El error se muestra en el render (step queda en el paso "Resultado"
+      // con commitMutation.isError). La carga NO se pierde: sigue en el
+      // servidor y en `?import=<id>`.
+      setStep(2);
     }
   };
 
-  const reset = () => {
-    setDismissedImportId(resumeImportId ?? parseResult?.parse_id ?? null);
-    setImportParam(null);
-    setResumed(null);
-    hydratedIdRef.current = null;
-    setStep(1);
-    setParseResult(null);
-    setResultadosPdf(null);
-    setGeneralPdf(null);
-    setResolutions({});
-    setOnlyPending(false);
-    setStep1Error(null);
-    setRevisionReason("");
-    setRevisionReasonTouched(false);
-    parseMutation.reset();
-    dryRunMutation.reset();
-    commitMutation.reset();
-  };
+  /** «Volver», «Cargar otro», el aviso de retomar y un descarte exitoso
+   * navegan al tablero — ya no hay un paso 1 al que regresar. */
+  function goToBoard() {
+    navigate(BOARD_PATH);
+  }
 
   // ---------------- Render
+  if (isLegacy || legacyFromAction) {
+    return (
+      <section
+        className="rounded-xl bg-surface-raised p-5 ring-1 ring-light-gray"
+        data-testid="import-wizard"
+        aria-label="Revisión de carga de resultados"
+      >
+        <ResumeStatusNotice
+          detail={resumeDetail}
+          isError={false}
+          legacy
+          onStartNew={goToBoard}
+          onDiscard={() => setDiscardOpen(true)}
+        />
+        {resumeDetail && (
+          <DiscardImportDialog
+            open={discardOpen}
+            onOpenChange={setDiscardOpen}
+            importId={resumeDetail.id}
+            filename={resumeDetail.source_filename}
+            onDiscarded={goToBoard}
+          />
+        )}
+      </section>
+    );
+  }
+
   return (
     <section
       className="rounded-xl bg-surface-raised p-5 ring-1 ring-light-gray"
       data-testid="import-wizard"
-      aria-label="Wizard de carga de resultados"
+      aria-label="Revisión de carga de resultados"
     >
       <div className="mb-4">
         <Stepper steps={STEPS} active={step - 1} />
@@ -980,498 +577,37 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
         {STEPS[step - 1].label}
       </h2>
 
-      {/* Feature 045 (US3) — retomando una carga desde `?import=<id>`. */}
+      {/* Retomando una carga desde `?import=<id>`. */}
       {step === 1 && showResumeLoading && <ResumeLoadingNotice />}
       {step === 1 && showResumeNotice && (
         <ResumeStatusNotice
           detail={resumeDetail}
           isError={resumeQuery.isError}
-          onStartNew={reset}
+          onStartNew={goToBoard}
         />
       )}
 
-      {/* Feature 015 — estados no-ready del prefill reemplazan el paso 1. */}
-      {step === 1 &&
-        !showResumeLoading &&
-        !showResumeNotice &&
-        isPrefilled &&
-        prefill &&
-        prefill.status !== "ready" && (
-        <div data-testid="import-wizard-step1-prefill">
-          {prefill.status === "loading" && <PrefillLoadingState />}
-          {prefill.status === "blocked" && (
-            <PrefillBlockedState
-              editMetadataHref={
-                prefill.editMetadataHref ??
-                `/competitions/${raceEventId}/edit`
-              }
-            />
-          )}
-          {prefill.status === "error" && <PrefillErrorState />}
-        </div>
-      )}
-
-      {step === 1 &&
-        !showResumeLoading &&
-        !showResumeNotice &&
-        (!isPrefilled || prefill?.status === "ready") && (
-        <form
-          onSubmit={handleSubmit(submitStep1)}
-          className="space-y-4"
-          data-testid="import-wizard-step1"
-          noValidate
-        >
-          {/* Feature 015 — identidad bloqueada (read-only) cuando hay prefill. */}
-          {isPrefilled && prefillValues && (
-            <PrefillLockedSummary
-              values={prefillValues}
-              editMetadataHref={`/competitions/${raceEventId}/edit`}
-            />
-          )}
-
-          {!isPrefilled && (
-          <div className="grid gap-3 sm:grid-cols-2">
-            {/* Spec 014: selector de tipo de competencia */}
-            <div className="sm:col-span-2">
-              <label
-                htmlFor="series_kind"
-                className="block text-xs font-medium text-mid-gray"
-              >
-                Tipo de competencia
-              </label>
-              <select
-                id="series_kind"
-                {...register("series_kind")}
-                className="mt-1 w-full rounded-lg bg-surface-raised px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 min-h-[44px] shadow-ring"
-                data-testid="wizard-series-kind"
-              >
-                <option value="cup">Copa (con válidas numeradas)</option>
-                <option value="championship">Campeonato (evento único anual)</option>
-              </select>
-            </div>
-
-            {/* Feature 023: nivel del campeonato — solo al crear serie nueva */}
-            {isChampionship && (
-              <div className="sm:col-span-2">
-                <label
-                  htmlFor="series_level"
-                  className="block text-xs font-medium text-mid-gray"
-                >
-                  Nivel del campeonato
-                </label>
-                <select
-                  id="series_level"
-                  {...register("series_level")}
-                  className="mt-1 w-full rounded-lg bg-surface-raised px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 min-h-[44px] shadow-ring"
-                  data-testid="wizard-series-level"
-                >
-                  <option value="departmental">Departamental</option>
-                  <option value="national">Nacional</option>
-                </select>
-              </div>
-            )}
-
-            <div className="sm:col-span-2">
-              <label
-                htmlFor="series_name"
-                className="block text-xs font-medium text-mid-gray"
-              >
-                Nombre de la serie
-              </label>
-              <input
-                id="series_name"
-                type="text"
-                placeholder={
-                  isChampionship
-                    ? "Ej: Campeonato Departamental 2026"
-                    : "Ej: Copa Valle de Ciclomontañismo"
-                }
-                {...register("series_name")}
-                className="mt-1 w-full rounded-lg bg-surface-raised px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
-                data-testid="wizard-series-name"
-              />
-              {errors.series_name && (
-                <p className="mt-1 text-xs text-red-600" role="alert">
-                  {errors.series_name.message}
-                </p>
-              )}
-            </div>
-
-            <div>
-              <label
-                htmlFor="season"
-                className="block text-xs font-medium text-mid-gray"
-              >
-                Temporada
-              </label>
-              <input
-                id="season"
-                type="number"
-                min={2020}
-                max={2100}
-                {...register("season", { valueAsNumber: true })}
-                className="mt-1 w-full rounded-lg bg-surface-raised px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
-                data-testid="wizard-season"
-              />
-              {errors.season && (
-                <p className="mt-1 text-xs text-red-600" role="alert">
-                  {errors.season.message}
-                </p>
-              )}
-            </div>
-
-            {/* Spec 014: valida_num visible y requerido SOLO para copa */}
-            {!isChampionship && (
-              <div>
-                <label
-                  htmlFor="valida_num"
-                  className="block text-xs font-medium text-mid-gray"
-                >
-                  Válida #
-                </label>
-                <input
-                  id="valida_num"
-                  type="number"
-                  min={1}
-                  max={9}
-                  {...register("valida_num", {
-                    // Vacío → undefined (no NaN). `valueAsNumber` daría NaN en
-                    // un input vacío, que `.optional()` no atrapa y bloquearía
-                    // el submit en silencio cuando el campo está oculto
-                    // (campeonato). Bug detectado en producción.
-                    setValueAs: (v) =>
-                      v === "" || v === null || v === undefined
-                        ? undefined
-                        : Number(v),
-                  })}
-                  className="mt-1 w-full rounded-lg bg-surface-raised px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
-                  data-testid="wizard-valida-num"
-                />
-                {errors.valida_num && (
-                  <p className="mt-1 text-xs text-red-600" role="alert">
-                    {errors.valida_num.message}
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* Spec 014: mensaje informativo para campeonato */}
-            {isChampionship && (
-              <div
-                className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800"
-                role="status"
-                data-testid="wizard-championship-notice"
-              >
-                Los campeonatos son eventos únicos anuales — no se registra
-                número de válida.
-              </div>
-            )}
-
-            <div>
-              <label
-                htmlFor="event_name"
-                className="block text-xs font-medium text-mid-gray"
-              >
-                Nombre del evento
-              </label>
-              <input
-                id="event_name"
-                type="text"
-                placeholder="Ej: Válida IV — Cali"
-                {...register("event_name")}
-                className="mt-1 w-full rounded-lg bg-surface-raised px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
-                data-testid="wizard-event-name"
-              />
-              {errors.event_name && (
-                <p className="mt-1 text-xs text-red-600" role="alert">
-                  {errors.event_name.message}
-                </p>
-              )}
-            </div>
-
-            <div>
-              <label
-                htmlFor="event_date"
-                className="block text-xs font-medium text-mid-gray"
-              >
-                Fecha del evento
-              </label>
-              <input
-                id="event_date"
-                type="date"
-                {...register("event_date")}
-                className="mt-1 w-full rounded-lg bg-surface-raised px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
-                data-testid="wizard-event-date"
-              />
-              {errors.event_date && (
-                <p className="mt-1 text-xs text-red-600" role="alert">
-                  {errors.event_date.message}
-                </p>
-              )}
-            </div>
-
-            <div>
-              <label
-                htmlFor="location"
-                className="block text-xs font-medium text-mid-gray"
-              >
-                Ciudad
-              </label>
-              <input
-                id="location"
-                type="text"
-                placeholder="Ej: Cali"
-                {...register("location")}
-                className="mt-1 w-full rounded-lg bg-surface-raised px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
-                data-testid="wizard-location"
-              />
-              {errors.location && (
-                <p className="mt-1 text-xs text-red-600" role="alert">
-                  {errors.location.message}
-                </p>
-              )}
-            </div>
-          </div>
-          )}
-
-          {/* ── F-COND: Sección Condiciones de carrera (opcional) ── */}
-          <div className="rounded-lg border border-border-gray p-4">
-            <div className="mb-3 flex items-center gap-2">
-              <h3 className="text-sm font-semibold text-charcoal">
-                Condiciones de carrera
-              </h3>
-              <span className="rounded-full bg-light-gray px-2 py-0.5 text-[11px] font-medium text-mid-gray">
-                Opcional
-              </span>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              {/* Fila 1 — Temperatura */}
-              <div className="space-y-1">
-                <label
-                  htmlFor="wizard-temperature"
-                  className="block text-xs font-medium text-mid-gray"
-                >
-                  Temperatura
-                </label>
-                <div className="relative">
-                  <input
-                    id="wizard-temperature"
-                    type="number"
-                    inputMode="numeric"
-                    min={0}
-                    max={50}
-                    step={0.1}
-                    {...register("temperature_c")}
-                    className="w-full rounded-lg bg-surface-raised py-2.5 pl-3 pr-10 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
-                    aria-invalid={errors.temperature_c ? true : undefined}
-                    data-testid="wizard-temperature"
-                  />
-                  <span
-                    className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-mid-gray"
-                    aria-hidden="true"
-                  >
-                    °C
-                  </span>
-                </div>
-                {errors.temperature_c && (
-                  <p className="text-xs text-red-600" role="alert">
-                    {errors.temperature_c.message}
-                  </p>
-                )}
-              </div>
-
-              {/* Fila 1 — Superficie (ToggleGroup chips) */}
-              <div className="space-y-1">
-                <span className="block text-xs font-medium text-mid-gray">
-                  Estado de la pista
-                </span>
-                <Controller
-                  name="surface_condition"
-                  control={control}
-                  render={({ field }) => (
-                    <ToggleGroup
-                      type="single"
-                      value={field.value ?? ""}
-                      onValueChange={(v) =>
-                        field.onChange(
-                          v === "" ? null : (v as SurfaceCondition),
-                        )
-                      }
-                      className="flex flex-wrap gap-1.5"
-                      aria-label="Estado de la pista"
-                      data-testid="wizard-surface-condition"
-                    >
-                      {SURFACE_CONDITIONS.map((sc) => (
-                        <ToggleGroupItem
-                          key={sc}
-                          value={sc}
-                          aria-label={SURFACE_CONDITION_LABELS[sc]}
-                          className="min-h-[48px] rounded-lg border border-[rgba(34,42,53,0.12)] px-3 py-1.5 text-xs font-medium text-charcoal transition-colors data-[state=on]:border-charcoal data-[state=on]:bg-charcoal data-[state=on]:text-surface"
-                          data-testid={`wizard-surface-chip-${sc}`}
-                        >
-                          {SURFACE_CONDITION_LABELS[sc]}
-                        </ToggleGroupItem>
-                      ))}
-                    </ToggleGroup>
-                  )}
-                />
-              </div>
-
-              {/* Fila 2 — Altitud */}
-              <div className="space-y-1">
-                <label
-                  htmlFor="wizard-altitude"
-                  className="block text-xs font-medium text-mid-gray"
-                >
-                  Altitud
-                </label>
-                <div className="relative">
-                  <input
-                    id="wizard-altitude"
-                    type="number"
-                    inputMode="numeric"
-                    min={0}
-                    max={5000}
-                    step={1}
-                    {...register("altitude_msnm")}
-                    className="w-full rounded-lg bg-surface-raised py-2.5 pl-3 pr-14 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
-                    aria-invalid={errors.altitude_msnm ? true : undefined}
-                    data-testid="wizard-altitude"
-                  />
-                  <span
-                    className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-mid-gray"
-                    aria-hidden="true"
-                  >
-                    msnm
-                  </span>
-                </div>
-                {errors.altitude_msnm && (
-                  <p className="text-xs text-red-600" role="alert">
-                    {errors.altitude_msnm.message}
-                  </p>
-                )}
-              </div>
-
-              {/* Fila 2 — Clima (input text + datalist) */}
-              <div className="space-y-1">
-                <label
-                  htmlFor="wizard-climate"
-                  className="block text-xs font-medium text-mid-gray"
-                >
-                  Clima
-                </label>
-                <input
-                  id="wizard-climate"
-                  type="text"
-                  list="wizard-climate-suggestions"
-                  placeholder="ej: soleado, parcialmente nublado"
-                  maxLength={60}
-                  {...register("climate")}
-                  className="w-full rounded-lg bg-surface-raised px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
-                  aria-invalid={errors.climate ? true : undefined}
-                  data-testid="wizard-climate"
-                />
-                <datalist id="wizard-climate-suggestions">
-                  <option value="Soleado" />
-                  <option value="Parcialmente nublado" />
-                  <option value="Nublado" />
-                  <option value="Llovizna" />
-                  <option value="Lluvioso" />
-                  <option value="Ventoso" />
-                  <option value="Soleado con viento" />
-                </datalist>
-                {errors.climate && (
-                  <p className="text-xs text-red-600" role="alert">
-                    {errors.climate.message}
-                  </p>
-                )}
-              </div>
-
-              {/* Fila 3 — Notas de clima (full-width) */}
-              <div className="space-y-1 md:col-span-2">
-                <label
-                  htmlFor="wizard-weather-notes"
-                  className="block text-xs font-medium text-mid-gray"
-                >
-                  Notas de condiciones
-                </label>
-                <textarea
-                  id="wizard-weather-notes"
-                  maxLength={2000}
-                  placeholder="Clima y estado de la pista el día de la carrera — evite incluir nombres de atletas o información médica"
-                  {...register("weather_notes")}
-                  className="w-full resize-y rounded-lg bg-surface-raised px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/40 shadow-ring"
-                  style={{
-                    minHeight: "80px",
-                  }}
-                  aria-invalid={errors.weather_notes ? true : undefined}
-                  data-testid="wizard-weather-notes"
-                />
-                {errors.weather_notes && (
-                  <p className="text-xs text-red-600" role="alert">
-                    {errors.weather_notes.message}
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-          {/* ── Fin F-COND ── */}
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <RaceUploadZone
-              kind="resultados"
-              label="Resultados (PDF o CSV) *"
-              value={resultadosPdf}
-              onChange={(f) => {
-                setResultadosPdf(f);
-                // Limpia error previo al reemplazar archivo (UX bug F-UP6 MEDIUM).
-                if (step1Error) setStep1Error(null);
-              }}
-              hint="obligatorio"
-            />
-            <RaceUploadZone
-              kind="general"
-              label="General (PDF)"
-              value={generalPdf}
-              onChange={setGeneralPdf}
-              hint="opcional"
-            />
-          </div>
-
-          {step1Error && (
-            <div
-              role="alert"
-              className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
-              data-testid="wizard-step1-error"
-            >
-              <div className="flex items-start gap-2">
-                <AlertCircle size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
-                <span>{step1Error}</span>
-              </div>
-            </div>
-          )}
-
-          <div className="flex justify-end">
-            <button
-              type="submit"
-              disabled={parseMutation.isPending}
-              data-testid="wizard-step1-submit"
-              className="inline-flex items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-surface transition-opacity hover:opacity-90 disabled:opacity-50"
-            >
-              {parseMutation.isPending ? (
-                <Loader2 size={14} className="animate-spin" aria-hidden="true" />
-              ) : (
-                <ArrowRight size={14} aria-hidden="true" />
-              )}
-              Continuar
-            </button>
-          </div>
-        </form>
-      )}
-
-      {step === 2 && (
+      {step === 1 && !showResumeLoading && !showResumeNotice && (
         <div className="space-y-4" data-testid="import-wizard-step2">
+          {/* Encabezado de la carga en revisión — de dónde viene el
+              manifiesto con que se stageó (skill/CLI). */}
+          {parseResult?.header && (
+            <div
+              className="rounded-lg bg-light-gray/30 px-3 py-2 text-xs text-mid-gray"
+              data-testid="wizard-review-header"
+            >
+              <span className="font-medium text-charcoal">
+                {parseResult.header.series_name}
+              </span>
+              {" · "}Temporada {parseResult.header.season}
+              {parseResult.header.valida_num > 0 && (
+                <> · Válida {parseResult.header.valida_num}</>
+              )}
+              {" · "}
+              {parseResult.header.event_name}
+            </div>
+          )}
+
           {resumed && (
             <div
               role="status"
@@ -1506,7 +642,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
             </div>
           )}
 
-          {dryRunMutation.isError && (
+          {dryRunMutation.isError && !isRestageRequiredError(dryRunMutation.error) && (
             <div
               role="alert"
               className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
@@ -1639,7 +775,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                 )}
               </div>
 
-              {commitMutation.isError && (
+              {commitMutation.isError && !isRestageRequiredError(commitMutation.error) && (
                 <div
                   role="alert"
                   className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
@@ -1655,7 +791,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
               <div className="flex justify-between">
                 <button
                   type="button"
-                  onClick={() => setStep(1)}
+                  onClick={goToBoard}
                   data-testid="wizard-step2-back"
                   className="inline-flex items-center gap-1 rounded-lg px-3 py-2 text-sm text-mid-gray hover:text-charcoal"
                 >
@@ -1845,7 +981,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                 </table>
               </div>
 
-              {commitMutation.isError && (
+              {commitMutation.isError && !isRestageRequiredError(commitMutation.error) && (
                 <div
                   role="alert"
                   className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
@@ -1861,7 +997,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
               <div className="flex justify-between">
                 <button
                   type="button"
-                  onClick={() => setStep(1)}
+                  onClick={goToBoard}
                   data-testid="wizard-step2-back"
                   className="inline-flex items-center gap-1 rounded-lg px-3 py-2 text-sm text-mid-gray hover:text-charcoal"
                 >
@@ -1883,7 +1019,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                   <span data-testid="wizard-step2-confirm-label">
                     {categoryReadyCounts.total > 0
                       ? `Confirmar categorías completas (${categoryReadyCounts.ready} de ${categoryReadyCounts.total})`
-                      : "Confirmar e ingestar"}
+                      : "Confirmar carga"}
                   </span>
                 </button>
               </div>
@@ -1900,8 +1036,8 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
             </>
           )}
 
-          {/* Feature 045 (US3) — salida explícita: la carga vive en el
-              servidor, así que descartarla pide confirmación. */}
+          {/* Salida explícita: la carga vive en el servidor, así que
+              descartarla pide confirmación. */}
           {parseResult && (
             <div className="border-t border-light-gray pt-3">
               <button
@@ -1918,7 +1054,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
         </div>
       )}
 
-      {step === 3 && (
+      {step === 2 && (
         <div className="space-y-4" data-testid="import-wizard-step3">
           {commitMutation.isError ? (
             <div
@@ -1939,7 +1075,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                 type="button"
                 onClick={() => {
                   commitMutation.reset();
-                  setStep(2);
+                  setStep(1);
                 }}
                 data-testid="wizard-step3-retry"
                 className="inline-flex items-center gap-2 rounded-lg bg-red-700 px-3 py-2 text-xs font-semibold text-white hover:opacity-90"
@@ -1957,7 +1093,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
               <div className="mb-2 flex items-center gap-2">
                 <CheckCircle2 size={18} aria-hidden="true" />
                 <span className="font-semibold">
-                  {revisionData ? "Revisión aplicada" : "Ingesta completada"}
+                  {revisionData ? "Revisión aplicada" : "Carga confirmada"}
                 </span>
               </div>
               {revisionData ? (
@@ -2029,7 +1165,7 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
                 </button>
                 <button
                   type="button"
-                  onClick={reset}
+                  onClick={goToBoard}
                   className="inline-flex items-center gap-1 rounded-lg bg-surface-raised px-3 py-2 text-xs font-medium text-charcoal ring-1 ring-light-gray hover:bg-light-gray"
                   data-testid="wizard-step3-new"
                 >
@@ -2084,13 +1220,13 @@ export function ImportWizard({ onCompleted, raceEventId }: ImportWizardProps) {
         </div>
       )}
 
-      {parseResult && (
+      {parseResult && step === 1 && (
         <DiscardImportDialog
           open={discardOpen}
           onOpenChange={setDiscardOpen}
           importId={parseResult.parse_id}
-          filename={resumed?.filename ?? resultadosPdf?.name ?? null}
-          onDiscarded={reset}
+          filename={resumed?.filename ?? null}
+          onDiscarded={goToBoard}
         />
       )}
     </section>

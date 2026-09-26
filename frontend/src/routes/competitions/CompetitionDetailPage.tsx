@@ -33,7 +33,6 @@ import {
   Loader2,
   RefreshCw,
   Trophy,
-  Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -148,13 +147,6 @@ export function getCalendarNewUrl(raceEventId: number): string {
   return `/calendar/events/new?race_event_id=${raceEventId}`;
 }
 
-function isBeforeToday(iso: string): boolean {
-  const eventDate = new Date(iso + "T00:00:00");
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  return eventDate < now;
-}
-
 // ---------------------------------------------------------------------------
 // Sub-componente: Tab trigger individual
 // ---------------------------------------------------------------------------
@@ -255,7 +247,7 @@ export function CompetitionDetailPage() {
   // Lista de series — se habilita siempre que el evento ya cargó (InfoTab
   // necesita el nombre de la serie para su fila "Serie", más allá del nivel
   // que solo aplica a campeonatos). No existe GET /race-series/{id}; se
-  // resuelve filtrando la lista, igual que `useImportPrefill` (feature 015).
+  // resuelve filtrando la lista.
   const seriesQuery = useRaceSeriesList({}, { enabled: event != null });
   const matchedSeries = seriesQuery.data?.items.find(
     (s) => s.id === event?.series_id,
@@ -388,20 +380,12 @@ export function CompetitionDetailPage() {
   }
 
   // ── Acción primaria contextual ─────────────────────────────────────────────
-  // `has_results` no está en RaceEventRead — inferimos desde climate+status:
-  // Si hay resultados, el status tiende a ser "completed". Lo determinamos
-  // verificando si la fecha ya pasó y el status es completed.
-  // La acción más útil en cada estado:
-  const eventDatePassed = isBeforeToday(event.event_date);
   const isCompleted = event.status === "completed";
   const isCancelled = event.status === "cancelled";
 
-  // Si es scheduled y la fecha ya pasó → probablemente tiene resultados
-  // pendientes de importar. Si es completed → ya tiene resultados.
-  // Usamos lógica conservadora: solo mostramos "importar" si aún no hay
-  // análisis (la CompetitionsListPage tiene `has_results` pero la DetailPage
-  // trabaja con RaceEventRead que no lo incluye).
-  const showImportCTA = !isCompleted && !isCancelled && eventDatePassed;
+  // Amendment 2026-09-26 — la app ya no sube archivos: la CTA primaria
+  // «Importar resultados» se retiró (`contracts/ui-review-only.md`). La
+  // carga se prepara fuera de la app y se revisa desde «Cargas».
   const showInsightsCTA = isCompleted;
 
   // CF6: botón "Asociar a calendario" — visible solo cuando el backend confirma
@@ -545,29 +529,17 @@ export function CompetitionDetailPage() {
         />
 
         {/* ── Acción primaria contextual ───────────────────────────── */}
-        {(showImportCTA || showInsightsCTA) && (
+        {showInsightsCTA && (
           <div className="mt-4">
-            {showImportCTA && (
-              <Link
-                to={`/competitions/${raceEventId}/import`}
-                className="inline-flex min-h-12 items-center gap-2 rounded-lg bg-charcoal px-5 py-2.5 text-sm font-semibold text-surface shadow-button-highlight transition-opacity hover:opacity-90"
-                data-testid="cta-import"
-              >
-                <Upload size={16} aria-hidden="true" />
-                Importar resultados
-              </Link>
-            )}
-            {showInsightsCTA && !showImportCTA && (
-              <button
-                type="button"
-                onClick={() => handleTabChange("insights")}
-                className="inline-flex min-h-12 items-center gap-2 rounded-lg bg-charcoal px-5 py-2.5 text-sm font-semibold text-surface shadow-button-highlight transition-opacity hover:opacity-90"
-                data-testid="cta-insights"
-              >
-                <BarChart2Icon size={16} aria-hidden="true" />
-                Ver análisis
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => handleTabChange("insights")}
+              className="inline-flex min-h-12 items-center gap-2 rounded-lg bg-charcoal px-5 py-2.5 text-sm font-semibold text-surface shadow-button-highlight transition-opacity hover:opacity-90"
+              data-testid="cta-insights"
+            >
+              <BarChart2Icon size={16} aria-hidden="true" />
+              Ver análisis
+            </button>
           </div>
         )}
       </header>

@@ -683,14 +683,8 @@ export function EventForm({
                         data-testid="event-race-event-empty"
                       >
                         No hay válidas disponibles para {seasonForRaceEvents}.
-                        Crea una desde el{" "}
-                        <RouterLink
-                          to="/competitions/import"
-                          className="font-medium text-charcoal underline transition-opacity hover:opacity-70"
-                        >
-                          módulo de importación
-                        </RouterLink>
-                        .
+                        La válida se crea cuando se confirma su carga de
+                        resultados.
                       </p>
                     )}
                   {/* CF6: link inline "crear nueva válida" cuando el dropdown está vacío */}

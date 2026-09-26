@@ -1,50 +1,28 @@
 /**
- * ImportWizard — retomar una carga persistida (feature 045, US3, T054).
+ * ImportWizard — retomar una carga persistida (feature 045, US3).
  *
- * Contexto: antes, salir del wizard a resolver identidades (o recargar la
- * página) perdía la carga — el estado vivía solo en memoria y había que
- * volver a subir el PDF. Ahora la carga vive en el servidor: el wizard escribe
- * `?import=<id>` al parsear y, si llega con ese parámetro, la retoma en el
- * paso 2 sin subir nada.
- *
- * Cubre:
- *  - REGRESIÓN «salir ya no pierde la carga»: parsear → 409 identity_pending →
- *    salir por el enlace → volver → el wizard retoma en el paso 2 SIN volver a
- *    llamar a /parse, y el commit posterior funciona.
- *  - `pending` → revisión, `dry_run` → confirmación (mismo paso, copy distinto).
- *  - `committed` / `discarded` / 404 → aviso, sin retomar, con «Empezar una
- *    carga nueva».
- *  - Descartar con confirmación (POST /discard) y volver al paso 1.
+ * Amendment 2026-09-26 (`contracts/ui-review-only.md`, T159): la app ya no
+ * sube archivos — toda carga llega ya stageada y el wizard SIEMPRE arranca
+ * desde `?import=<id>`. Cubre:
+ *  - `pending` → revisión, `dry_run` → confirmación (mismo paso, copy
+ *    distinto).
+ *  - `committed` / `discarded` / `failed` / 404 → aviso, sin retomar, con
+ *    «Empezar una carga nueva» (navega al tablero).
+ *  - Legacy (`restage_required`): aviso propio, solo *Descartar*.
+ *  - REGRESIÓN «salir a resolver identidades ya no pierde la carga»: 409
+ *    identity_pending → salir por el enlace → volver → retoma sin re-
+ *    consultar el dry-run innecesariamente y el commit posterior funciona.
+ *  - Descartar con confirmación (POST /discard) y vuelta al tablero.
  *  - Categorías rehidratadas (conteo de filas desde el meta) y a11y (axe).
- *
- * Solo `parseRaceImport` (multipart) se simula; dry-run, commit, detalle y
- * descarte pasan por axios real + MSW. Datos sintéticos.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import {
-  Link,
-  MemoryRouter,
-  Route,
-  Routes,
-  useLocation,
-  useSearchParams,
-} from "react-router-dom";
+import { Link, MemoryRouter, Route, Routes, useSearchParams } from "react-router-dom";
 import { axe } from "jest-axe";
 import { http, HttpResponse } from "msw";
 
-vi.mock("@/api/raceImports", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/api/raceImports")>();
-  return { ...actual, parseRaceImport: vi.fn() };
-});
 vi.mock("@/store/auth.store", () => ({
   useAuthStore: (selector: (s: { accessToken: string }) => unknown) =>
     selector({ accessToken: "test-token" }),
@@ -53,36 +31,16 @@ vi.mock("sonner", () => ({
   toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
 }));
 
-import * as importsApi from "@/api/raceImports";
 import { mswServer } from "@/test/setup";
-import {
-  identityPendingBody,
-  makeCommitResponse,
-  makeImportDetail,
-} from "@/test/msw/raceImportsHistoryHandlers";
+import { makeCommitResponse, makeImportDetail } from "@/test/msw/raceImportsHistoryHandlers";
 import { ImportWizard } from "@/components/competitions/import/ImportWizard";
 import { formatDateTime } from "@/lib/datetime";
 import type {
   ImportDryRunMatchesResponse,
   ImportDryRunRevisionResponse,
-  ImportParseResponse,
 } from "@/types/raceImports.types";
 
 const BASE = "*/api/race-analysis/imports";
-
-const PARSE_RESPONSE: ImportParseResponse = {
-  parse_id: "7",
-  sha256: "abcd",
-  header: {
-    series_name: "Copa Valle de Ciclomontañismo",
-    season: 2026,
-    valida_num: 1,
-    event_name: "Válida I — Ciudad Prueba",
-  },
-  n_rows_resultados: 20,
-  n_rows_general: 0,
-  warnings: [],
-};
 
 const DRY_RUN_CONFIRMED_ONLY: ImportDryRunMatchesResponse = {
   parse_id: "7",
@@ -120,27 +78,18 @@ function useBaseHandlers(overrides?: {
   return calls;
 }
 
-function LocationProbe() {
-  const location = useLocation();
-  return (
-    <div data-testid="loc">
-      {location.pathname}
-      {location.search}
-    </div>
-  );
-}
-
-/** Stand-in de «Cargas e identidades»: ofrece volver a la carga con ?import. */
-function IdentitiesStub() {
+/** Stand-in del tablero: ofrece volver a la carga con `?import=<id>`. */
+function BoardStub() {
   const [params] = useSearchParams();
+  const importId = params.get("import");
   return (
-    <div data-testid="identities-page">
-      <Link
-        to={`/competitions/import?import=${params.get("import")}`}
-        data-testid="back-to-import"
-      >
-        Volver a la carga
-      </Link>
+    <div data-testid="board-stub">
+      Tablero
+      {importId && (
+        <Link to={`/competitions/import?import=${importId}`} data-testid="back-to-import">
+          Volver a la carga
+        </Link>
+      )}
     </div>
   );
 }
@@ -155,51 +104,13 @@ function renderAt(initialEntry: string) {
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={[initialEntry]}>
-        <LocationProbe />
         <Routes>
           <Route path="/competitions/import" element={<ImportWizard />} />
-          <Route path="/competitions/imports" element={<IdentitiesStub />} />
+          <Route path="/competitions/imports" element={<BoardStub />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
   );
-}
-
-function makeValidPdf(name = "valida_1_2026.pdf"): File {
-  const header = new TextEncoder().encode("%PDF-1.4\n");
-  return new File([header, new Uint8Array(512)], name, {
-    type: "application/pdf",
-  });
-}
-
-async function fillStep1AndSubmit(user: ReturnType<typeof userEvent.setup>) {
-  await user.type(
-    screen.getByTestId("wizard-series-name"),
-    "Copa Valle de Ciclomontañismo",
-  );
-  fireEvent.change(screen.getByTestId("wizard-valida-num"), {
-    target: { value: "1" },
-  });
-  await user.type(
-    screen.getByTestId("wizard-event-name"),
-    "Válida I — Ciudad Prueba",
-  );
-  fireEvent.change(screen.getByTestId("wizard-event-date"), {
-    target: { value: "2026-03-15" },
-  });
-  await user.type(screen.getByTestId("wizard-location"), "Ciudad Prueba");
-
-  const input = screen.getByTestId(
-    "race-upload-resultados-input",
-  ) as HTMLInputElement;
-  Object.defineProperty(input, "files", { value: [makeValidPdf()] });
-  fireEvent.change(input);
-  await waitFor(() =>
-    expect(
-      screen.getByTestId("race-upload-resultados-preview"),
-    ).toBeInTheDocument(),
-  );
-  await user.click(screen.getByTestId("wizard-step1-submit"));
 }
 
 describe("ImportWizard — retomar una carga (feature 045, US3)", () => {
@@ -207,35 +118,33 @@ describe("ImportWizard — retomar una carga (feature 045, US3)", () => {
     vi.clearAllMocks();
   });
 
-  it("REGRESIÓN: salir a resolver identidades ya no pierde la carga — se retoma sin volver a subir el archivo", async () => {
-    vi.mocked(importsApi.parseRaceImport).mockResolvedValue(PARSE_RESPONSE);
+  it("REGRESIÓN: salir a resolver identidades ya no pierde la carga — se retoma sin volver a subir nada", async () => {
     const calls = useBaseHandlers();
     let commitAttempts = 0;
     mswServer.use(
       http.post(`${BASE}/7/commit`, () => {
         commitAttempts += 1;
-        // 1.er intento: hay decisiones de identidad de ESTA carga por resolver.
-        // 2.º intento (tras resolverlas y volver): la carga se confirma.
         return commitAttempts === 1
-          ? HttpResponse.json(identityPendingBody(7, 2), { status: 409 })
+          ? HttpResponse.json(
+              {
+                detail: "identity_pending",
+                pending_for_import: 2,
+                review_path: "/competitions/imports?seccion=identidades&import=7",
+              },
+              { status: 409 },
+            )
           : HttpResponse.json(makeCommitResponse({ parse_id: "7" }));
       }),
     );
 
     const user = userEvent.setup();
-    renderAt("/competitions/import");
+    renderAt("/competitions/import?import=7");
 
-    // 1) Subir y parsear: el wizard deja `?import=7` en la URL.
-    await fillStep1AndSubmit(user);
     await waitFor(() =>
       expect(screen.getByTestId("wizard-step2-confirm")).toBeEnabled(),
     );
-    expect(screen.getByTestId("loc")).toHaveTextContent(
-      "/competitions/import?import=7",
-    );
-    expect(importsApi.parseRaceImport).toHaveBeenCalledTimes(1);
 
-    // 2) Confirmar → 409 identity_pending con el conteo de ESTA carga.
+    // 1) Confirmar → 409 identity_pending con el conteo de ESTA carga.
     await user.click(screen.getByTestId("wizard-step2-confirm"));
     expect(
       await screen.findByTestId("wizard-identity-gate-message"),
@@ -243,40 +152,30 @@ describe("ImportWizard — retomar una carga (feature 045, US3)", () => {
       "Hay 2 decisiones de identidad pendientes para esta carga. Resuélvelas en «Cargas e identidades» y vuelve: tu carga queda guardada.",
     );
 
-    // 3) Salir por el enlace a las decisiones (`review_path`): el wizard se
+    // 2) Salir por el enlace a las decisiones (`review_path`): el wizard se
     //    desmonta y con él TODO su estado en memoria.
     await user.click(screen.getByTestId("wizard-identity-review-link"));
-    expect(await screen.findByTestId("identities-page")).toBeInTheDocument();
+    expect(await screen.findByTestId("board-stub")).toBeInTheDocument();
     expect(screen.queryByTestId("import-wizard")).not.toBeInTheDocument();
-    expect(screen.getByTestId("loc")).toHaveTextContent(
-      "/competitions/imports?seccion=identidades&import=7",
-    );
 
-    // 4) Volver a la carga: se retoma en el paso 2, con el archivo intacto.
+    // 3) Volver a la carga: se retoma en el mismo paso, con la carga intacta.
     await user.click(screen.getByTestId("back-to-import"));
     expect(await screen.findByTestId("wizard-resumed-notice")).toHaveTextContent(
       "Retomaste tu carga «valida_1_2026.pdf». El archivo sigue guardado.",
     );
     expect(screen.getByTestId("import-wizard-step2")).toBeInTheDocument();
-    // El formulario del paso 1 NUNCA reaparece: no hay que volver a subir nada.
-    expect(screen.queryByTestId("wizard-step1-submit")).not.toBeInTheDocument();
-    expect(importsApi.parseRaceImport).toHaveBeenCalledTimes(1);
 
-    // 5) Ya resueltas las decisiones, el commit de la MISMA carga funciona.
+    // 4) Ya resueltas las decisiones, el commit de la MISMA carga funciona.
     await waitFor(() =>
       expect(screen.getByTestId("wizard-step2-confirm")).toBeEnabled(),
     );
     await user.click(screen.getByTestId("wizard-step2-confirm"));
     expect(await screen.findByTestId("wizard-step3-success")).toBeInTheDocument();
     expect(commitAttempts).toBe(2);
-    expect(calls.dryRun).toBe(2); // uno al parsear, otro al retomar
-    // Carga confirmada: el parámetro ya no apunta a una carga en curso.
-    expect(screen.getByTestId("loc")).not.toHaveTextContent("import=");
-    // Flujo largo (parseo → 409 → salir → volver → commit): con la suite
-    // completa en paralelo supera el timeout por defecto de 5 s.
+    expect(calls.dryRun).toBe(2); // uno al montar, otro al retomar
   }, 15_000);
 
-  it("?import=<id> en estado pending: retoma en el paso 2 (revisión) con las categorías del meta", async () => {
+  it("?import=<id> en estado pending: retoma con las categorías del meta", async () => {
     const calls = useBaseHandlers();
     renderAt("/competitions/import?import=7");
 
@@ -285,17 +184,12 @@ describe("ImportWizard — retomar una carga (feature 045, US3)", () => {
       "Revisa las coincidencias y confirma.",
     );
     // El meta persistido solo guarda el CONTEO de filas por categoría.
-    expect(screen.getByTestId("category-row-Sub-15 Mujeres")).toHaveTextContent(
-      "12",
-    );
-    expect(screen.getByTestId("category-row-Sub-15 Hombres")).toHaveTextContent(
-      "8",
-    );
+    expect(screen.getByTestId("category-row-Sub-15 Mujeres")).toHaveTextContent("12");
+    expect(screen.getByTestId("category-row-Sub-15 Hombres")).toHaveTextContent("8");
     await waitFor(() => expect(calls.dryRun).toBe(1));
-    expect(importsApi.parseRaceImport).not.toHaveBeenCalled();
   });
 
-  it("?import=<id> en estado dry_run: retoma en el paso 2 (confirmación)", async () => {
+  it("?import=<id> en estado dry_run: retoma en confirmación", async () => {
     useBaseHandlers({ detail: { status: "dry_run" } });
     renderAt("/competitions/import?import=7");
 
@@ -328,8 +222,6 @@ describe("ImportWizard — retomar una carga (feature 045, US3)", () => {
     renderAt("/competitions/import?import=7");
 
     const banner = await screen.findByTestId("wizard-revision-banner");
-    // Intl separa la hora de «p. m.» con espacios no separables; el DOM que
-    // compara Testing Library ya viene con los espacios normalizados.
     const expected = formatDateTime(parentCommittedAt).replace(/\s+/g, " ");
     expect(expected).not.toBe("");
     expect(banner).toHaveTextContent(`ya fue importada el ${expected}`);
@@ -342,16 +234,11 @@ describe("ImportWizard — retomar una carga (feature 045, US3)", () => {
         await new Promise((resolve) => setTimeout(resolve, 60));
         return HttpResponse.json(makeImportDetail({ id: 7 }));
       }),
-      http.post(`${BASE}/7/dry-run`, () =>
-        HttpResponse.json(DRY_RUN_CONFIRMED_ONLY),
-      ),
+      http.post(`${BASE}/7/dry-run`, () => HttpResponse.json(DRY_RUN_CONFIRMED_ONLY)),
     );
     renderAt("/competitions/import?import=7");
 
-    expect(screen.getByTestId("resume-loading")).toHaveTextContent(
-      "Retomando tu carga…",
-    );
-    expect(screen.queryByTestId("wizard-step1-submit")).not.toBeInTheDocument();
+    expect(screen.getByTestId("resume-loading")).toHaveTextContent("Retomando tu carga…");
     expect(await screen.findByTestId("import-wizard-step2")).toBeInTheDocument();
   });
 
@@ -360,7 +247,7 @@ describe("ImportWizard — retomar una carga (feature 045, US3)", () => {
     ["discarded", "Esta carga se descartó."],
     ["failed", "Esta carga no se pudo leer. Sube el archivo de nuevo."],
   ] as const)(
-    "carga %s: no se retoma, avisa y ofrece empezar una carga nueva",
+    "carga %s: no se retoma, avisa y ofrece empezar una carga nueva (navega al tablero)",
     async (status, message) => {
       useBaseHandlers({ detail: { status, parse_meta: null } });
       const user = userEvent.setup();
@@ -369,11 +256,9 @@ describe("ImportWizard — retomar una carga (feature 045, US3)", () => {
       const notice = await screen.findByTestId("resume-status-notice");
       expect(notice).toHaveTextContent(message);
       expect(screen.queryByTestId("import-wizard-step2")).not.toBeInTheDocument();
-      expect(screen.queryByTestId("wizard-step1-submit")).not.toBeInTheDocument();
 
       await user.click(screen.getByTestId("resume-start-new"));
-      expect(await screen.findByTestId("wizard-step1-submit")).toBeInTheDocument();
-      expect(screen.getByTestId("loc")).not.toHaveTextContent("import=");
+      expect(await screen.findByTestId("board-stub")).toBeInTheDocument();
     },
   );
 
@@ -389,7 +274,7 @@ describe("ImportWizard — retomar una carga (feature 045, US3)", () => {
     );
   });
 
-  it("carga inexistente o de otro club (404): avisa sin exponer más y permite empezar de nuevo", async () => {
+  it("carga inexistente o de otro club (404): avisa sin exponer más y permite volver al tablero", async () => {
     mswServer.use(
       http.get(`${BASE}/7`, () =>
         HttpResponse.json({ detail: "no existe" }, { status: 404 }),
@@ -401,26 +286,23 @@ describe("ImportWizard — retomar una carga (feature 045, US3)", () => {
     const notice = await screen.findByRole("alert");
     expect(notice).toHaveTextContent("No encontramos esa carga.");
     await user.click(within(notice).getByTestId("resume-start-new"));
-    expect(await screen.findByTestId("wizard-step1-submit")).toBeInTheDocument();
+    expect(await screen.findByTestId("board-stub")).toBeInTheDocument();
   });
 
-  it("descartar: pide confirmación, llama a POST /discard y vuelve al paso 1 sin ?import", async () => {
+  it("descartar: pide confirmación, llama a POST /discard y navega al tablero", async () => {
     const calls = useBaseHandlers();
     const user = userEvent.setup();
     renderAt("/competitions/import?import=7");
 
     await user.click(await screen.findByTestId("wizard-discard"));
     const dialog = await screen.findByTestId("discard-import-dialog");
-    // Descartar es destructivo: hasta confirmar no se llama al servidor.
     expect(calls.discard).toEqual([]);
     expect(dialog).toHaveTextContent("valida_1_2026.pdf");
 
     await user.click(within(dialog).getByTestId("confirm-discard-import"));
     await waitFor(() => expect(calls.discard).toEqual(["7"]));
 
-    expect(await screen.findByTestId("wizard-step1-submit")).toBeInTheDocument();
-    expect(screen.getByTestId("loc")).not.toHaveTextContent("import=");
-    expect(screen.queryByTestId("resume-status-notice")).not.toBeInTheDocument();
+    expect(await screen.findByTestId("board-stub")).toBeInTheDocument();
   });
 
   it("descartar: cancelar el diálogo conserva la carga", async () => {
@@ -433,16 +315,70 @@ describe("ImportWizard — retomar una carga (feature 045, US3)", () => {
     await user.click(within(dialog).getByRole("button", { name: "Cancelar" }));
 
     await waitFor(() =>
-      expect(
-        screen.queryByTestId("discard-import-dialog"),
-      ).not.toBeInTheDocument(),
+      expect(screen.queryByTestId("discard-import-dialog")).not.toBeInTheDocument(),
     );
     expect(calls.discard).toEqual([]);
     expect(screen.getByTestId("import-wizard-step2")).toBeInTheDocument();
-    expect(screen.getByTestId("loc")).toHaveTextContent("import=7");
   });
 
-  it("a11y: cero violaciones en el paso 2 retomado", async () => {
+  // ---------------------------------------------------------------------------
+  // Amendment 2026-09-26 — carga legacy (`restage_required`, C2 / T158-adjacent)
+  // ---------------------------------------------------------------------------
+
+  it("carga legacy (restage_required): muestra el aviso propio y solo ofrece Descartar", async () => {
+    mswServer.use(
+      http.get(`${BASE}/7`, () =>
+        HttpResponse.json(makeImportDetail({ id: 7, restage_required: true })),
+      ),
+    );
+    renderAt("/competitions/import?import=7");
+
+    const notice = await screen.findByTestId("resume-status-notice");
+    expect(notice).toHaveTextContent(
+      "Esta carga se preparó con el método anterior y ya no se puede revisar. Descártala y pide que se prepare de nuevo.",
+    );
+    expect(screen.queryByTestId("resume-start-new")).not.toBeInTheDocument();
+    expect(screen.getByTestId("resume-legacy-discard")).toBeInTheDocument();
+  });
+
+  it("carga legacy: descartar navega al tablero", async () => {
+    mswServer.use(
+      http.get(`${BASE}/7`, () =>
+        HttpResponse.json(makeImportDetail({ id: 7, restage_required: true })),
+      ),
+      http.post(`${BASE}/7/discard`, () =>
+        HttpResponse.json(
+          makeImportDetail({ id: 7, status: "discarded", restage_required: true }),
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    renderAt("/competitions/import?import=7");
+
+    await user.click(await screen.findByTestId("resume-legacy-discard"));
+    const dialog = await screen.findByTestId("discard-import-dialog");
+    await user.click(within(dialog).getByTestId("confirm-discard-import"));
+
+    expect(await screen.findByTestId("board-stub")).toBeInTheDocument();
+  });
+
+  it("a11y: cero violaciones en la carga legacy", async () => {
+    mswServer.use(
+      http.get(`${BASE}/7`, () =>
+        HttpResponse.json(makeImportDetail({ id: 7, restage_required: true })),
+      ),
+    );
+    const { container } = renderAt("/competitions/import?import=7");
+    await screen.findByTestId("resume-status-notice");
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  // ---------------------------------------------------------------------------
+  // a11y — jest-axe (C2, análisis 044): la revisión (`?import=<id>`) y el
+  // diálogo de descarte deben quedar en cero violaciones.
+  // ---------------------------------------------------------------------------
+
+  it("a11y: cero violaciones en la revisión retomada", async () => {
     useBaseHandlers();
     const { container } = renderAt("/competitions/import?import=7");
     await screen.findByTestId("wizard-resumed-notice");
@@ -452,7 +388,7 @@ describe("ImportWizard — retomar una carga (feature 045, US3)", () => {
     expect(await axe(container)).toHaveNoViolations();
   });
 
-  it("a11y: cero violaciones en el diálogo de descartar", async () => {
+  it("a11y: cero violaciones en el diálogo de descartar (DiscardImportDialog)", async () => {
     useBaseHandlers();
     const user = userEvent.setup();
     renderAt("/competitions/import?import=7");

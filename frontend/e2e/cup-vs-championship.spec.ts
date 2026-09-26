@@ -603,75 +603,141 @@ test.describe("spec 014 — Detalle: tabs copa vs campeonato", () => {
 });
 
 // ---------------------------------------------------------------------------
-// E2E-014-006: ImportWizard — cambiar kind a "championship" oculta
-// wizard-valida-num y muestra wizard-championship-notice
-// series_name está vacío (no hardcodeado a "Copa Valle")
+// E2E-014-006 (amendment 2026-09-26, `contracts/ui-review-only.md` +
+// `contracts/results-skill-cli.md`) — el wizard ya no tiene un selector de
+// tipo (copa/campeonato) para elegir en pantalla: el tipo/nivel se fija en
+// el manifiesto con que la skill/CLI stageó la carga (`series_kind`,
+// `series_level`). Este test stagea un campeonato vía CLI y confirma que
+// el encabezado de revisión (`wizard-review-header`) refleja el nombre de
+// serie y de evento tal como quedaron en el manifiesto — no hay un campo
+// "nivel" propio en la UI (`ImportHeader` no lo trae; ver nota abajo).
 // ---------------------------------------------------------------------------
 
-test.describe("spec 014 — ImportWizard type-aware", () => {
-  test("E2E-014-006: ImportWizard — cambiar a campeonato oculta Válida # y muestra aviso; series_name vacío por defecto", async ({
+test.describe("spec 014 — revisión de una carga de campeonato", () => {
+  test("E2E-014-006: el encabezado de revisión muestra la serie/evento tal como quedaron en el manifiesto stageado (nivel nacional)", async ({
     page,
   }) => {
     await loginAsCoach(page);
+    const token = await page.evaluate(() => {
+      const raw = sessionStorage.getItem("auth-session");
+      if (!raw) return "";
+      try {
+        return JSON.parse(raw)?.state?.accessToken ?? "";
+      } catch {
+        return "";
+      }
+    });
+    const me = (await page.evaluate(
+      async ({ backend, t }) => {
+        const res = await fetch(`${backend}/api/auth/me`, {
+          headers: { Authorization: `Bearer ${t}` },
+        });
+        return res.json();
+      },
+      { backend: BACKEND, t: token },
+    )) as { id: number };
 
-    await page.goto("/competitions/import");
+    // Stage vía CLI (mask → apply → stage --target local), en vez de
+    // llenar un paso 1 que ya no existe. El PDF sintético reutiliza el
+    // generador de `race-history.spec.ts::generateFixturePdfs` — aquí solo
+    // necesitamos UN archivo válido, así que tomamos el primero.
+    const { execFileSync } = await import("node:child_process");
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    const repoRoot = path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "..",
+      "..",
+    );
+    const backendDir = path.join(repoRoot, "backend");
+    const python =
+      process.env.E2E_PYTHON ?? path.join(backendDir, ".venv", "bin", "python");
+    const outDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), "e2e-cup-vs-championship-"),
+    );
+    const genOut = execFileSync(
+      python,
+      ["scripts/generate_e2e_race_history_fixtures.py", outDir],
+      { cwd: backendDir, encoding: "utf-8" },
+    );
+    const [filePath] = genOut.trim().split("\n");
 
-    // El wizard carga
+    const eventName = `E2E Campeonato Nacional ${Date.now()}`;
+    const seriesName = `E2E Campeonato Nacional MTB ${Date.now()}`;
+
+    const maskOut = execFileSync(
+      python,
+      ["-m", "scripts.race_results", "mask", "--file", filePath],
+      { cwd: backendDir, encoding: "utf-8" },
+    );
+    const runDirMatch = maskOut.match(/output[\\/]race-results[\\/][^\s]+/);
+    if (!runDirMatch) throw new Error(`mask: no se encontró el run folder:\n${maskOut}`);
+    const runDir = path.join(backendDir, runDirMatch[0]);
+
+    execFileSync(
+      python,
+      [
+        "-m",
+        "scripts.race_results",
+        "apply",
+        "--run",
+        runDir,
+        "--profile",
+        "copa-valle-results-pdf",
+      ],
+      { cwd: backendDir, encoding: "utf-8" },
+    );
+
+    const manifestPath = path.join(outDir, "manifest.json");
+    fs.writeFileSync(
+      manifestPath,
+      JSON.stringify({
+        series_name: seriesName,
+        series_kind: "championship",
+        series_level: "national",
+        season: 2026,
+        valida_num: 1,
+        event_name: eventName,
+        event_date: "2026-07-18",
+        location: "Sede E2E Ficticia",
+      }),
+    );
+
+    const stageOut = execFileSync(
+      python,
+      [
+        "-m",
+        "scripts.race_results",
+        "stage",
+        "--run",
+        runDir,
+        "--manifest",
+        manifestPath,
+        "--user-id",
+        String(me.id),
+        "--target",
+        "local",
+      ],
+      { cwd: backendDir, encoding: "utf-8" },
+    );
+    const reviewPathMatch = stageOut.match(/\/competitions\/import\?import=\S+/);
+    if (!reviewPathMatch) {
+      throw new Error(`stage: no se encontró la ruta de revisión:\n${stageOut}`);
+    }
+
+    await page.goto(reviewPathMatch[0]);
     await expect(page.getByTestId("import-wizard")).toBeVisible({
       timeout: COLD_START_TIMEOUT,
     });
-
-    // El wizard está en step 1
-    await expect(page.getByTestId("import-wizard-step1")).toBeVisible({
+    await expect(page.getByTestId("import-wizard-step2")).toBeVisible({
       timeout: NAV_TIMEOUT,
     });
 
-    // El selector de tipo existe con valor por defecto "cup"
-    const kindSelect = page.getByTestId("wizard-series-kind");
-    await expect(kindSelect).toBeVisible();
-    await expect(kindSelect).toHaveValue("cup");
-
-    // Para copa: el campo "Válida #" es visible
-    await expect(page.getByTestId("wizard-valida-num")).toBeVisible();
-
-    // El campo series_name está VACÍO (no hardcodeado a "Copa Valle")
-    const seriesNameInput = page.getByTestId("wizard-series-name");
-    await expect(seriesNameInput).toBeVisible();
-    await expect(seriesNameInput).toHaveValue("");
-
-    // El aviso de campeonato NO está visible cuando el tipo es "copa"
-    await expect(
-      page.getByTestId("wizard-championship-notice"),
-    ).toHaveCount(0);
-
-    // Cambiar a "Campeonato"
-    await kindSelect.selectOption("championship");
-
-    // "Válida #" se OCULTA para campeonato
-    await expect(page.getByTestId("wizard-valida-num")).toHaveCount(0, {
-      timeout: NAV_TIMEOUT,
-    });
-
-    // El aviso de "evento único anual" APARECE
-    await expect(
-      page.getByTestId("wizard-championship-notice"),
-    ).toBeVisible({ timeout: NAV_TIMEOUT });
-
-    // El aviso contiene el texto esperado
-    await expect(
-      page.getByTestId("wizard-championship-notice"),
-    ).toContainText(/único/i);
-
-    // El series_name sigue vacío (el cambio de kind no lo rellena)
-    await expect(seriesNameInput).toHaveValue("");
-
-    // Volver a copa restaura "Válida #"
-    await kindSelect.selectOption("cup");
-    await expect(page.getByTestId("wizard-valida-num")).toBeVisible({
-      timeout: NAV_TIMEOUT,
-    });
-    await expect(
-      page.getByTestId("wizard-championship-notice"),
-    ).toHaveCount(0);
+    const header = page.getByTestId("wizard-review-header");
+    await expect(header).toBeVisible({ timeout: NAV_TIMEOUT });
+    await expect(header).toContainText(seriesName);
+    await expect(header).toContainText(eventName);
   });
 });

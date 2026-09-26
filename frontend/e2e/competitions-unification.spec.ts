@@ -537,15 +537,21 @@ test.describe("Competencias 045 — menú del área", () => {
 test.describe("Competencias 045 — PR4/PR5 (prerequisitos de datos)", () => {
   // PR4: el dropdown de catálogo `revision_reason` (data-testid
   // "wizard-revision-reason") SOLO se renderiza cuando el dry-run del wizard
-  // devuelve `is_revision: true`. Eso ocurre únicamente tras una re-ingesta
-  // sobre un race_event con un import previo (SHA256 distinto). El seed no
-  // tiene un import committeado para estas válidas, y no hay PDF fixture en
-  // este entorno e2e, así que no podemos provocar el modo revisión sin
-  // fabricar datos. Se cubre en los tests unitarios de ImportWizard (vitest).
-  test.skip("E2E-CU-011: PR4 dropdown revision_reason aparece en modo revisión [prereq: re-ingesta con import previo + PDF fixture]", async () => {
+  // devuelve `is_revision: true`. Eso ocurre únicamente tras stagear (vía
+  // `python -m scripts.race_results stage`, amendment 2026-09-26 —
+  // `contracts/results-skill-cli.md`) una segunda lectura sobre un
+  // race_event que YA tiene un import committeado (SHA256 distinto). El PDF
+  // fixture sintético SÍ existe en este entorno e2e desde la 044
+  // (`generate_e2e_race_history_fixtures.py`, usado por
+  // `race-history.spec.ts` y `cup-vs-championship.spec.ts`); lo que falta es
+  // el prerrequisito de datos: el seed no deja ninguna válida ya committeada
+  // para stagear una segunda lectura encima. Se cubre en los tests unitarios
+  // de ImportWizard (vitest, modo revisión) y en `revision-via-skill.md`.
+  test.skip("E2E-CU-011: PR4 dropdown revision_reason aparece en modo revisión [prereq: re-ingesta con import previo committeado]", async () => {
     // Prerequisito no disponible en el seed: import previo committeado para
-    // el mismo race_event_id + segundo PDF con SHA256 distinto que dispare
-    // diff_summary con n_delete>0 (que es cuando el motivo es obligatorio).
+    // el mismo race_event_id + una segunda lectura (mask/apply/stage) con
+    // SHA256 distinto que dispare diff_summary con n_delete>0 (que es
+    // cuando el motivo es obligatorio).
   });
 
   // PR5 (reubicado por la 045): el aviso "desactualizado" ya no es el badge

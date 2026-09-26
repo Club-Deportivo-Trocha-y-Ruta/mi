@@ -7,7 +7,7 @@
  *  - Filtro local "Con resultados" filtra correctamente.
  *  - Empty state + CTA "Crear primera válida".
  *  - Kebab "Eliminar" visible solo para admin.
- *  - Kebab "Importar resultados" oculto si has_results=true.
+ *  - Kebab: sin "Importar resultados" (retirado, amendment 2026-09-26).
  *  - Delete admin happy path: invalida lista + cierra dialog.
  *  - Delete 409 muestra mensaje de dependencias.
  *  - 0 violaciones a11y (con items + sin items).
@@ -165,24 +165,24 @@ describe("CompetitionsListPage — render", () => {
 });
 
 describe("CompetitionsListPage — acciones secundarias del header", () => {
-  it("acción 'Cargar resultados' apunta a /competitions/import", async () => {
+  // Amendment 2026-09-26 — la app ya no sube archivos: la acción «Cargar
+  // resultados» se retiró del encabezado (`contracts/ui-review-only.md`).
+  it("la acción 'Cargar resultados' ya no existe en el encabezado", async () => {
     mockAuthAs("coach");
     renderWithProviders(<CompetitionsListPage />);
-    // El nombre accesible viene del aria-label del link.
-    const link = await screen.findByRole("link", {
-      name: /Cargar resultados de una válida/i,
-    });
-    expect(link).toHaveAttribute("href", "/competitions/import");
+    await screen.findByRole("link", { name: /Nueva competencia/i });
+    expect(
+      screen.queryByRole("link", { name: /Cargar resultados/i }),
+    ).not.toBeInTheDocument();
   });
 
   // Feature 045 (T052, FR-019): los botones del encabezado llegan a 48 px
   // (`min-h-12`); el patrón previo era min-h-[44px].
-  it("las cuatro acciones del encabezado mantienen altura táctil ≥48px (min-h-12)", async () => {
+  it("las acciones del encabezado mantienen altura táctil ≥48px (min-h-12)", async () => {
     mockAuthAs("coach");
     renderWithProviders(<CompetitionsListPage />);
     const links = [
-      await screen.findByRole("link", { name: /Cargar resultados de una válida/i }),
-      screen.getByRole("link", { name: /Revisar identidad de competidores/i }),
+      await screen.findByRole("link", { name: /Revisar identidad de competidores/i }),
       screen.getByRole("link", { name: /Ver el tablero de carga histórica/i }),
       screen.getByRole("link", { name: /Nueva competencia/i }),
     ];
@@ -614,7 +614,10 @@ describe("CompetitionsListPage — RBAC kebab", () => {
     expect(menuItem).toBeInTheDocument();
   });
 
-  it("'Importar resultados' NO aparece cuando has_results=true", async () => {
+  // Amendment 2026-09-26 — «Importar resultados» se retiró del kebab por
+  // completo (`contracts/ui-review-only.md`), independientemente de
+  // `has_results`.
+  it("'Importar resultados' ya no aparece en el kebab", async () => {
     mswServer.use(
       http.get("*/api/race-analysis/race-events/", () =>
         HttpResponse.json({

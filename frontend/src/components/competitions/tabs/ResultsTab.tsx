@@ -4,7 +4,7 @@
  * Estado de la tabla:
  *   - loading   → skeleton de filas + anuncio sr-only
  *   - error     → banner con detección de cold-start de Render Free (~50 s)
- *   - vacío     → estado diseñado con CTA "Importar resultados"
+ *   - vacío     → estado diseñado con link "Ir a Cargas" (amendment 2026-09-26)
  *   - con datos → ResultsTable (lazy chunk) con filtros y ordenación
  *
  * Lazy-loading:
@@ -83,7 +83,7 @@ function ResultsTableSkeleton() {
   );
 }
 
-function EmptyState({ raceEventId }: { raceEventId: number }) {
+function EmptyState() {
   return (
     <div
       className="flex min-h-[28vh] flex-col items-center justify-center gap-4 rounded-card bg-surface-raised p-8 text-center shadow-card ring-1 ring-hairline"
@@ -95,16 +95,16 @@ function EmptyState({ raceEventId }: { raceEventId: number }) {
           Sin resultados importados
         </p>
         <p className="text-xs text-mid-gray">
-          Importa el PDF oficial de la Copa Valle para ver los resultados de
-          esta válida.
+          Esta válida todavía no tiene resultados. Cuando su carga esté
+          lista, la encontrarás en Cargas para revisarla.
         </p>
       </div>
       <Link
-        to={`/competitions/${raceEventId}/import`}
+        to="/competitions/imports?seccion=cargas"
         className={buttonVariants({ variant: "default" })}
         data-testid="results-tab-import-cta"
       >
-        Importar resultados
+        Ir a Cargas
       </Link>
     </div>
   );
@@ -195,7 +195,7 @@ export function ResultsTab({
 
   // Si el padre garantiza que no hay resultados, mostramos CTA de inmediato.
   if (hasResults === false) {
-    return <EmptyState raceEventId={raceEventId} />;
+    return <EmptyState />;
   }
 
   return (
@@ -268,7 +268,7 @@ function ResultsTabInner({
     data.categories.length === 0 ||
     data.categories.every((c) => c.rows.length === 0)
   ) {
-    return <EmptyState raceEventId={raceEventId} />;
+    return <EmptyState />;
   }
 
   // ── Con datos ──────────────────────────────────────────────────────────

@@ -13,6 +13,9 @@
  *    NO son capturadas por `/competitions/:id` (detalle de competencia)
  *  - el asistente retomado (`/competitions/import?import=<id>` y
  *    `/competitions/:id/import?import=<id>`) sigue ruteado.
+ *  - amendment 2026-09-26 (`contracts/ui-review-only.md`): sin `?import`,
+ *    `/competitions/import` y `/competitions/:id/import` redirigen al
+ *    tablero (`?seccion=cargas`) — la app ya no sube archivos.
  */
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
@@ -106,6 +109,11 @@ describe("Competencias — redirects y rutas nuevas (feature 045)", () => {
     expect(text).toContain("?seccion=identidades&import=5");
   });
 
+  // Amendment 2026-09-26 — `CompetitionImportPage` está mockeado en este
+  // archivo (prueba solo la TABLA de rutas), así que su propia redirección
+  // interna sin `?import` (→ `/competitions/imports?seccion=cargas`) se
+  // cubre con el componente real en `CompetitionImportPage.test.tsx`. Aquí
+  // solo se confirma que, CON `?import`, la ruta sigue llegando a él.
   it("el asistente retomado sigue ruteado: /competitions/import?import=<id>", async () => {
     const { label, text } = await landAt("/competitions/import?import=9");
     expect(label).toBe("asistente");

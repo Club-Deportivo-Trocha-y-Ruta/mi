@@ -1,7 +1,10 @@
 /**
  * Hooks TanStack Query para el módulo race-imports (F-UP5).
  *
- * - `useImportParse()`  → mutation POST /imports/parse. Invalida history al éxito.
+ * Amendment 2026-09-26 — `useImportParse()` se retiró junto con
+ * `parseRaceImport`: la carga llega ya stageada (skill/CLI de resultados,
+ * `contracts/ui-review-only.md`).
+ *
  * - `useImportDryRun()` → mutation POST /imports/{id}/dry-run.
  * - `useImportCommit()` → mutation POST /imports/{id}/commit. Invalida history + race-runs.
  * - `useImportsHistory({limit, offset, status?})` → query GET /imports/.
@@ -24,7 +27,6 @@ import {
   getAcknowledgeReasons,
   getRaceImport,
   listRaceImports,
-  parseRaceImport,
 } from "@/api/raceImports";
 import type {
   AcknowledgeInput,
@@ -36,8 +38,6 @@ import type {
   ImportDetail,
   ImportDryRunResponse,
   ImportListResponse,
-  ImportParseRequestFields,
-  ImportParseResponse,
   ImportsHistoryParams,
   RowCorrectionInput,
 } from "@/types/raceImports.types";
@@ -55,23 +55,6 @@ export const raceImportsKeys = {
 function invalidateImportCounters(queryClient: ReturnType<typeof useQueryClient>) {
   void queryClient.invalidateQueries({ queryKey: raceImportsKeys.all });
   void queryClient.invalidateQueries({ queryKey: ["dashboard", "coach-summary"] });
-}
-
-export interface UseImportParseVariables {
-  fields: ImportParseRequestFields;
-  files: { resultadosPdf: File; generalPdf?: File | null };
-}
-
-export function useImportParse() {
-  const queryClient = useQueryClient();
-  return useMutation<ImportParseResponse, unknown, UseImportParseVariables>({
-    mutationKey: ["race-imports", "parse"],
-    mutationFn: ({ fields, files }) => parseRaceImport(fields, files),
-    onSuccess: () => {
-      // Un parse deja una carga «en curso»: sube el conteo del badge.
-      invalidateImportCounters(queryClient);
-    },
-  });
 }
 
 export function useImportDryRun() {

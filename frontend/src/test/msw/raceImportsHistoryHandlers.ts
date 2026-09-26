@@ -1,12 +1,14 @@
 /**
  * MSW handlers para el tablero de carga histórica (feature 044, US5, T066).
  *
- * Cubre los endpoints que consume `LoadsSection` (y el wizard al retomar):
+ * Cubre los endpoints que consume `LoadsSection` (y el wizard al revisar):
  *   - GET  /api/race-analysis/imports/
  *   - POST /api/race-analysis/imports/:id/commit
  *   - POST /api/race-analysis/imports/:id/commit-pending
  *   - GET  /api/race-analysis/imports/:id            (feature 045, retomar)
  *   - POST /api/race-analysis/imports/:id/discard    (feature 045)
+ *   - POST /api/race-analysis/imports/:id/dry-run    (amendment 2026-09-26,
+ *     T159: el wizard sin paso 1 arranca siempre desde `?import=<id>`)
  *
  * Privacidad: `original_filename`/nombres siempre sintéticos — nunca datos
  * reales de un menor, ni siquiera en fixtures de test.
@@ -16,6 +18,7 @@ import { http, HttpResponse } from "msw";
 import type {
   ImportCommitResponse,
   ImportDetail,
+  ImportDryRunMatchesResponse,
   ImportListItem,
   ImportListResponse,
 } from "@/types/raceImports.types";
@@ -42,6 +45,7 @@ export function makeHistoricalImportItem(
     valida_num: 1,
     series_name: "Copa Valle de Ciclomontañismo",
     pending_categories_count: 0,
+    restage_required: false,
     ...overrides,
   };
 }
@@ -120,12 +124,39 @@ export function makeImportDetail(
   };
 }
 
+/**
+ * `POST /imports/{id}/dry-run` (T159): matches sin ambiguos — el caso base
+ * para que el paso "Revisar carga" habilite Confirmar sin resolución manual.
+ */
+export function makeDryRunMatchesResponse(
+  overrides?: Partial<ImportDryRunMatchesResponse>,
+): ImportDryRunMatchesResponse {
+  return {
+    parse_id: "1",
+    matches: [
+      {
+        competitor_normalized_name: "ana prueba uno",
+        competitor_name: "Ana Prueba Uno",
+        tyr_athlete: { id: 1, full_name: "Ana Prueba Uno" },
+        confidence: 0.95,
+        is_ambiguous: false,
+      },
+    ],
+    counts: { confirmed: 1, ambiguous: 0, no_match: 0, total: 1 },
+    warnings: [],
+    ...overrides,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Handlers por defecto
 // ---------------------------------------------------------------------------
 
 export const raceImportsHistoryHandlers = [
   http.get(`${BASE}/`, () => HttpResponse.json(makeImportListResponse())),
+  http.post(`${BASE}/:id/dry-run`, () =>
+    HttpResponse.json(makeDryRunMatchesResponse()),
+  ),
   http.post(`${BASE}/:id/commit`, () =>
     HttpResponse.json(makeCommitResponse()),
   ),

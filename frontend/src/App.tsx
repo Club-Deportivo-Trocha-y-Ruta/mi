@@ -794,7 +794,7 @@ export default function App() {
           path="/competitions/import"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense fallback={<RouteFallback label="Cargando importación..." />}>
+              <Suspense fallback={<RouteFallback label="Abriendo la carga…" />}>
                 <CompetitionImportPage />
               </Suspense>
             </ProtectedRoute>
@@ -849,7 +849,7 @@ export default function App() {
           path="/competitions/:id/import"
           element={
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
-              <Suspense fallback={<RouteFallback label="Cargando importación..." />}>
+              <Suspense fallback={<RouteFallback label="Abriendo la carga…" />}>
                 <CompetitionImportPage />
               </Suspense>
             </ProtectedRoute>

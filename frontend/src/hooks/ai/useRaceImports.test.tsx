@@ -9,7 +9,6 @@ import { createElement, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/api/raceImports", () => ({
-  parseRaceImport: vi.fn(),
   dryRunRaceImport: vi.fn(),
   commitRaceImport: vi.fn(),
   listRaceImports: vi.fn(),
@@ -20,7 +19,6 @@ import * as importsApi from "@/api/raceImports";
 import {
   useImportCommit,
   useImportDryRun,
-  useImportParse,
   useImportsHistory,
 } from "./useRaceImports";
 
@@ -35,74 +33,9 @@ function createWrapper() {
     createElement(QueryClientProvider, { client: queryClient }, children);
 }
 
-describe("useImportParse", () => {
-  beforeEach(() => vi.clearAllMocks());
-
-  it("llama parseRaceImport con campos y archivos correctos", async () => {
-    vi.mocked(importsApi.parseRaceImport).mockResolvedValue({
-      parse_id: "p1",
-      sha256: "abc",
-      header: {
-        series_name: "Copa Valle",
-        season: 2026,
-        valida_num: 4,
-        event_name: "IV Cali",
-      },
-      n_rows_resultados: 200,
-      n_rows_general: 0,
-      warnings: [],
-    });
-
-    const wrapper = createWrapper();
-    const { result } = renderHook(() => useImportParse(), { wrapper });
-
-    const pdf = new File(["%PDF-1.4"], "ok.pdf", { type: "application/pdf" });
-    await act(async () => {
-      await result.current.mutateAsync({
-        fields: {
-          series_name: "Copa Valle",
-          season: 2026,
-          valida_num: 4,
-          event_name: "IV Cali",
-          event_date: "2026-05-17",
-          location: "Cali",
-        },
-        files: { resultadosPdf: pdf },
-      });
-    });
-
-    expect(importsApi.parseRaceImport).toHaveBeenCalledTimes(1);
-    const args = vi.mocked(importsApi.parseRaceImport).mock.calls[0];
-    expect(args[0].season).toBe(2026);
-    expect(args[1].resultadosPdf).toBe(pdf);
-  });
-
-  it("propaga el error si parse falla", async () => {
-    vi.mocked(importsApi.parseRaceImport).mockRejectedValue(
-      new Error("boom"),
-    );
-    const wrapper = createWrapper();
-    const { result } = renderHook(() => useImportParse(), { wrapper });
-
-    await act(async () => {
-      await expect(
-        result.current.mutateAsync({
-          fields: {
-            series_name: "x",
-            season: 2026,
-            valida_num: 1,
-            event_name: "x",
-            event_date: "2026-01-01",
-            location: "x",
-          },
-          files: {
-            resultadosPdf: new File([""], "x.pdf"),
-          },
-        }),
-      ).rejects.toThrow("boom");
-    });
-  });
-});
+// Amendment 2026-09-26 — `useImportParse` se retiró junto con
+// `parseRaceImport` (`contracts/ui-review-only.md`): la carga llega ya
+// stageada (skill/CLI de resultados), la app ya no sube archivos.
 
 describe("useImportDryRun", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -179,6 +112,7 @@ describe("useImportsHistory", () => {
           valida_num: 4,
           series_name: "Copa Valle de Ciclomontañismo",
           pending_categories_count: 0,
+          restage_required: false,
         },
       ],
       total: 1,

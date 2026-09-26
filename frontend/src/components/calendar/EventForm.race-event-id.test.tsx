@@ -154,7 +154,10 @@ describe("EventForm — refactor FE-2 race_event_id", () => {
     expect(select.value).toBe("100");
   });
 
-  it("muestra empty state con link a /competitions/import cuando no hay válidas", async () => {
+  // Amendment 2026-09-26 — la válida se crea al confirmar su carga de
+  // resultados, no desde un "módulo de importación" dentro de la app
+  // (`contracts/ui-review-only.md`, copy table).
+  it("muestra empty state con el copy de que la válida se crea al confirmar su carga", async () => {
     mswServer.use(
       http.get("*/api/race-events/available-for-calendar", () =>
         HttpResponse.json([]),
@@ -170,8 +173,12 @@ describe("EventForm — refactor FE-2 race_event_id", () => {
       expect(screen.getByTestId("event-race-event-empty")).toBeInTheDocument();
     });
 
-    const link = screen.getByRole("link", { name: /módulo de importación/i });
-    expect(link).toHaveAttribute("href", "/competitions/import");
+    expect(screen.getByTestId("event-race-event-empty")).toHaveTextContent(
+      "La válida se crea cuando se confirma su carga de resultados.",
+    );
+    expect(
+      screen.queryByRole("link", { name: /módulo de importación/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("hidrata el race_event_id en mode=edit", async () => {

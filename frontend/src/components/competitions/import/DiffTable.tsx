@@ -254,7 +254,7 @@ export function DiffTable({
       >
         <table
           role="table"
-          aria-label="Diferencias entre el PDF nuevo y los resultados ya importados"
+          aria-label="Diferencias entre la lectura nueva y los resultados ya cargados"
           className="w-full border-collapse text-sm"
         >
           <thead className="sticky top-0 bg-light-gray/60 text-xs text-mid-gray">

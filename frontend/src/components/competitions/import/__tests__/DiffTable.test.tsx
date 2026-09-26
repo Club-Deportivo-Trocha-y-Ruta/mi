@@ -192,7 +192,7 @@ describe("DiffTable — render", () => {
   it("tabla tiene role + aria-label apropiados (a11y básico)", () => {
     render(<DiffTable diffRows={MIXED} defaultOnlyChanges={false} />);
     const table = screen.getByRole("table", {
-      name: /Diferencias entre el PDF nuevo/i,
+      name: /Diferencias entre la lectura nueva/i,
     });
     expect(table).toBeInTheDocument();
     // 4 <th> con scope="col"

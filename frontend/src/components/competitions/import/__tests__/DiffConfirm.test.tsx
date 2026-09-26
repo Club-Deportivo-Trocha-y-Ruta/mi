@@ -1,5 +1,8 @@
 /**
  * DiffConfirm — pruebas de integración del flujo de confirmación de diff (US4).
+ * Amendment 2026-09-26 (T159): arranca desde `?import=<id>` con MSW en vez
+ * de llenar el paso 1 (retirado), a través de la forma real de dry-run de
+ * revisión (`contracts/ui-review-only.md`).
  *
  * Verifica que:
  *  1. El diff agrupa los cambios por tipo de acción (create/update/delete/unchanged).
@@ -7,64 +10,32 @@
  *     deletes y no se ha elegido un motivo del catálogo cerrado.
  *  3. Al confirmar con motivo elegido, el commit se ejecuta con el payload
  *     correcto (FR-016: motivo obligatorio con deletes).
- *  4. Un diff que NO tiene deletes permite confirmar sin elegir motivo
- *     (FR-016: solo obligatorio con deletes).
- *  5. jest-axe: el step 2 en modo revisión no tiene violaciones a11y.
- *
- * Nota: este archivo se enfoca en la INTERFAZ de confirmación del diff.
- * Los tests de ciclo completo del wizard (parse → dry-run → commit → step 3)
- * viven en ImportWizard.test.tsx.
+ *  4. Un diff que NO tiene deletes permite confirmar sin elegir motivo.
+ *  5. jest-axe: el paso de revisión en modo revisión no tiene violaciones.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import {
-  render,
-  screen,
-  waitFor,
-  fireEvent,
-  within,
-} from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter } from "react-router-dom";
-import { createElement, type ReactNode } from "react";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { http, HttpResponse } from "msw";
 import { axe, toHaveNoViolations } from "jest-axe";
 
 expect.extend(toHaveNoViolations);
-
-vi.mock("@/api/raceImports", () => ({
-  parseRaceImport: vi.fn(),
-  dryRunRaceImport: vi.fn(),
-  commitRaceImport: vi.fn(),
-  listRaceImports: vi.fn(),
-  getRevisionReasons: vi.fn(),
-  getRaceEventDiff: vi.fn(),
-}));
-
-vi.mock("@/api/athletes", () => ({
-  getAthletes: vi.fn(),
-  getAthlete: vi.fn(),
-}));
 
 vi.mock("@/store/auth.store", () => ({
   useAuthStore: (selector: (s: { accessToken: string }) => unknown) =>
     selector({ accessToken: "test-token" }),
 }));
 
-import * as importsApi from "@/api/raceImports";
-import * as athletesApi from "@/api/athletes";
+import { mswServer } from "@/test/setup";
+import { makeImportDetail } from "@/test/msw/raceImportsHistoryHandlers";
 import { ImportWizard } from "@/components/competitions/import/ImportWizard";
-import type {
-  DiffRow,
-  ImportDryRunRevisionResponse,
-  ImportParseResponse,
-} from "@/types/raceImports.types";
-import { Sex } from "@/types/enums";
+import type { DiffRow, ImportDryRunRevisionResponse } from "@/types/raceImports.types";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+const BASE = "*/api/race-analysis/imports";
 
-function wrap(ui: ReactNode) {
+function renderAt() {
   const qc = new QueryClient({
     defaultOptions: {
       queries: { retry: false, gcTime: 0 },
@@ -72,43 +43,15 @@ function wrap(ui: ReactNode) {
     },
   });
   return render(
-    createElement(
-      QueryClientProvider,
-      { client: qc },
-      createElement(MemoryRouter, null, ui),
-    ),
+    <QueryClientProvider client={qc}>
+      <MemoryRouter initialEntries={["/competitions/import?import=7"]}>
+        <Routes>
+          <Route path="/competitions/import" element={<ImportWizard />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
-
-function makeValidPdf(name = "resultados.pdf"): File {
-  const header = new TextEncoder().encode("%PDF-1.4\n");
-  return new File([header, new Uint8Array(512)], name, {
-    type: "application/pdf",
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Fixtures
-// ---------------------------------------------------------------------------
-
-const PARSE_REVISION: ImportParseResponse = {
-  parse_id: "p-rev",
-  sha256: "sha-rev",
-  header: {
-    series_name: "Copa Valle",
-    season: 2026,
-    valida_num: 4,
-    event_name: "IV — Cali",
-  },
-  n_rows_resultados: 80,
-  n_rows_general: 0,
-  warnings: [],
-  will_be_revision: true,
-  parent_import_id: 10,
-  parent_event_id: 4,
-  parent_committed_at: "2026-05-17T18:42:00Z",
-  parent_n_results: 78,
-};
 
 // Diff con los cuatro tipos de cambio (grouped por action)
 const DIFF_ROWS_ALL_TYPES: DiffRow[] = [
@@ -151,76 +94,40 @@ const DIFF_ROWS_ALL_TYPES: DiffRow[] = [
 ];
 
 const DRY_RUN_WITH_DELETES: ImportDryRunRevisionResponse = {
-  parse_id: "p-rev",
+  parse_id: "7",
   is_revision: true,
   parent_event_id: 4,
-  diff_summary: {
-    n_create: 1,
-    n_update: 1,
-    n_delete: 1,
-    n_unchanged: 77,
-    n_total: 80,
-  },
+  diff_summary: { n_create: 1, n_update: 1, n_delete: 1, n_unchanged: 77, n_total: 80 },
   diff_rows: DIFF_ROWS_ALL_TYPES,
   warnings: [],
 };
 
 const DRY_RUN_NO_DELETES: ImportDryRunRevisionResponse = {
-  parse_id: "p-rev",
+  parse_id: "7",
   is_revision: true,
   parent_event_id: 4,
-  diff_summary: {
-    n_create: 1,
-    n_update: 1,
-    n_delete: 0,
-    n_unchanged: 78,
-    n_total: 80,
-  },
+  diff_summary: { n_create: 1, n_update: 1, n_delete: 0, n_unchanged: 78, n_total: 80 },
   diff_rows: DIFF_ROWS_ALL_TYPES.filter((r) => r.action !== "delete"),
   warnings: [],
 };
 
-// ---------------------------------------------------------------------------
-// Setup
-// ---------------------------------------------------------------------------
-
-async function renderAndGoToRevisionStep2(
-  dryRun: ImportDryRunRevisionResponse,
-) {
-  vi.mocked(importsApi.parseRaceImport).mockResolvedValue(PARSE_REVISION);
-  vi.mocked(importsApi.dryRunRaceImport).mockResolvedValue(dryRun);
+async function renderAndGoToRevision(dryRun: ImportDryRunRevisionResponse) {
+  mswServer.use(
+    http.get(`${BASE}/7`, () => HttpResponse.json(makeImportDetail({ id: 7 }))),
+    http.post(`${BASE}/7/dry-run`, () => HttpResponse.json(dryRun)),
+    http.get(`${BASE}/revision-reasons`, () =>
+      HttpResponse.json({
+        options: [
+          { code: "official_correction", label: "Corrección oficial de la Federación" },
+          { code: "timing_fix", label: "Ajuste de tiempos" },
+        ],
+      }),
+    ),
+  );
 
   const user = userEvent.setup();
-  wrap(<ImportWizard />);
+  renderAt();
 
-  // Paso 1: rellenar campos mínimos y subir PDF
-  // Spec 014: series_name y valida_num son requeridos para copa.
-  await user.type(screen.getByTestId("wizard-series-name"), "Copa Valle");
-  fireEvent.change(screen.getByTestId("wizard-valida-num"), {
-    target: { value: "4" },
-  });
-
-  await user.type(screen.getByTestId("wizard-event-name"), "Válida IV — Cali");
-  fireEvent.change(screen.getByTestId("wizard-event-date"), {
-    target: { value: "2026-05-17" },
-  });
-  await user.type(screen.getByTestId("wizard-location"), "Cali");
-
-  const input = screen.getByTestId(
-    "race-upload-resultados-input",
-  ) as HTMLInputElement;
-  const pdf = makeValidPdf();
-  Object.defineProperty(input, "files", { value: [pdf] });
-  fireEvent.change(input);
-
-  await waitFor(() =>
-    expect(
-      screen.getByTestId("race-upload-resultados-preview"),
-    ).toBeInTheDocument(),
-  );
-  await user.click(screen.getByTestId("wizard-step1-submit"));
-
-  // Esperar a que el wizard entre en modo revisión
   await waitFor(() =>
     expect(screen.getByTestId("wizard-revision-mode")).toBeInTheDocument(),
   );
@@ -230,42 +137,15 @@ async function renderAndGoToRevisionStep2(
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(importsApi.getRevisionReasons).mockResolvedValue({
-    options: [
-      { code: "official_correction", label: "Corrección oficial de la Federación" },
-      { code: "timing_fix", label: "Ajuste de tiempos" },
-    ],
-  });
-  vi.mocked(athletesApi.getAthletes).mockResolvedValue({
-    items: [
-      {
-        id: 1,
-        first_name: "Juan",
-        last_name: "Pérez",
-        sex: Sex.M,
-        category: "INF-A-M",
-        club_id: 1,
-        is_active: true,
-        user_id: null,
-      },
-    ] as unknown[],
-    total: 1,
-  } as Awaited<ReturnType<typeof athletesApi.getAthletes>>);
 });
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 describe("Diff-confirm flow (US4 / FR-014…017)", () => {
   it("renderiza los cuatro tipos de cambio como badges en el DiffTable", async () => {
-    await renderAndGoToRevisionStep2(DRY_RUN_WITH_DELETES);
+    await renderAndGoToRevision(DRY_RUN_WITH_DELETES);
 
-    // DiffTable es lazy — esperar hasta que esté montado
     const diffTable = await screen.findByTestId("diff-table");
     expect(diffTable).toBeInTheDocument();
 
-    // Verificar presencia de las 4 acciones (agrupadas por badge)
     expect(within(diffTable).getByTestId("diff-badge-create")).toBeInTheDocument();
     expect(within(diffTable).getByTestId("diff-badge-update")).toBeInTheDocument();
     expect(within(diffTable).getByTestId("diff-badge-delete")).toBeInTheDocument();
@@ -273,10 +153,9 @@ describe("Diff-confirm flow (US4 / FR-014…017)", () => {
   });
 
   it("muestra los nombres de los competidores en las filas del diff", async () => {
-    await renderAndGoToRevisionStep2(DRY_RUN_WITH_DELETES);
+    await renderAndGoToRevision(DRY_RUN_WITH_DELETES);
 
     const diffTable = await screen.findByTestId("diff-table");
-    // Competidores de todos los tipos
     expect(within(diffTable).getByText("Sofía Rueda")).toBeInTheDocument();
     expect(within(diffTable).getByText("Andrés Mejía")).toBeInTheDocument();
     expect(within(diffTable).getByText("Diego Rojas")).toBeInTheDocument();
@@ -284,75 +163,65 @@ describe("Diff-confirm flow (US4 / FR-014…017)", () => {
   });
 
   it("requiere confirmar explícitamente: botón deshabilitado con deletes sin motivo", async () => {
-    await renderAndGoToRevisionStep2(DRY_RUN_WITH_DELETES);
+    await renderAndGoToRevision(DRY_RUN_WITH_DELETES);
 
     await screen.findByTestId("diff-table");
-    const confirm = screen.getByTestId("wizard-step2-confirm");
-
-    // Con deletions y sin motivo seleccionado → disabled (FR-016)
-    expect(confirm).toBeDisabled();
+    expect(screen.getByTestId("wizard-step2-confirm")).toBeDisabled();
   });
 
   it("permite confirmar una vez seleccionado el motivo del catálogo cerrado", async () => {
-    const user = await renderAndGoToRevisionStep2(DRY_RUN_WITH_DELETES);
+    const user = await renderAndGoToRevision(DRY_RUN_WITH_DELETES);
 
     await screen.findByTestId("diff-table");
     const confirm = screen.getByTestId("wizard-step2-confirm");
     const select = screen.getByTestId("wizard-revision-reason");
 
-    // Antes de elegir motivo → disabled
     expect(confirm).toBeDisabled();
-
-    // Elegir motivo del catálogo (sin texto libre)
     await user.selectOptions(select, "official_correction");
-
-    // Ahora el botón debe estar habilitado (FR-017: aplicación explícita)
     expect(confirm).toBeEnabled();
   });
 
   it("sin deletes el commit no requiere motivo (botón habilitado desde el inicio)", async () => {
-    await renderAndGoToRevisionStep2(DRY_RUN_NO_DELETES);
+    await renderAndGoToRevision(DRY_RUN_NO_DELETES);
 
     await screen.findByTestId("diff-table");
-    const confirm = screen.getByTestId("wizard-step2-confirm");
-    const select = screen.getByTestId("wizard-revision-reason");
-
-    // n_delete=0 → motivo no requerido → enabled
-    expect(select).not.toHaveAttribute("aria-required", "true");
-    expect(confirm).toBeEnabled();
+    expect(screen.getByTestId("wizard-revision-reason")).not.toHaveAttribute(
+      "aria-required",
+      "true",
+    );
+    expect(screen.getByTestId("wizard-step2-confirm")).toBeEnabled();
   });
 
   it("commit envía el código del motivo (no texto libre) en el payload", async () => {
-    vi.mocked(importsApi.commitRaceImport).mockResolvedValue({
-      parse_id: "p-rev",
-      race_event_id: 4,
-      n_results_inserted: 0,
-      n_competitors_created: 0,
-      n_competitors_linked: 0,
-    });
+    let commitBody: unknown;
+    mswServer.use(
+      http.post(`${BASE}/7/commit`, async ({ request }) => {
+        commitBody = await request.json();
+        return HttpResponse.json({
+          parse_id: "7",
+          race_event_id: 4,
+          n_results_inserted: 0,
+          n_competitors_created: 0,
+          n_competitors_linked: 0,
+        });
+      }),
+    );
 
-    const user = await renderAndGoToRevisionStep2(DRY_RUN_WITH_DELETES);
+    const user = await renderAndGoToRevision(DRY_RUN_WITH_DELETES);
     await screen.findByTestId("diff-table");
 
-    await user.selectOptions(
-      screen.getByTestId("wizard-revision-reason"),
-      "timing_fix",
-    );
+    await user.selectOptions(screen.getByTestId("wizard-revision-reason"), "timing_fix");
     await user.click(screen.getByTestId("wizard-step2-confirm"));
 
-    await waitFor(() =>
-      expect(importsApi.commitRaceImport).toHaveBeenCalledTimes(1),
-    );
-
-    // El payload debe contener el CODE del catálogo, NO texto libre (PR4)
-    const [, body] = vi.mocked(importsApi.commitRaceImport).mock.calls[0];
-    expect(body.revision_reason).toBe("timing_fix");
-    // Y el commit envía matches vacíos en modo revisión
-    expect(body.resolved_matches).toHaveLength(0);
+    await waitFor(() => expect(commitBody).toBeDefined());
+    // El payload debe contener el CODE del catálogo, NO texto libre (PR4).
+    expect(commitBody).toEqual({
+      resolved_matches: [],
+      revision_reason: "timing_fix",
+    });
   });
 
   it("el filtro 'solo cambios' oculta las filas sin cambios por defecto cuando hay >20 unchanged", async () => {
-    // Diff con muchos unchanged para disparar el default de la DiffTable
     const manyUnchanged: DiffRow[] = [];
     for (let i = 0; i < 25; i++) {
       manyUnchanged.push({
@@ -366,16 +235,10 @@ describe("Diff-confirm flow (US4 / FR-014…017)", () => {
       });
     }
     const dryRunManyUnchanged: ImportDryRunRevisionResponse = {
-      parse_id: "p-rev",
+      parse_id: "7",
       is_revision: true,
       parent_event_id: 4,
-      diff_summary: {
-        n_create: 1,
-        n_update: 1,
-        n_delete: 1,
-        n_unchanged: 25,
-        n_total: 28,
-      },
+      diff_summary: { n_create: 1, n_update: 1, n_delete: 1, n_unchanged: 25, n_total: 28 },
       diff_rows: [
         {
           action: "update",
@@ -391,28 +254,21 @@ describe("Diff-confirm flow (US4 / FR-014…017)", () => {
       warnings: [],
     };
 
-    await renderAndGoToRevisionStep2(dryRunManyUnchanged);
+    await renderAndGoToRevision(dryRunManyUnchanged);
     const diffTable = await screen.findByTestId("diff-table");
 
-    // El toggle debe estar ON por defecto (>20 unchanged)
-    const toggle = within(diffTable).getByTestId(
-      "diff-toggle-only-changes",
-    ) as HTMLInputElement;
+    const toggle = within(diffTable).getByTestId("diff-toggle-only-changes") as HTMLInputElement;
     expect(toggle.checked).toBe(true);
 
-    // Los sin-cambios no se muestran, el actualizado sí
     expect(within(diffTable).getByText("Competidor Actualizado")).toBeInTheDocument();
     expect(within(diffTable).queryByText("Corredor 0")).not.toBeInTheDocument();
   });
 
-  it("jest-axe: modo revisión step 2 sin violaciones de accesibilidad", async () => {
-    await renderAndGoToRevisionStep2(DRY_RUN_WITH_DELETES);
+  it("jest-axe: modo revisión sin violaciones de accesibilidad", async () => {
+    await renderAndGoToRevision(DRY_RUN_WITH_DELETES);
     await screen.findByTestId("diff-table");
 
-    // axe sobre el wizard completo en estado step 2
-    const container = screen
-      .getByTestId("import-wizard")
-      .closest("section") as HTMLElement;
+    const container = screen.getByTestId("import-wizard").closest("section") as HTMLElement;
     const results = await axe(container ?? document.body);
     expect(results).toHaveNoViolations();
   });

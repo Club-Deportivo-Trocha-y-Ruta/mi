@@ -204,9 +204,17 @@ async function apiPost(
 }
 
 // ---------------------------------------------------------------------------
-// Wizard — sube un archivo, llena metadata, resuelve el hueco de
-// completitud (si aparece) y comprometa la válida.
+// Amendment 2026-09-26 (`contracts/ui-review-only.md`, `contracts/
+// results-skill-cli.md`, T167) — la app ya no sube archivos. Los PDFs
+// sintéticos se preparan con `python -m scripts.race_results` (mask → apply
+// con un perfil de lectura → stage --target local) contra la base de la
+// pila e2e, tal como lo haría el operador con la skill de resultados. El
+// wizard arranca directo en la revisión (`/competitions/import?import=<id>`)
+// que imprime `stage` en stdout. Todo lo posterior al staging queda igual.
 // ---------------------------------------------------------------------------
+
+/** Perfil de lectura para los PDFs sintéticos del builder (layout Copa Valle). */
+const READING_PROFILE = "copa-valle-results-pdf";
 
 interface StageOptions {
   filePath: string;
@@ -219,10 +227,80 @@ interface StageOptions {
   categoryHeader: string;
   /** true si esta categoría trae un hueco de completitud a reconocer. */
   expectGap: boolean;
+  /** id numérico del actor (coach) en la base de la pila e2e — `stage --user-id`. */
+  coachUserId: number;
+}
+
+/** Corre un subcomando de `scripts.race_results` y devuelve su stdout. */
+function runRaceResultsCli(args: string[]): string {
+  const python =
+    process.env.E2E_PYTHON ?? path.join(BACKEND_DIR, ".venv", "bin", "python");
+  return execFileSync(python, ["-m", "scripts.race_results", ...args], {
+    cwd: BACKEND_DIR,
+    env: {
+      ...process.env,
+      DYLD_FALLBACK_LIBRARY_PATH:
+        process.env.DYLD_FALLBACK_LIBRARY_PATH ?? "/opt/homebrew/lib",
+    },
+    encoding: "utf-8",
+  });
 }
 
 /**
- * Sube+llena el wizard hasta intentar el commit (step2 → confirm).
+ * `mask` → `apply` → `stage --target local` (contracts/results-skill-cli.md)
+ * sobre `opts.filePath`, con un manifiesto explícito (forma "Explicit" del
+ * contrato). Devuelve la ruta de revisión (`/competitions/import?import=<id>`)
+ * que `stage` imprime en stdout.
+ */
+function stageViaSkillCli(opts: StageOptions): string {
+  const maskOut = runRaceResultsCli(["mask", "--file", opts.filePath]);
+  const runDirMatch = maskOut.match(/output[\\/]race-results[\\/][^\s]+/);
+  if (!runDirMatch) {
+    throw new Error(`stageViaSkillCli: no se encontró el run folder en:\n${maskOut}`);
+  }
+  const runDir = path.join(BACKEND_DIR, runDirMatch[0]);
+
+  runRaceResultsCli(["apply", "--run", runDir, "--profile", READING_PROFILE]);
+
+  const manifestPath = path.join(
+    fs.mkdtempSync(path.join(os.tmpdir(), "e2e-race-results-manifest-")),
+    "manifest.json",
+  );
+  fs.writeFileSync(
+    manifestPath,
+    JSON.stringify({
+      series_name: opts.seriesName,
+      series_kind: "cup",
+      series_level: "departmental",
+      season: opts.seasonYear,
+      valida_num: opts.validaNum,
+      event_name: opts.eventName,
+      event_date: opts.eventDate,
+      location: opts.location,
+    }),
+  );
+
+  const stageOut = runRaceResultsCli([
+    "stage",
+    "--run",
+    runDir,
+    "--manifest",
+    manifestPath,
+    "--user-id",
+    String(opts.coachUserId),
+    "--target",
+    "local",
+  ]);
+  const reviewPathMatch = stageOut.match(/\/competitions\/import\?import=\S+/);
+  if (!reviewPathMatch) {
+    throw new Error(`stageViaSkillCli: no se encontró la ruta de revisión en:\n${stageOut}`);
+  }
+  return reviewPathMatch[0];
+}
+
+/**
+ * Abre la revisión de una carga ya stageada (`stageViaSkillCli`), resuelve el
+ * hueco de completitud (si aparece) e intenta el commit (confirmar → commit).
  *
  * CORREGIDO tras la primera corrida real contra la pila aislada
  * (2026-09-22): un commit exitoso NUNCA deja ver `import-wizard-step3` en
@@ -238,26 +316,8 @@ async function stageAndAttemptCommit(
   page: Page,
   opts: StageOptions,
 ): Promise<"navigated" | "step3-error"> {
-  await page.goto("/competitions/import");
-  await expect(page.getByTestId("import-wizard-step1")).toBeVisible({
-    timeout: NAV_TIMEOUT,
-  });
-
-  await page.getByTestId("wizard-series-kind").selectOption("cup");
-  await page.getByTestId("wizard-series-name").fill(opts.seriesName);
-  await page.getByTestId("wizard-season").fill(String(opts.seasonYear));
-  await page.getByTestId("wizard-valida-num").fill(String(opts.validaNum));
-  await page.getByTestId("wizard-event-name").fill(opts.eventName);
-  await page.getByTestId("wizard-event-date").fill(opts.eventDate);
-  await page.getByTestId("wizard-location").fill(opts.location);
-  await page
-    .getByTestId("race-upload-resultados-input")
-    .setInputFiles(opts.filePath);
-
-  // `{ force: true }`: un toast sonner ajeno a este flujo (p. ej.
-  // "Condiciones sin registrar") puede aparecer justo encima del botón y
-  // bloquear el click real — no es parte de lo que este spec verifica.
-  await page.getByTestId("wizard-step1-submit").click({ force: true });
+  const reviewPath = stageViaSkillCli(opts);
+  await page.goto(reviewPath);
   await expect(page.getByTestId("import-wizard-step2")).toBeVisible({
     timeout: NAV_TIMEOUT,
   });
@@ -411,6 +471,10 @@ test.describe("Feature 044 — historial Copa Valle (T087)", () => {
 
     await login(page, COACH);
     const coachToken = await getToken(page);
+    // `stage --user-id` necesita el id numérico del actor en la base de la
+    // pila e2e (el mismo coach autenticado en la app).
+    const me = (await apiGet(page, coachToken, "/api/auth/me")) as { id: number };
+    const coachUserId = me.id;
 
     const seriesName = `E2E Historico Copa Valle ${Date.now()}`;
 
@@ -427,6 +491,7 @@ test.describe("Feature 044 — historial Copa Valle (T087)", () => {
       location: "Sede E2E Ficticia",
       categoryHeader: "INFANTIL A",
       expectGap: false,
+      coachUserId,
     });
     if (outcome2024 === "step3-error" && (await isIdentityPendingError(page))) {
       await decideAllPendingCandidates(page);
@@ -485,6 +550,7 @@ test.describe("Feature 044 — historial Copa Valle (T087)", () => {
       location: "Sede E2E Ficticia",
       categoryHeader: "INFANTIL B",
       expectGap: true,
+      coachUserId,
     });
 
     // 3) Identidad: casi seguro bloqueada aquí (Mateo/Sofia ya tienen con

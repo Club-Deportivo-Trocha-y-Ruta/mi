@@ -48,43 +48,13 @@ export type ImportStatus =
   | "discarded";
 
 // ---------------------------------------------------------------------------
-// POST /imports/parse
+// Amendment 2026-09-26 — la carga se prepara fuera de la app (skill/CLI);
+// el wizard ya no sube archivos. `ImportParseRequestFields` (el body de
+// `POST /imports/parse`) se retiró junto con `parseRaceImport`
+// (`contracts/ui-review-only.md`). `ImportParseResponse` se conserva: el
+// camino de retomar una carga (`resumeFromDetail.ts`) sigue construyendo
+// este shape a partir de `GET /imports/{id}`.
 // ---------------------------------------------------------------------------
-
-export interface ImportParseRequestFields {
-  series_name: string;
-  season: number;
-  valida_num: number;
-  event_name: string;
-  event_date: string; // YYYY-MM-DD
-  location: string;
-  kind?: "resultados" | "general" | "both";
-  /**
-   * Spec 014 — Cup vs Championship: tipo de la serie a la que pertenece el
-   * evento. El backend lo usa para resolver/crear la serie correctamente y
-   * para omitir el número de válida en campeonatos (fuerza sequence_number=1,
-   * is_championship=true). Default `cup` para compatibilidad hacia atrás.
-   */
-  series_kind?: "cup" | "championship";
-  /**
-   * Feature 023 — Nivel del campeonato (departamental|nacional). Solo
-   * consultado por el backend cuando crea una serie de campeonato NUEVA;
-   * ignorado si la serie ya existe (resuelta por `series_id`). Default
-   * `departmental` para compatibilidad hacia atrás.
-   */
-  series_level?: "departmental" | "national";
-  // F-COND — campos opcionales de condiciones de carrera
-  /** Descripción corta del clima (máx 60 chars), ej: "Soleado con viento". */
-  climate?: string | null;
-  /** Temperatura ambiente en °C (0-50). Acepta string o number para flexibilidad de inputs. */
-  temperature_c?: string | number | null;
-  /** Estado del terreno en el momento de la prueba. */
-  surface_condition?: SurfaceCondition | null;
-  /** Altitud de la sede en metros sobre el nivel del mar (0-5000). */
-  altitude_msnm?: number | null;
-  /** Notas adicionales de condiciones climáticas (máx 2000 chars). */
-  weather_notes?: string | null;
-}
 
 /**
  * Condiciones de carrera tal como las devuelve el backend en el bloque
@@ -456,6 +426,13 @@ export interface ImportDetail {
    * válida o la carga ya no está en curso.
    */
   parent_committed_at?: string | null;
+  /**
+   * Amendment 2026-09-26 (`contracts/staged-import.md`) — `true` cuando la
+   * carga viene de antes de esta amendment y no tiene documento stageado:
+   * ninguna ruta de revisión puede leerla. El wizard y el tablero muestran
+   * el aviso legacy y solo ofrecen *Descartar*.
+   */
+  restage_required?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -499,6 +476,8 @@ export interface ImportListItem {
    * `ImportCommitResponse.pending_categories`, contado.
    */
   pending_categories_count: number;
+  /** Amendment 2026-09-26 — ver `ImportDetail.restage_required`. */
+  restage_required: boolean;
 }
 
 export interface ImportListResponse {
@@ -557,65 +536,8 @@ export interface RaceEventDiffResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Feature 015 — Prefill import from competition (view-model, frontend-only)
-//
-// Composed by `useImportPrefill(raceEventId)` from the existing race-event and
-// race-series reads. NO new backend field, table, or endpoint (FR-012).
-// Privacidad: solo lleva metadata de competencia ya visible en la tarjeta
-// "Información" del detalle — cero PII de menores (FR-013).
+// Amendment 2026-09-26 — feature 015's prefill view-model (`ImportPrefill`,
+// `ImportPrefillValues`, `ImportPrefillStatus`, `useImportPrefill`) se retiró
+// junto con el paso 1 del wizard: la carga ya no se crea desde una
+// competencia dentro de la app (`contracts/ui-review-only.md`).
 // ---------------------------------------------------------------------------
-
-/**
- * Estado del prefill del wizard cuando se lanza desde una competencia.
- *
- * - `loading`: se están resolviendo evento + serie.
- * - `ready`: evento cargado Y serie resuelta desde `series_id` → `values`.
- * - `blocked`: la serie/tipo no se pudo determinar (FR-009) → se ofrece
- *   `editMetadataHref` y la importación NO puede continuar.
- * - `error`: el fetch del evento falló (404 u otro) → UI de error existente.
- */
-export type ImportPrefillStatus = "loading" | "ready" | "blocked" | "error";
-
-/**
- * Valores derivados que se precargan y bloquean en el paso 1 del wizard.
- *
- * `series_kind` se deriva de `series.kind` y NO es editable en el flujo
- * (FR-005). `valida_num` es `null` para campeonatos (campo oculto, FR-008).
- * Las condiciones se precargan pero permanecen editables (comportamiento
- * actual del wizard).
- */
-export interface ImportPrefillValues {
-  series_kind: ImportSeriesKind;
-  series_name: string;
-  season: number;
-  valida_num: number | null;
-  event_name: string;
-  event_date: string;
-  location: string;
-  conditions?: {
-    climate?: string;
-    temperature_c?: number;
-    surface_condition?: SurfaceCondition | null;
-    altitude_msnm?: number;
-    weather_notes?: string;
-  };
-}
-
-/** Tipo de serie derivado — espejo del enum de race-series (cup | championship). */
-export type ImportSeriesKind = "cup" | "championship";
-
-/**
- * View-model del prefill producido por `useImportPrefill(raceEventId)`.
- *
- * Cuando el wizard se monta sin `raceEventId` (flujo standalone) este
- * view-model NO se produce y el wizard se comporta exactamente como hoy
- * (FR-007).
- */
-export interface ImportPrefill {
-  status: ImportPrefillStatus;
-  raceEventId: number;
-  /** Presente solo cuando `status === "ready"`. */
-  values?: ImportPrefillValues;
-  /** Presente cuando `status === "blocked"` — destino del escape hatch (FR-009). */
-  editMetadataHref?: string;
-}

@@ -170,3 +170,36 @@ Top 3 priorities: (1) `HistoryTable` has zero mobile accommodation — a 360 px 
 
 ## Next steps
 Findings are recommendations only — implementation belongs to `react-ui-engineer` via `engineering-lead`; the FR-042 backend gap should go to `product-manager`/`engineering-lead` as a follow-up task, not be patched with copy alone.
+
+# UX review — review-only wizard, legacy state, redirects (amendment 2026-09-26, US5, T166)
+
+Reviewed on the coach's tablet viewport (768–834 px) against the Nielsen heuristics and the project's no-dead-entry-point rule, after `contracts/ui-review-only.md` retired the upload step: `ImportWizard` (now "Revisar carga" / "Resultado"), `LoadsSection` (the board), the entry points in `CompetitionsListPage`/`CompetitionDetailPage`/`ResultsTab`/`EventForm`, `ResumeStatusNotice`'s legacy state, and the `/competitions/import` and `/competitions/:id/import` redirects.
+
+## Findings
+
+### [MINOR] Heuristic 1 (visibility of system status) — the legacy notice names the *cause* but not *who* fixes it
+`ResumeStatusNotice`'s legacy copy — *"Esta carga se preparó con el método anterior y ya no se puede revisar. Descártala y pide que se prepare de nuevo."* — correctly explains why the review can't open (Heuristic 1: the system state is visible) and gives the one available action (*Descartar*). What it doesn't say is who "prepara de nuevo" — the coach doesn't run the results skill themselves; someone with CLI/skill access does. A coach reading this cold could reasonably try clicking around for an upload button (there isn't one) before realizing the fix is outside the app entirely.
+Fix: append a half-sentence naming the channel, e.g. *"…y pide que se prepare de nuevo (quien maneja las cargas técnicas puede hacerlo)."* Low priority — the legacy path only fires for pre-amendment imports, a shrinking, one-time population, and *Descartar* remains a safe, non-destructive-to-data action regardless.
+
+### [MINOR] Heuristic 5 (error prevention) — the board's "Descartar" for a legacy row reads identically to discarding a normal in-progress row
+`LoadsSection`'s legacy row (badge "Preparar de nuevo") shows only *Descartar*, same button, same confirmation copy as any other in-progress row's discard (`DiscardImportDialog`'s generic text). For a normal row, discarding is reversible in spirit (the coach can re-run the skill and get a fresh import); for a legacy row, discarding is the *only* path forward, not an optional cleanup — but the dialog doesn't distinguish the two, so a coach skimming the confirmation text has no extra signal that this particular discard is mandatory-not-optional.
+Fix: low priority, since the current copy ("El archivo original queda guardado como respaldo. Si descartas la carga, habrá que prepararla de nuevo.") is already accurate for both cases and not misleading — flagging only because a legacy-specific sentence ("Esta carga no se puede revisar; descártala para poder prepararla de nuevo.") would remove a beat of hesitation. Not blocking.
+
+### [MINOR] Heuristic 4 (consistency) — "Revisar la carga" now names the same action three different ways across the module
+The board's resume link, the matches-unresolved inline link, and the review page's own heading all converged on "revisar" language this amendment ("Revisar la carga", "Revisar carga de resultados"), which is the right convergence — but `ResultsTab`'s empty-state CTA says "Ir a Cargas" (a destination, not an action) while the calendar hint says nothing actionable at all ("La válida se crea cuando se confirma su carga de resultados."). Both are correct copy for their context (one is a navigation link to a list, not to a specific carga; the other explains a system constraint, not an action), so this is a note rather than a defect — flagging only because a first read across all five entry points in sequence surfaces a slight verb/destination inconsistency a copy pass might tighten further.
+Fix: none required now; if a future pass unifies module vocabulary, prefer destination-style labels ("Ir a Cargas") for anything that lands on a list and action-style labels ("Revisar la carga") for anything that lands on one specific item — which is already the pattern actually shipped, just worth stating explicitly for the next person editing this copy.
+
+## What's already right (no finding needed)
+- **No dead entry point**: every retired upload CTA (`CompetitionsListPage` header and row-menu, `CompetitionDetailPage` primary CTA) was deleted outright rather than left pointing at a route that 404s or silently no-ops — confirmed by `noResultsUpload.test.tsx` asserting zero `input[type=file]` and zero "Cargar resultados"/"Importar resultados"/"Cargar archivo" text across the review page, the board, the list, the detail, and the results tab.
+- **Heuristic 3 (user control and freedom)**: `/competitions/import` and `/competitions/:id/import` without `?import=<id>` redirect to the board instead of rendering an empty or broken form — a coach who follows a stale bookmark lands somewhere useful, not at a dead end. Confirmed by `CompetitionImportPage.test.tsx` and `competitionsRedirects.test.tsx`.
+- **Heuristic 1 again**: the review page's loading fallback ("Abriendo la carga…") and the board's own loading/empty/error states all describe what's happening in the coach's language, never a bare spinner — consistent with the project's cold-start rule for Render's free tier.
+- **Heuristic 7 (flexibility)**: *Volver*, *Cargar otro*, a successful discard, and the legacy notice's only action all converge on the same destination (`/competitions/imports?seccion=cargas`) — one mental model for "I'm done here, take me back," not three slightly different ones depending on which button the coach happened to press.
+- **Touch targets**: every button/link touched by this amendment (`resume-legacy-discard`, the board's "Revisar la carga", the wizard's "Descartar esta carga") keeps the ≥48 px (`min-h-12`) floor already established for this module — no regression introduced while rewiring copy and navigation.
+- **No third-party/minor data leak introduced**: the legacy state and the copy sweep touch presentation only — no new field, log line, or error message in this amendment surfaces a row value (name/city/club); confirmed against the constitution's privacy rule during this review.
+
+## Executive summary
+Critical (blocker): 0 · Major: 0 · Minor: 3
+The upload removal is clean: no dead entry point, no broken redirect, no leftover copy referencing "subir"/"cargar archivo" anywhere the guard test doesn't already cover, and the legacy state is a genuinely minimal, one-action screen a coach can't get stuck on. The three findings above are all copy-polish, not correctness or safety issues, and none block the amendment from shipping.
+
+## Next steps
+No blocking work. The three minor findings are optional copy refinements for a future pass — none are assigned back to `react-ui-engineer` for this deploy.

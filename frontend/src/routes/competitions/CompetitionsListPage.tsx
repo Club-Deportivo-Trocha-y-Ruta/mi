@@ -37,7 +37,6 @@ import {
   Trash2,
   Trophy,
   UserCheck,
-  Upload,
 } from "lucide-react";
 
 import {
@@ -260,15 +259,9 @@ export function CompetitionsListPage() {
         subtitle="Válidas Copa Valle y campeonatos del club."
         actions={
           <>
-            {/* Acciones secundarias */}
-            <Link
-              to="/competitions/import"
-              className={HEADER_ACTION_SECONDARY_CLASS}
-              aria-label="Cargar resultados de una válida"
-            >
-              <Upload size={14} aria-hidden="true" />
-              Cargar resultados
-            </Link>
+            {/* Acciones secundarias. Amendment 2026-09-26: la app ya no sube
+                archivos — la entrada «Cargar resultados» se retiró
+                (`contracts/ui-review-only.md`). */}
             {/* Feature 044 (US4) — entrada a la revisión de identidad del
                 histórico. 045: apunta directo a «Cargas e identidades» (la
                 ruta vieja solo redirige). */}
@@ -688,18 +681,9 @@ function ActionsKebab({
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        {/* Importar resultados — solo si no tiene resultados */}
-        {!item.has_results && (
-          <DropdownMenuItem asChild>
-            <Link
-              to={`/competitions/${item.id}/import`}
-              className="flex items-center gap-2"
-            >
-              <Upload size={14} aria-hidden="true" />
-              Importar resultados
-            </Link>
-          </DropdownMenuItem>
-        )}
+        {/* Amendment 2026-09-26: la app ya no sube archivos — «Importar
+            resultados» se retiró (`contracts/ui-review-only.md`). La carga
+            se prepara fuera de la app y se revisa desde «Cargas». */}
 
         {/* Editar datos */}
         <DropdownMenuItem asChild>
