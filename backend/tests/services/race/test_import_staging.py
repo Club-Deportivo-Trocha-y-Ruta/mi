@@ -35,15 +35,10 @@ from app.models.race_import import RaceImport, RaceImportKind, RaceImportStatus
 from app.models.race_import_staged_document import RaceImportStagedDocument
 from app.models.race_series import RaceSeries, RaceSeriesKind
 from app.models.user import User, UserRole
-from app.services.race.import_staging import (
-    StageHeader,
-    _STAGE_PUBLIC_META_KEYS,
-    stage_extracted_results,
-)
+from app.services.race.import_staging import _STAGE_PUBLIC_META_KEYS
 from app.services.race.staged_document import (
     ParsedCategory,
     ParsedResults,
-    ResultsRow,
     document_from_json,
 )
 from app.services.request_context import AuditContext

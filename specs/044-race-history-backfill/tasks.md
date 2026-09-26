@@ -1139,7 +1139,7 @@ This follows the same policy as Phases 1–10:
 
 **Purpose**: the operator's procedure, written for the LLM, with its guardrails (R-29, `contracts/results-skill-cli.md` § Skill procedure).
 
-- [ ] T177 [P] Write the skill in English:
+- [X] T177 [P] Write the skill in English:
   - `.claude/skills/race-results-load/SKILL.md`:
     - the eight rules of the contract;
     - the prerequisites;
@@ -1151,11 +1151,17 @@ This follows the same policy as Phases 1–10:
   - `references/reading-profile.md`: schema v1 with a worked example built on a builder file's masked view (fake names only).
   - `references/manifest.md`: both forms, with placeholders.
 
+  **Done 2026-09-26.** All four files written. The eight rules are quoted verbatim from `contracts/results-skill-cli.md` § Skill procedure inside `SKILL.md`. The `reading-profile.md` worked example is not hand-written: a synthetic PDF was built with `tests/helpers/results_pdf_builder.py` (layout `"2026"`, category `PREJUVENIL A`, 4 rows, `FakeNameGenerator`), `build_masked_view`/`render_masked_view` was actually run on it to capture the real `masked/view.txt`, and the derived profile was actually run through `apply_profile` — the counts shown (4 rows, code `PJUV_A`, 0 unreadable, `leak_count: 0`) are real engine output, not asserted prose. **Flagged for T179/T180 (not fixed here — no code touched)**: writing the worked example surfaced that `results_skill/masking.py` never renders a `WORD` token verbatim, on *any* line, including a structural (`S`) one where every word is by construction already in the vocabulary (`_classify_token`'s `WORD` branch always returns `"⟨W⟩"` regardless of vocabulary membership; `_render_run` reads that field unconditionally, with no branch on `line.kind`) — stricter than `contracts/masked-view.md`'s own illustrative example, which shows column titles and category headers rendered verbatim. Verified directly against the tuples masking.py builds (`(cls, raw, masked)`), not inferred. The references were written to document this actual, tested behaviour (geometry-only reasoning; a real word only ever comes from the operator reading the printed file, per rule 3) rather than the contract's more permissive illustration, so the skill never tells an operator to expect something the code will not show. `docs/technical-notes.md`'s dated entry (T183) repeats this finding for visibility.
+
   [agent: data-analyst · opus]
-- [ ] T178 [P] Add `permissions.deny` for `Read(./output/race-results/**/private/**)` to `.claude/settings.json`, checking the exact rule syntax against the current Claude Code documentation (the `update-config` skill). Document in `SKILL.md` the optional local deny rule for the operator's official-files folder. Confirm that `output/` is still git-ignored.
+- [X] T178 [P] Add `permissions.deny` for `Read(./output/race-results/**/private/**)` to `.claude/settings.json`, checking the exact rule syntax against the current Claude Code documentation (the `update-config` skill). Document in `SKILL.md` the optional local deny rule for the operator's official-files folder. Confirm that `output/` is still git-ignored.
+
+  **Done 2026-09-26.** `permissions.deny: ["Read(./output/race-results/**/private/**)"]` added to `.claude/settings.json`, syntax confirmed against the `update-config` skill's own schema reference (path rules use `Read(path)` for every read, `Edit(path)` for writes); the pre-existing `hooks` key was left untouched, nothing else in the file was replaced. `SKILL.md`'s "Optional: an operator-side deny rule for the official-files folder" section documents the local, personal-machine `.claude/settings.local.json` rule the operator can add for wherever *they* keep official files (a path only they know, outside this repo) — explicitly not the committed `settings.json`, since that path is per-operator. Confirmed `output/` is still listed in `backend/.gitignore` (line 81, unchanged by this pass).
 
   [agent: devops-engineer · sonnet]
-- [ ] T179 Review the skill, its references, the deny rules and the vocabulary against FR-046 / SC-013 and the CLAUDE.md hard rules. Record the findings in `specs/044-race-history-backfill/privacy-audit.md` §4 (new).
+- [X] T179 Review the skill, its references, the deny rules and the vocabulary against FR-046 / SC-013 and the CLAUDE.md hard rules. Record the findings in `specs/044-race-history-backfill/privacy-audit.md` §4 (new).
+
+  **Done 2026-09-26.** Findings recorded in `privacy-audit.md` §4 under a new "T179" subsection. Verdict: aligned with FR-046/SC-013 and CLAUDE.md — no blocking findings. Confirmed directly in `masking.py` (not from the T177 note alone) that `_classify_token` masks every `WORD` token unconditionally, so no real word ever reaches `masked/view.txt`, even on a structural line — stricter than the contract's own illustrative example, and `references/masked-view.md` documents that real, tested behaviour correctly. `vocabulary.py` reviewed word-by-word (five closed sets, no runtime path to add one) — none is or resembles a rider name/city/club; the PR-review rule for additions matches what the code actually enforces. Deny rule syntax and scope confirmed correct (blocks `output/.../private/**` inside the repo; `SKILL.md` is honest that the real official file, outside the repo, needs the skill's own rule 2, not this deny rule). `SKILL.md`'s eight rules quoted verbatim from the contract; `reading-profile.md`'s worked example re-verified by re-running `build_masked_view`/`apply_profile` on a matching synthetic PDF; `manifest.md` has no real-shaped data, only explicit placeholders.
 
   [agent: data-privacy-guard · sonnet]
 - [ ] T180 Review T179, then sign the skill as usable on real files, or list the blockers, in `privacy-audit.md` §4. **No real official file is masked before this sign-off.**
@@ -1166,33 +1172,43 @@ This follows the same policy as Phases 1–10:
 
 ## Phase 20: Polish & cross-cutting (amendment)
 
-- [ ] T181 [P] Update `docs/10-race-results/runbook-ops.md`:
+- [X] T181 [P] Update `docs/10-race-results/runbook-ops.md`:
   - §12.1: the pre-deploy legacy count (quickstart §9.6 step 1) and the new migration;
   - §12.2: the CLI's target guard replaces the reminder about a local backend pointed at production;
   - §12.3: rewritten for the skill, local first and production only when explicit;
   - §12.7: staged documents and revisions;
   - §1.2: the Hostinger remote-MySQL allow-list for the operator's IP.
 
+  **Done 2026-09-26.** §12 gained an amendment banner up front pointing at the skill and at §12.4–§12.6 staying unchanged. §12.1 gained the legacy-import `SELECT` from `quickstart.md` §9.6 step 1 and a bullet naming `c9d0e1f2a3b4` (`race_import_staged_documents`) as the amendment's own migration, verified against `alembic heads` (single head, matches) and `alembic/versions/c9d0e1f2a3b4_race_import_staged_documents.py`. §12.2's old "reminder, not a check-box" bullet is replaced by the CLI's actual, enforced local/production target rules (quoted from `contracts/results-skill-cli.md` § Target rules). §12.3 rewritten step-by-step for the skill's local-first loop, referencing `quickstart.md` §9.6 step 4 for the production-only-on-request step. §12.7 (retitled "…staged documents and revisions") gained two new steps on following `parent_import_id` chains and deleting `race_result_revisions` rows before deleting results, plus a note that a still-pending staged document is removed by the existing `ON DELETE CASCADE`, not a separate statement. §1.2 gained a note that `stage --target production` connects to Hostinger MySQL directly from the operator's own machine (not Render), so the operator's own outgoing IP — not Render's — must be on the hPanel → MySQL Remote allow-list before the first production `stage`.
+
   [agent: technical-writer · sonnet]
-- [ ] T182 [P] Documentation:
+- [X] T182 [P] Documentation:
   - an addendum to `docs/10-race-results/history-backfill-design.md` summarising R-17…R-31;
   - "superseded" banners on `docs/10-race-results/upload-design.md` and `upload-workflow.md`;
   - a minimal correction of the race-results bullet in `CLAUDE.md`: loading is done by the results skill; the web app reviews and commits; there is no upload endpoint. No history in that file.
 
-  [agent: technical-writer · sonnet]
-- [ ] T183 [P] Add the amendment's step table to `docs/implementation-status.md` and a dated entry to `docs/technical-notes.md`.
+  **Done 2026-09-26.** New §12 in `history-backfill-design.md` (placed after §11 References, which now also cross-links the skill and the two superseded docs) summarises R-17…R-31 in one paragraph per research item, explicit that §1–§10 above are unchanged. Superseded banners added at the top of `upload-design.md` (pointing at the amendment and naming what in that doc is still current — identity/corrections/commit — vs. history — the upload step itself) and `upload-workflow.md` (pointing at both). `CLAUDE.md`'s race-results bullet corrected minimally: names the skill and its CLI as how loading happens, states the web app only reviews and commits (dry-run → commit, never parse), and that there is no upload endpoint; no changelog/history text added to `CLAUDE.md` itself, consistent with its own "History lives outside this file" rule.
 
   [agent: technical-writer · sonnet]
-- [ ] T184 Run the mandatory privacy audit of the amendment: engine and vocabulary, CLI and its output, staged documents, router deltas, revision wiring, frontend deltas and deleted fixtures. Record the verdict in `privacy-audit.md` §4 and close finding A of §2.
+- [X] T183 [P] Add the amendment's step table to `docs/implementation-status.md` and a dated entry to `docs/technical-notes.md`.
+
+  **Done 2026-09-26.** New "Amendment 2026-09-26 — skill-only results loading" subsection under the feature's existing `implementation-status.md` entry, with a Phase 13–20 status table (13–18 already done by prior waves per their own task-line notes; 19–20 done this pass; T179/T180 and T184–T192 flagged not yet run in the same row rather than implied done) and a paragraph stating plainly what this pass did and did not verify, including the masking-behaviour finding above. Matching dated entry appended to `docs/technical-notes.md`.
+
+  [agent: technical-writer · sonnet]
+- [X] T184 Run the mandatory privacy audit of the amendment: engine and vocabulary, CLI and its output, staged documents, router deltas, revision wiring, frontend deltas and deleted fixtures. Record the verdict in `privacy-audit.md` §4 and close finding A of §2.
+
+  **Done 2026-09-26.** Full `git diff origin/main...HEAD` audited across all seven named areas, recorded in `privacy-audit.md` §4 under a new "T184" subsection. Verdict: **APROBADO**, no critical/high/medium blocking findings. One hygiene-only observation (CLI's `stage` would print `StageResult.warnings` verbatim if that field is ever populated with free text; today it is always empty by construction, grep-confirmed) recorded as a forward-looking recommendation, not a finding. Router's new revision-branch schema (`DiffRowRead`) exposes `competitor_display_name` only to `[admin, coach]`, same accepted category as the rest of the import wizard; internal `raw_city`/`raw_club`/`raw_bib` confirmed never serialized. Frontend deltas grepped clean for `console.*`/`localStorage`/`sessionStorage`; URLs use opaque numeric import ids. New golden/parity fixtures inspected directly and confirmed fictional (`FakeNameGenerator` convention). **Finding A of §2 closed**: `grep -rn "_RAW_PARSE_CACHE\|_CORRECTED_CATEGORIES_CACHE\|download_to_tempfile" app/routers/race_imports.py app/services/race/identity_review.py app/routers/race_identity.py` → zero matches — T138 removed both process-level caches entirely when review routes moved to `staged_document.load`, so the caché-without-its-own-RBAC problem no longer exists.
 
   [agent: data-privacy-guard · sonnet]
 - [ ] T185 Review T184's verdict and record it in `privacy-audit.md` §5.
 
   [agent: data-platform-lead · opus]
-- [ ] T186 Run `pytest -m mysql backend/tests/mysql/test_race_import_staged_documents.py` (T111 and the migration round-trip) against a `_test` database, and record the result in `docs/implementation-status.md`, or state explicitly there that it was not run and why.
+- [ ] T186 Run `pytest -m mysql backend/tests/mysql/test_race_import_staged_documents.py` (T111 and the migration round-trip) against a `_test` database, and record the result in `docs/implementation-status.md`, or state explicitly there that it was not run and why. — **deferred 2026-09-26: no MySQL instance available in this sandboxed session (no Docker, no `TEST_DATABASE_URL`). Recorded as not run, with reason, in `docs/implementation-status.md`'s new T186/T187 subsection.**
 
   [agent: qa-engineer · sonnet]
-- [ ] T187 Run the full offline gates: backend `pytest -q` and `ruff check`; frontend `npm run typecheck`, `npm run build` and `npm test`. Compare lazy-chunk sizes of the competitions routes before and after; they must not grow. Record `pytest -m golden` as not affected (no prompt or pipeline change), as in T088. Write every result in `docs/implementation-status.md`.
+- [X] T187 Run the full offline gates: backend `pytest -q` and `ruff check`; frontend `npm run typecheck`, `npm run build` and `npm test`. Compare lazy-chunk sizes of the competitions routes before and after; they must not grow. Record `pytest -m golden` as not affected (no prompt or pipeline change), as in T088. Write every result in `docs/implementation-status.md`.
+
+  **Done 2026-09-26.** Full comparison against `origin/main` in a temporary worktree (`/tmp/wt-main`, removed after use), same venv. Backend: 227 failed/9 errors on both main and branch, and the failing/erroring test-id sets are identical — zero new failures (branch adds 65 new passing tests). `ruff check`: 69 branch-only issues vs. main, all cosmetic style/modernization debt consistent with the project's existing 4583-issue baseline, except 3 genuine unused imports (`F401` in `tests/services/race/test_import_staging.py`), which were fixed in this pass. Frontend: `typecheck` and `build` both clean; `npm test` has the same 1 pre-existing, branch-unrelated failure (`SessionWizardRouteNotify.test.tsx`, training module, confirmed failing on main too) on both sides — zero new frontend failures. Competitions lazy chunks compared byte-for-byte against main's build: none grew; `ImportWizard` shrank ~34% (step-1 removal, expected). `pytest -m golden` not affected (no prompt/pipeline change). Full detail in `docs/implementation-status.md`'s new T186/T187 subsection.
 
   [agent: qa-engineer · sonnet]
 - [ ] T188 Pre-deploy checklist:

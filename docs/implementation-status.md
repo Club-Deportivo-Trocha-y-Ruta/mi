@@ -1047,6 +1047,92 @@ real infrastructure in any session of this feature.
 | 10 — Polish & Cross-Cutting | `pytest -m mysql` (T085/T086) run for real, 33 passed — one migration bug (downgrade order, MySQL 1553) and one test bug (missing `created_at`/`updated_at` on a raw INSERT, MySQL 1364) found and fixed. Playwright `race-history.spec.ts` (T087) run for real once Docker became available: 1 passed, four real bugs found and fixed getting there (see `history-backfill-design.md` §4.6). `pytest -m golden` (T088) closed deliberately without a real run — no prompt/pipeline change, `test_2026_unchanged.py` already proves it, reasoning recorded in `tasks.md`. Full offline gates (T089) done: typecheck/build clean, lazy chunks confirmed, no new failures vs. `main`. **Mandatory full-feature privacy audit (T090) done**: five independent sub-reviews, 0 critical/high, 3 non-blocking MEDIUM findings closed or explicitly tracked — verdict APROBADO CON CONDICIONES, confirmed by the lead's review (T091), FR-043's deferred items written down with an owner each. Runbook reviewed by the data lead (T096): mandatory pre-load MySQL backup added, rollback procedure (§12.7) rewritten from a one-line "delete by `imported_from_id`" to a 7-step ordered procedure. T097 (pre-deploy checklist) done — new `runbook-ops.md` §12.1: single head, migration timing on an empty DB (**production-sized timing still unmeasured, flagged explicitly**), `RACE_HISTORY_FAMILY_POLICY_VERSION` unset, the two post-migrate seed commands verified against `entrypoint.sh` and each script's own docstring. T101–T103 (español-copy sweep, a11y inventory note, mutmut scope) done. **Still open**: T098 (Gate G7, hand-over for deploy), T099 (post-deploy smoke), T100 (production pre-load privacy check), T104 (final SC-001…SC-012 acceptance on the deployed build) | 🚧 Nearly done — only deploy-dependent tasks remain 2026-09-22 |
 | Owner-only (T105–T107) | Obtain the fifteen real files, stage them, resolve pending categories and identity candidates, commit season by season, spot-check, publish the family notice | ⏳ Not started — blocked on T098–T100 (deploy + smoke + pre-load privacy check) |
 
+### Amendment 2026-09-26 — skill-only results loading
+
+> Removes the upload endpoint entirely. Loading a results file now happens through
+> `.claude/skills/race-results-load/SKILL.md` (an LLM session reading only a masked,
+> no-rider-data layout view) driving `backend/scripts/race_results.py`
+> (`mask`/`profile-check`/`apply`/`compare`/`stage`); the web app only reviews a staged
+> import and commits it. Design rationale: `docs/10-race-results/history-backfill-design.md`
+> §12. Research R-17…R-31, contracts `masked-view.md`/`reading-profile.md`/
+> `results-skill-cli.md`/`revision-via-skill.md`, `data-model.md` §11, `tasks.md`'s
+> "Amendment 2026-09-26" section (T108–T192) are all in `specs/044-race-history-backfill/`.
+
+| Phase | Scope | Status |
+|---|---|---|
+| 13 — masked view, vocabulary, reading profiles, apply engine | `results_skill/{vocabulary,masking,profile,apply,pdf_runs}.py`; `pdf_parser.py`/`csv_parser.py` retired in favour of the engine; `copa-valle-results-pdf.json` reproduces the retired parser's output row-for-row on the synthetic builder fixtures (parity golden). 143 `results_skill` tests + 240 parser-parity tests green | ✅ Complete |
+| 14 — staged documents; the server never re-reads a file | `race_import_staged_documents` (migration `c9d0e1f2a3b4`); `staged_document.load` replaces the two process-local LRU caches (closes privacy-audit finding A) | ✅ Complete |
+| 15 — the CLI, local-first | `scripts/race_results.py` (`mask`/`profile-check`/`apply`/`compare`/`stage`), `results_skill/target.py` (local/production target resolution, actor check, `.env.production` scrubbing) | ✅ Complete |
+| 16 — no results upload remains | `POST /imports/parse` and its helpers, `scripts/stage_race_history.py`, the two real Válida IV PDF fixtures, and the dead settings (`RACE_MAX_PDF_MB` etc.) all deleted; structural allow-list test (4 non-results file endpoints) green | ✅ Complete |
+| 17 — the web app reviews and commits, never uploads | `ImportWizard.tsx` step 1 removed (review-only, `?import=<id>` required); `RaceUploadZone`, `useImportParse`, `useImportPrefill` and `VITE_RACE_MAX_PDF_MB` deleted; frontend "no file input" sweep green | ✅ Complete |
+| 18 — corrections are real revisions | `revision.py::compute_diff` rewritten identity-aware (`(category, competitor_id)`, read-only `IdentityResolver`, fuzzy fallback only for new rows); wired into `routers/race_imports.py`; legacy partial-commit-through-revision end-to-end test green; `REVISION_STAGING_AVAILABLE` flipped true | ✅ Complete |
+| 19 — the skill and session guardrails | `.claude/skills/race-results-load/SKILL.md` + `references/{masked-view,reading-profile,manifest}.md` (English, the contract's eight procedure rules, a worked example built on a builder-file masked view); `.claude/settings.json` `permissions.deny` for `Read(./output/race-results/**/private/**)` | ✅ Complete 2026-09-26 (this pass) — **T179/T180 (privacy review and sign-off before any real file) not yet run** |
+| 20 — polish & cross-cutting (amendment) | Runbook §12/§1.2 rewrite for the skill flow, `history-backfill-design.md` §12 addendum, superseded banners on `upload-design.md`/`upload-workflow.md`, the `CLAUDE.md` race-results bullet correction, this table and the `technical-notes.md` entry (T181–T183, this pass) | ✅ Complete 2026-09-26 (docs only) — **T184–T192 (mandatory audit, real-infra gates, real load) not yet run** |
+
+**What T177–T183 verified and what they did not, stated plainly**: the skill and its three
+references exist and quote the contract's eight procedure rules verbatim where the contract
+itself is authoritative; the reading-profile worked example is a real, captured
+`masked/view.txt` and a real `apply_profile` run against a synthetic builder PDF (fake names
+only, `FakeNameGenerator`), not a hand-written illustration — its counts (4 rows, `PJUV_A`,
+0 unreadable, `leak_count: 0`) were produced by actually running the engine, not asserted.
+One thing worth flagging for whoever runs T179/T184: the masking engine's actual behaviour is
+stricter than `contracts/masked-view.md`'s own illustrative example — it never renders a word
+token verbatim, even on a structural (`S`) line, even for a word already in the vocabulary
+(verified directly against `masking.py`'s `_classify_token`/`_render_run` and against real
+rendered output). The skill's references document this actual, tested behaviour rather than
+the contract's more permissive illustration, so an operator is never told to expect a real
+word on a structural line that the code will not actually show them; this is a safer
+deviation, not a defect, but it is exactly the kind of thing `data-privacy-guard`'s review
+(T179) should look at with its own eyes rather than take on this pass's word. `permissions.deny`
+was added to `.claude/settings.json` in the exact `Read(<glob>)` syntax the current Claude
+Code settings schema documents (path rules use `Read(path)` for reads); `output/` was
+confirmed still present in `backend/.gitignore` (unchanged by this pass). No code was
+touched in this pass, only skill/reference files, `.claude/settings.json`, and the five docs
+files named above.
+
+**T186/T187 — offline gates, 2026-09-26 (this pass)**: full default-lane comparison against
+`origin/main` in a throwaway worktree (`/tmp/wt-main`, removed after use), same venv
+(Python 3.11), `tests/services/race/test_field_metrics.py` excluded from both runs (pre-existing
+`get_protocol_members` import error under 3.11, needs 3.12+, unrelated to this branch).
+
+- Backend `python -m pytest -q -p no:cacheprovider` — **main**: 227 failed, 6031 passed, 84
+  skipped, 13 xfailed, 6 xpassed, 9 errors. **branch**: 227 failed, 6096 passed, 89 skipped, 13
+  xfailed, 6 xpassed, 9 errors. The `FAILED`/`ERROR` test-id sets are byte-for-byte identical
+  between the two runs (diffed directly) — **zero new failures**; the extra 65 passed / 5
+  skipped are this amendment's own new tests. The 227 pre-existing failures are unrelated
+  (training-session router/fields, `test_users.py`, `test_parent_register.py`, `test_privacy.py`,
+  `test_security.py`, email-client tests, etc. — none of them touched by this branch).
+- `ruff check` (default rules) — **main**: 4583 errors. **branch**: 4528 errors (net lower,
+  since Phase 16 deleted `pdf_parser.py`/`csv_parser.py` and their tests). Diffed by
+  (file, code, message): 69 issues exist in branch-only files/lines that don't exist on main,
+  all cosmetic modernization/style (`I001` import order, `UP045`/`UP017`/`UP035`/`UP037` typing
+  modernization, `SIM114`, `PERF102`, one intentional `S110` already commented in
+  `race_results.py::compare` for cross-dialect SQL) — consistent with the project's existing,
+  un-gated lint debt (ruff is not currently a green gate on `main`; there is no CI rule cited in
+  `CLAUDE.md` enforcing it). The three genuine issues (`F401` unused imports
+  `StageHeader`/`stage_extracted_results`/`ResultsRow` in
+  `tests/services/race/test_import_staging.py`) were real dead imports and were fixed in this
+  pass (no behavior change, confirmed by re-running that file green).
+- Frontend `npm run typecheck` — clean (exit 0), no errors.
+- Frontend `npm run build` — clean (exit 0). Competitions lazy-chunk sizes vs `main` (built from
+  the same worktree with a symlinked `node_modules`, package.json identical to branch):
+  `ImportWizard` 62.87 kB → 41.21 kB gzip (15.48 → 10.58 kB) — **shrank**, expected from T161's
+  step-1 removal; `CompetitionsListPage` 18.33 → 17.90 kB; `CompetitionDetailPage` 24.91 → 24.43
+  kB; `CompetitionImportsPage` 13.12 → 12.78 kB; `CompetitionImportPage`, `DiffTable`,
+  `ResultsTable`, `CompetitionFormPage`, `CourseTab` unchanged or within noise (±0.5 kB from
+  content-hash/name churn only). **No competitions-route chunk grew.**
+- Frontend `npm test` (vitest) — **main**: 1 failed / 4879 total (`SessionWizardRouteNotify.test.tsx`,
+  a training-module test, file untouched by this branch per `git diff origin/main...HEAD`).
+  **branch**: same 1 failed / 4879 total, same test, confirmed pre-existing by running it in
+  isolation against the `main` worktree too. **Zero new frontend failures.**
+- `pytest -m golden` — not affected by this amendment (no prompt/pipeline change to the race
+  analyst; same conclusion as T088/T176).
+- T186 (`pytest -m mysql backend/tests/mysql/test_race_import_staged_documents.py`) —
+  **deferred, not run**: no MySQL instance in this sandboxed session (no Docker, no
+  `TEST_DATABASE_URL`). The test file collects cleanly and skips correctly offline (confirmed by
+  a previous wave, T111); it still needs a real `_test` MySQL run before deploy (T188's
+  pre-deploy checklist).
+
 **What is verified and what is not, stated plainly**: every gate through G6 is recorded
 PASSED with a date in `tasks.md` — all seven user stories, all nine phases through Polish's
 own core tasks, are done. Real infrastructure came available mid-implementation and was used
