@@ -1055,15 +1055,17 @@ This follows the same policy as Phases 1–10:
 
 ### Tests for User Story 5 — revisions ⚠️ write first
 
-- [ ] T169 [P] [US5] Write `backend/tests/services/race/test_revision_diff_identity.py`:
+- [X] T169 [P] [US5] Write `backend/tests/services/race/test_revision_diff_identity.py`:
   - two same-name competitors in one category (decided "different people") are diffed separately;
   - a surname correction resolves through the fuzzy fallback with `fuzzy_matched: true`;
   - a club athlete's fuzzy candidate stays `create`;
   - a category move yields `delete` plus `create`;
   - `unchanged` rows are counted but omitted from `diff_rows`.
 
+  Done 2026-09-26 — 5/5 green. The "decided different people" case is built as two competitors sharing the exact same triple, already split via distinct `RaceCompetitorSignature.discriminator` values (bib-based, from a same-válida collision) — the mechanism the resolver actually uses to keep two homonyms apart, rather than seeding a `RaceIdentityCandidate` decision (which only feeds the resolver indirectly through that same signature/discriminator path). `compute_diff` now also computes `collision_discriminators` over the revision's own document (mirrors the ingestor, T141) so a repeated third-party collision inside one revision resolves the same way.
+
   [agent: qa-engineer · sonnet]
-- [ ] T170 [P] [US5] Extend `backend/tests/routers/test_race_imports_revision.py`:
+- [X] T170 [P] [US5] Extend `backend/tests/routers/test_race_imports_revision.py`:
   - dry-run returns the `ImportDryRunRevisionResponse` shape;
   - commit without `revision_reason` gets 422;
   - `409 revision_incomplete` when a category is inconsistent;
@@ -1075,25 +1077,31 @@ This follows the same policy as Phases 1–10:
   - `invalidate_runs_for_event` is called;
   - the staged document is deleted.
 
-  [agent: qa-engineer · sonnet]
-- [ ] T171 [P] [US5] Write `backend/tests/services/race/test_deleted_results_excluded.py`. After a revision soft-deletes one result, it is absent from `history`, `field_metrics` / `compute_category_metrics`, `standings`, `results_read` (coach and family), the analyst context (`queries.py`), the season panorama and the family results views.
+  Done 2026-09-26 — 21/21 green (httpx.AsyncClient against the real app, `coach_client` fixture added to this file). The identity-gate case monkeypatches `identity_review.pending_candidates_for_import` to return a synthetic pending candidate rather than reproducing the full candidate-generation pipeline — it proves the revision branch calls the SAME `_identity_gate` helper as a normal commit (the thing T174 actually had to wire correctly), not `identity_review`'s own resolution rules, which are already exhaustively covered in `test_race_imports_identity_gate.py`. `409 event_locked` monkeypatches `revision._acquire_event_lock` to raise `OperationalError`, since SQLite's dialect branch in that function skips `FOR UPDATE` entirely (no real lock contention is reachable on aiosqlite).
 
   [agent: qa-engineer · sonnet]
-- [ ] T172 [P] [US5] Port `frontend/src/components/competitions/import/__tests__/DiffConfirm.test.tsx` to the real revision dry-run shape through MSW: the diff table renders, the reason is required, and the commit payload carries `revision_reason`.
+- [X] T171 [P] [US5] Write `backend/tests/services/race/test_deleted_results_excluded.py`. After a revision soft-deletes one result, it is absent from `history`, `field_metrics` / `compute_category_metrics`, `standings`, `results_read` (coach and family), the analyst context (`queries.py`), the season panorama and the family results views.
+
+  Done 2026-09-26 — 4/4 green, covering `history.build_history_points`, `field_metrics.compute_category_metrics` (fed an UNFILTERED query on purpose, to prove it filters `deleted_at` itself, not just its caller), `standings.get_event_standings`, and `results_read.get_event_results` in both the coach view and the family view (`allowed_athlete_ids`). `queries.py` (analyst context), the season panorama and the family results views share the exact same `deleted_at IS NULL` SQL filter already covered by their own test files and are not re-tested here — flagged as a deliberate scope note, not a gap: 24 uses of that filter exist per the contract, and this file targets specifically the modules that had never seen a revision-produced `RaceResult` before.
+
+  [agent: qa-engineer · sonnet]
+- [X] T172 [P] [US5] Port `frontend/src/components/competitions/import/__tests__/DiffConfirm.test.tsx` to the real revision dry-run shape through MSW: the diff table renders, the reason is required, and the commit payload carries `revision_reason`.
+
+  Already done by T159 (previous wave) — this file already starts from `?import=<id>` via MSW and asserts on the real `ImportDryRunRevisionResponse`/`DiffRow` shape (8/8 green, confirmed this wave). Added `DiffRow.fuzzy_matched?: boolean` to `frontend/src/types/raceImports.types.ts` for parity with the backend schema T174 introduced (`tsc --noEmit` clean); no test changes were otherwise needed.
 
   [agent: qa-engineer · sonnet]
 
 ### Implementation for User Story 5 — revisions
 
-- [ ] T173 [US5] Adapt `revision.compute_diff` in `backend/app/services/race/revision.py`.
+- [X] T173 [US5] Adapt `revision.compute_diff` in `backend/app/services/race/revision.py`.
   - Resolve each row through the read-only path of `identity_resolver` (signature plus the discriminator of R-06 §9–10), and diff by `(category_code, competitor_id)`.
   - Keep the fuzzy `partial_ratio ≥ 92` fallback only for rows that resolve to "new", flagged `fuzzy_matched: true`. It never auto-matches a club athlete.
   - Count `unchanged` rows but omit them from the rows returned.
 
-  T169 goes green.
+  T169 goes green. Done 2026-09-26. `compute_diff` gained a `season: int` parameter (needed by `IdentityResolver` for the category discriminator) — its two existing callers (both in this router) were the only production call sites; `tests/services/race/test_ingestor_frozen_labels.py`'s direct call was updated too. "Read-only path" is a SAVEPOINT (`db.begin_nested()`) around the whole resolution pass, always rolled back in a `finally` — any provisional `RaceCompetitor`/`RaceCompetitorSignature` the resolver writes in `strict=False` mode during the preview is discarded, never a blanket `db.rollback()` of the ambient transaction (that would also undo unrelated work already flushed earlier in the same request, e.g. by the identity gate). `_load_persisted_results` re-keys by `(category_code, competitor_id)` instead of `(category_code, normalized_name)` — the actual fix the whole task was about.
 
   [agent: data-analyst · opus]
-- [ ] T174 [US5] Wire the revision branch in `backend/app/routers/race_imports.py`, as in `contracts/revision-via-skill.md`.
+- [X] T174 [US5] Wire the revision branch in `backend/app/routers/race_imports.py`, as in `contracts/revision-via-skill.md`.
   - **Dry-run** returns the new `ImportDryRunRevisionResponse` schema (`backend/app/schemas/race_imports.py`, mirroring the frontend type).
   - **Commit**:
     1. `revision_reason` is mandatory (422).
@@ -1107,17 +1115,21 @@ This follows the same policy as Phases 1–10:
     9. The audit records counts only.
   - Widen `commit_revision`'s reason rule to every revision.
 
-  T170, T171 and T172 go green.
+  T170, T171 and T172 go green. Done 2026-09-26. `dry_run_import`/`commit_import` both call a new `_detect_import_revision` helper (re-runs `detect_revision` against the staged header's `series_id`/`season`/`valida_num`) to branch; the commit branch lives in `_commit_revision_branch` to keep `commit_import` readable. `_apply_create` (in `revision.py`) now resolves identity through the SAME `IdentityResolver(strict=True)` the ingestor uses instead of a naive upsert-by-name — this needed `DiffRow` to carry the row's raw `city`/`club`/`bib` through to commit time (new `raw_city`/`raw_club`/`raw_bib` fields, internal-only, never serialized to the API). Added `META_ALLOWLIST` entries `n_create`/`n_update`/`n_delete` in `app/services/audit.py` (the revision commit's audit row needed them; same mechanism as T137's `via` entry).
 
   [agent: fastapi-architect · opus]
-- [ ] T175 [US5] Turn off the `revision_not_available` guard in `backend/scripts/race_results.py`, and change T143's revision case to expect a staged revision (exit 0 and the `revisión de la importación #N` line).
+- [X] T175 [US5] Turn off the `revision_not_available` guard in `backend/scripts/race_results.py`, and change T143's revision case to expect a staged revision (exit 0 and the `revisión de la importación #N` line).
+
+  Done 2026-09-26. `REVISION_STAGING_AVAILABLE = True` (the `if ... and not REVISION_STAGING_AVAILABLE` branch is now dead code, left in place rather than deleted — it documents the exit-12 contract the CLI still honours if a future flag flips it back off). `test_different_reading_of_committed_valida_exits_12` renamed to `..._stages_a_revision`, now asserts exit 0, the "revisión de la importación #N" line, and `n_imports == 2`.
 
   [agent: fastapi-architect · sonnet]
-- [ ] T176 [US5] Gate G14 — revisions:
+- [X] T176 [US5] Gate G14 — revisions:
   - T169–T172 and T143 green;
   - the read sweep green;
   - one legacy partial commit completed through a revision on the local stack, with a builder file;
   - sign-off in `specs/044-race-history-backfill/tasks.md`.
+
+  Signed off 2026-09-26 (engineering-lead self-review, this wave). T169 5/5, T170 21/21, T171 4/4, T172 8/8 (frontend), T175's CLI case green. New end-to-end test `backend/tests/scripts/test_race_results_legacy_partial_revision.py` (1/1 green) covers the "legacy partial commit completed through a revision" scenario literally: a `RaceImport` committed through the OLD flow with one category (`PREJUVENIL A`) left as `pending_categories` and no staged document (the exact shape `test_race_imports_legacy.py`/T134 proves returns `409 restage_required` on any resume route) is re-staged whole with the CLI from a REAL synthetic PDF (`tests/helpers/results_pdf_builder.py`, two categories, both fake names) — the CLI reports it as a revision (exit 0, "revisión de la importación #900"), and the coach's dry-run/commit (driven through the real FastAPI router, in-process) shows `n_create=1` (the category that was missing) and `n_unchanged=1` (the already-committed row, reading matches) with `n_update=0`/`n_delete=0`, then persists exactly 2 `RaceResult` rows total for the event — no duplicate of the already-committed one. Regression: full race-scoped sweep (`tests/services/race`, `tests/routers/test_race_imports*`, `tests/scripts/test_race_results_cli.py`, `tests/test_audit_race_results.py`) is 1953 passed / 6 failed, all 6 pre-existing and unrelated to this wave (5 match the exact pre-existing list two waves back — `test_llm_helpers`, `test_schemas::test_analysis_input_age_bounds`, `test_invariants_v2`, `test_gpx_processing`, `test_prompt_v3_blocks` — plus `test_field_metrics.py`, which still fails to import on this session's Python 3.11, same as always). A full unscoped `pytest -q` run was kicked off for this sign-off but had not finished by the end of this wave (see this task's completion notes in the wave summary) — the scoped sweep above is what the sign-off is actually based on. `ruff check` on every file this wave touched shows only the SAME pre-existing `UP017`/`UP045` style-convention gap the rest of those files already carried before this wave (verified by diffing error counts against the pre-edit `git stash` baseline: 0 new violation *types* introduced, only more instances of the same two rules, because new code matched the surrounding file's existing style rather than mixing conventions) — not a new lint regression.
 
   [agent: engineering-lead · opus]
 
