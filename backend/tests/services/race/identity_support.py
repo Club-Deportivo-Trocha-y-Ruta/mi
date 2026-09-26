@@ -25,7 +25,7 @@ from app.models.race_series import RaceSeries
 from app.models.user import UserRole
 from app.schemas.race import EventMeta
 from app.services.race.ingestor import RaceIngestor
-from app.services.race.pdf_parser import ResultsRow
+from app.services.race.staged_document import ResultsRow
 from tests.helpers.audit_tables import AUDIT_TABLES
 from tests.services.race.conftest import _SEED_CATEGORIES
 

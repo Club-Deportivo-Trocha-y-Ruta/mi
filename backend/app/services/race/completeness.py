@@ -47,7 +47,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, Literal, Mapping, Sequence
 
-from app.services.race.pdf_parser import ParsedCategory, ParsedResults, ResultsRow
+from app.services.race.staged_document import ParsedCategory, ParsedResults, ResultsRow
 
 # ---------------------------------------------------------------------------
 # Estado de completitud

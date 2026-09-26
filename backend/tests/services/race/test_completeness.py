@@ -32,7 +32,7 @@ from app.services.race.completeness import (
     apply_corrections,
     check_completeness,
 )
-from app.services.race.pdf_parser import ParsedCategory, ParsedResults, ResultsRow
+from app.services.race.staged_document import ParsedCategory, ParsedResults, ResultsRow
 
 try:
     from app.services.race.completeness import ACKNOWLEDGE_REASON_LABELS

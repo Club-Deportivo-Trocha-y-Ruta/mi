@@ -49,7 +49,7 @@ from app.models.race_result_revision import (
 from app.services.race.normalizer import normalize_name, parse_time
 
 if TYPE_CHECKING:
-    from app.services.race.pdf_parser import ResultsRow
+    from app.services.race.staged_document import ResultsRow
 
 logger = logging.getLogger(__name__)
 

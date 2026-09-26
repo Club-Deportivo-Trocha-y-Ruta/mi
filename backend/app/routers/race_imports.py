@@ -129,7 +129,7 @@ from app.services.race.import_staging import (
 )
 from app.services.race.ingestor import RaceIngestor
 from app.services.race.matcher import match_athletes
-from app.services.race.pdf_parser import (
+from app.services.race.staged_document import (
     ParsedCategory,
     ParsedResults,
     ResultsRow,

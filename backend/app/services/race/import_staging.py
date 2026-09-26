@@ -59,12 +59,10 @@ from app.services.audit import AuditEntityType, record_audit
 from app.services.race.completeness import check_category
 from app.services.race.normalizer import mapping_kind_for
 from app.services.race.pdf_parser import (
-    ParsedCategory,
-    ParsedResults,
-    ResultsRow,
     parse_event_header,
     parse_results_document,
 )
+from app.services.race.staged_document import ParsedCategory, ParsedResults, ResultsRow
 from app.services.race.revision import detect_revision
 from app.services.request_context import AuditContext
 from app.services.training import storage_sftp

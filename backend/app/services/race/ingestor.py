@@ -70,7 +70,8 @@ from app.services.race.series_rules import derive_event_fields_for_series
 
 if TYPE_CHECKING:
     from app.services.race.identity_resolver import Resolution
-    from app.services.race.pdf_parser import GeneralRow, ResultsRow
+    from app.services.race.pdf_parser import GeneralRow
+    from app.services.race.staged_document import ResultsRow
 
 logger = logging.getLogger(__name__)
 

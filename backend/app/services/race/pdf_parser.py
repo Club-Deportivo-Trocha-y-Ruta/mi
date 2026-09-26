@@ -62,67 +62,27 @@ from typing import Optional, Sequence
 import pdfplumber
 
 from app.services.race.normalizer import LAP_WORD_PATTERN, parse_category_header
+from app.services.race.staged_document import (  # noqa: F401 — re-export temporal, T113/T153
+    ParsedCategory,
+    ParsedResults,
+    ResultsRow,
+    UnreadableRow,
+)
 
 logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
 # Dataclasses de salida
+#
+# ``ResultsRow``, ``ParsedCategory``, ``ParsedResults`` y ``UnreadableRow``
+# vivían aquí; la amendment 2026-09-26 (T113) los mueve, sin cambios, a
+# ``app.services.race.staged_document`` — el motor de lectura offline de la
+# fase 13 los produce igual que este parser, así que dejan de pertenecer
+# específicamente al parser de PDFs. El import de arriba los reexporta para
+# que ningún importador existente de ``pdf_parser`` se rompa; T153 retira
+# este reexport junto con el resto de este módulo.
 # ---------------------------------------------------------------------------
-
-
-@dataclass
-class ResultsRow:
-    """Una fila del PDF RESULTADOS (un corredor en una válida).
-
-    ``time_raw == ""`` significa **clasificado sin tiempo**: la banda trae
-    posición, dorsal y puntos pero la celda ``Tiempo`` vino vacía en el acta
-    (research R-01 punto 4). No es lo mismo que ``DNF``/``DSQ``/``DNS``, que
-    sí se conservan como texto.
-    """
-
-    position: Optional[int]
-    bib: str
-    name: str
-    city: str  #: capturado para resolución de homónimos, no se persiste en `RaceCompetitor`.
-    club: str
-    time_raw: str
-    points: int
-
-
-@dataclass
-class UnreadableRow:
-    """Banda de fila que no pudo interpretarse (FR-001).
-
-    Se reporta al coach en la previsualización en vez de descartarse en
-    silencio. Solo lleva ubicación — ``page`` y el ordinal impreso cuando la
-    celda 0 de la tabla es numérica — nunca texto de la fila.
-    """
-
-    page: int
-    ordinal: Optional[int]
-
-
-@dataclass
-class ParsedCategory:
-    """Una categoría del acta, en el orden en que aparece en el documento.
-
-    ``code is None`` significa encabezado no reconocido: las filas **se
-    conservan** igual (FR-002) y el commit queda bloqueado hasta que exista
-    un mapeo en ``normalizer.HEADER_TO_CODE``.
-    """
-
-    header_raw: str  #: tal como se imprime, p. ej. "PREJUVENIL A DAMAS".
-    code: Optional[str]
-    rows: list[ResultsRow] = field(default_factory=list)
-
-
-@dataclass
-class ParsedResults:
-    """Salida completa de ``parse_results_document``."""
-
-    categories: list[ParsedCategory] = field(default_factory=list)
-    unreadable_rows: list[UnreadableRow] = field(default_factory=list)
 
 
 @dataclass

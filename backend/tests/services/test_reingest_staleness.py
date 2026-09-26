@@ -77,7 +77,7 @@ def _meta(valida_num: int = 4, season: int = 2026) -> EventMeta:
 
 def _results_one_row(bib: str = "401", time: str = "0:33:00") -> dict:
     """Minimal results dict with a single category / single row."""
-    from app.services.race.pdf_parser import ResultsRow
+    from app.services.race.staged_document import ResultsRow
 
     return {
         "INF_A": [
