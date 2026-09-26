@@ -46,6 +46,12 @@ from app.models.race_result_revision import (
     RaceResultRevision,
     RaceResultRevisionAction,
 )
+from app.services.race.identity_resolver import (
+    IdentityResolver,
+    IdentityUnresolved,
+    collision_discriminators,
+)
+from app.services.race.ingestor import _derive_sex_from_code
 from app.services.race.normalizer import normalize_name, parse_time
 
 if TYPE_CHECKING:
@@ -122,6 +128,10 @@ class DiffRow:
     - ``after``: snapshot del estado nuevo (para create/update; None en delete).
     - ``fields_changed``: lista de campos modificados (solo update).
     - ``fuzzy_matched``: True si el match se hizo via fuzzy fallback (warning UI).
+    - ``raw_city``/``raw_club``/``raw_bib``: terna impresa tal cual, SOLO para
+      filas ``create`` — ``commit_revision`` los necesita para resolver
+      identidad con el mismo resolver que el ingestor (T173/T174); nunca se
+      exponen en la respuesta API (el schema del router no los copia).
     """
 
     action: str
@@ -133,6 +143,9 @@ class DiffRow:
     after: Optional[dict[str, Any]] = None
     fields_changed: list[str] = field(default_factory=list)
     fuzzy_matched: bool = False
+    raw_city: Optional[str] = None
+    raw_club: Optional[str] = None
+    raw_bib: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
         """Serialización JSON-friendly (enums.value, datetimes ISO, etc.)."""
@@ -402,11 +415,13 @@ def _fuzzy_match_in_category(
 
 async def _load_persisted_results(
     db: AsyncSession, event_id: int
-) -> dict[tuple[str, str], tuple[RaceResult, RaceCompetitor, RaceCategory]]:
+) -> dict[tuple[str, int], tuple[RaceResult, RaceCompetitor, RaceCategory]]:
     """Carga ``RaceResult`` activos del event + joinea competitor + category.
 
-    Retorna dict ``{(cat_code, normalized_name): (result, competitor, category)}``.
-    Filtra ``deleted_at IS NULL`` (soft-deleted no participan en el diff).
+    Retorna dict ``{(cat_code, competitor_id): (result, competitor, category)}``
+    — clave de identidad (feature 044 revisiones, R-06), no de nombre: dos
+    homónimos con competitor_id distinto nunca comparten fila. Filtra
+    ``deleted_at IS NULL`` (soft-deleted no participan en el diff).
     """
     # Cargar competitors index
     comp_result = await db.execute(select(RaceCompetitor))
@@ -425,15 +440,15 @@ async def _load_persisted_results(
     )
     rows = list(result.scalars().all())
 
-    out: dict[tuple[str, str], tuple[RaceResult, RaceCompetitor, RaceCategory]] = {}
+    out: dict[tuple[str, int], tuple[RaceResult, RaceCompetitor, RaceCategory]] = {}
     for r in rows:
         comp = competitors_by_id.get(r.competitor_id)
         cat = categories_by_id.get(r.category_id)
         if comp is None or cat is None:
             continue
-        key = (cat.code, comp.normalized_name)
-        # Tie-break: si dos persistidos comparten la key (raro pero posible si
-        # hubo duplicados), preservamos el primero (orden ID asc).
+        key = (cat.code, comp.id)
+        # Tie-break: si dos persistidos comparten la key (no debería pasar —
+        # UNIQUE(event, category, competitor) — pero preservamos el primero).
         if key not in out:
             out[key] = (r, comp, cat)
     return out
@@ -494,150 +509,265 @@ async def compute_diff(
     db: AsyncSession,
     parsed_results: dict[str, list["ResultsRow"]],
     parent_event_id: int,
+    season: int,
 ) -> DiffReport:
-    """Computa el diff completo entre PDF nuevo y RaceResult persistidos.
+    """Computa el diff completo entre el documento nuevo y los ``RaceResult``
+    persistidos del evento padre (identity-aware, amendment 2026-09-26 T173,
+    ``contracts/revision-via-skill.md`` §"Identity-aware diff").
+
+    Cada fila se resuelve con ``IdentityResolver`` (camino de solo-lectura:
+    ``strict=False`` — nunca lanza ``IdentityUnresolved`` — dentro de un
+    SAVEPOINT que se deshace al final, así ningún competidor/firma
+    provisional de esta previsualización queda escrito) y el match contra lo
+    persistido es por ``(category_code, competitor_id)``, nunca por nombre:
+    dos homónimos ya separados por el resolver (categoría o decisión del
+    coach) se diffean por separado (T169 caso 1).
+
+    El fallback fuzzy (``partial_ratio >= 92``) solo se intenta para filas
+    que el resolver decide "nuevas" (``resolution.created``) — nunca
+    reemplaza una identidad ya resuelta — y nunca propone un competidor
+    vinculado a un atleta del club (``athlete_id is not None``): esa fila se
+    queda ``create`` para que el candado de identidad la levante (T169 casos
+    2-3). Un competidor que cambia de categoría sale como ``delete`` en la
+    vieja más ``create`` en la nueva (T169 caso 4).
 
     Args:
         db: AsyncSession activa.
-        parsed_results: output de ``parse_results_pdf``: ``{cat_code: [ResultsRow]}``.
-        parent_event_id: id del ``RaceEvent`` ya commiteado (de ``RevisionContext``).
+        parsed_results: ``{cat_code: [ResultsRow]}`` del documento nuevo.
+        parent_event_id: id del ``RaceEvent`` ya commiteado (de
+            ``RevisionContext``).
+        season: temporada de la serie (``RaceSeries.season_year``) — la
+            necesita ``IdentityResolver`` para el discriminador de categoría.
 
     Returns:
-        ``DiffReport`` con summary + rows ordenados (delete → update → create →
-        unchanged).
+        ``DiffReport`` con summary (incluye ``n_unchanged``) + rows ordenados
+        delete → update → create. Las filas ``unchanged`` se cuentan pero se
+        omiten de ``rows`` (contrato §"Dry-run, revision branch").
     """
     persisted_index = await _load_persisted_results(db, parent_event_id)
 
-    # Index de categorías por code (para resolver category_id en creates)
     cat_result = await db.execute(select(RaceCategory))
     categories_by_code = {c.code: c for c in cat_result.scalars().all()}
 
-    # Pre-agrupar persisted keys por categoría (para fuzzy fallback intra-cat)
-    persisted_keys_by_cat: dict[str, list[str]] = {}
-    for (cat_code, norm_name) in persisted_index.keys():
-        persisted_keys_by_cat.setdefault(cat_code, []).append(norm_name)
-
-    matched_persisted_keys: set[tuple[str, str]] = set()
+    matched_keys: set[tuple[str, int]] = set()
     rows_create: list[DiffRow] = []
     rows_update: list[DiffRow] = []
-    rows_unchanged: list[DiffRow] = []
+    n_unchanged = 0
 
-    # Iteramos las filas del PDF nuevo
-    for cat_code, parsed_rows in parsed_results.items():
-        cat_obj = categories_by_code.get(cat_code)
-        if cat_obj is None:
-            # Categoría desconocida — la dejamos como create skip silencioso
-            # (ingest_event lo bloquearía con ValueError; aquí preferimos
-            # incluirla en el diff con warning implícito).
-            continue
-        for parsed in parsed_rows:
-            norm_name = normalize_name(parsed.name)
-            if not norm_name:
+    #: Filas que el resolver decidió "nuevas" — candidatas al fallback fuzzy,
+    #: en el orden en que se leyeron (estabilidad del tie-break).
+    pending_fuzzy: list[tuple[str, "ResultsRow", str, ResultStatus, Optional[int], Optional[int], int]] = []
+
+    # Discriminadores de colisión (dos filas con la misma terna en ESTE
+    # documento) — mismo cálculo que el ingestor real (T141), para que una
+    # revisión que repite una colisión de terceros resuelva igual que un
+    # commit normal lo haría.
+    collisions = collision_discriminators(
+        (
+            ((code, idx), r.name, r.club, r.city, categories_by_code.get(code), r.bib)
+            for code, rows in parsed_results.items()
+            for idx, r in enumerate(rows)
+        ),
+        season,
+    )
+
+    savepoint = await db.begin_nested()
+    try:
+        resolver = IdentityResolver(db, strict=False)
+        for cat_code, parsed_rows in parsed_results.items():
+            cat_obj = categories_by_code.get(cat_code)
+            if cat_obj is None:
+                # Categoría desconocida — igual que antes, se deja fuera del
+                # diff (el ingestor real la bloquearía con ValueError).
                 continue
-            key = (cat_code, norm_name)
-            fuzzy_used = False
+            sex_from_code = _derive_sex_from_code(cat_obj.code)
+            for idx, parsed in enumerate(parsed_rows):
+                norm_name = normalize_name(parsed.name)
+                if not norm_name:
+                    continue
 
-            persisted_entry = persisted_index.get(key)
-            if persisted_entry is None:
-                # Fallback fuzzy intra-cat
-                fuzzy_key = _fuzzy_match_in_category(
-                    norm_name, persisted_keys_by_cat.get(cat_code, [])
-                )
-                if fuzzy_key is not None:
-                    fkey = (cat_code, fuzzy_key)
-                    if fkey not in matched_persisted_keys:
-                        persisted_entry = persisted_index.get(fkey)
-                        fuzzy_used = True
-                        key = fkey  # tratamos al fuzzy match como match real
+                try:
+                    resolution = await resolver.resolve(
+                        name=parsed.name,
+                        club=getattr(parsed, "club", None),
+                        city=getattr(parsed, "city", None),
+                        season=season,
+                        sex=sex_from_code,
+                        category=cat_obj,
+                        bib=getattr(parsed, "bib", None),
+                        collision_discriminator=collisions.get((cat_code, idx)),
+                    )
+                except IdentityUnresolved:
+                    # No debería ocurrir con strict=False; defensivo — la
+                    # fila queda sin identidad resuelta, se trata como
+                    # "nueva" para el fallback fuzzy (nunca bloquea el
+                    # preview; el candado de identidad real vive aparte).
+                    resolution = None
 
-            # Parseo defensivo del tiempo del PDF nuevo
-            try:
-                p_status, p_time_ms, p_laps_behind = parse_time(parsed.time_raw)
-            except ValueError:
-                # Tiempo no parseable: skip (warning lo emite el ingestor real;
-                # acá lo tratamos como unchanged si existe persisted, ó skip).
-                if persisted_entry is not None:
-                    matched_persisted_keys.add(key)
+                # Parseo defensivo del tiempo del documento nuevo.
+                try:
+                    p_status, p_time_ms, p_laps_behind = parse_time(parsed.time_raw)
+                except ValueError:
+                    p_status, p_time_ms, p_laps_behind = None, None, None
+
+                competitor_id = resolution.competitor.id if resolution else None
+                key = (cat_code, competitor_id) if competitor_id is not None else None
+                persisted_entry = persisted_index.get(key) if key else None
+
+                if persisted_entry is not None and key not in matched_keys:
+                    matched_keys.add(key)
                     r, comp, cat = persisted_entry
-                    rows_unchanged.append(
+                    if p_status is None:
+                        # Tiempo no parseable — no hay valores nuevos que
+                        # comparar; se trata como sin cambios.
+                        n_unchanged += 1
+                        continue
+                    field_diffs = _compute_field_diffs(
+                        r, p_status, p_time_ms, p_laps_behind, parsed.position, parsed.points
+                    )
+                    if field_diffs:
+                        before_snapshot = _serialize_result_snapshot(r)
+                        after_snapshot = dict(before_snapshot)
+                        for fname, change in field_diffs.items():
+                            after_snapshot[fname] = change["after"]
+                        rows_update.append(
+                            DiffRow(
+                                action="update",
+                                competitor_normalized_name=norm_name,
+                                competitor_display_name=comp.display_name,
+                                category_code=cat.code,
+                                result_id=r.id,
+                                before=before_snapshot,
+                                after=after_snapshot,
+                                fields_changed=sorted(field_diffs.keys()),
+                                fuzzy_matched=False,
+                            )
+                        )
+                    else:
+                        n_unchanged += 1
+                    continue
+
+                if p_status is None:
+                    # Tiempo no parseable en una fila sin match persistido —
+                    # nada seguro que crear; se descarta del diff (igual que
+                    # antes de esta reescritura).
+                    continue
+
+                if resolution is not None and not resolution.created:
+                    # Competidor ya identificado (por firma/decisión/nombre)
+                    # pero sin fila persistida en ESTA categoría del evento
+                    # padre — ej. cambió de categoría, o corre este evento
+                    # por primera vez. Nunca pasa por el fuzzy fallback:
+                    # su identidad ya está resuelta.
+                    laps_behind_val = (
+                        p_laps_behind if p_laps_behind and p_laps_behind > 0 else None
+                    )
+                    rows_create.append(
                         DiffRow(
-                            action="unchanged",
+                            action="create",
+                            competitor_normalized_name=norm_name,
+                            competitor_display_name=parsed.name.strip(),
+                            category_code=cat_code,
+                            result_id=None,
+                            before=None,
+                            after=_parsed_row_snapshot(
+                                parsed, p_status, p_time_ms, laps_behind_val, cat_obj.id
+                            ),
+                            fuzzy_matched=False,
+                            raw_city=getattr(parsed, "city", None),
+                            raw_club=getattr(parsed, "club", None),
+                            raw_bib=getattr(parsed, "bib", None),
+                        )
+                    )
+                    continue
+
+                # Fila "nueva" (resolver.created, o sin resolución) — el
+                # fallback fuzzy decide en una segunda pasada, cuando ya se
+                # conoce qué claves persistidas quedaron reclamadas por match
+                # exacto de otras filas de la misma categoría.
+                pending_fuzzy.append(
+                    (cat_code, parsed, norm_name, p_status, p_time_ms, p_laps_behind, cat_obj.id)
+                )
+
+        # Segunda pasada — fallback fuzzy intra-categoría, solo para filas
+        # "nuevas". Nunca propone un competidor vinculado a un atleta del
+        # club (T169 caso 3): esa fila se queda `create` y el candado de
+        # identidad la levanta.
+        for cat_code, parsed, norm_name, p_status, p_time_ms, p_laps_behind, cat_id in pending_fuzzy:
+            candidates = [
+                (comp_id, comp.normalized_name)
+                for (c_code, comp_id), (_, comp, _) in persisted_index.items()
+                if c_code == cat_code
+                and (c_code, comp_id) not in matched_keys
+                and comp.athlete_id is None
+            ]
+            fuzzy_key = _fuzzy_match_in_category(
+                norm_name, [name for _, name in candidates]
+            )
+            matched_comp_id = next(
+                (comp_id for comp_id, name in candidates if name == fuzzy_key),
+                None,
+            ) if fuzzy_key is not None else None
+
+            if matched_comp_id is not None:
+                key = (cat_code, matched_comp_id)
+                matched_keys.add(key)
+                r, comp, cat = persisted_index[key]
+                field_diffs = _compute_field_diffs(
+                    r, p_status, p_time_ms, p_laps_behind, parsed.position, parsed.points
+                )
+                if field_diffs:
+                    before_snapshot = _serialize_result_snapshot(r)
+                    after_snapshot = dict(before_snapshot)
+                    for fname, change in field_diffs.items():
+                        after_snapshot[fname] = change["after"]
+                    rows_update.append(
+                        DiffRow(
+                            action="update",
                             competitor_normalized_name=norm_name,
                             competitor_display_name=comp.display_name,
                             category_code=cat.code,
                             result_id=r.id,
-                            fuzzy_matched=fuzzy_used,
+                            before=before_snapshot,
+                            after=after_snapshot,
+                            fields_changed=sorted(field_diffs.keys()),
+                            fuzzy_matched=True,
                         )
                     )
+                else:
+                    n_unchanged += 1
                 continue
 
             laps_behind_val = (
                 p_laps_behind if p_laps_behind and p_laps_behind > 0 else None
             )
-
-            if persisted_entry is None:
-                # CREATE — competitor nuevo en revisión
-                rows_create.append(
-                    DiffRow(
-                        action="create",
-                        competitor_normalized_name=norm_name,
-                        competitor_display_name=parsed.name.strip(),
-                        category_code=cat_code,
-                        result_id=None,
-                        before=None,
-                        after=_parsed_row_snapshot(
-                            parsed, p_status, p_time_ms, laps_behind_val, cat_obj.id
-                        ),
-                        fuzzy_matched=False,
-                    )
+            rows_create.append(
+                DiffRow(
+                    action="create",
+                    competitor_normalized_name=norm_name,
+                    competitor_display_name=parsed.name.strip(),
+                    category_code=cat_code,
+                    result_id=None,
+                    before=None,
+                    after=_parsed_row_snapshot(
+                        parsed, p_status, p_time_ms, laps_behind_val, cat_id
+                    ),
+                    fuzzy_matched=False,
+                    raw_city=getattr(parsed, "city", None),
+                    raw_club=getattr(parsed, "club", None),
+                    raw_bib=getattr(parsed, "bib", None),
                 )
-                continue
-
-            # Match exact o fuzzy — clasificar update vs unchanged
-            matched_persisted_keys.add(key)
-            r, comp, cat = persisted_entry
-            field_diffs = _compute_field_diffs(
-                r,
-                p_status,
-                p_time_ms,
-                p_laps_behind,
-                parsed.position,
-                parsed.points,
             )
-            if field_diffs:
-                before_snapshot = _serialize_result_snapshot(r)
-                after_snapshot = dict(before_snapshot)
-                for fname, change in field_diffs.items():
-                    after_snapshot[fname] = change["after"]
-                rows_update.append(
-                    DiffRow(
-                        action="update",
-                        competitor_normalized_name=norm_name,
-                        competitor_display_name=comp.display_name,
-                        category_code=cat.code,
-                        result_id=r.id,
-                        before=before_snapshot,
-                        after=after_snapshot,
-                        fields_changed=sorted(field_diffs.keys()),
-                        fuzzy_matched=fuzzy_used,
-                    )
-                )
-            else:
-                rows_unchanged.append(
-                    DiffRow(
-                        action="unchanged",
-                        competitor_normalized_name=norm_name,
-                        competitor_display_name=comp.display_name,
-                        category_code=cat.code,
-                        result_id=r.id,
-                        fuzzy_matched=fuzzy_used,
-                    )
-                )
+    finally:
+        # Camino de solo-lectura (docstring del módulo): cualquier competidor
+        # o firma provisional que el resolver haya escrito en modo
+        # strict=False se descarta siempre, éxito o error.
+        await savepoint.rollback()
 
-    # Calcular DELETES: persisted no matched
+    # Calcular DELETES: persisted no matched.
     rows_delete: list[DiffRow] = []
     for key, (r, comp, cat) in persisted_index.items():
-        if key in matched_persisted_keys:
+        if key in matched_keys:
             continue
         rows_delete.append(
             DiffRow(
@@ -652,13 +782,14 @@ async def compute_diff(
             )
         )
 
-    # Orden DTR-5: deletes → updates → creates → unchanged
-    ordered_rows = rows_delete + rows_update + rows_create + rows_unchanged
+    # Orden DTR-5: deletes → updates → creates. `unchanged` se cuenta en el
+    # summary pero se omite de `rows` (contrato §"Dry-run, revision branch").
+    ordered_rows = rows_delete + rows_update + rows_create
     summary = DiffSummary(
         n_create=len(rows_create),
         n_update=len(rows_update),
         n_delete=len(rows_delete),
-        n_unchanged=len(rows_unchanged),
+        n_unchanged=n_unchanged,
     )
     return DiffReport(summary=summary, rows=ordered_rows)
 
@@ -713,16 +844,26 @@ async def commit_revision(
         ``CommitRevisionReport`` con counts aplicados.
 
     Raises:
-        ValueError: si ``revision_reason`` requerido pero faltante.
+        ValueError: si ``revision_reason`` falta — obligatorio en TODA
+            revisión (amendment 2026-09-26, T174: se ensancha la regla
+            previa, que solo lo exigía cuando el diff traía deletes).
     """
-    # Validación app-level (Q4 design): obligatorio si hay deletes
-    if diff_report.summary.n_delete > 0 and not revision_reason:
-        raise ValueError(
-            "revision_reason obligatorio cuando el diff incluye deletes"
-        )
+    # T174 — el motivo es obligatorio en toda revisión, haya o no deletes.
+    if not revision_reason:
+        raise ValueError("revision_reason obligatorio en toda revisión")
 
     # Lock pesimista sobre RaceEvent (NOWAIT timeout 5s en MySQL)
     event = await _acquire_event_lock(db, revision_context.parent_event_id)
+
+    # Temporada de la serie — la necesita IdentityResolver (discriminador de
+    # categoría) para resolver identidad de las filas `create` igual que el
+    # ingestor real (contrato §Commit, punto 4d).
+    from app.models.race_series import RaceSeries
+
+    season_result = await db.execute(
+        select(RaceSeries.season_year).where(RaceSeries.id == event.series_id)
+    )
+    season = season_result.scalar_one()
 
     warnings: list[str] = []
     revisions_created = 0
@@ -731,7 +872,7 @@ async def commit_revision(
     for row in diff_report.rows:
         if row.action == "create":
             new_result = await _apply_create(
-                db, row, event.id, parse_import.id, changed_by_user_id
+                db, row, event.id, parse_import.id, changed_by_user_id, season
             )
             if new_result is not None:
                 db.add(
@@ -838,38 +979,51 @@ async def _apply_create(
     event_id: int,
     parse_import_id: int,
     user_id: int,
+    season: int,
 ) -> Optional[RaceResult]:
-    """Aplica un create del diff: upsert competitor + insert RaceResult.
-
-    Reusa el patrón del ingestor (upsert por normalized_name + sex_from_code
-    fallback). Para revisión simplificamos: si competitor no existe lo creamos
-    sin sex (puede actualizarse vía endpoint dedicado en el futuro).
+    """Aplica un create del diff: resuelve el competidor con el MISMO
+    ``IdentityResolver`` que usa el ingestor real (``strict=True`` — esto
+    corre dentro del commit real, no del preview) — contrato §Commit punto
+    4d: "creates a través de la misma resolución de competidor y escritura
+    de firma que el ingestor, con etiqueta de categoría y rango de edad
+    congelados". El candado de identidad (feature 045) ya corrió antes de
+    llegar aquí, así que ``IdentityUnresolved`` no debería levantarse; si lo
+    hace, se propaga (el caller — ``commit_revision`` — no la atrapa, el
+    router la deja subir como 500, igual que el ingestor).
     """
     after = row.after or {}
     category_id = after.get("category_id")
     if category_id is None:
         return None
 
-    # Upsert competitor (reusa la convención del ingestor)
     norm_name = row.competitor_normalized_name
     if not norm_name:
         return None
 
-    comp_result = await db.execute(
-        select(RaceCompetitor).where(
-            RaceCompetitor.normalized_name == norm_name
-        )
+    category = await db.get(RaceCategory, category_id)
+    if category is None:
+        return None
+
+    resolver = IdentityResolver(db, strict=True)
+    resolution = await resolver.resolve(
+        name=row.competitor_display_name or norm_name,
+        club=row.raw_club,
+        city=row.raw_city,
+        season=season,
+        sex=_derive_sex_from_code(category.code),
+        category=category,
+        bib=row.raw_bib,
     )
-    competitor = comp_result.scalar_one_or_none()
-    if competitor is None:
-        competitor = RaceCompetitor(
-            normalized_name=norm_name,
-            display_name=row.competitor_display_name,
-            club_text=None,
-            sex=None,
-        )
-        db.add(competitor)
-        await db.flush()
+    competitor = resolution.competitor
+    if not resolution.created:
+        # Ablandar club/ciudad más recientes, igual que el ingestor real
+        # (``RaceIngestor._resolve_competitor``) — nunca pisa un sex ya fijado.
+        if row.raw_club and competitor.club_text != row.raw_club:
+            competitor.club_text = row.raw_club
+        if row.raw_city and competitor.city_text != row.raw_city[:100]:
+            competitor.city_text = row.raw_city[:100]
+        if competitor.sex is None:
+            competitor.sex = _derive_sex_from_code(category.code)
 
     # Parsear status enum desde el snapshot serializado (string)
     status_str = after.get("status")
@@ -886,7 +1040,9 @@ async def _apply_create(
         event_id=event_id,
         category_id=category_id,
         competitor_id=competitor.id,
-        athlete_id=None,  # athlete linkage F2 — no se asigna en revisión
+        # El link de atleta sigue al competidor ya resuelto (nunca se decide
+        # de nuevo en una revisión) — preserva el matching previo del coach.
+        athlete_id=competitor.athlete_id,
         bib_number=after.get("bib_number"),
         position=after.get("position"),
         status=status_enum,
