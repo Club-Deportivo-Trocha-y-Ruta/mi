@@ -9,7 +9,7 @@ Cubre: CRUD sesión, asistencia, upload — todos los roles.
 from __future__ import annotations
 
 import io
-from datetime import date, time
+from datetime import date, time, timedelta
 from unittest.mock import AsyncMock as _AsyncMock
 from unittest.mock import MagicMock as _MagicMock
 from unittest.mock import patch as _patch
@@ -150,17 +150,62 @@ class TestCreateTrainingSession:
         )
         assert resp.status_code == 422
 
-    async def test_past_date_returns_422(self, client: AsyncClient):
+    async def test_past_date_is_accepted_for_retroactive_logging(self, client: AsyncClient):
+        """Una sesión con fecha pasada se puede crear (registro retroactivo).
+
+        El validador `date_must_not_be_in_the_past` se eliminó a propósito en
+        eadb34d (refactor «remove age group»): en ese mismo commit el servicio
+        ganó el guard `is_future` para que una sesión pasada NO dispare correo
+        a los padres. La versión anterior de este test exigía 422 con una
+        fecha fija (`2000-01-01`) y quedó obsoleta con ese cambio de contrato.
+        """
         headers = await _auth_coach(client)
         club_id = await _get_club_id(client, headers)
         athlete_id = await _get_first_athlete_id(client, headers, club_id)
+        past = (date.today() - timedelta(days=7)).isoformat()
 
         resp = await client.post(
             "/api/training-sessions",
-            json=_session_payload([athlete_id], scheduled_date="2000-01-01"),
+            json=_session_payload([athlete_id], scheduled_date=past),
             headers=headers,
         )
-        assert resp.status_code == 422
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["scheduled_date"] == past
+
+    async def test_past_date_never_notifies_parents_but_future_does(self, client: AsyncClient):
+        """`send_notification=True` solo despacha correo si la sesión es a futuro.
+
+        Es el otro lado del contrato que reemplazó al 422 por fecha pasada: se
+        permite registrar sesiones pasadas, pero jamás se avisa a las familias
+        de algo que ya ocurrió. El control con fecha futura demuestra que el
+        guard decide por fecha y no que el parche del despacho esté inerte.
+        """
+        headers = await _auth_coach(client)
+        club_id = await _get_club_id(client, headers)
+        athlete_id = await _get_first_athlete_id(client, headers, club_id)
+        past = (date.today() - timedelta(days=7)).isoformat()
+        future = (date.today() + timedelta(days=30)).isoformat()
+
+        with _patch.object(_sessions_svc, "_notify_parents", new=_AsyncMock()) as notify:
+            past_resp = await client.post(
+                "/api/training-sessions",
+                json=_session_payload(
+                    [athlete_id], scheduled_date=past, send_notification=True
+                ),
+                headers=headers,
+            )
+            assert past_resp.status_code == 201, past_resp.text
+            notify.assert_not_awaited()
+
+            future_resp = await client.post(
+                "/api/training-sessions",
+                json=_session_payload(
+                    [athlete_id], scheduled_date=future, send_notification=True
+                ),
+                headers=headers,
+            )
+            assert future_resp.status_code == 201, future_resp.text
+            notify.assert_awaited_once()
 
     async def test_empty_convocados_returns_422(self, client: AsyncClient):
         headers = await _auth_coach(client)
@@ -775,7 +820,24 @@ class TestParentIDORFilterByForeignAthleteId:
         # Buscar un atleta que NO sea hijo del padre (para probar IDOR)
         foreign_ids = [a["id"] for a in athletes if a["id"] not in parent_kids]
         if not foreign_ids:
-            pytest.skip("No hay atletas ajenos al padre seed en este entorno — requiere seed con >= 2 atletas")
+            # El seed sólo trae al hijo del padre: crear un atleta ajeno
+            # (datos sintéticos) en vez de depender de lo que hayan creado
+            # tests anteriores — antes esto se saltaba en una BD recién
+            # sembrada y el invariante IDOR quedaba sin ejercitar.
+            created = await client.post(
+                "/api/athletes",
+                json={
+                    "first_name": "Atleta",
+                    "last_name": "Ajeno",
+                    "birth_date": "2013-06-15",
+                    "sex": "F",
+                    "club_join_date": "2024-01-01",
+                    "club_id": club_id,
+                },
+                headers=coach_headers,
+            )
+            assert created.status_code == 201, created.text
+            foreign_ids = [created.json()["id"]]
 
         foreign_id = foreign_ids[0]
 

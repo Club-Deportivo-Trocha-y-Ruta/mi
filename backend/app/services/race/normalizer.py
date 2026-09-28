@@ -45,8 +45,8 @@ DEFAULT_TYR_THRESHOLD: int = 85
 #: ``race_categories``. Igualdad exacta sobre header normalizado para evitar
 #: la colisión ``"INFANTIL A" ⊂ "INFANTIL A FEMENINO"`` (edge-cases.md §4.4).
 #:
-#: 38 entradas: las 26 categorías observadas en Válida IV (edge-cases.md §2)
-#: más 12 alias históricos Copa Valle 2024/2025 (feature 044, ver
+#: 46 entradas: las 26 categorías observadas en Válida IV (edge-cases.md §2)
+#: más 20 alias históricos Copa Valle 2022/2024/2025 (feature 044, ver
 #: ``contracts/category-mapping.md`` y ``HEADER_ALIASES``). Si una válida
 #: futura usa un texto distinto (ej. ``INFANTIL A (FEMENINO)``), ampliar
 #: este dict — punto único de cambio.
@@ -97,6 +97,20 @@ HEADER_TO_CODE: dict[str, str] = {
     "master c": "MAS_C_2025",
     "preinfantil ninas": "PRE_F_U",
     "preinfantil femenino": "PRE_F_U",
+    # --- Copa Vallecaucana 2022: mismo grupo, otro rótulo -------------------
+    # ``PREINFANTIL DAMAS`` = grupo único femenino (igual que 2024/2025);
+    # ``MASTER D1`` es la única categoría D de 2022 (Master D hoy, 60+).
+    "preinfantil damas": "PRE_F_U",
+    "master d1": "MAS_D",
+    # --- Copa Vallecaucana 2022: propios de temporada (códigos inactivos) ---
+    # ``MASTER A 2`` es la misma categoría que ``MASTER A2`` con otro espaciado
+    # (aparece así en las válidas I–V; VI y VII la imprimen ``MASTER A2``).
+    "master a1": "MAS_A1_2022",
+    "master a2": "MAS_A2_2022",
+    "master a 2": "MAS_A2_2022",
+    "infantil damas": "INF_F_U",
+    "sport a": "SPORT_A_2022",
+    "sport b": "SPORT_B_2022",
 }
 
 #: Subconjunto de keys de ``HEADER_TO_CODE`` que son alias históricos (feature
@@ -118,6 +132,14 @@ HEADER_ALIASES: frozenset[str] = frozenset(
         "master c",
         "preinfantil ninas",
         "preinfantil femenino",
+        "preinfantil damas",
+        "master d1",
+        "master a1",
+        "master a2",
+        "master a 2",
+        "infantil damas",
+        "sport a",
+        "sport b",
     }
 )
 

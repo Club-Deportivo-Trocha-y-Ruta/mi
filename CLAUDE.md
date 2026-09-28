@@ -71,7 +71,7 @@ There is no ESLint config — `tsc --noEmit` is the static gate.
 
 ### Deploy topology
 
-Backend auto-deploys to Render free tier from `main` (`https://mi-2yzi.onrender.com`, cold start ~50 s — the frontend must show a "starting server" state, never a bare spinner); MySQL lives on Hostinger; frontend on Cloudflare Pages. Post-deploy: smoke-check `/health` plus one authenticated endpoint.
+Backend auto-deploys to Render free tier from `main` (`https://mi-2yzi.onrender.com`, cold start ~50 s — the frontend must show a "starting server" state, never a bare spinner); MySQL, media files and the frontend live on Hostinger. Post-deploy: smoke-check `/health` plus one authenticated endpoint.
 
 ## Workflow conventions
 

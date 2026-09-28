@@ -128,7 +128,7 @@ PROHIBIDO mencionar distancia, vueltas, tipo de superficie o terreno, desnivel, 
 {% if is_adult %}
 ## Maduración — No aplica
 
-{{ athlete_ref | capitalize }} es un atleta adulto: la maduración biológica (PHV) no aplica. No menciones fase madurativa, Pre-PHV, Circa-PHV ni Post-PHV en este análisis.
+{{ athlete_ref | capitalize }} es un atleta adulto: la maduración biológica (PHV) no aplica. No menciones fase madurativa ni ninguna etiqueta de fase respecto del pico de crecimiento en este análisis.
 {% elif anthro_block %}
 ## Maduración
 

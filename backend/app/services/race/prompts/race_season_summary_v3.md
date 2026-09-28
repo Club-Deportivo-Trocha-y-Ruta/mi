@@ -76,7 +76,7 @@ No hay carreras con resultado en la temporada: decláralo en `data_gaps`, usa `t
 {% if is_adult %}
 ## Maduración — No aplica
 
-{{ athlete_ref | capitalize }} es un atleta adulto: la maduración biológica (PHV) no aplica. No menciones fase madurativa, Pre-PHV, Circa-PHV ni Post-PHV en este resumen.
+{{ athlete_ref | capitalize }} es un atleta adulto: la maduración biológica (PHV) no aplica. No menciones fase madurativa ni ninguna etiqueta de fase respecto del pico de crecimiento en este resumen.
 {% elif anthro_block %}
 ## Maduración
 

@@ -2,7 +2,7 @@
 
 Plataforma entrenador–deportistas–familias del **Club Deportivo Trocha y Ruta**, club de ciclismo de montaña XCO juvenil (10–15 años) del Valle del Cauca, Colombia.
 
-- **App:** <https://mi.clubdeportivotrochayruta.org> (frontend en Cloudflare Pages)
+- **App:** <https://mi.clubdeportivotrochayruta.org> (frontend en Hostinger)
 - **API:** <https://mi-2yzi.onrender.com> (Render, plan gratuito — el primer arranque tarda ~50 s)
 
 ## Qué hace
@@ -32,7 +32,7 @@ La plataforma trata datos de menores de edad. Ningún nombre, fecha de nacimient
 | Documentos | Jinja2 (correos) · WeasyPrint (PDF) · docxtpl (DOCX) · pdfplumber + rapidfuzz + pandas (resultados) |
 | Frontend | React 19 · Vite · TypeScript · Tailwind v4 · shadcn/ui · TanStack Query · Zustand · React Hook Form + Zod |
 | Pruebas | pytest (aiosqlite en memoria) · Vitest + Testing Library + MSW + jest-axe · Playwright · Stryker / mutmut |
-| Infra | Docker Compose (backend + MySQL + MailHog) · Render · Cloudflare Pages · MySQL en Hostinger |
+| Infra | Docker Compose (backend + MySQL + MailHog) · Render · Hostinger (frontend, MySQL y archivos) |
 
 ## Estructura
 
@@ -121,7 +121,7 @@ npm run build
 ## Despliegue
 
 - **Backend:** despliegue automático en Render desde `main`; las migraciones corren al iniciar.
-- **Frontend:** Cloudflare Pages.
+- **Frontend:** hosting de Hostinger (build estático de `frontend/dist`).
 - **Después de cada despliegue:** revisar `/health` y un endpoint autenticado.
 - **Tareas programadas (GitHub Actions):** conciliación diaria de Strava, retención de auditoría y evaluaciones de IA (`.github/workflows/`).
 

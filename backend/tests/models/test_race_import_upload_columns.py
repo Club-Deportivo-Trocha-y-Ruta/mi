@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, inspect, text
@@ -26,6 +27,15 @@ from app.models.race_import import (
     RaceImport,
     RaceImportKind,
     RaceImportStatus,
+)
+
+# tests/models/<este archivo> → parents[2] = backend/. Relativo al archivo para
+# que el test corra igual en cualquier checkout (CI, contenedor, otra máquina).
+_UPLOAD_UI_MIGRATION_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "alembic"
+    / "versions"
+    / "e8f9a0b1c2d3_race_imports_upload_ui_delta.py"
 )
 
 
@@ -343,12 +353,11 @@ def test_alembic_migration_upgrade_adds_all_columns(monkeypatch, tmp_path):
     # Import lazy del módulo de migración
     import importlib.util
 
-    migration_path = (
-        "/Users/juadiga/Documents/Personal/Trocha y Ruta/me/backend/"
-        "alembic/versions/e8f9a0b1c2d3_race_imports_upload_ui_delta.py"
+    assert _UPLOAD_UI_MIGRATION_PATH.is_file(), (
+        f"No existe la migración esperada: {_UPLOAD_UI_MIGRATION_PATH}"
     )
     spec = importlib.util.spec_from_file_location(
-        "race_imports_upload_ui_delta", migration_path
+        "race_imports_upload_ui_delta", _UPLOAD_UI_MIGRATION_PATH
     )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -367,8 +376,7 @@ def test_alembic_migration_upgrade_adds_all_columns(monkeypatch, tmp_path):
     # Drift check: los nombres de columnas que el modelo declara deben
     # mencionarse en el código fuente de la migración (sanity simple
     # contra renombrados accidentales).
-    with open(migration_path) as f:
-        source = f.read()
+    source = _UPLOAD_UI_MIGRATION_PATH.read_text(encoding="utf-8")
     for col in [
         "event_id",
         "kind",

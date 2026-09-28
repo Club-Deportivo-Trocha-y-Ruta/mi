@@ -101,6 +101,12 @@
   h3 { margin: 9pt 0 5pt 0; }
   p { margin-bottom: 6pt; }
   .sl-section { margin-bottom: 10pt; }
+  /* Pie "Generado el …" (2026-09-25): `layout.html` lo separa con 24pt. Con
+     las fuentes de marca cargando de verdad (Inter es más ancha que el
+     Arial al que se caía antes), el mes más cargado con anexo cerraba la
+     tercera página a ~15pt del borde y este pie se iba solo a una cuarta.
+     Solo espacio en blanco — el borde superior sigue separándolo. */
+  .doc-footer { margin-top: 8pt; }
 </style>
 
 <!-- ============================================================

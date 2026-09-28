@@ -85,10 +85,18 @@ def test_analysis_input_happy_path():
 
 
 def test_analysis_input_age_bounds():
+    """Rango plausible 6..80 (feature "adult athlete path", 4c549eb).
+
+    El tope anterior (20) rechazaba con ValidationError a los atletas
+    adultos de competición reales del club; el techo de 80 sigue blindando
+    contra datos corruptos (p. ej. birth_date del año 1900).
+    """
+    for valid_age in (6, 18, 31, 80):
+        assert _sample_input(age=valid_age).age == valid_age
     with pytest.raises(ValueError):
         _sample_input(age=5)
     with pytest.raises(ValueError):
-        _sample_input(age=25)
+        _sample_input(age=81)
 
 
 def test_analysis_input_forbids_extra_fields():

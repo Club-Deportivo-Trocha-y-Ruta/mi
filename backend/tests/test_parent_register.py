@@ -440,13 +440,17 @@ class TestParentInviteFlow:
         )
         assert link_resp.status_code == 201
 
-        # 3. Coach desactiva al padre vía PATCH /api/users/{padre_id}
+        # 3. Coach desactiva al padre vía PATCH /api/users/{padre_id}.
+        # Feature 041 (staff-admin.md §4.2): desactivar exige `reason_code`
+        # del catálogo de estado de cuenta o de baja de padre (sin él, 422
+        # «Debes indicar el motivo de la desactivación»). Para una cuenta de
+        # familia el motivo veraz es el del grupo `parent_*`.
         deactivate_resp = await client.patch(
             f"/api/users/{padre_id}",
             headers=headers,
-            json={"is_active": False},
+            json={"is_active": False, "reason_code": "parent_family_request"},
         )
-        assert deactivate_resp.status_code == 200
+        assert deactivate_resp.status_code == 200, deactivate_resp.text
         assert deactivate_resp.json()["is_active"] is False
 
         # 4. Confirmar que quedó inactivo vía GET /api/users?club_id=

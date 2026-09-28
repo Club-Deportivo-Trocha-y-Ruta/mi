@@ -920,11 +920,26 @@ def test_v3_dataset_covers_the_required_scenarios() -> None:
 
 
 def test_v3_cases_declare_data_gaps_when_a_block_is_missing() -> None:
-    """Si falta antropometría o ventana, el ideal lo declara en ``data_gaps`` (AC-1.2)."""
+    """Si falta antropometría o ventana, el ideal lo declara en ``data_gaps`` (AC-1.2).
+
+    Excepción adulto (feature "adult athlete path", 4c549eb): para un atleta
+    ≥18 la maduración no aplica — no es un hueco de datos sino un bloque
+    que no existe, el prompt le prohíbe mencionarla y ``scorer_v3`` escanea
+    ``data_gaps`` contra ``forbidden_terms`` (que incluye "maduración"). Para
+    adultos se exige lo contrario: el ideal NO la declara como hueco.
+    """
+    from app.services.race.ai.grounding import is_adult_age
+
     for case_id, case in _ALL_CASES_V3:
         case_input = case["input"]
         gaps = " ".join(case["ideal_output"].get("data_gaps") or []).lower()
-        if case_input.get("anthro_context") is None and case_input.get("analysis_kind") != "season":
+        # Misma regla de adultez que scorer_v3.score_case_v3.
+        is_adult = bool(case_input.get("is_adult")) or is_adult_age(case_input.get("age"))
+        if is_adult:
+            assert "antropometr" not in gaps and "maduraci" not in gaps, (
+                f"case_{case_id}: atleta adulto, la maduración no aplica y no es un hueco"
+            )
+        elif case_input.get("anthro_context") is None and case_input.get("analysis_kind") != "season":
             assert "antropometr" in gaps or "maduraci" in gaps, (
                 f"case_{case_id}: sin antropometría pero el ideal no lo declara"
             )

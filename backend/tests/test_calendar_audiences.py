@@ -71,11 +71,18 @@ def _make_db_returning(rows):
 
 class TestSetAudiences:
     async def test_set_audiences_borra_y_reinserta(self):
+        # Desde 2cc1431 el borrado es un DELETE masivo por `event_id`
+        # (`db.execute(delete(...))`) y ya no itera `event.audiences` con
+        # `db.delete()`: recorrer la colección disparaba un lazy load
+        # (MissingGreenlet) en SQLAlchemy async. Este test verifica el contrato
+        # observable: qué se borra, qué se inserta y en qué orden.
         old_audience = MagicMock()
         event = _make_event(audiences=[old_audience])
+        calls: list[str] = []
         db = AsyncMock()
+        db.execute = AsyncMock(side_effect=lambda stmt: calls.append("delete"))
         db.delete = AsyncMock()
-        db.add = MagicMock()
+        db.add = MagicMock(side_effect=lambda obj: calls.append("add"))
 
         from app.schemas.calendar import AudienceCreate
 
@@ -87,10 +94,31 @@ class TestSetAudiences:
         ]
         await set_audiences(db, event, specs)
 
-        db.delete.assert_awaited_once_with(old_audience)
+        # 1. Un único DELETE dirigido a event_audiences, acotado al evento.
+        db.execute.assert_awaited_once()
+        stmt = db.execute.await_args.args[0]
+        compiled = stmt.compile()
+        assert str(compiled).startswith("DELETE FROM event_audiences")
+        assert "event_audiences.event_id" in str(compiled)
+        assert list(compiled.params.values()) == [event.id]
+        # 2. Sin borrado fila a fila por ORM (la ruta que causaba el lazy load).
+        db.delete.assert_not_awaited()
+        # 3. La audiencia nueva se inserta ligada al evento.
         db.add.assert_called_once()
+        new_row = db.add.call_args.args[0]
+        assert isinstance(new_row, EventAudience)
+        assert new_row.event_id == event.id
+        assert new_row.audience_type == AudienceType.ALL_CLUB
+        assert new_row.audience_value == {}
+        # 4. El orden importa: si el DELETE corriera después del INSERT
+        #    borraría también las audiencias recién creadas.
+        assert calls == ["delete", "add"]
 
     async def test_set_audiences_lista_vacia(self):
+        # Lista vacía = «quitar todas las audiencias»: el DELETE igual debe
+        # ejecutarse. Asertar `db.delete.assert_not_awaited()` aquí sería
+        # vacuo (el servicio ya no usa `db.delete`), por eso se verifica el
+        # `execute` del DELETE masivo.
         event = _make_event(audiences=[])
         db = AsyncMock()
         db.delete = AsyncMock()
@@ -98,7 +126,10 @@ class TestSetAudiences:
 
         await set_audiences(db, event, [])
 
-        db.delete.assert_not_awaited()
+        db.execute.assert_awaited_once()
+        assert str(db.execute.await_args.args[0].compile()).startswith(
+            "DELETE FROM event_audiences"
+        )
         db.add.assert_not_called()
 
 

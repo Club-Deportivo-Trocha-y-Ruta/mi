@@ -23,6 +23,7 @@ Uso::
         route.methods   # set[str]
         route.endpoint  # la función de la vista
         route.name
+        route.response_model  # el ``response_model`` declarado (o ``None``)
 """
 
 from __future__ import annotations
@@ -39,6 +40,10 @@ class ResolvedRoute:
     methods: frozenset[str]
     endpoint: Any
     name: str | None = None
+    #: ``response_model`` declarado en el decorador (``None`` si no hay). Lo
+    #: usan los barridos de privacidad que inspeccionan qué campos serializa
+    #: cada endpoint (``tests/privacy/test_city_not_serialised.py``).
+    response_model: Any = None
 
 
 def _as_resolved(path: str, route: Any) -> ResolvedRoute:
@@ -47,6 +52,7 @@ def _as_resolved(path: str, route: Any) -> ResolvedRoute:
         methods=frozenset(getattr(route, "methods", None) or ()),
         endpoint=getattr(route, "endpoint", None),
         name=getattr(route, "name", None),
+        response_model=getattr(route, "response_model", None),
     )
 
 

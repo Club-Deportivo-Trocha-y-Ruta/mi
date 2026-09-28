@@ -373,16 +373,17 @@ class TestParseCategoryHeader:
         assert parse_category_header("INFANTIL A") is None
         assert parse_category_header("") is None
 
-    def test_header_to_code_has_38_entries_after_044_aliases(self):
+    def test_header_to_code_has_46_entries_after_044_aliases(self):
         """Sanity check: 26 originales (edge-cases §1) + 12 alias históricos
-        del contrato de la 044 (8 renombres + 4 propios de temporada) = 38.
+        del contrato de la 044 (8 renombres + 4 propios de temporada) + 8 de 2022
+        (2 renombres 1:1 y 6 propios de temporada) = 46.
 
         Reemplaza el sanity check previo de "26 entries" — T028 agrega los
         alias al MISMO dict (``HEADER_TO_CODE``, no uno separado), así que
         el tamaño total debe crecer. Si este test falla con
         ``len == 26``, T028 todavía no corrió.
         """
-        assert len(HEADER_TO_CODE) == 38
+        assert len(HEADER_TO_CODE) == 46
 
 
 # ---------------------------------------------------------------------------
@@ -441,7 +442,7 @@ class TestHeaderAliasesFrozenset:
     (no las 26 originales) — usado por ``mapping_kind_for`` para distinguir
     ``exact`` de ``rename``/``season_specific``."""
 
-    def test_contains_exactly_the_12_alias_headers(self):
+    def test_contains_exactly_the_20_alias_headers(self):
         from app.services.race.normalizer import HEADER_ALIASES
 
         assert HEADER_ALIASES == frozenset(
@@ -458,6 +459,14 @@ class TestHeaderAliasesFrozenset:
                 "master c",
                 "preinfantil ninas",
                 "preinfantil femenino",
+                "preinfantil damas",
+                "master d1",
+                "master a1",
+                "master a2",
+                "master a 2",
+                "infantil damas",
+                "sport a",
+                "sport b",
             }
         )
 
@@ -523,3 +532,31 @@ class TestMappingKindDerivation:
         from app.services.race.normalizer import mapping_kind_for
 
         assert mapping_kind_for("CAT: SUPER ELITE COSMICO", None) == "unknown"
+
+
+class TestAliasesCopaVallecaucana2022:
+    """Renombres 1:1 de la temporada 2022 (un encabezado → una categoría)."""
+
+    def test_preinfantil_damas_es_el_grupo_unico_femenino(self):
+        assert parse_category_header("CATEGORIA: PREINFANTIL DAMAS") == "PRE_F_U"
+        assert parse_category_header("CAT: PREINFANTIL DAMAS") == "PRE_F_U"
+
+    def test_master_d1_es_master_d(self):
+        assert parse_category_header("CATEGORIA: MASTER D1") == "MAS_D"
+
+    @pytest.mark.parametrize(
+        "header, code",
+        [
+            ("MASTER A1", "MAS_A1_2022"),
+            ("MASTER A2", "MAS_A2_2022"),
+            ("MASTER A 2", "MAS_A2_2022"),
+            ("INFANTIL DAMAS", "INF_F_U"),
+            ("SPORT A", "SPORT_A_2022"),
+            ("SPORT B", "SPORT_B_2022"),
+        ],
+    )
+    def test_propios_de_temporada_no_se_funden_con_el_catalogo_actual(self, header, code):
+        """A1/A2, SPORT A/B e INFANTIL DAMAS resuelven a códigos propios de
+        2022 (inactivos) — nunca a ``MAS_A``, ``PROMO`` ni ``INF_*_F``."""
+        assert parse_category_header(f"CATEGORIA: {header}") == code
+        assert code not in {"MAS_A", "PROMO", "INF_A_F", "INF_B_F"}

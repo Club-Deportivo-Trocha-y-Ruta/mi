@@ -555,7 +555,7 @@ class Settings(BaseSettings):
             import warnings
             warnings.warn(
                 "CORS_ORIGINS='*' en producción. Restringir al dominio real del "
-                "frontend (Cloudflare Pages) en cuanto exista.",
+                "frontend (Hostinger) en cuanto exista.",
                 stacklevel=2,
             )
         if (

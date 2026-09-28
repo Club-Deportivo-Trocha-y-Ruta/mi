@@ -33,6 +33,7 @@ from pydantic import BaseModel
 
 import app.schemas as schemas_pkg
 from app.main import app
+from tests.helpers.app_routes import iter_api_routes
 
 FORBIDDEN_FIELD_NAMES = {"city", "city_text", "city_norm"}
 
@@ -157,16 +158,19 @@ def test_race_identity_module_itself_still_declares_city() -> None:
 
 
 def _iter_route_response_models() -> list[tuple[str, type[BaseModel]]]:
-    """``[(path, response_model), ...]`` para cada ``APIRoute`` con un
-    ``response_model`` que sea (o contenga) un ``BaseModel``."""
+    """``[(path, response_model), ...]`` para cada ruta con un
+    ``response_model`` que sea (o contenga) un ``BaseModel``.
+
+    Recorre vía ``iter_api_routes`` y NO ``app.routes`` a secas: desde
+    FastAPI 0.14x cada ``include_router`` queda como un ``_IncludedRouter``
+    perezoso en ``app.routes``, sin ``response_model`` propio, y el barrido
+    revisaría cero endpoints de ``/api/*`` — pasaría en falso."""
     out: list[tuple[str, type[BaseModel]]] = []
-    for route in app.routes:
-        response_model = getattr(route, "response_model", None)
-        path = getattr(route, "path", "")
-        if response_model is None:
+    for route in iter_api_routes(app):
+        if route.response_model is None:
             continue
-        for cls in _flatten_models(response_model):
-            out.append((path, cls))
+        for cls in _flatten_models(route.response_model):
+            out.append((route.path, cls))
     return out
 
 
@@ -209,6 +213,23 @@ def test_no_mounted_route_outside_race_identity_responds_with_city_fields() -> N
         "Ruta fuera de /api/race-identity/* respondiendo con campo(s) de "
         "ciudad:\n" + "\n".join(offenders)
     )
+
+
+def test_scan_reaches_routes_outside_race_identity() -> None:
+    """Autoprueba del barrido 2 por el otro lado: debe revisar de verdad las
+    rutas que NO están exentas. Si el recorrido de rutas volviera a perder los
+    routers incluidos (p. ej. un cambio de montaje en FastAPI), el barrido de
+    arriba pasaría con cero rutas revisadas; aquí se exige que alcance
+    endpoints con ``response_model`` de dominios que sirven a familias."""
+    scanned_paths = {
+        path
+        for path, _cls in _iter_route_response_models()
+        if not path.startswith(ALLOWED_ROUTE_PREFIX)
+    }
+    for prefix in ("/api/race-competitors/", "/api/race-events/", "/api/athletes/"):
+        assert any(p.startswith(prefix) for p in scanned_paths), (
+            f"el barrido no revisa ninguna ruta {prefix}* — ¿recorrido de rutas roto?"
+        )
 
 
 def test_race_identity_routes_are_actually_mounted_and_reachable_by_the_scan() -> None:

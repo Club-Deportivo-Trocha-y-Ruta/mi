@@ -91,6 +91,18 @@ import { DistributionChart } from "@/components/athletes/ai/DistributionChart";
 describe("DistributionChart", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // El componente SIEMPRE pide /races (picker de carreras) además de
+    // /distribution. Sin handler, MSW la deja pasar (`onUnhandledRequest:
+    // "bypass"` en test/setup.ts) y sale a la red real: el resultado depende
+    // de la máquina (conexión rechazada → "Network Error" que se lee como
+    // cold start, o un backend local respondiendo 401) y de qué llegue antes.
+    // Eso hacía intermitentes los tests de ErrorState de la distribución,
+    // porque un segundo ErrorState (el de /races) con la MISMA copy podía
+    // aparecer en el mismo commit y `findByText`/`getByRole` veían dos nodos.
+    // Default hermético: los tests que necesitan otra lista de carreras
+    // (`emptyRacesListHandler`, `errorRacesListHandler`…) la registran con
+    // `mswServer.use(...)` y, al anteponerse, tiene prioridad sobre este.
+    mswServer.use(racesListHandler);
   });
 
   it("renderiza selectores de season y válida", async () => {
@@ -212,7 +224,7 @@ describe("DistributionChart", () => {
     // no de error) — se verifica en el contenedor específico del mensaje,
     // no con getByRole("status") a secas: el picker de carreras de este
     // componente puede tener su propio spinner "Cargando carreras" con el
-    // mismo role simultáneamente (query /races sin handler en este test).
+    // mismo role mientras la query /races sigue en vuelo.
     expect(coldStartMessage.closest('[role="status"]')).not.toBeNull();
   });
 

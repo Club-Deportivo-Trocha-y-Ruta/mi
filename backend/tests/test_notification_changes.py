@@ -516,6 +516,12 @@ class TestAnthropometryNotificationLogic:
         Un AsyncSession real puebla el id autoincremental del objeto durante
         el flush; MagicMock no lo hace por sí solo, así que aquí lo emulamos
         para que record_audit reciba un entity_id entero, como en producción.
+
+        También expone ``db.commit`` como corrutina: ``create_anthropometry``
+        hace ``await db.commit()`` explícito antes de responder (no espera al
+        teardown de ``get_db``, que corre DESPUÉS de enviar la respuesta —
+        ver el comentario en el router). Un ``MagicMock`` pelado no es
+        ``await``-able y reventaba con ``TypeError``.
         """
         added_objects: list = []
 
@@ -529,6 +535,7 @@ class TestAnthropometryNotificationLogic:
 
         db.add = MagicMock(side_effect=fake_add)
         db.flush = AsyncMock(side_effect=fake_flush)
+        db.commit = AsyncMock()
         return db
 
     def _make_phv_result(self, maturity_offset: float = -1.5) -> dict:
@@ -886,3 +893,55 @@ class TestAnthropometryNotificationLogic:
         assert "athlete_id" not in ctx
         assert sent_requests[0].template == NotificationTemplate.ANTHROPOMETRY_ALERT
         assert sent_requests[0].recipient.email == "padre@test.com"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("notifies", [True, False])
+    async def test_record_is_committed_explicitly_once_after_flush(self, notifies):
+        """Regresión de la carrera POST→GET: el router debe hacer ``commit``
+        él mismo (una sola vez, después del flush), tanto si notifica a los
+        padres como si no.
+
+        El teardown de ``get_db`` corre DESPUÉS de que FastAPI envía la
+        respuesta; sin este commit explícito el 201 llegaba con la fila aún
+        sin persistir y un GET inmediato no la veía. Un test HTTP con
+        ``httpx.ASGITransport`` no puede atrapar esa carrera (ver
+        ``tests/test_athletes.py::TestCreateAnthropometry``), así que aquí se
+        espía el ``commit`` directamente."""
+        from app.routers.anthropometry import create_anthropometry
+
+        events: list[str] = []
+        notification_service = MagicMock()
+        notification_service.send = AsyncMock(
+            return_value=NotificationResult(success=True, message_id="q")
+        )
+
+        db = self._setup_db(parents=[self._make_parent_user("padre@test.com")])
+        flush_impl = db.flush.side_effect
+
+        async def flush_spy():
+            events.append("flush")
+            await flush_impl()
+
+        async def commit_spy():
+            events.append("commit")
+
+        db.flush = AsyncMock(side_effect=flush_spy)
+        db.commit = AsyncMock(side_effect=commit_spy)
+        current_user = MagicMock()
+        current_user.id = 99
+
+        with self._base_patches(detect_return=notifies):
+            await create_anthropometry(
+                body=self._make_body(),
+                db=db,
+                current_user=current_user,
+                athlete=self._make_athlete(),
+                notification_service=notification_service,
+                dispatcher=MagicMock(),
+            )
+
+        db.commit.assert_awaited_once()
+        assert "flush" in events
+        # El commit es lo último: nada se persiste "a medias" tras el commit.
+        assert events[-1] == "commit"
+        assert events.index("flush") < events.index("commit")

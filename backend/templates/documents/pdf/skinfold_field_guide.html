@@ -80,6 +80,19 @@
   /* Con ilustraciones de 45 mm la página 2 queda casi llena: el pie del
      documento pega más arriba para no caer en una página 3. */
   .doc-footer { margin-top: 6pt; }
+  /* Holgura de paginación real (no calibrada a una sola máquina). Con los
+     márgenes de 28 mm y la cabecera de `base/layout.html`, la página 1 dejaba
+     ~92 pt vacíos (la 3.ª tarjeta, de ~133 pt e indivisible, no cabía) y la
+     página 2 cargaba 4 tarjetas + protocolo + pie con ~0 pt de margen: bajo
+     las métricas de Linux/Pango — las del contenedor de producción y del CI —
+     el pie se desbordaba ~4 pt a una página 3 casi en blanco, aunque en
+     macOS cabía en 2. Se recuperan ~54 pt en la página 1 (márgenes de página
+     de 28→22 mm y una cabecera de documento más baja) para que la 3.ª tarjeta
+     suba y queden 3 tarjetas por página: la página 1 sobra ~70 pt y la
+     página 2 más de 160 pt, sin depender del motor de fuentes.
+     Ámbito: solo este instructivo; los demás PDF conservan `layout.html`. */
+  @page { margin: 22mm 18mm 22mm 18mm; }
+  .doc-header { padding: 10pt 20pt; margin-bottom: 12pt; }
   .site-text h3 { margin: 0 0 4pt 0; }
   .site-text p { margin: 0 0 4pt 0; line-height: 1.35; }
 </style>

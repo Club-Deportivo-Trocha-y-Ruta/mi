@@ -1,0 +1,72 @@
+# ============================================================
+# CI — Frontend (React SPA) — Club Deportivo Trocha y Ruta
+# ============================================================
+# Trigger: push (merge) a main, SOLO si cambió algo del frontend.
+# Pipeline: checkout → node setup → install → tests → build
+#
+# Reglas de ejecución:
+#   - Solo corre en la rama main (los commits en feature branches
+#     NO disparan este workflow).
+#   - Solo corre si el cambio toca frontend/ o este mismo archivo.
+#     Un cambio exclusivo de backend/ dispara ci-backend.yml, no este.
+#
+# `npm run build` ya ejecuta `tsc --noEmit` antes de `vite build`,
+# así que el typecheck es parte del build (no hay ESLint en el repo:
+# tsc es la compuerta estática).
+#
+# No despliega nada: solo verifica. Playwright (test:e2e) no corre
+# aquí porque necesita levantar backend + base de datos.
+# ============================================================
+
+name: CI → Frontend
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "frontend/**"
+      - ".github/workflows/ci-frontend.yml"
+
+# Cancela la verificación anterior en curso si llega un push nuevo a main.
+concurrency:
+  group: ci-frontend
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: Tests y build del frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      # ── 1. Checkout ───────────────────────────────────────
+      - name: Checkout código fuente
+        uses: actions/checkout@v6
+
+      # ── 2. Setup Node.js ──────────────────────────────────
+      - name: Configurar Node.js 22
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22.12'
+          # El repo tiene package-lock.json y pnpm-lock.yaml a la vez;
+          # el flujo documentado (CLAUDE.md) es npm, así que el caché
+          # y la instalación usan package-lock.json.
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      # ── 3. Instalar dependencias ──────────────────────────
+      - name: Instalar dependencias
+        run: npm ci
+
+      # ── 4. Tests unitarios — GATE DE CALIDAD ──────────────
+      - name: Ejecutar pruebas unitarias (Vitest)
+        run: npm test
+
+      # ── 5. Typecheck + build ──────────────────────────────
+      - name: Verificar tipos y compilar (tsc + vite build)
+        run: npm run build

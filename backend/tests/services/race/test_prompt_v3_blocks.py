@@ -427,7 +427,33 @@ def test_adult_analyst_prompt_never_claims_maturation_even_with_anthro_context()
     text = render(_adult_input(anthro_context=ANTHRO_CONTEXT), PROMPT_VERSION_ANALYST_V3)
     assert "## Maduración — No aplica" in text
     assert "(PHV) no aplica" in text
-    assert "Circa-PHV" not in text.split("# Ejemplo resuelto")[0]
+    _assert_no_maturation_leak(text)
+    # Control positivo: el mismo anthro_context SÍ se imprime para un menor,
+    # así que los marcadores de _assert_no_maturation_leak no son vacíos.
+    minor = render(full_input(anthro_context=ANTHRO_CONTEXT), PROMPT_VERSION_ANALYST_V3)
+    assert "- Fase madurativa: Circa-PHV" in minor
+
+
+def _assert_no_maturation_leak(text: str) -> None:
+    """Ni el bloque real de maduración ni ninguna etiqueta de fase llegan al
+    prompt de un adulto antes del ejemplo resuelto (que es juvenil a
+    propósito). Nombrar las etiquetas, aunque sea para prohibirlas, las
+    siembra en la salida — y ``case_014_adult_athlete`` las tiene en
+    ``forbidden_terms``."""
+    body = text.split("# Ejemplo resuelto")[0]
+    assert "- Fase madurativa:" not in body
+    assert "Offset de maduración" not in body
+    for label in ("Pre-PHV", "Circa-PHV", "Post-PHV"):
+        assert label not in body, label
+
+
+def test_adult_season_prompt_never_claims_maturation_even_with_anthro_context():
+    text = render(
+        _adult_input(anthro_context=ANTHRO_CONTEXT, valida_num=0, analysis_kind="season"),
+        PROMPT_VERSION_SEASON_SUMMARY_V3,
+    )
+    assert "## Maduración — No aplica" in text
+    _assert_no_maturation_leak(text)
 
 
 def test_adult_season_prompt_coach_question_step_drops_family_and_school_wording():

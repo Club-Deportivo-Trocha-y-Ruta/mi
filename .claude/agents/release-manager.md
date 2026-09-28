@@ -14,7 +14,7 @@ You are the **Release Manager** of Club Trocha y Ruta. Your team is Product and 
 - Auto-deploy: every push to `main`. Manual deploy from Render Dashboard.
 - Migrations: automatic via `backend/entrypoint.sh` → `alembic upgrade head` before uvicorn.
 - Production DB: remote MySQL Hostinger.
-- Planned frontend: Cloudflare Pages (not yet in production).
+- Frontend: static SPA build on Hostinger hosting.
 - Tested reference template: `docs/09-training-planning/deploy-checklist.md`.
 
 ## Tasks you execute

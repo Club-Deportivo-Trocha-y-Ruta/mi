@@ -326,3 +326,179 @@ class TestParseEventHeaderEdges:
         page = _FakePage(text="Sin nada parecido a header\n")
         path = fake_pdf([page])
         assert parse_event_header(path) is None
+
+
+class TestEncabezadoCategoriaHistorico:
+    """Las actas 2022 rotulan la categoría ``CATEGORIA:`` en vez de ``CAT:``."""
+
+    @pytest.mark.parametrize(
+        "line, esperado",
+        [
+            ("CAT: INFANTIL B", "INFANTIL B"),
+            ("CATEGORIA: INFANTIL B", "INFANTIL B"),
+            ("CATEGORÍA: TETEROS CON PEDALES", "TETEROS CON PEDALES"),
+            ("categoria: infantil b", "infantil b"),
+        ],
+    )
+    def test_reconoce_prefijo(self, line: str, esperado: str) -> None:
+        assert parser_mod._category_header_of(line) == esperado
+
+    @pytest.mark.parametrize(
+        "line",
+        ["RESULTADOS VII VALIDA YUMBO", "Ord No. Nombre Club Tiempo Puntos", "CATEGORIAS"],
+    )
+    def test_ignora_lineas_que_no_son_encabezado(self, line: str) -> None:
+        assert parser_mod._category_header_of(line) is None
+
+
+class TestListadoSinColumnaPuntos:
+    """Listado 2022 (La Cumbre): sin ``Puntos`` y con la 1.ª categoría sin prefijo."""
+
+    _COLS_SIN_PUNTOS = "Ord No. Nombre Club Patrocinador Ciudad Tiempo"
+    _COLS_CON_PUNTOS = "Ord No. Nombre Club Patrocinador Ciudad Tiempo Puntos"
+
+    def test_page_has_points(self) -> None:
+        assert parser_mod._page_has_points(f"TITULO\n{self._COLS_SIN_PUNTOS}\n1 10 A B 0:01:00") is False
+        assert parser_mod._page_has_points(f"TITULO\n{self._COLS_CON_PUNTOS}\n1 10 A B 0:01:00 40") is True
+        # Sin encabezado de columnas reconocible: comportamiento de siempre.
+        assert parser_mod._page_has_points("1 10 A B 0:01:00 40") is True
+
+    @pytest.mark.parametrize(
+        "row, time_raw, points",
+        [
+            ("1 1052 Persona Uno CLUB Ciudad 0:01:33", "0:01:33", 40),
+            ("2 1054 Persona Dos CLUB Ciudad DNF", "DNF", 1),
+            ("3 522 Persona Tres CLUB Ciudad - 1 vuelta", "- 1 vuelta", 33),
+        ],
+    )
+    def test_fila_sin_puntos(self, row: str, time_raw: str, points: int) -> None:
+        match, time = parser_mod._match_row_text(row, has_points=False)
+        assert match is not None and time == time_raw
+        assert parser_mod._row_from_match(match, time, {}).points == points
+
+    def test_fila_sin_tiempo_ni_puntos_no_es_fila(self) -> None:
+        assert parser_mod._match_row_text("4 700 Persona Cuatro CLUB Ciudad", has_points=False)[0] is None
+
+    def test_con_puntos_no_cambia(self) -> None:
+        match, time = parser_mod._match_row_text("1 10 Persona Uno CLUB Ciudad 0:01:00 40")
+        assert match is not None and time == "0:01:00" and match.group("points") == "40"
+        # Sin puntos, el camino con puntos sigue sin aceptar la fila.
+        assert parser_mod._match_row_text("1 10 Persona Uno CLUB Ciudad 0:01:00")[0] is None
+
+    @pytest.mark.parametrize(
+        "above, esperado",
+        [
+            ("TETEROS CON PEDALES", "TETEROS CON PEDALES"),
+            ("INFANTIL A", "INFANTIL A"),
+            ("", None),
+            ("XXVI COPA VALLECAUCANA CICLOMONTAÑISMO 2022", None),  # trae dígitos
+            ("RESULTADOS VII VALIDA YUMBO", None),  # cabecera descartable
+            ("CATEGORIA: INFANTIL A", None),  # ya tiene prefijo
+            ("A" * 80, None),
+        ],
+    )
+    def test_categoria_implicita(self, above: str, esperado: str | None) -> None:
+        assert parser_mod._implicit_category_header(above) == esperado
+
+    def test_documento_completo(self, fake_pdf) -> None:
+        pagina_1 = _FakePage(
+            "TITULO DEL LISTADO\n"
+            "TETEROS CON PEDALES\n"
+            f"{self._COLS_SIN_PUNTOS}\n"
+            "1 1052 Persona Uno CLUB Ciudad 0:01:33\n"
+            "2 1054 Persona Dos CLUB Ciudad 0:01:36\n"
+            "CATEGORIA: INFANTIL A\n"
+            f"{self._COLS_SIN_PUNTOS}\n"
+            "1 815 Persona Tres CLUB Ciudad 0:05:30\n"
+        )
+        parsed = parser_mod.parse_results_document(fake_pdf([pagina_1]))
+
+        assert [c.header_raw for c in parsed.categories] == ["TETEROS CON PEDALES", "INFANTIL A"]
+        assert [len(c.rows) for c in parsed.categories] == [2, 1]
+        assert [[r.points for r in c.rows] for c in parsed.categories] == [[40, 36], [40]]
+        assert parsed.points_inferred_rows == 3
+        assert parsed.unreadable_rows == []
+
+    def test_con_puntos_y_sin_categoria_sigue_sin_atribuir(self, fake_pdf) -> None:
+        """La categoría implícita no se inventa cuando hay título con dígitos."""
+        pagina = _FakePage(
+            "XXVI COPA 2022\n"
+            f"{self._COLS_CON_PUNTOS}\n"
+            "1 10 Persona Uno CLUB Ciudad 0:01:00 40\n"
+        )
+        parsed = parser_mod.parse_results_document(fake_pdf([pagina]))
+        assert parsed.categories == []
+        assert len(parsed.unreadable_rows) == 1
+
+
+class TestPuntosInferidos:
+    """Respaldo de puntos por posición para actas sin columna ``Puntos``."""
+
+    @pytest.mark.parametrize(
+        "position, time_raw, esperado",
+        [
+            (1, "0:01:33", 40),
+            (2, "0:01:36", 36),
+            (18, "0:09:00", 1),
+            (19, "0:09:10", 1),
+            (60, "0:20:00", 1),
+            (7, "- 1 vuelta", 23),
+            (5, "DNF", 1),
+            (30, "DNF", 1),
+            (3, "DSQ", 0),
+            (9, "DNS", 0),
+            (0, "0:01:00", 0),
+        ],
+    )
+    def test_regla(self, position: int, time_raw: str, esperado: int) -> None:
+        assert parser_mod._infer_points(position, time_raw) == esperado
+
+    def test_escala_es_la_impresa_en_las_actas_2022(self) -> None:
+        assert parser_mod._POSITION_POINTS_2022[:6] == (40, 36, 33, 30, 27, 25)
+        assert len(parser_mod._POSITION_POINTS_2022) == 18
+
+    def test_puntos_impresos_nunca_se_reemplazan(self, fake_pdf) -> None:
+        pagina = _FakePage(
+            "CATEGORIA: INFANTIL A\n"
+            "Ord No. Nombre Club Patrocinador Ciudad Tiempo Puntos\n"
+            "1 10 Persona Uno CLUB Ciudad 0:01:00 33\n"
+        )
+        parsed = parser_mod.parse_results_document(fake_pdf([pagina]))
+        assert parsed.categories[0].rows[0].points == 33  # impreso, no 40
+        assert parsed.points_inferred_rows == 0
+
+
+def test_aviso_points_inferred_solo_cuando_hay_filas_inferidas() -> None:
+    from app.services.race.import_staging import _points_inferred_warnings
+    from app.services.race.pdf_parser import ParsedResults
+
+    assert _points_inferred_warnings(ParsedResults()) == []
+    (aviso,) = _points_inferred_warnings(ParsedResults(points_inferred_rows=333))
+    assert aviso.code == "points_inferred" and aviso.context == {"rows": 333}
+
+
+class TestDorsalPegadoAlNombre:
+    """Actas 2022 (IV y V) imprimen a veces ``4 1061Nombre`` sin espacio."""
+
+    @pytest.mark.parametrize(
+        "row, bib, position",
+        [
+            ("4 1061Persona Uno CLUB Ciudad 0:01:02 30", "1061", 4),
+            ("5 1062Persona Dos CLUB Ciudad DNF 1", "1062", 5),
+        ],
+    )
+    def test_con_puntos(self, row: str, bib: str, position: int) -> None:
+        match, _ = parser_mod._match_row_text(row)
+        assert match is not None
+        assert (match.group("bib"), int(match.group("pos"))) == (bib, position)
+        assert match.group("body").startswith("Persona")
+
+    def test_sin_puntos(self) -> None:
+        match, time = parser_mod._match_row_text(
+            "4 1061Persona Uno CLUB Ciudad 0:01:02", has_points=False
+        )
+        assert match is not None and match.group("bib") == "1061" and time == "0:01:02"
+
+    def test_el_dorsal_no_se_traga_digitos_del_nombre(self) -> None:
+        match, _ = parser_mod._match_row_text("4 1061 Persona Uno CLUB Ciudad 0:01:02 30")
+        assert match is not None and match.group("bib") == "1061"

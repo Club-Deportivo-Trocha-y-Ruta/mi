@@ -9,20 +9,23 @@
     /* -----------------------------------------------------------------------
        Fuentes de marca — WeasyPrint soporta @font-face con woff2.
        Las fonts están copiadas en backend/templates/static/fonts/.
-       WeasyPrint recibe la ruta absoluta al directorio de templates via
-       base_url al invocar HTML.write_pdf(). Con ese base_url configurado,
-       la ruta relativa "../static/fonts/..." funciona sin file://.
-       Si el generador no configura base_url, usar ruta absoluta file:///...
+       WeasyPrint recibe como base_url el directorio raíz de templates
+       (backend/templates, ver DocumentGenerator._generate_pdf), así que la
+       ruta relativa correcta es "static/fonts/..." — NO "../static/...",
+       que resuelve a backend/static/fonts/ (inexistente): WeasyPrint avisa
+       "Font-face ... cannot be loaded" y cae a la fuente del sistema
+       (DejaVu Sans en Linux, más ancha), lo que cambia la paginación.
+       Lo fija tests/services/notification/test_pdf_brand_fonts.py.
     ----------------------------------------------------------------------- */
     @font-face {
       font-family: 'Inter Variable';
-      src: url('../static/fonts/InterVariable.woff2') format('woff2');
+      src: url('static/fonts/InterVariable.woff2') format('woff2');
       font-weight: 100 900;
       font-style: normal;
     }
     @font-face {
       font-family: 'Plus Jakarta Sans';
-      src: url('../static/fonts/PlusJakartaSans-Variable.woff2') format('woff2');
+      src: url('static/fonts/PlusJakartaSans-Variable.woff2') format('woff2');
       font-weight: 200 800;
       font-style: normal;
     }

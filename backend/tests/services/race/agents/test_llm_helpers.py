@@ -169,27 +169,57 @@ def test_build_chat_llm_google_default_model_is_gemini_3_1_flash_lite(monkeypatc
     assert llm.model == "gemini-3.1-flash-lite"
 
 
-def test_build_chat_llm_constructs_claude_cli_instance_without_calling_api():
+def test_build_chat_llm_constructs_claude_cli_instance_without_calling_api(monkeypatch):
     """build_chat_llm(provider='claude-cli') no debe hacer red ni llamar al
     CLI — solo instanciar ``ChatClaudeCli``. ``temperature`` y
     ``max_output_tokens`` se ignoran a propósito (ver docstring de
     ``_build_claude_cli_llm``): claude-sonnet-5 (familia 4.6+) rechaza con
     400 cualquier sampling distinto del default, y la truncación
     client-side de ``max_tokens`` rompería el JSON estructurado del
-    analista."""
+    analista.
+
+    ``langchain-claude-cli`` es deliberadamente una dependencia SOLO local
+    (no está en requirements.txt: en Render no debe instalarse), así que el
+    test inyecta un módulo falso en ``sys.modules`` en vez de importar el
+    paquete real. Lo que se verifica es el cableado NUESTRO — qué kwargs le
+    pasa el factory al constructor — no el comportamiento del paquete de
+    terceros. El espía registra los kwargs y falla si alguien invoca el
+    modelo (garantiza que construir no dispara ninguna llamada)."""
+    import sys
+    import types
+
+    from app.config import settings
+
+    captured: dict = {}
+
+    class _SpyChatClaudeCli:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        def invoke(self, *args, **kwargs):  # pragma: no cover - no debe ocurrir
+            raise AssertionError("construir el LLM no debe invocar al CLI")
+
+        ainvoke = invoke
+
+    fake_module = types.ModuleType("langchain_claude_cli")
+    fake_module.ChatClaudeCli = _SpyChatClaudeCli  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "langchain_claude_cli", fake_module)
+    # Determinista: el timeout efectivo es max(AI_TIMEOUT_SECONDS, v3) — se fija
+    # el v3 para no depender del default de Settings.
+    monkeypatch.setattr(settings, "race_ai_v3_timeout_seconds", 120.0)
+    monkeypatch.setattr(settings, "ai_timeout_seconds", 30.0)
+
     llm = build_chat_llm(
         provider="claude-cli",
         model="claude-sonnet-5",
         max_output_tokens=4096,
         temperature=0.2,
     )
-    from langchain_claude_cli import ChatClaudeCli
 
-    assert isinstance(llm, ChatClaudeCli)
-    assert llm.model == "claude-sonnet-5"
-    assert llm.max_tokens is None
-    temperature_attr = getattr(llm, "temperature", None)
-    assert temperature_attr != 0.2
+    assert isinstance(llm, _SpyChatClaudeCli)
+    # Igualdad exacta (no solo "sin temperature"): cualquier kwarg nuevo —
+    # max_tokens, temperature, api_key, base_url— rompería este contrato.
+    assert captured == {"model": "claude-sonnet-5", "timeout": 120.0}
 
 
 def test_build_chat_llm_claude_cli_default_model_is_claude_sonnet_5(monkeypatch):

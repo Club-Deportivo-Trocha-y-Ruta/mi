@@ -348,17 +348,18 @@ async def test_delete_parent_with_consent_409_and_preserved(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    reason=(
-        "Requiere que el motor aplique ON DELETE RESTRICT. El arnés de sqlite "
-        "construye un subconjunto de tablas, así que activar PRAGMA "
-        "foreign_keys=ON rompe el sembrado (faltan tablas referenciadas) y "
-        "dejarlo apagado impide que salte el IntegrityError que el código sí "
-        "provoca contra MySQL real. Se cubre en la vía -m mysql."
-    ),
-    strict=False,
-)
-async def test_delete_parent_with_training_session_maps_to_409(scenario, client_factory):
+async def test_delete_parent_with_training_session_maps_to_409(
+    scenario, client_factory, users_engine, users_session_factory
+):
+    # Las FK se activan DESPUÉS del sembrado: el arnés crea un subconjunto de
+    # tablas, pero borrar de ``users`` solo consulta las tablas hijas que sí
+    # existen (``training_sessions`` incluida). Con StaticPool la conexión es
+    # única, así que el PRAGMA aplica a la petición HTTP de abajo.
+    async with users_engine.connect() as conn:
+        await conn.exec_driver_sql("PRAGMA foreign_keys=ON")
+        fk_on = (await conn.exec_driver_sql("PRAGMA foreign_keys")).scalar()
+    assert fk_on == 1
+
     async with client_factory(ADMIN_ID) as client:
         resp = await client.request(
             "DELETE",
@@ -366,6 +367,11 @@ async def test_delete_parent_with_training_session_maps_to_409(scenario, client_
             json={"reason_code": "parent_family_request"},
         )
     assert resp.status_code == 409
+    assert "actividad registrada" in resp.json()["detail"]
+
+    # El rollback deja al padre intacto.
+    async with users_session_factory() as session:
+        assert await session.get(User, PARENT_WITH_SESSION_ID) is not None
 
 
 # ---------------------------------------------------------------------------

@@ -42,6 +42,15 @@ año no existía:
   confirmados de `PRE_A_F` (6–7) y `PRE_B_F` (7–8), que sí son ciertos porque
   son las categorías activas que ese grupo único reemplaza en 2026.
 
+Copa Vallecaucana 2022 (mismo criterio): corrió Máster A en dos grupos (A1, A2)
+donde hoy hay uno solo (`MAS_A`, 30–39), las niñas de infantil en un solo grupo
+(`INF_F_U`, unión exacta de `INF_A_F` 9–10 y `INF_B_F` 11–12) y dos categorías
+«Sport» (A, B) sin equivalente en el catálogo actual. `MAS_A1_2022`,
+`MAS_A2_2022`, `SPORT_A_2022` y `SPORT_B_2022` llevan edad y sexo sin fijar: el
+acta no los trae y no hay fuente confiable (Sport = `MIXED`, como `PROMO`).
+Renombres 1:1 de 2022 (sin código nuevo): `PREINFANTIL DAMAS` → `PRE_F_U` y
+`MASTER D1` → `MAS_D`.
+
 `sort_order`: se insertaron en huecos existentes del catálogo (sin renumerar
 ninguna de las 26 filas activas). `PRE_F_U` va en 24, entre `PRE_B_F` (23) y
 `INF_A` (30) — justo después de sus dos equivalentes activas. `MAS_B_2025` y
@@ -79,6 +88,8 @@ CATEGORIES: list[
     ("INF_B",    "Infantil B",                CategoryGender.M,     11,   12,   CategoryTier.menores, 31, True),
     ("INF_A_F",  "Infantil A Femenino",       CategoryGender.F,     9,    10,   CategoryTier.menores, 32, True),
     ("INF_B_F",  "Infantil B Femenino",       CategoryGender.F,     11,   12,   CategoryTier.menores, 33, True),
+    # Propia de temporada 2022 — grupo único, ver docstring del módulo.
+    ("INF_F_U",  "Infantil femenino (grupo único)", CategoryGender.F, 9,   12,   CategoryTier.menores, 34, False),
     ("PJUV_A",   "Prejuvenil A",              CategoryGender.M,     13,   13,   CategoryTier.menores, 40, True),
     ("PJUV_B",   "Prejuvenil B",              CategoryGender.M,     14,   14,   CategoryTier.menores, 41, True),
     ("PJUV_A_F", "Prejuvenil A Femenino",     CategoryGender.F,     13,   13,   CategoryTier.menores, 42, True),
@@ -90,6 +101,9 @@ CATEGORIES: list[
     ("ELITE_M",  "Elite",                     CategoryGender.M,     17,   None, CategoryTier.adulto,  60, True),
     ("ELITE_F",  "Elite Femenino",            CategoryGender.F,     17,   None, CategoryTier.adulto,  61, True),
     ("PROMO",    "Promocional",               CategoryGender.MIXED, None, None, CategoryTier.adulto,  70, True),
+    # Propias de temporada 2022 — Sport A/B, ver docstring del módulo.
+    ("SPORT_A_2022", "Sport A (2022)",        CategoryGender.MIXED, None, None, CategoryTier.adulto,  71, False),
+    ("SPORT_B_2022", "Sport B (2022)",        CategoryGender.MIXED, None, None, CategoryTier.adulto,  72, False),
     # Master
     ("MAS_A",    "Master A",                  CategoryGender.M,     30,   39,   CategoryTier.master,  80, True),
     ("MAS_B1",   "Master B1",                 CategoryGender.M,     40,   44,   CategoryTier.master,  81, True),
@@ -100,6 +114,9 @@ CATEGORIES: list[
     # Propias de temporada 2025 — grupos B/C únicos, ver docstring del módulo.
     ("MAS_B_2025", "Máster B (2025)",         CategoryGender.M,     None, None, CategoryTier.master,  86, False),
     ("MAS_C_2025", "Máster C (2025)",         CategoryGender.M,     None, None, CategoryTier.master,  87, False),
+    # Propias de temporada 2022 — Master A partido en dos grupos, ver docstring.
+    ("MAS_A1_2022", "Máster A1 (2022)",       CategoryGender.M,     None, None, CategoryTier.master,  88, False),
+    ("MAS_A2_2022", "Máster A2 (2022)",       CategoryGender.M,     None, None, CategoryTier.master,  89, False),
     ("MAS_F",    "Master Femenino",           CategoryGender.F,     30,   None, CategoryTier.master,  90, True),
 ]
 

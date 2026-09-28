@@ -22,9 +22,11 @@ el marcador "pending instrumentation". Lo que se comprueba aquí:
 La mitad **dinámica** de T4.4 (ejercitar la ruta y contar filas en
 `audit_log`) sigue pendiente: necesita levantar la aplicación contra una base
 real y un constructor de petición por ruta, y el contrato la limita a las
-entradas "que declaren un factory", de las que todavía no hay ninguna. Esa
-prueba recoge por eso cero casos — antes recogía las 81 rutas y las saltaba
-una por una, que es lo que hacía parecer que la compuerta existía.
+entradas "que declaren un factory", de las que todavía no hay ninguna.
+`test_dynamic_audit_smoke_is_not_silently_bypassed` es su alarma: falla si
+alguna entrada declara un factory sin que exista el humo. (Antes fue una
+prueba parametrizada que recogía las 81 rutas y las saltaba, y luego una con
+parametrización vacía que pytest reportaba como skip en cada corrida.)
 
 Aviso a quien edite este archivo: este docstring afirmó durante dos oleadas
 que "every route is still `Exempt`" mucho después de dejar de ser cierto. Si
@@ -261,9 +263,11 @@ def test_audited_route_handler_reaches_record_audit(
 
 
 #: Entradas `Audited` que declaran un constructor de petición para el humo
-#: dinámico de §9 T4.4. Hoy `Audited` no tiene ese campo y ninguna entrada lo
-#: declara, así que la parametrización de abajo recoge **cero** casos: es un
-#: hueco reconocido, no una compuerta que pase en falso.
+#: dinámico de §9 T4.4 (`specs/041-multi-coach-governance/contracts/
+#: audit-recording.md`). Hoy `Audited` no tiene ese campo, así que la lista es
+#: vacía: el humo dinámico es un hueco reconocido del contrato, no una
+#: compuerta. Antes era una prueba parametrizada sobre esta lista que pytest
+#: reportaba como "got empty parameter set" — un skip silencioso en cada corrida.
 def _audited_entries_with_a_request_factory() -> list[tuple[tuple[str, str], Audited]]:
     return [
         (key, policy)
@@ -272,23 +276,19 @@ def _audited_entries_with_a_request_factory() -> list[tuple[tuple[str, str], Aud
     ]
 
 
-@pytest.mark.parametrize("key,policy", _audited_entries_with_a_request_factory())
-def test_audited_route_writes_at_least_one_audit_log_row(
-    key: tuple[str, str], policy: Audited
-) -> None:
-    """T4.4, humo dinámico — parametrizado sobre las entradas que declaran un
-    constructor de petición, como pide el contrato (§9 T4.4: "parametrised
-    over the `Audited` entries that declare a factory").
+def test_dynamic_audit_smoke_is_not_silently_bypassed() -> None:
+    """T4.4 (humo dinámico) sigue pendiente — esta prueba es su alarma.
 
-    Ninguna lo declara todavía, así que esta prueba recoge cero casos. Antes
-    recogía las 81 rutas y las saltaba una por una, lo que hacía parecer que
-    la compuerta existía. La mitad estática de FR-009 sí está cubierta, por
-    `test_audited_route_handler_reaches_record_audit`.
-
-    Para completarla hace falta una base real (el fixture `client` levanta la
-    aplicación contra MySQL) y sintetizar una petición válida por ruta.
+    No hay skip: si alguien agrega `request_factory` a una entrada `Audited`,
+    esta prueba falla para exigir que el humo dinámico se implemente (contar
+    filas en `audit_log`, un solo `request_id`, `entity_type` dentro de
+    `entities`, `club_id` no nulo salvo `CLUB_OPTIONAL`) en vez de declarar
+    factories que nadie ejercita. La mitad estática de FR-009 sí está
+    cubierta, por `test_audited_route_handler_reaches_record_audit`.
     """
-    raise AssertionError(  # pragma: no cover - hoy no se recoge ningún caso
-        f"{key}: llegó un caso con factory pero el humo dinámico no está "
-        f"implementado (entities={sorted(e.value for e in policy.entities)})."
+    declared = _audited_entries_with_a_request_factory()
+    assert declared == [], (
+        f"{len(declared)} entradas `Audited` declaran `request_factory` pero el "
+        f"humo dinámico de §9 T4.4 no está implementado: "
+        f"{sorted(key for key, _ in declared)}"
     )

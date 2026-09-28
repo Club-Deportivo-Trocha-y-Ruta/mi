@@ -1,0 +1,135 @@
+# ============================================================
+# CI — Backend (FastAPI) — Club Deportivo Trocha y Ruta
+# ============================================================
+# Trigger: push (merge) a main, SOLO si cambió algo del backend.
+# Pipeline: checkout → python setup → libs del sistema → install
+#           → ruff (errores de ejecución) → MySQL efímero
+#           → migraciones + seed → pytest
+#
+# Reglas de ejecución:
+#   - Solo corre en la rama main (los commits en feature branches
+#     NO disparan este workflow).
+#   - Solo corre si el cambio toca backend/ o este mismo archivo.
+#     Un cambio exclusivo de frontend/ dispara ci-frontend.yml.
+#
+# Base de datos: una parte grande de la suite (login, usuarios, clubes,
+# consentimientos, sesiones…) usa el fixture `client` de conftest.py, que
+# NO reemplaza get_db: habla con la MySQL que digan las variables MYSQL_*.
+# Por eso este job levanta un MySQL 8.4 desechable (mismo motor que
+# docker-compose), aplica las migraciones y carga el seed de desarrollo.
+# Las credenciales de abajo son de un contenedor efímero que muere con el
+# job: no son secretos y nunca apuntan a producción.
+#
+# Los tests con marcador `mysql` (TEST_DATABASE_URL), `golden` e
+# `integration` se saltan solos: no hay esas variables ni API keys aquí
+# (los evals con IA tienen sus propios workflows: race-eval.yml y
+# anthropometry-eval.yml).
+# ============================================================
+
+name: CI → Backend
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "backend/**"
+      - ".github/workflows/ci-backend.yml"
+
+# Cancela la verificación anterior en curso si llega un push nuevo a main.
+concurrency:
+  group: ci-backend
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: Lint y tests del backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    defaults:
+      run:
+        working-directory: backend
+
+    # MySQL desechable para los tests que usan la base real de la app.
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci_root
+          MYSQL_DATABASE: trocha_ci
+          MYSQL_USER: ci
+          MYSQL_PASSWORD: ci_pass
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -uci -pci_pass"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    # Config que lee app.config.Settings. 127.0.0.1 (no localhost) evita
+    # que el driver intente primero IPv6 (::1) y falle.
+    env:
+      MYSQL_HOST: 127.0.0.1
+      MYSQL_PORT: "3306"
+      MYSQL_USER: ci
+      MYSQL_PASS: ci_pass
+      MYSQL_DB: trocha_ci
+
+    steps:
+      # ── 1. Checkout ───────────────────────────────────────
+      # Repo completo (no solo backend/): algunos tests leen archivos de
+      # frontend/src/data y specs/.
+      - name: Checkout código fuente
+        uses: actions/checkout@v6
+
+      # ── 2. Setup Python ───────────────────────────────────
+      - name: Configurar Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      # ── 3. Librerías del sistema ──────────────────────────
+      # WeasyPrint (PDF de boletines e informes) necesita pango y cairo.
+      - name: Instalar librerías del sistema (WeasyPrint)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpango-1.0-0 libpangoft2-1.0-0 libcairo2 \
+            libgdk-pixbuf-2.0-0 shared-mime-info
+
+      # ── 4. Instalar dependencias ──────────────────────────
+      # requirements.txt es el conjunto real de producción. pytest,
+      # pytest-asyncio, pytest-mock (fixture `mocker`) y ruff no están ahí
+      # (ruff se instala global en local, ver CLAUDE.md).
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio pytest-mock ruff
+
+      # ── 5. Lint — solo errores de ejecución ───────────────
+      # E9 (sintaxis), F63/F7 (comparaciones y sentencias inválidas) y
+      # F82 (nombres indefinidos). Con las reglas por defecto de ruff hay
+      # ~360 avisos de estilo preexistentes (imports sin usar, orden de
+      # imports) que aún no se limpian; ninguno de esa clase es un bug,
+      # así que no se usan como compuerta.
+      - name: Lint (errores de ejecución)
+        run: ruff check --select E9,F63,F7,F82
+
+      # ── 6. Esquema y datos de la BD efímera ───────────────
+      # Mismos pasos que backend/entrypoint.sh en desarrollo.
+      - name: Migraciones y seed
+        run: |
+          alembic upgrade head
+          python -m app.seed_growth_data
+          APP_ENV=development python -m scripts.seed
+
+      # ── 7. Tests — GATE DE CALIDAD ────────────────────────
+      # `python -m pytest` (no el script `pytest`): el módulo agrega el
+      # directorio actual al sys.path y así tests/conftest.py puede
+      # importar `app`. Con el script suelto falla con ModuleNotFoundError.
+      - name: Ejecutar pruebas (pytest)
+        run: python -m pytest -q

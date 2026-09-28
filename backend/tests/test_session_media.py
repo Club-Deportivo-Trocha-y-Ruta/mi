@@ -29,22 +29,24 @@ from app.models.session_media import MediaType
 def _make_jpeg_with_gps(width: int = 800, height: int = 600) -> bytes:
     """Genera un JPEG con tag EXIF GPS (latitud/longitud) embedded.
 
-    Usamos PIL para construir un JPG con GPS metadata. El test verifica
-    luego que tras pasar por `_validate_and_clean_image` el GPS desaparece.
+    Usamos solo Pillow (``Image.Exif`` + IFD GPSInfo) para construir el JPG:
+    antes se usaba ``piexif``, que NO es dependencia del proyecto (producción
+    quita el EXIF re-codificando con Pillow) y, al faltar en un entorno
+    limpio, el test de privacidad de GPS se saltaba en silencio. El test
+    verifica luego que tras pasar por `_validate_and_clean_image` el GPS
+    desaparece.
     """
-    from PIL import Image
-    import piexif  # type: ignore
+    from PIL import ExifTags, Image
 
     img = Image.new("RGB", (width, height), color=(120, 200, 100))
-    gps_ifd = {
-        piexif.GPSIFD.GPSLatitudeRef: b"N",
-        piexif.GPSIFD.GPSLatitude: ((3, 1), (28, 1), (0, 1)),
-        piexif.GPSIFD.GPSLongitudeRef: b"W",
-        piexif.GPSIFD.GPSLongitude: ((76, 1), (30, 1), (0, 1)),
-    }
-    exif_bytes = piexif.dump({"0th": {}, "Exif": {}, "GPS": gps_ifd, "1st": {}, "thumbnail": None})
+    exif = Image.Exif()
+    gps_ifd = exif.get_ifd(ExifTags.IFD.GPSInfo)
+    gps_ifd[ExifTags.GPS.GPSLatitudeRef] = "N"
+    gps_ifd[ExifTags.GPS.GPSLatitude] = (3.0, 28.0, 0.0)
+    gps_ifd[ExifTags.GPS.GPSLongitudeRef] = "W"
+    gps_ifd[ExifTags.GPS.GPSLongitude] = (76.0, 30.0, 0.0)
     buf = io.BytesIO()
-    img.save(buf, format="JPEG", exif=exif_bytes)
+    img.save(buf, format="JPEG", exif=exif)
     return buf.getvalue()
 
 
@@ -129,12 +131,16 @@ def test_magic_bytes_reject_too_short_file():
 
 def test_image_processing_strips_exif_gps():
     """Tras procesar la imagen, los tags GPS deben desaparecer."""
-    pytest.importorskip("piexif")
-    from PIL import Image  # type: ignore
+    from PIL import ExifTags, Image  # type: ignore
 
     from app.services.training.media_files import _validate_and_clean_image
 
     raw = _make_jpeg_with_gps()
+    # Precondición: el fixture SÍ trae GPS. Sin esto, si el fixture dejara de
+    # incrustar coordenadas el test pasaría en vacío (nada que quitar).
+    raw_gps = Image.open(io.BytesIO(raw)).getexif().get_ifd(ExifTags.IFD.GPSInfo)
+    assert raw_gps, "el JPEG de prueba debería traer coordenadas GPS en el EXIF"
+
     clean, w, h, thumb = _validate_and_clean_image(raw, ".jpg")
 
     # Verificamos que la imagen procesada NO tiene EXIF (Pillow guarda sin EXIF
@@ -143,6 +149,11 @@ def test_image_processing_strips_exif_gps():
     exif_dict = img.getexif()
     # El campo 34853 es GPSInfo. Debe no existir o estar vacío.
     assert 34853 not in exif_dict or not exif_dict[34853]
+    assert not exif_dict.get_ifd(ExifTags.IFD.GPSInfo)
+    # El thumbnail tampoco debe arrastrar las coordenadas.
+    if thumb is not None:
+        thumb_exif = Image.open(io.BytesIO(thumb)).getexif()
+        assert not thumb_exif.get_ifd(ExifTags.IFD.GPSInfo)
 
     assert w > 0 and h > 0
     assert thumb is not None

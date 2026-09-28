@@ -123,6 +123,9 @@ class ParsedResults:
 
     categories: list[ParsedCategory] = field(default_factory=list)
     unreadable_rows: list[UnreadableRow] = field(default_factory=list)
+    #: Filas cuyo puntaje NO venía impreso (acta sin columna ``Puntos``) y se
+    #: calculó con ``_infer_points``. 0 en todo acta con puntos impresos.
+    points_inferred_rows: int = 0
 
 
 @dataclass
@@ -208,13 +211,29 @@ _LAP_TOKEN = (
     + LAP_WORD_PATTERN
     + r"(?:\s*[)=\-])?(?:\s*\(\w+\))?"
 )
-_RESULTS_ROW_RE = re.compile(
-    r"^(?P<pos>\d+)\s+(?P<bib>\d+)\s+(?P<body>.+?)\s*"
+#: Separador dorsal→nombre: un espacio, o **nada** cuando el acta imprime el
+#: nombre pegado al dorsal (``4 1061Nombre``, medido en las válidas IV y V de
+#: 2022). El lookahead exige un carácter que no sea dígito ni espacio, así que
+#: el dorsal nunca se parte ni se traga un dígito del nombre.
+_BIB_SEP = r"(?:\s+|(?=[^\d\s]))"
+_ROW_HEAD = r"^(?P<pos>\d+)\s+(?P<bib>\d+)" + _BIB_SEP + r"(?P<body>.+?)\s*"
+_ROW_TIME = (
     r"(?P<time>(?<![\d:])\d{1,2}:\d{2}(?::'?\d{2})?"
     r"|(?<=\s)(?:DNF|DSQ|DNS)"
     r"|" + _LAP_TOKEN
-    + r"|(?<=\s)-\d{1,2})\s+"
-    r"(?P<points>\d+)\s*$",
+    + r"|(?<=\s)-\d{1,2})"
+)
+_RESULTS_ROW_RE = re.compile(
+    _ROW_HEAD + _ROW_TIME + r"\s+(?P<points>\d+)\s*$",
+    re.IGNORECASE,
+)
+
+#: Variante para actas **sin columna de puntos** (listado de La Cumbre 2022):
+#: el token de tiempo/estado es lo último de la fila. Solo se usa en páginas
+#: cuyo encabezado de columnas no incluye ``Puntos`` (``_page_has_points``);
+#: nunca reemplaza a ``_RESULTS_ROW_RE`` en los formatos 2024+.
+_RESULTS_ROW_NO_POINTS_RE = re.compile(
+    _ROW_HEAD + _ROW_TIME + r"\s*$",
     re.IGNORECASE,
 )
 
@@ -223,13 +242,17 @@ _RESULTS_ROW_RE = re.compile(
 #: archivo de 2025). Solo se intenta cuando ``_RESULTS_ROW_RE`` ya falló y la
 #: línea no es una cabecera descartable, para que no se coma ruido.
 _RESULTS_ROW_NO_TIME_RE = re.compile(
-    r"^(?P<pos>\d+)\s+(?P<bib>\d+)\s+(?P<body>.+?)\s+(?P<points>\d+)\s*$"
+    r"^(?P<pos>\d+)\s+(?P<bib>\d+)" + _BIB_SEP + r"(?P<body>.+?)\s+(?P<points>\d+)\s*$"
 )
 
-#: Encabezado de categoría dentro de una línea: ``CAT: <NOMBRE>``. Captura el
-#: nombre tal como se imprime (``header_raw``). Tolera un prefijo antes del
-#: ``CAT:`` usando la última ocurrencia.
-_CAT_LINE_RE = re.compile(r"CAT\s*:\s*(?P<header>\S.*)$", re.IGNORECASE)
+#: Encabezado de categoría dentro de una línea: ``CAT: <NOMBRE>`` (actas
+#: 2024+) o ``CATEGORIA: <NOMBRE>`` (actas 2022). Captura el nombre tal como
+#: se imprime (``header_raw``). Tolera un prefijo antes del ``CAT:`` usando la
+#: última ocurrencia.
+_CAT_LINE_RE = re.compile(
+    r"CAT(?:EGOR[IÍ]A)?\s*:\s*(?P<header>\S.*)$", re.IGNORECASE
+)
+_CAT_PREFIXES = ("CAT:", "CATEGORIA:", "CATEGORÍA:")
 
 #: Tolerancia (pt) del hueco horizontal a partir del cual ``_band_text``
 #: inserta un espacio entre dos caracteres consecutivos (research R-01
@@ -482,6 +505,35 @@ def _band_cells(
     )
 
 
+#: Puntos por posición de la Copa Vallecaucana 2022 (1.º…18.º; del 19.º en
+#: adelante, 1). Medida sobre las actas I–V con puntos impresos: coincide en el
+#: 100 % de las filas con tiempo. Solo se usa como respaldo para actas sin
+#: columna ``Puntos`` (``_infer_points``); nunca reemplaza un puntaje impreso.
+_POSITION_POINTS_2022: tuple[int, ...] = (
+    40, 36, 33, 30, 27, 25, 23, 21, 19, 17, 15, 13, 11, 9, 7, 5, 3, 1,
+)
+_STATUS_ONE_POINT = ("DNF",)
+_STATUS_NO_POINTS = ("DSQ", "DNS")
+
+
+def _infer_points(position: int, time_raw: str) -> int:
+    """Puntos de una fila de un acta sin columna ``Puntos``.
+
+    Regla medida en las actas 2022 con puntos impresos: tiempo o vuelta
+    perdida → puntaje de su posición; ``DNF`` → 1 (94 de 106 casos);
+    ``DSQ``/``DNS`` → 0 (no puntúan; no aparecen en el listado de La Cumbre).
+    """
+    status = time_raw.strip().upper()[:3]
+    if status in _STATUS_NO_POINTS:
+        return 0
+    if status in _STATUS_ONE_POINT:
+        return 1
+    if position < 1:
+        return 0
+    index = position - 1
+    return _POSITION_POINTS_2022[index] if index < len(_POSITION_POINTS_2022) else 1
+
+
 def _row_from_match(
     match: re.Match,
     time_raw: str,
@@ -517,6 +569,7 @@ def _row_from_match(
             club = club[: -len(time_raw)].rstrip()
         elif not club and city.endswith(time_raw):
             city = city[: -len(time_raw)].rstrip()
+    printed = match.groupdict().get("points")
     return ResultsRow(
         position=int(pos_str),
         bib=bib,
@@ -524,17 +577,26 @@ def _row_from_match(
         city=city,
         club=club,
         time_raw=time_raw,
-        points=int(match.group("points")),
+        points=int(printed) if printed is not None else _infer_points(int(pos_str), time_raw),
     )
 
 
-def _match_row_text(text: str) -> tuple[Optional[re.Match], str]:
+def _match_row_text(
+    text: str, *, has_points: bool = True
+) -> tuple[Optional[re.Match], str]:
     """Intenta interpretar el texto de una banda/línea como fila de resultados.
 
     Devuelve ``(match, time_raw)``; ``(None, "")`` si no es una fila. Una fila
     sin token de tiempo ni de estado se acepta como clasificada sin tiempo
     (``time_raw == ""``).
+
+    ``has_points=False`` (página cuyo encabezado no trae ``Puntos``) exige el
+    token de tiempo/estado al final de la fila y deja ``points`` en 0; no hay
+    variante "sin tiempo" porque sin ancla cualquier texto sería una fila.
     """
+    if not has_points:
+        match = _RESULTS_ROW_NO_POINTS_RE.match(text)
+        return (match, match.group("time")) if match is not None else (None, "")
     match = _RESULTS_ROW_RE.match(text)
     if match is not None:
         return match, match.group("time")
@@ -544,14 +606,59 @@ def _match_row_text(text: str) -> tuple[Optional[re.Match], str]:
     return None, ""
 
 
+_COLUMNS_HEADER_RE = re.compile(r"^\s*ORD\b.*\bTIEMPO\b", re.IGNORECASE)
+
+
+def _is_columns_header(text: str) -> bool:
+    """Línea de encabezado de columnas: ``Ord No. Nombre ... Tiempo [Puntos]``."""
+    return _COLUMNS_HEADER_RE.match(text) is not None
+
+
+def _page_has_points(text: str) -> bool:
+    """False solo si el encabezado de columnas de la página omite ``Puntos``.
+
+    Sin encabezado de columnas reconocible se asume que sí hay puntos: es el
+    comportamiento de siempre (actas 2024+ y 2022 con puntos).
+    """
+    for line in text.splitlines():
+        if _is_columns_header(line):
+            return "PUNTOS" in line.upper()
+    return True
+
+
+def _implicit_category_header(above: str) -> Optional[str]:
+    """Categoría impresa **sin** prefijo ``CAT:``/``CATEGORIA:`` justo encima
+    del encabezado de columnas (primera categoría del listado de La Cumbre
+    2022). Solo se llama cuando aún no hay categoría activa, es decir, cuando
+    esas filas hoy quedarían sin atribuir. Rechaza líneas con dígitos, filas y
+    cabeceras descartables para no tomar un título por categoría.
+    """
+    candidate = above.strip()
+    if (
+        not candidate
+        or len(candidate) > 60
+        or any(ch.isdigit() for ch in candidate)
+        or _is_discardable_line(candidate)
+        or _is_columns_header(candidate)
+        or _category_header_of(candidate) is not None
+    ):
+        return None
+    return candidate
+
+
+def _is_known_category(header: str) -> bool:
+    """El texto suelto coincide con una categoría del catálogo."""
+    return parse_category_header(f"CAT: {header}") is not None
+
+
 def _category_header_of(text: str) -> Optional[str]:
-    """Devuelve el ``header_raw`` de una línea ``CAT: <NOMBRE>``, o ``None``.
+    """Devuelve el ``header_raw`` de una línea ``CAT:``/``CATEGORIA: <NOMBRE>``, o ``None``.
 
     Tolera un prefijo espurio antes del ``CAT:`` — mismo criterio que el
     camino por líneas previo a la feature 044.
     """
     upper = text.upper()
-    if not upper.startswith("CAT:") and " CAT:" not in upper:
+    if not any(upper.startswith(p) or f" {p}" in upper for p in _CAT_PREFIXES):
         return None
     match = _CAT_LINE_RE.search(text)
     return match.group("header").strip() if match is not None else None
@@ -569,6 +676,7 @@ def _parse_page(
 ) -> None:
     """Procesa una página: intercala encabezados ``CAT:`` y bandas de fila."""
     text = page.extract_text() or ""
+    has_points = _page_has_points(text)
 
     tables = []
     find_tables = getattr(page, "find_tables", None)
@@ -578,13 +686,15 @@ def _parse_page(
     if not tables:
         # Respaldo: páginas donde ``find_tables`` no devuelve tabla (o páginas
         # que no exponen la API, como los dobles de prueba).
-        _parse_page_by_lines(text, page_no, state)
+        _parse_page_by_lines(text, page_no, state, has_points=has_points)
         return
 
-    _parse_page_by_bands(page, text, tables, page_no, state)
+    _parse_page_by_bands(page, text, tables, page_no, state, has_points=has_points)
 
 
-def _parse_page_by_bands(page, text: str, tables, page_no: int, state: "_DocState") -> None:
+def _parse_page_by_bands(
+    page, text: str, tables, page_no: int, state: "_DocState", *, has_points: bool = True
+) -> None:
     """Camino principal: una banda por fila, chars en orden de flujo."""
     table_idx = _build_table_index([table.extract() for table in tables])
 
@@ -605,10 +715,26 @@ def _parse_page_by_bands(page, text: str, tables, page_no: int, state: "_DocStat
     events: list[tuple[float, int, str, object]] = []
     extract_lines = getattr(page, "extract_text_lines", None)
     if callable(extract_lines):
-        for line in extract_lines():
+        text_lines = list(extract_lines())
+        for line in text_lines:
             header_raw = _category_header_of(line["text"].strip())
             if header_raw is not None:
                 events.append((line["top"], 0, "cat", header_raw))
+        seen_category = state.current is not None
+        for i, line in enumerate(text_lines[1:], start=1):
+            if not _is_columns_header(line["text"]):
+                continue
+            above = text_lines[i - 1]
+            # Un encabezado con prefijo ANTES de esta tabla ya abrió categoría.
+            seen_category = seen_category or any(
+                kind == 0 and top < above["top"] for top, kind, *_ in events
+            )
+            implicit = _implicit_category_header(above["text"])
+            if implicit is not None and (
+                not seen_category or _is_known_category(implicit)
+            ):
+                events.append((above["top"], 0, "cat", implicit))
+            seen_category = True
     for idx, bbox in enumerate(bboxes):
         events.append((bbox[1], 1, "band", idx))
     events.sort(key=lambda event: (event[0], event[1]))
@@ -624,8 +750,10 @@ def _parse_page_by_bands(page, text: str, tables, page_no: int, state: "_DocStat
         band = " ".join(run_text for _, run_text in runs)
         if not band or _is_discardable_line(band):
             continue
+        if _category_header_of(band) is not None:
+            continue  # el encabezado ya es un evento "cat"; no es una fila
 
-        match, time_raw = _match_row_text(band)
+        match, time_raw = _match_row_text(band, has_points=has_points)
         if match is None:
             state.unreadable.append(UnreadableRow(page=page_no, ordinal=cell_ordinals[idx]))
             logger.warning(
@@ -641,17 +769,28 @@ def _parse_page_by_bands(page, text: str, tables, page_no: int, state: "_DocStat
                 match, time_raw, table_idx, _band_cells(runs, cell_boxes[idx])
             ),
             page_no,
+            has_points=has_points,
         )
 
-    _warn_on_path_mismatch(text, band_keys, page_no)
+    _warn_on_path_mismatch(text, band_keys, page_no, has_points=has_points)
 
 
-def _parse_page_by_lines(text: str, page_no: int, state: "_DocState") -> None:
+def _parse_page_by_lines(
+    text: str, page_no: int, state: "_DocState", *, has_points: bool = True
+) -> None:
     """Respaldo por líneas de texto (comportamiento previo a la feature 044)."""
+    previous = ""
     for line in text.splitlines():
         stripped = line.strip()
         if not stripped:
             continue
+        if _is_columns_header(stripped):
+            implicit = _implicit_category_header(previous)
+            if implicit is not None and (
+                state.current is None or _is_known_category(implicit)
+            ):
+                state.start_category(implicit)
+        previous = stripped
 
         header_raw = _category_header_of(stripped)
         if header_raw is not None:
@@ -661,22 +800,27 @@ def _parse_page_by_lines(text: str, page_no: int, state: "_DocState") -> None:
         if _is_discardable_line(stripped):
             continue
 
-        match, time_raw = _match_row_text(stripped)
+        match, time_raw = _match_row_text(stripped, has_points=has_points)
         if match is None:
             # Sub-header partido o ruido — no es una fila.
             continue
 
-        state.add_row(_row_from_match(match, time_raw, {}), page_no)
+        state.add_row(
+            _row_from_match(match, time_raw, {}), page_no, has_points=has_points
+        )
 
 
-def _warn_on_path_mismatch(text: str, band_keys: set[tuple[str, str]], page_no: int) -> None:
+def _warn_on_path_mismatch(
+    text: str, band_keys: set[tuple[str, str]], page_no: int, *, has_points: bool = True
+) -> None:
     """Verificación cruzada banda ↔ línea de texto (research R-01 punto 7)."""
+    row_re = _RESULTS_ROW_RE if has_points else _RESULTS_ROW_NO_POINTS_RE
     line_keys: set[tuple[str, str]] = set()
     for line in text.splitlines():
         stripped = line.strip()
         if not stripped or _is_discardable_line(stripped):
             continue
-        match = _RESULTS_ROW_RE.match(stripped)
+        match = row_re.match(stripped)
         if match is not None:
             line_keys.add((match.group("pos"), match.group("bib")))
 
@@ -700,6 +844,7 @@ class _DocState:
     unreadable: list[UnreadableRow] = field(default_factory=list)
     current: Optional[ParsedCategory] = None
     unknown_headers: set[str] = field(default_factory=set)
+    points_inferred_rows: int = 0
 
     def start_category(self, header_raw: str) -> None:
         """Abre una categoría. Un encabezado repetido de forma contigua
@@ -714,7 +859,7 @@ class _DocState:
         self.categories.append(category)
         self.current = category
 
-    def add_row(self, row: ResultsRow, page_no: int) -> None:
+    def add_row(self, row: ResultsRow, page_no: int, *, has_points: bool = True) -> None:
         if self.current is None:
             # Fila antes del primer ``CAT:`` — no se puede atribuir. Se reporta
             # al coach en vez de descartarse en silencio (FR-001).
@@ -726,6 +871,8 @@ class _DocState:
             self.unreadable.append(UnreadableRow(page=page_no, ordinal=row.position))
             return
         self.current.rows.append(row)
+        if not has_points:
+            self.points_inferred_rows += 1
 
 
 def parse_results_document(path: Path) -> ParsedResults:
@@ -752,7 +899,11 @@ def parse_results_document(path: Path) -> ParsedResults:
     if state.unreadable:
         logger.warning("Filas ilegibles o no atribuidas: %d", len(state.unreadable))
 
-    return ParsedResults(categories=state.categories, unreadable_rows=state.unreadable)
+    return ParsedResults(
+        categories=state.categories,
+        unreadable_rows=state.unreadable,
+        points_inferred_rows=state.points_inferred_rows,
+    )
 
 
 def parse_results_pdf(path: Path) -> dict[str, list[ResultsRow]]:

@@ -22,4 +22,4 @@ jobs:
             -H "X-Reconcile-Token: ${{ secrets.STRAVA_RECONCILE_TOKEN }}" \
             --max-time 300 \
             --retry 2 \
-            https://mi-2yzi.onrender.com/api/integrations/strava/reconcile
+            "${{ vars.API_BASE_URL || 'https://mi-2yzi.onrender.com' }}/api/integrations/strava/reconcile"

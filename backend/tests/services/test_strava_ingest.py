@@ -31,6 +31,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from typing import AsyncGenerator
 
+import httpx
 import pytest
 import pytest_asyncio
 from cryptography.fernet import Fernet
@@ -849,37 +850,24 @@ class TestSummaryCompleteHeuristic:
 
 
 # ---------------------------------------------------------------------------
-# Integration bug: oauth.refresh_access_token() ↔ StravaClient contract
-# mismatch (found while writing "token exchange + refresh rotation" tests)
+# Regresión: contrato oauth.refresh_access_token() ↔ StravaClient.
+# El cliente leía el resultado por atributo (result.access_token) mientras
+# oauth.py devuelve el dict crudo de Strava → AttributeError en CADA refresh
+# real. Corregido en client.py; estos tests usan la forma real del dict.
 # ---------------------------------------------------------------------------
 
 
-class TestStravaClientRefreshIntegrationBug:
-    @pytest.mark.xfail(
-        reason=(
-            "BUG (T013/T014 contract mismatch): "
-            "oauth.refresh_access_token() returns Strava's raw dict "
-            "(documented explicitly in its own docstring: 'return Strava's "
-            "raw token response dict'), but "
-            "StravaClient._ensure_fresh_access_token() reads the result via "
-            "ATTRIBUTE access (result.access_token / result.refresh_token / "
-            "result.expires_at) per client.py's module docstring, which "
-            "promises a 'TokenRefreshResult' object with those attributes. "
-            "A dict has no such attributes, so EVERY real token refresh "
-            "raises an unhandled AttributeError (not StravaOAuthError, not "
-            "StravaAuthError — the attribute access happens AFTER the "
-            "try/except around the oauth call). Strava access tokens expire "
-            "every 6h, so this will fire on the daily reconcile job and on "
-            "any webhook-triggered activity fetch for a connection whose "
-            "token has gone stale — i.e. the feature breaks itself within "
-            "hours of a family connecting. Fix: either make "
-            "oauth.refresh_access_token() return a small dataclass/object "
-            "with those three attributes, or change client.py to read "
-            "result['access_token'] / result['refresh_token'] / "
-            "datetime.fromtimestamp(result['expires_at'], tz=timezone.utc)."
-        ),
-        strict=True,
+def _mock_strava_http(recorded: list) -> httpx.AsyncClient:
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        return httpx.Response(200, json={"id": 1})
+
+    return httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url="https://strava.test"
     )
+
+
+class TestStravaClientRefreshContract:
     async def test_strava_client_refresh_rotates_tokens_end_to_end(
         self, db, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -890,15 +878,16 @@ class TestStravaClientRefreshIntegrationBug:
             athlete,
             consent,
             status=StravaConnectionStatus.active,
-            # Well past the 5-minute refresh skew — forces a refresh.
+            # Muy por encima del margen de 5 min — fuerza el refresh.
             token_expires_at=datetime.now(timezone.utc) - timedelta(hours=1),
         )
         await db.commit()
 
+        new_expiry = datetime(2026, 9, 25, 18, 0, tzinfo=timezone.utc)
         rotated_response = {
             "access_token": "AT_ROTATED_NEW",
             "refresh_token": "RT_ROTATED_NEW",
-            "expires_at": int((datetime.now(timezone.utc) + timedelta(hours=6)).timestamp()),
+            "expires_at": int(new_expiry.timestamp()),
             "expires_in": 21600,
             "token_type": "Bearer",
         }
@@ -906,17 +895,60 @@ class TestStravaClientRefreshIntegrationBug:
         async def _fake_refresh(refresh_token: str) -> dict:
             return rotated_response
 
-        # Patch the reference StravaClient actually calls: `oauth.refresh_access_token`.
+        # Se parchea la referencia que StravaClient usa: `oauth.refresh_access_token`.
         import app.services.strava.client as client_module
 
         monkeypatch.setattr(client_module.oauth, "refresh_access_token", _fake_refresh)
 
-        async with StravaClient(connection, db) as client:
-            await client.get_activity(1)  # never reaches the HTTP layer — fails in refresh
+        recorded: list = []
+        async with _mock_strava_http(recorded) as http:
+            async with StravaClient(connection, db, http_client=http) as client:
+                await client.get_activity(1)
 
         await db.commit()
         await db.refresh(connection)
 
+        assert recorded[0].headers["Authorization"] == "Bearer AT_ROTATED_NEW"
         assert connection.status == StravaConnectionStatus.active
         assert decrypt_token(connection.access_token_enc) == "AT_ROTATED_NEW"
         assert decrypt_token(connection.refresh_token_enc) == "RT_ROTATED_NEW"
+        stored = connection.token_expires_at
+        if stored.tzinfo is None:
+            stored = stored.replace(tzinfo=timezone.utc)
+        assert stored == new_expiry
+
+    async def test_malformed_refresh_response_marks_connection_broken(
+        self, db, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Un dict sin ``refresh_token`` no debe persistir tokens a medias:
+        la conexión queda rota y se levanta ``StravaAuthError`` (no
+        ``KeyError``/``AttributeError`` sin envolver)."""
+        athlete = await _seed_athlete(db)
+        consent = await _seed_consent(db, athlete)
+        connection = await _seed_connection(
+            db,
+            athlete,
+            consent,
+            status=StravaConnectionStatus.active,
+            token_expires_at=datetime.now(timezone.utc) - timedelta(hours=1),
+        )
+        await db.commit()
+        old_access_enc = connection.access_token_enc
+
+        async def _fake_refresh(refresh_token: str) -> dict:
+            return {"access_token": "AT_ONLY", "expires_at": 1_790_000_000}
+
+        import app.services.strava.client as client_module
+
+        monkeypatch.setattr(client_module.oauth, "refresh_access_token", _fake_refresh)
+
+        recorded: list = []
+        async with _mock_strava_http(recorded) as http:
+            async with StravaClient(connection, db, http_client=http) as client:
+                with pytest.raises(StravaAuthError):
+                    await client.get_activity(1)
+
+        assert recorded == []
+        assert connection.status == StravaConnectionStatus.broken
+        assert connection.last_error == "refresh_401"
+        assert connection.access_token_enc == old_access_enc

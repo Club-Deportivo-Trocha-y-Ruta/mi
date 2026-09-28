@@ -200,10 +200,15 @@ def test_resolve_age_logs_warning_when_missing(caplog):
 
 
 def test_resolve_age_logs_warning_when_out_of_range(caplog):
-    """Si athlete_age viene fuera de [6, 20], se aplica fallback con warning."""
+    """Si athlete_age viene fuera de [6, 80], se aplica fallback con warning.
+
+    El techo era 20 hasta la feature "adult athlete path" (4c549eb): un
+    atleta adulto real (p. ej. 50 años) caía al fallback=12 y se analizaba
+    como bambino. Hoy 50 es válido y solo lo implausible cae al fallback.
+    """
     caplog.clear()
     with caplog.at_level(logging.WARNING, logger="app.services.race.ai.nodes.analyst_agent"):
-        assert _resolve_age({"athlete_age": 50}) == 12
+        assert _resolve_age({"athlete_age": 81}) == 12
         assert _resolve_age({"athlete_age": 3}) == 12
 
     age_warnings = [
@@ -217,16 +222,17 @@ def test_resolve_age_logs_warning_when_out_of_range(caplog):
 
 
 def test_resolve_age_returns_value_silently_when_valid(caplog):
-    """Cuando state trae edad válida (6..20), NO debe loggear warning."""
+    """Cuando state trae edad válida (6..80), NO debe loggear warning."""
     caplog.clear()
     with caplog.at_level(logging.WARNING, logger="app.services.race.ai.nodes.analyst_agent"):
         assert _resolve_age({"athlete_age": 14}) == 14
+        assert _resolve_age({"athlete_age": 50}) == 50
 
     age_warnings = [
         r for r in caplog.records if "athlete_age" in r.getMessage()
     ]
     assert age_warnings == [], (
-        "athlete_age=14 es válido; no debería generar warning. "
+        "athlete_age=14 y 50 son válidos; no deberían generar warning. "
         f"Observados: {[r.getMessage() for r in age_warnings]!r}"
     )
 

@@ -1,5 +1,9 @@
 import pytest
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
+
+from app.dependencies import get_notification_service
+from app.main import app
 
 
 async def _admin_token(client):
@@ -247,39 +251,57 @@ class TestAddMember:
         )
         token = admin_login.json()["access_token"]
 
-        # Crear un club nuevo para este test
-        club_code = f"test-members-{uuid4().hex[:8]}"
-        club_resp = await client.post(
-            "/api/clubs/",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"name": "Club Para Miembros", "code": club_code},
-        )
-        assert club_resp.status_code == 201
-        club_id = club_resp.json()["id"]
+        headers = {"Authorization": f"Bearer {token}"}
 
-        # Crear un usuario nuevo para agregar como miembro
-        email = f"test-{uuid4().hex[:8]}@test.com"
-        user_resp = await client.post(
-            "/api/users",
-            headers={"Authorization": f"Bearer {token}"},
-            json={
-                "email": email,
-                "password": "Test2026!",
-                "first_name": "Nuevo",
-                "last_name": "Miembro",
-                "role": "coach",
-            },
-        )
-        assert user_resp.status_code == 201
+        # Dos clubes nuevos y propios de este test (código único por corrida):
+        # el test no depende de qué clubes siembre la BD.
+        async def _create_club(label: str) -> int:
+            resp = await client.post(
+                "/api/clubs/",
+                headers=headers,
+                json={"name": f"Club {label} Miembros", "code": f"test-{label}-{uuid4().hex[:8]}"},
+            )
+            assert resp.status_code == 201
+            return resp.json()["id"]
+
+        club_origin_id = await _create_club("origen")
+        club_target_id = await _create_club("destino")
+
+        # Feature 041 (staff-admin.md §1.2/§1.4): una cuenta de personal nace
+        # SIEMPRE con club (`club_id` obligatorio → 422 sin él) y sin
+        # contraseña (FR-023: la fija la persona desde el correo que recibe).
+        # Por eso el coach se crea en el club de origen y luego se le asigna
+        # el club de destino — el caso real de «entrenador en varios clubes».
+        # `get_notification_service` se sustituye: crear personal despacha un
+        # correo de restablecimiento y el test no debe tocar SMTP/Resend.
+        fake_notifications = MagicMock()
+        fake_notifications.send = AsyncMock()
+        app.dependency_overrides[get_notification_service] = lambda: fake_notifications
+        try:
+            email = f"test-{uuid4().hex[:8]}@test.com"
+            user_resp = await client.post(
+                "/api/users",
+                headers=headers,
+                json={
+                    "email": email,
+                    "first_name": "Nuevo",
+                    "last_name": "Miembro",
+                    "role": "coach",
+                    "club_id": club_origin_id,
+                },
+            )
+        finally:
+            app.dependency_overrides.pop(get_notification_service, None)
+        assert user_resp.status_code == 201, user_resp.text
         user_id = user_resp.json()["id"]
 
-        # Agregar el usuario al club
+        # Agregar el usuario al segundo club
         resp = await client.post(
-            f"/api/clubs/{club_id}/members",
-            headers={"Authorization": f"Bearer {token}"},
+            f"/api/clubs/{club_target_id}/members",
+            headers=headers,
             json={"user_id": user_id, "role_in_club": "coach"},
         )
-        assert resp.status_code == 201
+        assert resp.status_code == 201, resp.text
         body = resp.json()
         assert body["user_id"] == user_id
         assert body["role_in_club"] == "coach"

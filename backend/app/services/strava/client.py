@@ -23,16 +23,12 @@ Side effects:
   privacy gate; FR-016). See ``token_store.py`` for the same rule applied to
   token contents.
 
-Dependency on T013 (``services/strava/oauth.py``, not yet created at the time
-this module was written): token refresh delegates to
-``oauth.refresh_access_token(refresh_token: str) -> TokenRefreshResult``
-where ``TokenRefreshResult`` exposes ``access_token: str``,
-``refresh_token: str`` and ``expires_at: datetime`` (UTC, tz-aware), and
-raises ``oauth.StravaOAuthError`` on a failed refresh (e.g. HTTP 400/401 from
-Strava's ``/oauth/token`` endpoint). Until T013 lands, importing this module
-will raise ``ModuleNotFoundError`` — this is the expected intermediate state
-for two files developed in parallel from the same contract (research.md §4,
-plan.md "Within US1").
+Token refresh delegates to ``oauth.refresh_access_token(refresh_token)``,
+which returns Strava's raw token response ``dict`` (``access_token``,
+``refresh_token``, ``expires_at`` as epoch seconds) and raises
+``oauth.StravaOAuthError`` on a failed refresh (e.g. HTTP 400/401 from
+Strava's ``/oauth/token`` endpoint). A response missing any of those keys is
+treated as a failed refresh too.
 """
 
 from __future__ import annotations
@@ -259,7 +255,14 @@ class StravaClient:
         )
         refresh_plain = decrypt_token(connection.refresh_token_enc)
         try:
+            # ``oauth.refresh_access_token`` returns Strava's raw token dict
+            # (``access_token``/``refresh_token``/``expires_at`` epoch seconds).
             result = await oauth.refresh_access_token(refresh_plain)
+            new_access = result.get("access_token")
+            new_refresh = result.get("refresh_token")
+            expires_epoch = result.get("expires_at")
+            if not new_access or not new_refresh or expires_epoch is None:
+                raise oauth.StravaOAuthError("malformed refresh response")
         except oauth.StravaOAuthError as exc:
             connection.status = StravaConnectionStatus.broken
             connection.last_error = "refresh_401"
@@ -275,9 +278,11 @@ class StravaClient:
                 "No se pudo renovar el token de Strava; conexión marcada como rota."
             ) from exc
 
-        connection.access_token_enc = encrypt_token(result.access_token)
-        connection.refresh_token_enc = encrypt_token(result.refresh_token)
-        connection.token_expires_at = result.expires_at
+        connection.access_token_enc = encrypt_token(new_access)
+        connection.refresh_token_enc = encrypt_token(new_refresh)
+        connection.token_expires_at = datetime.fromtimestamp(
+            int(expires_epoch), tz=timezone.utc
+        )
         connection.last_error = None
         if connection.status != StravaConnectionStatus.active:
             connection.status = StravaConnectionStatus.active
@@ -286,7 +291,7 @@ class StravaClient:
             "strava_token_refresh_ok",
             extra={"athlete_id": connection.athlete_id},
         )
-        return result.access_token
+        return new_access
 
     # -- Low-level request ------------------------------------------------
 

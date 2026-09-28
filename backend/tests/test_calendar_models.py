@@ -344,24 +344,51 @@ class TestEventCreate:
         assert e.event_data["training_session_id"] == 42
 
     def test_event_data_competition_valid(self):
+        # Desde 5a6a07a (integración race-events ↔ calendario) una competencia
+        # exige `race_event_id`; el CHECK `ck_calendar_competition_race_event`
+        # de la BD lo respalda.
         e = EventCreate(
             event_type=EventType.COMPETITION,
             title="Copa Valle IV",
             start_at=_NOW,
             end_at=_END,
+            race_event_id=1,
             event_data={"city": "Cali", "race_category": "A", "is_departmental": False},
         )
         assert e.event_data["city"] == "Cali"
+        assert e.race_event_id == 1
 
     def test_event_data_invalid_shape_raises(self):
-        with pytest.raises(ValidationError):
+        # Con `race_event_id` presente, el único motivo de rechazo es la forma
+        # de `event_data`. Sin él el test pasaba "en falso": fallaba por el
+        # validador de la válida y nunca llegaba a validar el shape.
+        with pytest.raises(ValidationError) as exc:
             EventCreate(
                 event_type=EventType.COMPETITION,
                 title="Copa Valle IV",
                 start_at=_NOW,
                 end_at=_END,
+                race_event_id=1,
                 event_data={"city": "Cali"},  # falta race_category
             )
+        assert "race_category" in str(exc.value)
+        assert "race_event_id" not in str(exc.value)
+
+    def test_competition_without_race_event_id_raises(self):
+        with pytest.raises(ValidationError) as exc:
+            EventCreate(
+                event_type=EventType.COMPETITION,
+                title="Copa Valle IV",
+                start_at=_NOW,
+                end_at=_END,
+                event_data={"city": "Cali", "race_category": "A"},
+            )
+        assert "race_event_id" in str(exc.value)
+
+    def test_non_competition_with_race_event_id_raises(self):
+        with pytest.raises(ValidationError) as exc:
+            _make_event_create(race_event_id=1)
+        assert "race_event_id" in str(exc.value)
 
     def test_audiences_default_empty(self):
         e = _make_event_create()

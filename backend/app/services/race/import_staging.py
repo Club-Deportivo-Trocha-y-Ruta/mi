@@ -295,6 +295,24 @@ def _unreadable_rows_meta(parsed: ParsedResults) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
+def _points_inferred_warnings(parsed: ParsedResults) -> list[ParseWarning]:
+    """Aviso no bloqueante cuando el acta no trae columna de puntos y estos se
+    calcularon por posición (``pdf_parser._infer_points``). Se emite igual en
+    el staging nuevo y en la respuesta de un archivo ya en staging."""
+    if not parsed.points_inferred_rows:
+        return []
+    return [
+        ParseWarning(
+            code="points_inferred",
+            message=(
+                "El archivo no trae columna de puntos: se calcularon por "
+                "posición con la escala de la Copa Vallecaucana 2022."
+            ),
+            context={"rows": parsed.points_inferred_rows},
+        )
+    ]
+
+
 async def _response_for_already_staged(
     db: AsyncSession,
     imp: RaceImport,
@@ -356,7 +374,7 @@ async def _response_for_already_staged(
         ),
         n_rows_resultados=n_rows_resultados,
         n_rows_general=n_rows_general,
-        warnings=[],
+        warnings=_points_inferred_warnings(parsed_doc),
         categories=categories_read,
         unreadable_rows=unreadable_rows_read,
         will_be_revision=False,
@@ -503,6 +521,7 @@ async def stage_results_file(
     warnings_collected: list[ParseWarning] = []
     try:
         parsed_doc = await _parse_results_with_timeout(results_path, results_ext)
+        warnings_collected.extend(_points_inferred_warnings(parsed_doc))
         # FR-025 (contracts/historical-load.md §"Staging service"):
         # season/válida/fecha/sede vienen SIEMPRE de los parámetros — nunca
         # se infieren del PDF. ``parse_event_header`` solo pre-rellena el

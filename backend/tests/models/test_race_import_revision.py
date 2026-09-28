@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import importlib.util
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, inspect, text
@@ -25,6 +26,15 @@ from app.models.race_import import (
     RaceImport,
     RaceImportKind,
     RaceImportStatus,
+)
+
+# tests/models/<este archivo> → parents[2] = backend/. Relativo al archivo para
+# que el test corra igual en cualquier checkout (CI, contenedor, otra máquina).
+_REVISION_MIGRATION_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "alembic"
+    / "versions"
+    / "f9a0b1c2d3e4_race_imports_revision_delta.py"
 )
 
 
@@ -349,12 +359,11 @@ def test_alembic_revision_migration_has_correct_lineage():
 
     Garantiza que la cadena F-UP base → F-UP-REV1 es lineal y reversible.
     """
-    migration_path = (
-        "/Users/juadiga/Documents/Personal/Trocha y Ruta/me/backend/"
-        "alembic/versions/f9a0b1c2d3e4_race_imports_revision_delta.py"
+    assert _REVISION_MIGRATION_PATH.is_file(), (
+        f"No existe la migración esperada: {_REVISION_MIGRATION_PATH}"
     )
     spec = importlib.util.spec_from_file_location(
-        "race_imports_revision_delta", migration_path
+        "race_imports_revision_delta", _REVISION_MIGRATION_PATH
     )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -368,12 +377,10 @@ def test_alembic_revision_migration_has_correct_lineage():
 def test_alembic_revision_migration_mentions_all_changes():
     """Drift detection: el source de la migración debe mencionar todos los
     nombres canónicos (columnas, índice, FK)."""
-    migration_path = (
-        "/Users/juadiga/Documents/Personal/Trocha y Ruta/me/backend/"
-        "alembic/versions/f9a0b1c2d3e4_race_imports_revision_delta.py"
+    assert _REVISION_MIGRATION_PATH.is_file(), (
+        f"No existe la migración esperada: {_REVISION_MIGRATION_PATH}"
     )
-    with open(migration_path) as f:
-        source = f.read()
+    source = _REVISION_MIGRATION_PATH.read_text(encoding="utf-8")
 
     for needle in [
         "parent_import_id",

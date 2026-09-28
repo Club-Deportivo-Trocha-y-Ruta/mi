@@ -21,7 +21,6 @@ parcheando la referencia ``oauth.refresh_access_token`` que usa el client.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -206,12 +205,15 @@ async def test_get_activity_laps_refreshes_near_expiry_token(
     rotated bearer — proving ``get_activity_laps`` inherits the refresh from
     the ``_request``/``_ensure_fresh_access_token`` choke point."""
 
-    async def fake_refresh(refresh_token: str) -> SimpleNamespace:
-        return SimpleNamespace(
-            access_token="AT_REFRESHED",
-            refresh_token="RT_REFRESHED",
-            expires_at=datetime.now(timezone.utc) + timedelta(hours=6),
-        )
+    # Forma real de ``oauth.refresh_access_token``: dict crudo de Strava.
+    async def fake_refresh(refresh_token: str) -> dict:
+        return {
+            "access_token": "AT_REFRESHED",
+            "refresh_token": "RT_REFRESHED",
+            "expires_at": int(
+                (datetime.now(timezone.utc) + timedelta(hours=6)).timestamp()
+            ),
+        }
 
     monkeypatch.setattr(client_module.oauth, "refresh_access_token", fake_refresh)
 
