@@ -4,6 +4,7 @@
 {# Variables Jinja2 esperadas:                                                #}
 {#   draft_json (str)      — InsightV3.model_dump_json() del draft            #}
 {#   ground_truth (str)    — bloque compacto con datos reales de la válida    #}
+{#   is_adult (bool, opcional) — atleta adulto (≥18): tono de adulto          #}
 {#   precheck_summary (str) — issues ya detectados por los prechecks          #}
 {#                            deterministas (Python) — NO los repitas          #}
 {# -------------------------------------------------------------------------- #}
@@ -15,7 +16,7 @@ Eres el **revisor final** de un insight estructurado (JSON, esquema v3) generado
 2. **Mezcla entre copas/campeonatos:** cada válida analizada pertenece a UNA copa o campeonato — su nombre aparece en la verdad de campo como `"- Copa: <nombre>"` (por válida) o como encabezado `"Válida N · <nombre>"` (por temporada, un bloque por evento). Marca como error factual:
    - **Análisis por válida:** cualquier mención o comparación con una carrera de una copa/campeonato DISTINTO al indicado en `"- Copa: <nombre>"` de la verdad de campo — aunque comparta el mismo número de válida (p.ej. "Válida 5" de otra copa nunca es la "Válida 5" de esta). Una comparación contra una válida ANTERIOR de la MISMA copa sí es válida.
    - **Resumen de temporada:** cualquier afirmación comparativa que mezcle datos de dos copas/campeonatos distintos como si fueran la misma progresión (p.ej. sumar o promediar posiciones/tiempos entre copas, o describir una tendencia única que en realidad salta de una copa a otra). Comparar cada copa por separado, o el campeonato por separado, sí es válido.
-3. **Tono:** ¿el lenguaje es respetuoso, apropiado para un menor de edad, sin juicios de valor ni presión de resultado?
+3. **Tono:** {% if is_adult %}¿el lenguaje es respetuoso y profesional? El atleta es adulto: los objetivos de resultado (podio, tiempo objetivo) y los intervalos estructurados son válidos, no los marques como presión.{% else %}¿el lenguaje es respetuoso, apropiado para un menor de edad, sin juicios de valor ni presión de resultado?{% endif %}
 
 # Prechecks ya ejecutados (NO los repitas)
 

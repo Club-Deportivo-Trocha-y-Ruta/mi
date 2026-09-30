@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     # estatico — evita el import en tiempo de ejecucion mientras el modulo
     # aun no existe (`from __future__ import annotations` difiere la
     # evaluacion de anotaciones).
+    from app.models.anthropometry import AnthropometricRecord
     from app.models.race_import import RaceImport
     from app.models.strava_activity import StravaActivity
 
@@ -633,6 +634,29 @@ def can_view_audit(user: User, club_id: int) -> bool:
     if user.role == UserRole.coach:
         return club_id in coach_club_ids(user)
     return False
+
+
+# ---------------------------------------------------------------------------
+# Autoría de mediciones antropométricas (feature 048)
+# ---------------------------------------------------------------------------
+
+
+def can_modify_anthropometric_record(user: User, record: AnthropometricRecord) -> bool:
+    """¿Puede *user* editar o eliminar esta medición antropométrica?
+
+    Spec 048, clarificación 3 (sesión 2026-09-29): solo el coach que tomó la
+    medición (``record.evaluated_by``) o un admin, tanto para editar como para
+    eliminar. Otros coaches con acceso al deportista la ven pero no la cambian;
+    un padre nunca (research R2).
+
+    No reemplaza el alcance por club: los endpoints llaman primero a
+    ``verify_athlete_access`` (club, archivado → 404) y después a esta
+    función (→ 403 ``not_record_author``). Síncrona y sin I/O: solo compara
+    el rol y el id ya cargados.
+    """
+    if user.role == UserRole.admin:
+        return True
+    return record.evaluated_by == user.id
 
 
 # NOTA (contracts/audit-log-api.md §4.3): no existe un

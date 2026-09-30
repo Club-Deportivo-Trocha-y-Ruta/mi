@@ -104,6 +104,21 @@ from app.models.audit_log import AuditAction, AuditActorKind, AuditLog
 from app.models.race_course_variant import RaceCourseVariant
 from app.models.race_course_category_setup import RaceCourseCategorySetup
 
+# Feature 047 — Planilla mensual de asistencia IMDERTY
+from app.models.imderty import (
+    AthleteImdertyProfile,
+    AthleteSensitiveAuthorization,
+    AthleteSensitiveData,
+    ClubImdertySettings,
+    ImdertyBarrio,
+    ImdertyDisability,
+    ImdertyDocumentType,
+    ImdertyEthnicity,
+    ImdertyGrade,
+    ImdertyProgram,
+    ImdertyYesNo,
+)
+
 __all__ = [
     "Base",
     "ActorTimestampMixin",
@@ -214,4 +229,16 @@ __all__ = [
     "RaceIdentityCandidate",
     "IdentityCandidateKind",
     "IdentityCandidateState",
+    # Feature 047 — Planilla mensual de asistencia IMDERTY
+    "AthleteImdertyProfile",
+    "AthleteSensitiveAuthorization",
+    "AthleteSensitiveData",
+    "ClubImdertySettings",
+    "ImdertyBarrio",
+    "ImdertyDisability",
+    "ImdertyDocumentType",
+    "ImdertyEthnicity",
+    "ImdertyGrade",
+    "ImdertyProgram",
+    "ImdertyYesNo",
 ]

@@ -21,6 +21,10 @@
   - Tested independently
   - Deployed independently
   - Demonstrated to users independently
+
+  RESPONSIVE (Constitution Principle III): name the primary device of each user-facing
+  surface, and cover its phone-width (360 px) behaviour with an acceptance scenario or
+  an edge case. Responsiveness complements the primary design; it does not replace it.
 -->
 
 ### User Story 1 - [Brief Title] (Priority: P1)

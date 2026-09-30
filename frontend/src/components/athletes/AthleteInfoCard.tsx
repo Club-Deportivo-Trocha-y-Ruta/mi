@@ -13,6 +13,11 @@ interface AthleteInfoCardProps {
   editUrl?: string | null;
 }
 
+/** Un decimal con coma decimal (es-CO): 31.8 → «31,8». */
+function formatOneDecimal(value: number): string {
+  return value.toFixed(1).replace(".", ",");
+}
+
 function StatPill({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
   return (
     <div
@@ -35,78 +40,80 @@ export function AthleteInfoCard({
   const initials = `${athlete.first_name.charAt(0)}${athlete.last_name.charAt(0)}`.toUpperCase();
 
   return (
-    <article className="overflow-hidden rounded-card bg-surface-raised shadow-card ring-1 ring-hairline">
-      {/* Top bar: navigation */}
-      {(backUrl !== null || resolvedEditUrl !== null) && (
-        <div
-          className="flex items-center justify-between px-5 pt-4 pb-3"
-          style={{ borderBottom: "1px solid rgba(34, 42, 53, 0.06)" }}
-        >
-          {backUrl !== null ? (
-            <Link
-              to={backUrl}
-              className="inline-flex min-h-12 items-center gap-1.5 text-sm text-mid-gray transition-colors hover:text-charcoal"
-            >
-              <ArrowLeft size={16} />
-              Volver a lista
-            </Link>
-          ) : (
-            <span />
-          )}
-          {resolvedEditUrl !== null && (
-            <Link
-              to={resolvedEditUrl}
-              className="inline-flex min-h-12 items-center gap-1.5 rounded-lg bg-surface-raised px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
-            >
-              <Pencil size={14} />
-              Editar
-            </Link>
-          )}
-        </div>
-      )}
-
-      {/* Hero content */}
-      <div className="px-5 py-4">
-        <div className="flex items-start gap-4">
-          {/* Avatar */}
-          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-light-gray text-lg font-bold text-charcoal">
-            {initials}
-          </div>
-
-          {/* Name + subtitle */}
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-3">
-              <h2
-                className="font-display truncate text-xl text-charcoal"
-                style={{ letterSpacing: "0.2px" }}
+    <div className="space-y-4">
+      <article className="overflow-hidden rounded-card bg-surface-raised shadow-card ring-1 ring-hairline">
+        {/* Top bar: navigation */}
+        {(backUrl !== null || resolvedEditUrl !== null) && (
+          <div
+            className="flex items-center justify-between px-5 pt-4 pb-3"
+            style={{ borderBottom: "1px solid rgba(34, 42, 53, 0.06)" }}
+          >
+            {backUrl !== null ? (
+              <Link
+                to={backUrl}
+                className="inline-flex min-h-12 items-center gap-1.5 text-sm text-mid-gray transition-colors hover:text-charcoal"
               >
-                {athlete.first_name} {athlete.last_name}
-              </h2>
-              <PHVBadge status={latest?.maturation_status ?? null} size="md" />
+                <ArrowLeft size={16} />
+                Volver a lista
+              </Link>
+            ) : (
+              <span />
+            )}
+            {resolvedEditUrl !== null && (
+              <Link
+                to={resolvedEditUrl}
+                className="inline-flex min-h-12 items-center gap-1.5 rounded-lg bg-surface-raised px-3 py-1.5 text-sm font-medium text-charcoal transition-opacity hover:opacity-70 shadow-ring"
+              >
+                <Pencil size={14} />
+                Editar
+              </Link>
+            )}
+          </div>
+        )}
+
+        {/* Hero content */}
+        <div className="px-5 py-4">
+          <div className="flex items-start gap-4">
+            {/* Avatar */}
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-light-gray text-lg font-bold text-charcoal">
+              {initials}
             </div>
-            <p className="mt-1 text-sm text-mid-gray">
-              {athlete.age_decimal?.toFixed(1) ?? "—"} años
-              {" · "}
-              {athlete.category ?? "Sin categoría"}
-              {" · "}
-              {athlete.sex === "M" ? "Masculino" : "Femenino"}
-            </p>
+
+            {/* Name + subtitle */}
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-3">
+                <h2
+                  className="font-display truncate text-xl text-charcoal"
+                  style={{ letterSpacing: "0.2px" }}
+                >
+                  {athlete.first_name} {athlete.last_name}
+                </h2>
+                <PHVBadge status={latest?.maturation_status ?? null} size="md" />
+              </div>
+              <p className="mt-1 text-sm text-mid-gray">
+                {athlete.age_decimal != null ? formatOneDecimal(athlete.age_decimal) : "—"} años
+                {" · "}
+                {athlete.category ?? "Sin categoría"}
+                {" · "}
+                {athlete.sex === "M" ? "Masculino" : "Femenino"}
+              </p>
+            </div>
+          </div>
+
+          {/* Stat pills */}
+          <div className="mt-4 flex flex-wrap gap-2">
+            {athlete.years_in_club != null && (
+              <StatPill icon={Calendar} label="En club" value={`${formatOneDecimal(athlete.years_in_club)} años`} />
+            )}
+            {latest && (
+              <>
+                <StatPill icon={Ruler} label="Talla" value={`${latest.standing_height_cm} cm`} />
+                <StatPill icon={Scale} label="Peso" value={`${latest.weight_kg} kg`} />
+              </>
+            )}
           </div>
         </div>
-
-        {/* Stat pills */}
-        <div className="mt-4 flex flex-wrap gap-2">
-          {athlete.years_in_club != null && (
-            <StatPill icon={Calendar} label="En club" value={`${athlete.years_in_club.toFixed(1)} años`} />
-          )}
-          {latest && (
-            <>
-              <StatPill icon={Ruler} label="Talla" value={`${latest.standing_height_cm} cm`} />
-              <StatPill icon={Scale} label="Peso" value={`${latest.weight_kg} kg`} />
-            </>
-          )}
-        </div>
-      </div>
-    </article>
+      </article>
+    </div>
   );
 }

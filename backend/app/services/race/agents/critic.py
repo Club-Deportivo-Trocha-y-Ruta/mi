@@ -274,6 +274,8 @@ class RaceCriticAgent:
         draft: Any,
         ground_truth: str,
         precheck_issues: list[Any] | None = None,
+        *,
+        is_adult: bool = False,
     ) -> tuple[CriticFeedback, RunMetrics]:
         """Revisa un draft estructurado v3 (feature 037, T202).
 
@@ -289,6 +291,8 @@ class RaceCriticAgent:
             ground_truth: bloque markdown con los datos reales de la válida.
             precheck_issues: lista de ``PrecheckIssue`` ya detectados
                 (para excluirlos del prompt vía ``precheck_summary``).
+            is_adult: el atleta es adulto (≥18); el revisor de tono deja de
+                exigir el registro propio de un menor.
         """
         if not _critic_enabled():
             return _bypass_feedback(), _zero_metrics()
@@ -303,6 +307,7 @@ class RaceCriticAgent:
                 "draft_json": draft_json,
                 "ground_truth": ground_truth,
                 "precheck_summary": precheck_summary,
+                "is_adult": is_adult,
             },
             strict=False,
         )

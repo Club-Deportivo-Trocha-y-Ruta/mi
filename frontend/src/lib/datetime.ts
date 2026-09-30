@@ -12,10 +12,23 @@ type DateInput = string | Date | null | undefined;
  */
 const ISO_DATETIME_NAIVE_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/;
 
+/**
+ * Fechas de calendario sin hora ("2026-05-25", p. ej. `evaluation_date`).
+ * `new Date("2026-05-25")` las interpreta como medianoche UTC, que en
+ * America/Bogota (UTC-5) es el día anterior a las 19:00 → se mostraba un día
+ * menos. Se anclan al mediodía UTC: cae el mismo día calendario en cualquier
+ * zona entre UTC-11 y UTC+11, incluida la del club.
+ */
+const ISO_DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 function toDate(value: DateInput): Date | null {
   if (value == null || value === "") return null;
   if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
-  const normalized = ISO_DATETIME_NAIVE_RE.test(value) ? `${value}Z` : value;
+  const normalized = ISO_DATE_ONLY_RE.test(value)
+    ? `${value}T12:00:00Z`
+    : ISO_DATETIME_NAIVE_RE.test(value)
+      ? `${value}Z`
+      : value;
   const d = new Date(normalized);
   return isNaN(d.getTime()) ? null : d;
 }

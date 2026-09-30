@@ -1,0 +1,58 @@
+/**
+ * Guías de medición de la captura antropométrica (feature 048, FR-030).
+ *
+ * Mismos textos que `backend/app/data/anthropometry_measures.json` (fuente
+ * única para el instructivo PDF); la prueba de paridad
+ * `__tests__/measureGuides.parity.test.ts` falla si divergen.
+ */
+
+export type MeasureKey = "weight" | "standing_height" | "sitting_height" | "arm_span";
+
+export interface MeasureGuide {
+  label: string;
+  donde: string;
+  como: string;
+  alt: string;
+}
+
+export const MEASURE_KEYS: readonly MeasureKey[] = [
+  "weight",
+  "standing_height",
+  "sitting_height",
+  "arm_span",
+];
+
+export const MEASURE_GUIDES: Record<MeasureKey, MeasureGuide> = {
+  weight: {
+    label: "Peso",
+    donde: "Báscula apoyada en un piso firme y plano, lejos de tapetes o alfombras. Confirma que marque 0,0 antes de que el deportista se suba.",
+    como: "Pide que se suba descalzo y con ropa liviana, con un pie a cada lado del centro de la báscula, los brazos relajados a los costados y la mirada al frente, sin moverse ni apoyarse en nada. Espera a que el número deje de cambiar y anótalo en kilogramos con un decimal.",
+    alt: "Ilustración de un deportista descalzo de pie sobre una báscula, quieto, con los brazos a los costados y la mirada al frente.",
+  },
+  standing_height: {
+    label: "Talla de pie",
+    donde: "Tallímetro fijo o cinta métrica pegada en una pared recta, sin zócalo, con el piso plano. Usa una escuadra o tabla para bajar hasta la cabeza.",
+    como: "Descalzo, de espaldas a la pared, con los talones juntos. Los talones, los glúteos y la espalda deben tocar la pared. Acomoda la cabeza de modo que la línea entre el borde inferior del ojo y el borde superior de la oreja quede horizontal (plano de Frankfort). Pide que tome aire y se estire sin levantar los talones; baja la escuadra hasta apoyarla firme sobre la coronilla y lee en centímetros con un decimal.",
+    alt: "Ilustración de un deportista descalzo de espaldas a un tallímetro, con talones, glúteos y espalda tocando la pared y una escuadra apoyada sobre la cabeza.",
+  },
+  sitting_height: {
+    label: "Talla sentado",
+    donde: "Banco firme y plano, sin cojín, pegado a la pared del tallímetro. Mide antes la altura del banco desde el piso y anótala.",
+    como: "Sentado en el banco, con los glúteos y la espalda tocando la pared, las manos sobre los muslos y las piernas relajadas. Coloca la cabeza igual que en la talla de pie (plano de Frankfort), pide que se estire sin levantarse del banco y baja la escuadra sobre la coronilla. Lee la medida en el tallímetro y resta la altura del banco para obtener la talla sentado.",
+    alt: "Ilustración de un deportista sentado en un banco junto a un tallímetro, con glúteos y espalda contra la pared y una escuadra apoyada sobre la cabeza.",
+  },
+  arm_span: {
+    label: "Envergadura",
+    donde: "Pared lisa con una cinta métrica horizontal a la altura de los hombros del deportista, con el cero en una esquina o en un tope fijo.",
+    como: "Medida opcional: si no tienes espacio o cinta, puedes omitirla. De frente a la pared y con los brazos extendidos a los lados, a la altura de los hombros y con las palmas hacia la pared. La punta del dedo medio de una mano toca el cero; pide que estire bien los brazos sin despegar los talones del piso y lee en centímetros con un decimal donde llega la punta del dedo medio de la otra mano.",
+    alt: "Ilustración de un deportista de frente a una pared con los brazos extendidos en cruz a la altura de los hombros junto a una cinta métrica horizontal.",
+  },
+};
+
+export const PRECHECK_CONDITIONS: readonly string[] = [
+  "Sin zapatos",
+  "Ropa liviana",
+  "A una hora parecida a la de la última medición",
+  "Antes de entrenar",
+  "Báscula y tallímetro en superficie plana",
+];

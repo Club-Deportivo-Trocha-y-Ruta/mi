@@ -198,6 +198,25 @@ describe("AthletesListPage", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("muestra «Jornada de medición» a coach y admin, no a padres (feature 048)", () => {
+    mockAthletesQuery({ data: { items: [makeAthlete()], total: 1 } as AthleteListOut });
+    const { unmount } = renderPage();
+    expect(screen.getByRole("link", { name: "Jornada de medición" })).toHaveAttribute(
+      "href",
+      "/anthropometry/session",
+    );
+    unmount();
+
+    mockAuthAs("admin");
+    const admin = renderPage();
+    expect(screen.getByRole("link", { name: "Jornada de medición" })).toBeInTheDocument();
+    admin.unmount();
+
+    mockAuthAs("parent");
+    renderPage();
+    expect(screen.queryByRole("link", { name: "Jornada de medición" })).not.toBeInTheDocument();
+  });
+
   describe("accesibilidad", () => {
     it("0 violaciones jest-axe con atletas cargados", async () => {
       mockAthletesQuery({

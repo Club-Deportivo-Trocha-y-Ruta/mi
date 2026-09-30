@@ -2,7 +2,7 @@
  * Elegibilidad de captura de pliegues cutáneos (feature 046, US1).
  *
  * Compuertas de UX compartidas por `SkinfoldCapturePage`,
- * `AnthropometryForm` («Guardar y agregar pliegues») y
+ * la captura antropométrica («Guardar y agregar pliegues») y
  * `AnthropometryHistory` («Agregar pliegues»). El backend es la autoridad
  * (`check_min_age` → 409 `athlete_too_young`, `check_interval` → 409
  * `skinfold_interval_too_short`); aquí sólo se evita ofrecer una salida que

@@ -1,10 +1,33 @@
 <!--
 Sync Impact Report
 ==================
-Version change: 1.2.0 → 1.3.0
-Rationale: MINOR amendment. Guidance is materially expanded (test lanes, AI eval gates,
-AI tracing/provider constraints, secrets) and stale tooling claims are corrected. No
-principle is removed, renumbered, or redefined.
+Version change: 1.3.0 → 1.4.0
+Rationale: MINOR amendment. Principle III guidance is materially expanded with an
+always-on responsive rule (complementary to each screen's primary-device design) and
+responsive verification gates. No principle is removed,
+renumbered, or redefined.
+
+Amendment 2026-09-28 (1.3.0 → 1.4.0):
+  - III. User Experience Consistency → new "Responsive as a complementary, always-on
+    requirement" rule. Each screen is designed for its primary device (named in the
+    spec), and responsiveness is always considered as a complement: usable at
+    360 / 768 / ≥1280 px, with narrow-screen patterns for tables, forms, dialogs and
+    hover. The new "Responsive verification" rule requires primary device + phone-width
+    coverage in specs, narrow-screen adaptation per screen in plans, and a 360 px check
+    in frontend PRs. The primary device drives layout priority, not CSS authoring order.
+    Shared dialogs scroll by default. A mobile Playwright run is mandatory for parent
+    (phone-primary) e2e specs and recommended elsewhere.
+  - Templates: spec-template.md and plan-template.md gain a mobile reminder (edited in
+    the same change); tasks-template.md is unchanged.
+  - Follow-up TODOs:
+    (1) Add a mobile project to `frontend/playwright.config.ts` (today only Desktop
+        Chrome exists) and run the parent e2e specs in it.
+    (2) Add `max-h-[90vh] overflow-y-auto` (or equivalent) to the shared `DialogContent`
+        in `frontend/src/components/ui/dialog.tsx`. Today only a minority of dialogs add
+        scroll manually.
+    Until both land, report them as pending gaps rather than as passing.
+
+Amendment 2026-09-23 (1.2.0 → 1.3.0):
 
 Amendment 2026-09-23 (1.2.0 → 1.3.0):
   - I. Code Quality → static gate aligned with the repo: `ruff check` + `tsc --noEmit`
@@ -122,9 +145,31 @@ incident from happening twice.
 
 ### III. User Experience Consistency
 
-The product serves two distinct users — coaches (tablet, on the field) and parents
-(mobile Android, intermittent 3G/4G). Consistency across both surfaces is mandatory.
+The product serves two distinct users — coaches (tablet or phone on the field, desktop
+for office work) and parents (mobile Android, intermittent 3G/4G). Consistency across
+every surface and every screen size is mandatory.
 
+- **Responsive as a complementary, always-on requirement**: Each screen is designed
+  first for its primary device, which the spec states (coach: desktop or tablet; parent:
+  phone). "Primary device" governs layout priority and content triage, not the order in
+  which CSS is written: Tailwind's unprefixed styles remain the phone-width baseline,
+  with `sm:`/`md:`/`lg:` layering up, whichever device is primary. Responsive behaviour complements that design and MUST always be considered. It
+  is never optional and never an afterthought, but it does not replace the primary
+  design. Concretely, every user-facing screen MUST remain usable at **360 px** wide
+  (mid-tier Android phone), at **768 px** (tablet) and at **≥1280 px** (desktop), with no
+  page-level horizontal scroll, no clipped or overlapping content, and no control hidden
+  off-screen.
+  - Data-dense tables and grids MUST define how they adapt to narrow screens (stacked
+    cards, prioritized columns with a details view, or horizontal scroll contained
+    inside the table with a sticky identifying column).
+  - Forms on phones MUST collapse to one column, keep visible labels, use the right
+    input type / `inputmode` (numeric keypad for measurements, document numbers and
+    phones), and keep the primary action reachable when the on-screen keyboard opens.
+  - Dialogs MUST remain fully scrollable on phones. The shared dialog primitive MUST cap
+    its height and scroll by default, so scrollability never depends on each feature
+    remembering to add it. No action may depend on hover alone.
+  - When a task is genuinely impractical on a phone, the screen MUST say so and offer
+    the closest workable path; it MUST NOT silently break.
 - **Language policy**: A single, non-contradictory policy governs language across the
   project. **Product end-user copy** — anything a coach or parent reads in the running
   product (frontend UI strings, backend Jinja email/PDF templates, notification bodies)
@@ -149,9 +194,19 @@ The product serves two distinct users — coaches (tablet, on the field) and par
   informational. Re-using these tokens for other meanings is a violation.
 - WCAG 2.1 AA is the floor. Contrast, focus rings, and keyboard navigability are
   non-negotiable.
+- **Responsive verification**: Every spec MUST name the primary device of each
+  user-facing surface and cover its phone-width behaviour (an acceptance scenario or an
+  edge case). Every plan MUST state how each screen adapts to narrow screens
+  (Constitution Check). Frontend PRs MUST include or reference a check at 360 px.
+  E2E specs for phone-primary screens (everything under `frontend/src/routes/parents/`)
+  MUST also run in a mobile Playwright project (360–412 px viewport, touch enabled).
+  For other screens, a mobile run is recommended.
 
-**Rationale**: Coaches use the app outdoors with gloves and sweat; parents use it on
-modest Android phones with patchy reception. Consistency reduces cognitive load,
+**Rationale**: Coaches use the app outdoors with gloves and sweat, often from a phone
+rather than a tablet; parents use it on modest Android phones with patchy reception.
+Designing for the primary device keeps each screen focused; treating responsiveness as
+an always-on complement keeps it from breaking in the hands of whoever opens it on a
+phone. Consistency reduces cognitive load,
 training cost, and support tickets, and accessibility is both a legal and ethical
 baseline.
 
@@ -306,4 +361,4 @@ non-negotiables in `CLAUDE.md`.
   guidance file for AI-assisted development and is informative-but-binding alongside
   this constitution.
 
-**Version**: 1.3.0 | **Ratified**: 2026-06-01 | **Last Amended**: 2026-09-23
+**Version**: 1.4.0 | **Ratified**: 2026-06-01 | **Last Amended**: 2026-09-28

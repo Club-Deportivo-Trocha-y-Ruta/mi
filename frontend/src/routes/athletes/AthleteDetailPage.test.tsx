@@ -43,10 +43,6 @@ vi.mock("@/api/ai", () => ({
 }));
 
 // Mocks de componentes pesados que no son objeto del test
-vi.mock("@/components/athletes/AnthropometryForm", () => ({
-  AnthropometryForm: () => <div data-testid="anthropometry-form">AnthropometryForm</div>,
-}));
-
 vi.mock("@/components/athletes/AnthropometryHistory", () => ({
   AnthropometryHistory: () => <div data-testid="anthropometry-history">AnthropometryHistory</div>,
 }));
@@ -322,16 +318,14 @@ describe("AthleteDetailPage — refactor Opción C", () => {
       expect(screen.getByTestId("anthropometry-history")).toBeInTheDocument();
     });
 
-    it("renderiza AnthropometryForm al abrir el formulario", async () => {
+    it("«+ Nueva medición» es un enlace a la captura guiada (feature 048)", async () => {
       renderPage();
       await act(async () => {
         await userEvent.click(await screen.findByRole("button", { name: /Antropometría/i }));
       });
-      // El form aparece sólo tras click en '+ Nueva medición'
-      await act(async () => {
-        await userEvent.click(screen.getByRole("button", { name: /Nueva medición/i }));
-      });
-      expect(screen.getByTestId("anthropometry-form")).toBeInTheDocument();
+      const link = screen.getByRole("link", { name: /Nueva medición/i });
+      expect(link).toHaveAttribute("href", expect.stringMatching(/\/athletes\/\d+\/anthropometry\/new$/));
+      expect(screen.queryByTestId("anthropometry-form")).not.toBeInTheDocument();
     });
 
     it("NO renderiza GrowthCurveSection en tab Antropometría", async () => {
@@ -480,24 +474,6 @@ describe("AthleteDetailPage — refactor Opción C", () => {
       });
       expect(screen.queryByTestId("anthropometry-history")).not.toBeInTheDocument();
       expect(screen.queryByTestId("growth-curve")).not.toBeInTheDocument();
-    });
-
-    it("tab Antropometría conserva estado de anulación (cancelar form) tras ida y vuelta", async () => {
-      renderPage();
-      await act(async () => {
-        await userEvent.click(await screen.findByRole("button", { name: /Antropometría/i }));
-      });
-      // Abrir form
-      await act(async () => {
-        await userEvent.click(screen.getByRole("button", { name: /Nueva medición/i }));
-      });
-      expect(screen.getByTestId("anthropometry-form")).toBeInTheDocument();
-
-      // Cancelar
-      await act(async () => {
-        await userEvent.click(screen.getByRole("button", { name: /Cancelar/i }));
-      });
-      expect(screen.queryByTestId("anthropometry-form")).not.toBeInTheDocument();
     });
   });
 

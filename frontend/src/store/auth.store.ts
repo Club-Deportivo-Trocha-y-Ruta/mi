@@ -8,6 +8,7 @@ import { clearAllDrafts } from "@/hooks/useFormDraft";
 import { getMyAthletes } from "@/api/parents";
 import { getQueryClient } from "@/lib/queryClientHandle";
 import { wipePersistedCache } from "@/lib/queryPersister";
+import { useMeasurementSessionStore } from "@/store/measurementSession.store";
 import { useParentContextStore } from "@/store/parentContext.store";
 import type { MeResponse } from "@/types/auth.types";
 import { UserRole } from "@/types/enums";
@@ -119,6 +120,14 @@ export const useAuthStore = create<AuthState>()(
         } catch {
           // Defensa: si el store aún no se inicializó (improbable —
           // ambos viven en el mismo bundle), no debe romper el logout.
+        }
+        // Feature 048 (T044): la jornada de medición grupal vive solo en
+        // memoria, pero en una tablet compartida no debe sobrevivir al
+        // cambio de cuenta (ids y estados de deportistas de otro coach).
+        try {
+          useMeasurementSessionStore.getState().reset();
+        } catch {
+          // Mismo criterio defensivo que parentContext: nunca romper logout.
         }
         set({
           accessToken: null,

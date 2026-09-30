@@ -69,6 +69,14 @@ There is no ESLint config — `tsc --noEmit` is the static gate.
 
 `src/routes/*` (pages per domain; coach surface vs `routes/parents/`) + `src/components/*` (shadcn/ui + Tailwind v4) + `src/api/*` (axios) + `src/hooks/*` (TanStack Query; persisted cache is busted per deploy via `__APP_VERSION__`) + `src/store/` (Zustand auth) + `src/schemas/` (Zod, mirroring backend schemas). Forms are always React Hook Form + Zod. Tests: vitest + Testing Library + MSW; jest-axe with zero violations required on page- and dialog-level components.
 
+**Responsive, always considered — as a complement** (constitution Principle III): design each screen for its primary device, which the spec names (coach: desktop/tablet; parent: phone). This sets layout priority, not CSS order: unprefixed Tailwind stays the phone baseline, and `sm:`/`md:`/`lg:` layer up. Then make sure it adapts cleanly: usable at 360 px, 768 px and ≥1280 px with no page-level horizontal scroll.
+- Tables define a narrow-screen pattern (stacked cards, or scroll contained inside the table with a sticky identifying column).
+- Forms go single-column on phones, with visible labels and the correct `inputmode`.
+- Dialogs stay scrollable on phones. The shared `DialogContent` should scroll by default; this is an open TODO, since today most dialogs lack a height cap.
+- Nothing depends on hover alone.
+- Specs cover phone-width behaviour, plans state each screen's narrow-screen adaptation, and frontend PRs reference a 360 px check.
+- Parent-route e2e specs must also run in a mobile Playwright project. Adding that project is an open TODO, since only Desktop Chrome exists; until it lands, report the mobile run as pending.
+
 ### Deploy topology
 
 Backend auto-deploys to Render free tier from `main` (`https://mi-2yzi.onrender.com`, cold start ~50 s — the frontend must show a "starting server" state, never a bare spinner); MySQL, media files and the frontend live on Hostinger. Post-deploy: smoke-check `/health` plus one authenticated endpoint.
@@ -83,7 +91,7 @@ Backend auto-deploys to Render free tier from `main` (`https://mi-2yzi.onrender.
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
-at specs/044-race-history-backfill/plan.md
+at specs/047-imderty-attendance-sheet/plan.md
 <!-- SPECKIT END -->
 
 ## Cross-feature invariants

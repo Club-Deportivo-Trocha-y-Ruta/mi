@@ -640,6 +640,31 @@ def _field_guide_illustration(site_key: str) -> str:
     return f"{_FIELD_GUIDE_IMG_REL}/skinfold_{site_key}.png"
 
 
+#: `backend/app/data/anthropometry_measures.json` (feature 048, T050): the
+#: pre-check list and the four basic measures (`donde`/`como`/`alt`) shown
+#: before the skinfold sections. Same static, athlete-independent contract.
+_ANTHRO_MEASURES_PATH = Path(__file__).resolve().parents[1] / "data" / "anthropometry_measures.json"
+
+
+@lru_cache(maxsize=1)
+def _load_anthropometry_measures_data() -> dict:
+    with _ANTHRO_MEASURES_PATH.open(encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _build_field_guide_basic_measures() -> list[dict]:
+    """`basic_measures` context: the four basic measures in file order, each
+    with its `anthro_<key>.png` illustration path — no athlete data."""
+    return [
+        {**m, "illustration": f"{_FIELD_GUIDE_IMG_REL}/anthro_{m['key']}.png"}
+        for m in _load_anthropometry_measures_data()["measures"]
+    ]
+
+
+def _build_field_guide_precheck() -> list[str]:
+    return list(_load_anthropometry_measures_data()["precheck"])
+
+
 def _build_field_guide_sites() -> list[dict]:
     """`sites` context for `documents/pdf/skinfold_field_guide.html`: the six
     entries of `skinfold_sites.json`, in `site_order`, each with its
@@ -680,7 +705,11 @@ async def get_field_guide(
         template=DocumentTemplate.BODY_COMPOSITION_FIELD_GUIDE,
         format=DocumentFormat.PDF,
         filename_hint="instructivo-pliegues",
-        context={"sites": _build_field_guide_sites()},
+        context={
+            "sites": _build_field_guide_sites(),
+            "precheck": _build_field_guide_precheck(),
+            "basic_measures": _build_field_guide_basic_measures(),
+        },
     )
     generated = await notification_service.generate_document_only(doc_request)
 

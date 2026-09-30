@@ -67,6 +67,8 @@ export function AthletesListPage() {
   }, [rows, debouncedSearch, category, phv]);
 
   const isCoach = user?.role === UserRole.coach;
+  // Feature 048 (US3): la jornada de medición es coach/admin (guard en App.tsx).
+  const canMeasure = isCoach || user?.role === UserRole.admin;
 
   return (
     <section className="space-y-5">
@@ -74,13 +76,25 @@ export function AthletesListPage() {
         title="Atletas"
         subtitle="Gestion de atletas del club."
         actions={
-          isCoach && (
-            <Link
-              to="/athletes/new"
-              className="rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-surface transition-opacity hover:opacity-70 shadow-button-highlight"
-            >
-              + Agregar atleta
-            </Link>
+          canMeasure && (
+            <div className="flex flex-col gap-2 sm:flex-row">
+              {canMeasure && (
+                <Link
+                  to="/anthropometry/session"
+                  className="inline-flex min-h-12 items-center justify-center rounded-lg px-4 py-2 text-sm font-medium text-charcoal ring-1 ring-hairline transition-colors hover:bg-light-gray"
+                >
+                  Jornada de medición
+                </Link>
+              )}
+              {isCoach && (
+                <Link
+                  to="/athletes/new"
+                  className="inline-flex min-h-12 items-center justify-center rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-surface transition-opacity hover:opacity-70 shadow-button-highlight"
+                >
+                  + Agregar atleta
+                </Link>
+              )}
+            </div>
           )
         }
       />

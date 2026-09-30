@@ -88,7 +88,24 @@ const AthleteFormPage = lazy(() =>
     default: m.AthleteFormPage,
   })),
 );
+// Feature 048 (T038/T024) — captura y edición de mediciones antropométricas.
+const AnthropometryCapturePage = lazy(() =>
+  import("@/routes/athletes/AnthropometryCapturePage").then((m) => ({
+    default: m.AnthropometryCapturePage,
+  })),
+);
+const AnthropometryEditPage = lazy(() =>
+  import("@/routes/athletes/AnthropometryEditPage").then((m) => ({
+    default: m.AnthropometryEditPage,
+  })),
+);
 // Feature 046 (T029) — captura de pliegues cutáneos de una evaluación.
+// Feature 048 (US3) — jornada de medición grupal, coach/admin.
+const MeasurementSessionPage = lazy(() =>
+  import("@/routes/anthropometry/MeasurementSessionPage").then((m) => ({
+    default: m.MeasurementSessionPage,
+  })),
+);
 const SkinfoldCapturePage = lazy(() =>
   import("@/routes/athletes/SkinfoldCapturePage").then((m) => ({
     default: m.SkinfoldCapturePage,
@@ -284,6 +301,18 @@ const ActivityMatchPage = lazy(() =>
     default: m.ActivityMatchPage,
   })),
 );
+
+// IMDERTY monthly attendance sheet (feature 047) — lazy.
+const ImdertySheetPage = lazy(() =>
+  import("@/routes/imderty/ImdertySheetPage").then((m) => ({
+    default: m.ImdertySheetPage,
+  })),
+);
+const BarrioCatalogPage = lazy(() =>
+  import("@/routes/imderty/BarrioCatalogPage").then((m) => ({
+    default: m.BarrioCatalogPage,
+  })),
+);
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -395,6 +424,36 @@ export default function App() {
             <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
               <Suspense fallback={<RouteFallback label="Cargando deportista..." />}>
                 <AthleteDetailPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/athletes/:id/anthropometry/new"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <Suspense fallback={<RouteFallback label="Cargando captura de medición..." />}>
+                <AnthropometryCapturePage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/athletes/:id/anthropometry/:recordId/edit"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <Suspense fallback={<RouteFallback label="Cargando medición..." />}>
+                <AnthropometryEditPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/anthropometry/session"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <Suspense fallback={<RouteFallback label="Cargando jornada de medición..." />}>
+                <MeasurementSessionPage />
               </Suspense>
             </ProtectedRoute>
           }
@@ -531,6 +590,27 @@ export default function App() {
             <ProtectedRoute allowedRoles={[UserRole.admin]}>
               <Suspense fallback={<RouteFallback label="Cargando personal..." />}>
                 <StaffPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        {/* ── IMDERTY monthly attendance sheet (feature 047) ── */}
+        <Route
+          path="/imderty/planilla"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.coach, UserRole.admin]}>
+              <Suspense fallback={<RouteFallback label="Cargando planilla IMDERTY..." />}>
+                <ImdertySheetPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/imderty/barrios"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.admin]}>
+              <Suspense fallback={<RouteFallback label="Cargando catálogo de barrios..." />}>
+                <BarrioCatalogPage />
               </Suspense>
             </ProtectedRoute>
           }

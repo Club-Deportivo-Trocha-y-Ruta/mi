@@ -70,16 +70,12 @@ describe("formatDate", () => {
     expect(formatDate(null)).toBe("");
   });
 
-  it("acepta string solo-fecha con noon ficticio para evitar TZ-shift", () => {
-    // "2026-05-25" como string ISO sin hora se interpreta en UTC,
-    // lo que podría desplazar el día en TZ Colombia (-5).
-    // Verificamos que el módulo lo maneja (puede mostrar 24 si el input es medianoche UTC).
-    // El comportamiento correcto: el llamador debe pasar T12:00:00 si quiere día estable.
-    // Para fechas-only recomendamos formatear con el truco T12 en el call site;
-    // aquí solo verificamos que no explota.
-    const result = formatDate(DATE_ONLY);
-    expect(typeof result).toBe("string");
-    expect(result.length).toBeGreaterThan(0);
+  it("una fecha sin hora conserva su día calendario en Bogotá (no se corre al día anterior)", () => {
+    // Antes: "2026-05-25" = medianoche UTC = 24 de mayo 19:00 en Bogotá.
+    expect(formatDate(DATE_ONLY)).toBe(formatDate("2026-05-25T12:00:00Z"));
+    expect(formatDate(DATE_ONLY)).toMatch(/^25 de mayo de 2026$/);
+    expect(formatDateShort(DATE_ONLY)).toBe("25/05/2026");
+    expect(formatFullDate("2026-01-01")).toMatch(/1 de enero de 2026/);
   });
 });
 

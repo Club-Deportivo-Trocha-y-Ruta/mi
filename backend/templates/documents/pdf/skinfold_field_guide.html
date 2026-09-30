@@ -7,6 +7,11 @@
   ningún deportista (nombre, edad, valores) — por eso el único contexto
   requerido es `sites` (validado por TemplateRegistry).
 
+  Feature 048: `precheck` (list[str]) y `basic_measures` (list[dict] con
+  key, label, donde, como, alt, illustration) salen de
+  `app/data/anthropometry_measures.json`; se renderizan antes de los pliegues.
+  Son opcionales para el registro (contexto de `sites` sigue siendo el requerido).
+
   Variables requeridas (validadas por TemplateRegistry):
     sites   list[dict] — orden fijo de `app/data/skinfold_sites.json`
                           (`site_order`), cada elemento:
@@ -107,7 +112,32 @@
   </p>
 </div>
 
-<h2>Antes de empezar</h2>
+<h2>Antes de medir</h2>
+<ul>
+  {% for item in precheck %}
+  <li>{{ item }}</li>
+  {% endfor %}
+</ul>
+
+<h2>Medidas básicas</h2>
+{% for m in basic_measures %}
+<table class="site-card">
+  <tr>
+    <td class="site-figure">
+      <div class="figure-box">
+        <img src="{{ m.illustration }}" alt="{{ m.alt }}">
+      </div>
+    </td>
+    <td class="site-text">
+      <h3>{{ loop.index }}. {{ m.label }}</h3>
+      <p><strong>Dónde:</strong> {{ m.donde }}</p>
+      <p><strong>Cómo:</strong> {{ m.como }}</p>
+    </td>
+  </tr>
+</table>
+{% endfor %}
+
+<h2>Antes de empezar los pliegues</h2>
 <ul>
   <li>El atleta no acaba de entrenar (evita retención de líquido en la piel).</li>
   <li>Piel seca, sin loción ni protector solar en las zonas de medición.</li>

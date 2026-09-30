@@ -1165,3 +1165,97 @@ against a throwaway container (passed) but not yet against the shared `TEST_DATA
 Playwright was not run; T075 post-deploy smoke is explicitly deferred to after merge/deploy.
 Nothing in this feature is deployed or merged; the working tree carries uncommitted changes
 from this feature interleaved with feature 045's own uncommitted state.
+
+## Implementation status — IMDERTY monthly attendance sheet (specs/047-imderty-attendance-sheet)
+
+> Generates the official FO-GDD-057 v006 planilla de asistencia for the Instituto Municipal
+> de Deporte y Recreación de Yumbo (IMDERTY) directly from recorded training, calendar-event
+> and competition attendance, replacing the coach's hand-filled workbook. New "Datos IMDERTY"
+> athlete profile (surnames, document, barrio from an 82-barrio Yumbo seed with automatic
+> comuna/zona, school/grade, EPS, guardian-phone precedence), sensitive fields (ethnicity,
+> disability, armed-conflict victim status) behind an express-authorization gate with proof
+> custody kept by the club outside the platform, sexual orientation never collected,
+> club-level header configuration with per-download program marks, readiness check before
+> download. Implemented on `main` with no dedicated branch (owner decision recorded in the
+> spec: the feature-branch and auto-commit hooks are explicitly skipped for this feature); not
+> committed, not deployed. Owner decisions and clarifications in `specs/047-imderty-attendance-sheet/spec.md`;
+> analysis in `research.md` R1–R11; stable reference in `docs/22-imderty-attendance-sheet/`.
+
+| Wave / scope | What was done | Status |
+|---|---|---|
+| Phase 1–2 — setup, data model | `openpyxl` dependency, audit catalogue entries, `imderty_barrios` 82-entry seed, migration, schemas, XML-level template builder (`scripts/build_imderty_template.py`, sanitized `fo_gdd_057_v006.xlsx` committed, owner's reference workbook never copied), router dependencies, privacy tests, frontend foundations | ✅ Complete 2026-09-28, uncommitted |
+| Phase 3 — US1 (generate the month's sheet) | Attendance grid (precedence A>E>F, linked-event exclusion, multi-day events, activity windows, blank days without activity, short-month day headers), workbook writer with barrio dropdown rebuilt as a standard cross-sheet validation, `PROGRAM_HEADING_CELLS` " X" convention for MASIFICACIÓN/COMPETENCIA, API and RBAC | ✅ Complete 2026-09-28, uncommitted |
+| Phase 4 — US2 (athlete IMDERTY data) | Surname split (proposed once, coach confirms), profile fields, barrio combobox, "contacto principal" guardian mark, `PATCH` hooks | ✅ Complete 2026-09-28, uncommitted |
+| Phase 5 — US3 (sensitive data) | `athlete_sensitive_authorizations` / `athlete_sensitive_data`, authorization/withdrawal transaction with no-value audit entry, `SensitiveDataCard` locked/error states | ✅ Complete 2026-09-28, uncommitted |
+| Phase 6 — US4 (club header, readiness) | Club-level IMDERTY header settings, per-download overrides, `ReadinessPanel` gap detection, anchor scroll to `#imderty-profile` | ✅ Complete 2026-09-28, uncommitted |
+| Stories gate (W3) fixes | 10 fixes closed (per-month authorized-data loading, audit `META_ALLOWLIST`/`_IMDERTY` registry block/`AuditReasonCode.withdrawn`, app-wide 422 handler stripping `input`/`ctx`/`url`, `effective_phone_source.first_guardian`, `AlertTitle` heading-order fix, profile-anchor deep link, program-heading " X" convention, 82-barrio doc alignment, `SheetRequest` month format, `SECTOR` `OTRO MUNICIPIO` `=""` zone formula) plus one extra fix (archive-scope gate false positive in `profile.py::set_primary_contact`); `test_imderty_privacy.py::TestFeatureFlowNeverLeaksValues` added | ✅ Complete 2026-09-28, uncommitted |
+| Docs (T054) | This entry, `docs/technical-notes.md` dated entry, `docs/README.md` row 22, `docs/22-imderty-attendance-sheet/` (`workflow.md`, `runbook.md`, `qa.md`) | ✅ Complete 2026-09-28, this pass |
+
+**Decisions carried into this pass:**
+
+| # | Decision | Where |
+|---|---|---|
+| 1 | `row_count` counts rows across all month sheets; `gap_count` counts athletes with at least one readiness gap | `routers/imderty_sheet.py` |
+| 2 | The 422 handler applies app-wide (not 047-specific) and drops `input`/`ctx`/`url` | `app/main.py` |
+| 3 | `SECTOR`'s `OTRO MUNICIPIO` zone cell is the formula `=""`, not an empty cell, so `COMUNA` stays blank instead of resolving to `0` via `VLOOKUP` | `app/services/imderty/`, `research.md` R6 |
+| 4 | MASIFICACIÓN/COMPETENCIA have no "X" cell in the format; owner decision 2026-09-29: left unmarked (`PROGRAM_HEADING_CELLS` is empty; map a program there to append " X" to its heading later) | `app/services/imderty/workbook.py`, `research.md` R3 addendum |
+
+**Open items (not resolved):**
+
+| # | Item | Where |
+|---|---|---|
+| 1 | Opening the file in Excel with no repair prompt (quickstart §3.5) not yet checked interactively — needs an owner demo | `specs/047-imderty-attendance-sheet/quickstart.md` §3 |
+| 2 | `pytest -m mysql` (migration upgrade/downgrade and the 82-barrio seed on real MySQL) deferred — no MySQL in this session | `specs/047-imderty-attendance-sheet/quickstart.md` §2 |
+| 3 | The program-heading " X" mark is an orchestrator decision, not yet confirmed with IMDERTY by the owner | `research.md` R3 addendum |
+| 4 | The mandatory `data-privacy-guard` audit is still required before closing the feature | — |
+| 5 | Pre-existing, unrelated local-env failures remain: `tests/test_langchain_provider.py` collection error (venv `langchain_core` drift) and `test_growth_summary_latest_analysis.py::test_null_when_ai_disabled` (local `.env` enables AI) | — |
+
+**What is verified and what is not, stated plainly**: T001–T050 (except gates) are implemented
+and uncommitted on `main`. The stories gate (W3) ran for T022, T038 and T046 with all 10 open
+items fixed plus one extra fix found along the way. `tests/imderty/test_imderty_privacy.py`
+confirms end to end (via `caplog` and every `audit_log` column) that no new field value leaks
+into logs or the audit trail, after first confirming the markers are present in the generated
+sheet. A synthetic month generated through the service layer passed all 14 manual checks,
+including table column names matching the row-23 headers, and reopened cleanly in LibreOffice
+headless with recalculation; no temp file with synthetic or real data was left behind.
+`pytest -m mysql`, the interactive Excel-repair-prompt check, and the `data-privacy-guard`
+audit are deferred, not passed. Nothing in this feature is deployed or merged.
+
+## Implementation status — Guided anthropometric capture (specs/048-anthropometry-capture-ux)
+
+> Reworks the capture of the four basic measures: guided (pre-check, one step per measure with
+> illustration and «Dónde / Cómo») and quick modes, sitting-height bench subtraction, plausibility
+> warnings from one backend engine, edit and delete of saved records by the evaluator or an admin,
+> a group measurement session, and duplicate-safe saving. Delivered on `main` with no branch (owner
+> decision, same pattern as 045–047); uncommitted, not deployed. Docs in
+> `docs/23-anthropometry-capture/`; contracts in `specs/048-anthropometry-capture-ux/contracts/`.
+
+| Wave / task | Scope | Status |
+|---|---|---|
+| Waves 1–2 (backend + frontend) | `derive_record_fields` extraction; `PUT`/`DELETE .../anthropometry/{record_id}` with `can_modify_anthropometric_record`; `409 anthropometry_same_date_exists`; `sitting_ratio_impossible` 422; plausibility dry-run and `plausibility_flags`/`can_modify` on the list; `GET /api/anthropometry/roster`; capture, edit and session pages; `measurementSession` store; field-guide PDF section from `backend/app/data/anthropometry_measures.json` | ✅ Complete 2026-09-29, uncommitted |
+| Illustrations (T002–T006) | Four webp + four PDF PNG, generated with Gemini in the owner's browser, approved by the owner | ✅ Complete 2026-09-29 |
+| Fixes wave | Mode switch keeps values both ways; same-date dialog focus; stale comments removed; `BODY_COMPOSITION_FIELD_GUIDE` required context keys; contract docs updated | ✅ Complete 2026-09-29 |
+| T052–T056 E2E | Three new specs plus updates to three existing ones, run on the isolated stack: target set 16 passed / 2 failed (both AI-dependent, `AI_ENABLED=false` on the stack) | ⚠️ Partial 2026-09-29 |
+| T057 offline gates | Frontend typecheck and full vitest (429 files, 5121/5121) passed; backend anthropometry lane 227/227; full backend run not done (collection error in `tests/test_langchain_provider.py`) | ⚠️ Partial 2026-09-29 |
+| T058 mysql lane | Not run | ⏳ Pending |
+| T059 privacy audit | `specs/048-anthropometry-capture-ux/privacy-audit.md`: approved, 0 blockers, 1 major, 3 minor | ✅ Complete 2026-09-29 |
+| T060 docs | This entry, `docs/23-anthropometry-capture/`, README row, technical note | ✅ Complete 2026-09-29 |
+| T061 owner tablet check + post-deploy smoke | Guided under 2 minutes, 3-athlete session; `/health` + GET anthropometry of the demo athlete | ⏳ Pending |
+
+**Open items (not resolved):**
+
+| # | Item | Where |
+|---|---|---|
+| 1 | Privacy P-1: `notes` has no backend `max_length`; possible value exposure in a generic 500 on MySQL (proposed fix: `max_length=2000` + 422 test; `hide_parameters=True` platform-wide, pending decision) | `backend/app/schemas/anthropometry.py:53`, `privacy-audit.md` |
+| 2 | Privacy P-2 (roster `birth_date` vs `age_decimal`) and P-4 (confirm demo-seed name in `anthropometry-record-explanation.spec.ts` is fictional) | `privacy-audit.md` |
+| 3 | `anthropometry-record-explanation.spec.ts` fails on the isolated stack (503, AI disabled); owner decides between enabling the fake provider in `docker-compose.e2e.yml` or skipping when AI is off | `frontend/e2e/`, `docker-compose.e2e.yml` |
+| 4 | Same-date dialog focus relies on a 150 ms timeout; cleaner: an `onCloseFocus` hook on `ConfirmDialog` (proposed) | `CaptureReviewStep`/`AnthropometryCapture`, `ConfirmDialog` |
+| 5 | Review-step dry-run fires twice in dev StrictMode; cleaner: `useQuery` keyed by the payload (proposed) | `CaptureReviewStep.tsx` |
+| 6 | 48 px touch-target sweep does not cover the new pages; no mobile Playwright project | `frontend/e2e/target-size.spec.ts` |
+| 7 | Pre-existing, unrelated: `lib/datetime` `formatDate` parses `YYYY-MM-DD` as UTC midnight (possible off-by-one day in America/Bogota); `test_null_when_ai_disabled` depends on local `AI_ENABLED`; `tests/test_langchain_provider.py` import error from the installed `langchain_core`; 29 deterministic + 2 flaky Playwright failures in other features (list in `qa.md` section 2) | `docs/23-anthropometry-capture/qa.md` |
+
+**What is verified and what is not, stated plainly**: the feature is implemented and uncommitted on
+`main`. Offline lanes above passed as counted; the 048 e2e specs pass on the isolated stack except
+the two AI-dependent record-explanation tests. `pytest -m mysql`, `pytest -m golden` (not required,
+no prompt changed), the owner tablet check (SC-003), the 48 px sweep on the new pages and the
+post-deploy smoke are deferred, not passed. Nothing is deployed or merged.

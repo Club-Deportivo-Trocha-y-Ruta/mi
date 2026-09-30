@@ -103,3 +103,16 @@ def test_draft_to_json_handles_pydantic_model():
 def test_draft_to_json_handles_plain_dict():
     text = RaceCriticAgent._draft_to_json({"headline": "hola"})
     assert json.loads(text) == {"headline": "hola"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("is_adult", [True, False])
+async def test_invoke_v3_tone_rule_depends_on_athlete_age(monkeypatch, is_adult):
+    monkeypatch.setenv("RACE_AGENT_CRITIC_ENABLED", "true")
+    llm = _FakeLLM(_clean_json())
+    agent = RaceCriticAgent(llm=llm)
+
+    await agent.invoke_v3({"headline": "x"}, "ground truth", [], is_adult=is_adult)
+
+    assert ("El atleta es adulto" in llm.calls[0]) is is_adult
+    assert ("apropiado para un menor de edad" in llm.calls[0]) is (not is_adult)

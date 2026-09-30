@@ -582,7 +582,7 @@ describe("DashboardPage", () => {
 
     // NextSessionTile — nombre/día relativo/hora/lugar visibles.
     expect(screen.getByText("Técnica de curvas")).toBeInTheDocument();
-    expect(screen.getByText("Mañana · 07:00 a. m. · Cancha Ginebra")).toBeInTheDocument();
+    expect(screen.getByText("en 2 días · 07:00 a. m. · Cancha Ginebra")).toBeInTheDocument();
 
     // NextRaceTile — nombre/lugar visibles.
     expect(screen.getByText("Copa Valle — Próxima Válida")).toBeInTheDocument();

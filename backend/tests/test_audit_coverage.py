@@ -74,6 +74,9 @@ GENUINE_EXEMPTIONS: frozenset[tuple[str, str]] = frozenset(
         # identidad, no decide nada — ver la razón en `_RACE_IDENTITY`
         # (services/audit.py).
         ("POST", "/api/race-identity/rebuild"),
+        # Feature 048 (R5/R7): dry-run de plausibilidad antropométrica, sin
+        # escritura — ver la razón en `_ATHLETES` (services/audit.py).
+        ("POST", "/api/athletes/{athlete_id}/anthropometry/plausibility"),
     }
 )
 

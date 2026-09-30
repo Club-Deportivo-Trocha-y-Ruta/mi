@@ -1,8 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { AthleteInfoCard } from "./AthleteInfoCard";
-import { MaturationStatus, Sex } from "@/types/enums";
+import { MaturationStatus, Sex, UserRole } from "@/types/enums";
+import type { MeResponse } from "@/types/auth.types";
+import { useAuthStore } from "@/store/auth.store";
 import type { AthleteDetailOut } from "@/types/athlete.types";
 
 // ---------------------------------------------------------------------------
@@ -82,7 +84,7 @@ describe("AthleteInfoCard", () => {
 
     it("debería mostrar la edad decimal en el subtítulo", () => {
       renderWithRouter(<AthleteInfoCard athlete={baseAthlete} />);
-      expect(screen.getByText(/12\.8 años/)).toBeInTheDocument();
+      expect(screen.getByText(/12,8 años/)).toBeInTheDocument();
     });
 
     it("debería mostrar '—' cuando age_decimal es null", () => {
@@ -107,7 +109,7 @@ describe("AthleteInfoCard", () => {
 
     it("debería mostrar los años en el club como stat pill", () => {
       renderWithRouter(<AthleteInfoCard athlete={baseAthlete} />);
-      expect(screen.getByText("2.3 años")).toBeInTheDocument();
+      expect(screen.getByText("2,3 años")).toBeInTheDocument();
     });
 
     it("no debería mostrar pill de club cuando years_in_club es null", () => {
@@ -161,6 +163,24 @@ describe("AthleteInfoCard", () => {
     it("debería tener link para editar", () => {
       renderWithRouter(<AthleteInfoCard athlete={baseAthlete} />);
       expect(screen.getByText("Editar")).toBeInTheDocument();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Feature 047: la sección IMDERTY ya no vive en el hero (pestaña propia)
+  // -------------------------------------------------------------------------
+  describe("sección IMDERTY", () => {
+    afterEach(() => {
+      useAuthStore.setState({ user: null });
+    });
+
+    it("no debería montar la tarjeta IMDERTY ni siquiera para un coach", () => {
+      useAuthStore.setState({
+        user: { id: 1, email: "coach@example.test", role: UserRole.coach } as MeResponse,
+      });
+      const { container } = renderWithRouter(<AthleteInfoCard athlete={baseAthlete} />);
+      expect(screen.queryByText("Perfil IMDERTY")).not.toBeInTheDocument();
+      expect(container.querySelector("#imderty-profile")).toBeNull();
     });
   });
 });

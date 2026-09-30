@@ -1,7 +1,11 @@
 import { useRef, useState } from "react";
+import { Link } from "react-router-dom";
+import { isAxiosError } from "axios";
+import * as Popover from "@radix-ui/react-popover";
 
 import { AnthropometricRecordExplanationCard } from "@/components/ai/AnthropometricRecordExplanationCard";
 import { PHVBadge } from "@/components/athletes/PHVBadge";
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import {
   Dialog,
   DialogBody,
@@ -11,9 +15,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useDeleteAnthropometry } from "@/hooks/athletes/useAnthropometry";
 import { useMeasurementExplanationCached } from "@/hooks/ai/useMeasurementExplanation";
 import type { AnthropometricRecordExplanationResponse } from "@/types/ai.types";
 import { ageAtEvaluation, SKINFOLD_MIN_AGE_YEARS } from "@/lib/bodyComposition/eligibility";
+import { PLAUSIBILITY_COPY } from "@/lib/anthropometry/plausibilityCopy";
 import type { AnthropometricRecord } from "@/types/anthropometry.types";
 
 interface AnthropometryHistoryProps {
@@ -83,6 +89,135 @@ function SkinfoldsActionButton({
   );
 }
 
+/** La fila trae avisos de plausibilidad (feature 048; el backend los omite a padres). */
+function hasPlausibilityFlags(record: AnthropometricRecord): boolean {
+  return (record.plausibility_flags?.length ?? 0) > 0;
+}
+
+/**
+ * Feature 048 (T039): marcador ámbar «Revisar» de una medición con avisos de
+ * plausibilidad. El detalle se abre al tocar/hacer clic (popover de Radix,
+ * también con teclado) — nunca depende del hover.
+ */
+function PlausibilityFlagBadge({ record }: { record: AnthropometricRecord }) {
+  const flags = record.plausibility_flags ?? [];
+  if (flags.length === 0) return null;
+  const date = formatDate(record.evaluation_date);
+  return (
+    <Popover.Root>
+      <Popover.Trigger
+        type="button"
+        data-testid="history-plausibility-badge"
+        aria-label={`Revisar: ver los avisos de la medición del ${date}`}
+        onClick={(event) => event.stopPropagation()}
+        className="inline-flex min-h-[48px] items-center rounded-lg px-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link-blue/50"
+      >
+        <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-900">
+          <span aria-hidden="true">⚠</span>
+          Revisar
+        </span>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          side="bottom"
+          align="start"
+          sideOffset={4}
+          collisionPadding={12}
+          aria-label={`Avisos de la medición del ${date}`}
+          onClick={(event) => event.stopPropagation()}
+          className="z-50 w-[min(20rem,calc(100vw-24px))] rounded-card border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 shadow-card focus-visible:outline-none"
+        >
+          <p className="mb-2 font-semibold">Revisar esta medición</p>
+          <ul className="flex list-disc flex-col gap-2 pl-4">
+            {flags.map((code) => (
+              <li key={code}>{PLAUSIBILITY_COPY[code] ?? code}</li>
+            ))}
+          </ul>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
+const actionClass =
+  "inline-flex min-h-[48px] items-center whitespace-nowrap rounded-lg px-3 text-xs font-medium ring-1 ring-hairline transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link-blue/50";
+
+/**
+ * Feature 048: «Editar» / «Eliminar» de una medición (sólo coach, sólo si el
+ * backend marcó `can_modify`). Vive en un subcomponente para que los hooks y
+ * el router sólo se necesiten cuando de verdad hay acciones que mostrar.
+ */
+function RecordModifyActions({
+  athleteId,
+  record,
+  onDelete,
+}: {
+  athleteId: number;
+  record: AnthropometricRecord;
+  onDelete: (record: AnthropometricRecord) => void;
+}) {
+  const date = formatDate(record.evaluation_date);
+  return (
+    <span className="inline-flex flex-wrap items-center gap-2">
+      <Link
+        to={`/athletes/${athleteId}/anthropometry/${record.id}/edit`}
+        onClick={(event) => event.stopPropagation()}
+        aria-label={`Editar la medición del ${date}`}
+        className={`${actionClass} text-link-blue hover:bg-light-gray`}
+      >
+        Editar
+      </Link>
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          onDelete(record);
+        }}
+        aria-label={`Eliminar la medición del ${date}`}
+        className={`${actionClass} text-danger hover:bg-danger/10`}
+      >
+        Eliminar
+      </button>
+    </span>
+  );
+}
+
+function deleteErrorMessage(error: unknown): string {
+  if (isAxiosError(error) && error.response?.status === 403) {
+    return "Solo quien tomó esta medición o un administrador puede eliminarla.";
+  }
+  return "No se pudo eliminar la medición. Intenta de nuevo.";
+}
+
+function DeleteRecordDialog({
+  athleteId,
+  record,
+  onClose,
+}: {
+  athleteId: number;
+  record: AnthropometricRecord;
+  onClose: () => void;
+}) {
+  const deleteMutation = useDeleteAnthropometry(athleteId);
+  return (
+    <ConfirmDialog
+      open
+      tone="danger"
+      title={`¿Eliminar la medición del ${formatDate(record.evaluation_date)}?`}
+      description="Se eliminarán también los pliegues cutáneos y la explicación de IA de esta fecha, si existen. Esta acción no se puede deshacer."
+      confirmLabel="Eliminar"
+      isPending={deleteMutation.isPending}
+      errorMessage={
+        deleteMutation.isError ? deleteErrorMessage(deleteMutation.error) : undefined
+      }
+      onConfirm={() =>
+        deleteMutation.mutate(record.id, { onSuccess: onClose })
+      }
+      onCancel={onClose}
+    />
+  );
+}
+
 function formatDate(dateStr: string): string {
   const [year, month, day] = dateStr.split("-");
   return `${day}/${month}/${year}`;
@@ -146,6 +281,8 @@ export function AnthropometryHistory({
 }: AnthropometryHistoryProps) {
   const [selectedRecord, setSelectedRecord] =
     useState<AnthropometricRecord | null>(null);
+  const [recordToDelete, setRecordToDelete] =
+    useState<AnthropometricRecord | null>(null);
   // FR-031: el foco debe volver al control que abrió el diálogo. Radix lo
   // hace solo cuando el disparador es un `DialogTrigger`; aquí el diálogo es
   // controlado y hay N filas, así que Radix no puede saber CUÁL de ellas lo
@@ -168,6 +305,14 @@ export function AnthropometryHistory({
   const skinfoldsAction = showClinical ? onSkinfoldsAction : undefined;
   const showSkinfoldsColumn =
     showClinical && (!!skinfoldsAction || records.some(hasSkinfolds));
+  // Feature 048: editar/eliminar — sólo coach, con athleteId y `can_modify`.
+  const modifyEnabled = showClinical && athleteId !== undefined && athleteId > 0;
+  const canModify = (record: AnthropometricRecord) =>
+    modifyEnabled && record.can_modify === true;
+  const showActionsColumn = modifyEnabled && records.some((r) => r.can_modify === true);
+  // Feature 048 (T039): marcador «Revisar» — sólo coach (en modo padre ni se pinta).
+  const showPlausibilityBadge = (record: AnthropometricRecord) =>
+    showClinical && hasPlausibilityFlags(record);
 
   const sorted = [...records].sort(
     (a, b) =>
@@ -233,9 +378,14 @@ export function AnthropometryHistory({
                 )}
               </div>
             </button>
-            {skinfoldsAction && canOfferSkinfoldsAction(record) && (
-              <div className="mt-1 flex justify-end">
-                <SkinfoldsActionButton record={record} onAction={skinfoldsAction} />
+            {(showPlausibilityBadge(record) ||
+              (skinfoldsAction && canOfferSkinfoldsAction(record))) && (
+              <div className="mt-1 flex items-center justify-between gap-2">
+                {/* Fuera de la tarjeta-botón: un botón no puede anidar otro. */}
+                <span>{showPlausibilityBadge(record) && <PlausibilityFlagBadge record={record} />}</span>
+                {skinfoldsAction && canOfferSkinfoldsAction(record) && (
+                  <SkinfoldsActionButton record={record} onAction={skinfoldsAction} />
+                )}
               </div>
             )}
           </li>
@@ -265,6 +415,9 @@ export function AnthropometryHistory({
               {showSkinfoldsColumn && (
                 <th className="px-3 py-2.5 text-xs font-medium uppercase tracking-wide text-mid-gray">Pliegues</th>
               )}
+              {showActionsColumn && (
+                <th className="px-3 py-2.5 text-xs font-medium uppercase tracking-wide text-mid-gray">Acciones</th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -281,6 +434,7 @@ export function AnthropometryHistory({
                     {athleteId !== undefined && athleteId > 0 && (
                       <HistoryRowWarningMarker athleteId={athleteId} recordId={record.id} />
                     )}
+                    {showPlausibilityBadge(record) && <PlausibilityFlagBadge record={record} />}
                   </span>
                 </td>
                 <td className="px-3 py-2.5 text-mid-gray">
@@ -308,6 +462,17 @@ export function AnthropometryHistory({
                         <SkinfoldsActionButton record={record} onAction={skinfoldsAction} />
                       )}
                     </span>
+                  </td>
+                )}
+                {showActionsColumn && (
+                  <td className="px-3 py-2.5">
+                    {canModify(record) && (
+                      <RecordModifyActions
+                        athleteId={athleteId as number}
+                        record={record}
+                        onDelete={setRecordToDelete}
+                      />
+                    )}
                   </td>
                 )}
               </tr>
@@ -413,11 +578,36 @@ export function AnthropometryHistory({
                     />
                   </div>
                 )}
+
+                {/* Angosto (<md): las acciones de fila viven en el detalle. */}
+                {canModify(selectedRecord) && (
+                  <div
+                    className="mt-5 flex flex-wrap gap-2 pt-4 md:hidden"
+                    style={{ borderTop: "1px solid rgba(34, 42, 53, 0.08)" }}
+                  >
+                    <RecordModifyActions
+                      athleteId={athleteId as number}
+                      record={selectedRecord}
+                      onDelete={(record) => {
+                        setSelectedRecord(null);
+                        setRecordToDelete(record);
+                      }}
+                    />
+                  </div>
+                )}
               </DialogBody>
             </>
           )}
         </DialogContent>
       </Dialog>
+
+      {recordToDelete && athleteId !== undefined && (
+        <DeleteRecordDialog
+          athleteId={athleteId}
+          record={recordToDelete}
+          onClose={() => setRecordToDelete(null)}
+        />
+      )}
     </>
   );
 }

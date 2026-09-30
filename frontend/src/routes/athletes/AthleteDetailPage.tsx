@@ -1,11 +1,19 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import {
+  Link,
+  Navigate,
+  useLocation,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
 import {
   Activity,
   AlertTriangle,
   Bike,
   ExternalLink,
   History,
+  IdCard,
   Info,
   Link2,
   Loader2,
@@ -21,10 +29,11 @@ import { useMutation } from "@tanstack/react-query";
 
 import { ActivityCard } from "@/components/activities/ActivityCard";
 import { ConnectionStatusBadge } from "@/components/activities/ConnectionStatusBadge";
-import { AnthropometryForm } from "@/components/athletes/AnthropometryForm";
 import { AnthropometryHistory } from "@/components/athletes/AnthropometryHistory";
 import { AthleteInfoCard } from "@/components/athletes/AthleteInfoCard";
 import { LinkedParentsCard } from "@/components/athletes/LinkedParentsCard";
+import { ImdertyProfileCard } from "@/components/imderty/ImdertyProfileCard";
+import { IMDERTY_PROFILE_ANCHOR_ID } from "@/components/imderty/anchors";
 import { AthleteNewslettersTabPanel } from "@/components/training/AthleteNewslettersTabPanel";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -34,7 +43,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiClient } from "@/api/client";
 import { cn } from "@/lib/utils";
-import { formatDateMedium } from "@/lib/datetime";
+import { formatDate, formatDateMedium } from "@/lib/datetime";
 import { skinfoldCapturePath } from "@/lib/bodyComposition/eligibility";
 import { getMeasurementStatusMeta } from "@/lib/measurementStatus";
 import { dropCarrerasParams, resolveLegacyAiTabAlias } from "@/lib/carrerasTabAlias";
@@ -86,7 +95,8 @@ type Tab =
   | "races"
   | "newsletters"
   | "activities"
-  | "history";
+  | "history"
+  | "imderty";
 
 const VALID_TABS: readonly Tab[] = [
   "info",
@@ -96,6 +106,7 @@ const VALID_TABS: readonly Tab[] = [
   "newsletters",
   "activities",
   "history",
+  "imderty",
 ] as const;
 
 /** Tabs que un padre nunca puede ver — usado tanto para el botón (guardado
@@ -103,7 +114,12 @@ const VALID_TABS: readonly Tab[] = [
  * string. "races" (feature 045, FR-010) es la pestaña única «Carreras» para
  * coach Y familia: ya no es solo-coach (la audiencia se resuelve con
  * `isParent` al montar `CarrerasTab`). */
-const COACH_ONLY_TABS: readonly Tab[] = ["newsletters", "history"];
+const COACH_ONLY_TABS: readonly Tab[] = ["newsletters", "history", "imderty"];
+
+/** Pestañas que exigen rol admin/coach explícito (no basta con `!isParent`):
+ * «Perfil IMDERTY» (feature 047) nunca la ve un padre NI un atleta — mismo
+ * filtro que tenía el montaje anterior dentro de `AthleteInfoCard`. */
+const STAFF_ONLY_TABS: readonly Tab[] = ["imderty"];
 
 function parseTabParam(raw: string | null): Tab | null {
   // Alias legado de «Insights IA» (feature 045): hoy es «Carreras». La URL se
@@ -465,6 +481,16 @@ export function AthleteDetailPage() {
   const growthSummaryQuery = useGrowthSummary(athleteId, Number.isFinite(athleteId));
   const role = useAuthStore((s) => s.user?.role);
   const isParent = role === UserRole.parent;
+  const isStaff = role === UserRole.admin || role === UserRole.coach;
+  const location = useLocation();
+
+  /** Descarta (→ null) los tabs que el rol actual no puede ver. */
+  const allowTab = (tab: Tab | null): Tab | null => {
+    if (!tab) return null;
+    if (isParent && COACH_ONLY_TABS.includes(tab)) return null;
+    if (!isStaff && STAFF_ONLY_TABS.includes(tab)) return null;
+    return tab;
+  };
 
   // FE-2: el tab inicial puede venir del query string (?tab=races).
   // Si el rol es parent y la URL pide un tab solo-coach → fallback silencioso a "info".
@@ -474,12 +500,8 @@ export function AthleteDetailPage() {
   // `?tab=races&view=analisis[&insight=<id>]`.
   const [searchParams, setSearchParams] = useSearchParams();
   const rawTabFromUrl = parseTabParam(searchParams.get("tab"));
-  const tabFromUrl =
-    isParent && rawTabFromUrl && COACH_ONLY_TABS.includes(rawTabFromUrl)
-      ? null
-      : rawTabFromUrl;
+  const tabFromUrl = allowTab(rawTabFromUrl);
   const [activeTab, setActiveTab] = useState<Tab>(tabFromUrl ?? "info");
-  const [showForm, setShowForm] = useState(false);
   const [reportSent, setReportSent] = useState(false);
   const reportSentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -503,11 +525,7 @@ export function AthleteDetailPage() {
   // Reaccionar a cambios externos del query string (back/forward del navegador).
   // Si el rol es parent y pide un tab solo-coach → fallback silencioso a "info".
   useEffect(() => {
-    const rawUrlTab = parseTabParam(searchParams.get("tab"));
-    const urlTab =
-      isParent && rawUrlTab && COACH_ONLY_TABS.includes(rawUrlTab)
-        ? null
-        : rawUrlTab;
+    const urlTab = allowTab(parseTabParam(searchParams.get("tab")));
     if (urlTab && urlTab !== activeTab) {
       setActiveTab(urlTab);
     }
@@ -546,6 +564,22 @@ export function AthleteDetailPage() {
   const canonicalCarrerasParams = resolveLegacyAiTabAlias(searchParams);
   if (canonicalCarrerasParams) {
     return <Navigate to={{ search: `?${canonicalCarrerasParams}` }} replace />;
+  }
+
+  // Feature 047: enlace legado `/athletes/{id}#imderty-profile` (sin `tab`),
+  // de cuando la tarjeta IMDERTY vivía bajo el hero. Se normaliza a
+  // `?tab=imderty#imderty-profile` para admin/coach; el hash se conserva para
+  // que `ImdertyProfileCard` se desplace a sí misma. Padres/atletas: se ignora.
+  if (
+    isStaff &&
+    !searchParams.get("tab") &&
+    location.hash === `#${IMDERTY_PROFILE_ANCHOR_ID}`
+  ) {
+    const next = new URLSearchParams(searchParams);
+    next.set("tab", "imderty");
+    return (
+      <Navigate to={{ search: `?${next.toString()}`, hash: location.hash }} replace />
+    );
   }
 
   if (athleteQuery.isLoading) {
@@ -709,6 +743,20 @@ export function AthleteDetailPage() {
           </button>
         )}
 
+        {/* Feature 047: la planilla IMDERTY se llena una vez por atleta; vive en
+            su propia pestaña para no empujar las demás hacia abajo. */}
+        {isStaff && (
+          <button
+            type="button"
+            className={tabClasses("imderty")}
+            onClick={() => updateTab("imderty")}
+            data-testid="athlete-tab-imderty"
+          >
+            <IdCard size={14} />
+            Perfil IMDERTY
+          </button>
+        )}
+
         <button
           type="button"
           className={tabClasses("activities")}
@@ -786,14 +834,14 @@ export function AthleteDetailPage() {
               <div>
                 <dt className="text-xs font-medium uppercase tracking-wide text-mid-gray">Ingreso al club</dt>
                 <dd className="mt-0.5 font-medium text-charcoal">
-                  {athlete.club_join_date ?? "—"}
+                  {athlete.club_join_date ? formatDate(athlete.club_join_date) : "—"}
                 </dd>
               </div>
               <div>
                 <dt className="text-xs font-medium uppercase tracking-wide text-mid-gray">Tiempo en club</dt>
                 <dd className="mt-0.5 font-medium text-charcoal">
                   {athlete.years_in_club != null
-                    ? `${athlete.years_in_club.toFixed(1)} años`
+                    ? `${athlete.years_in_club.toFixed(1).replace(".", ",")} años`
                     : "—"}
                 </dd>
               </div>
@@ -838,28 +886,13 @@ export function AthleteDetailPage() {
             >
               Registro de mediciones
             </h3>
-            <button
-              type="button"
-              onClick={() => setShowForm(!showForm)}
-              className="rounded-lg bg-charcoal px-3 py-2 text-sm font-medium text-surface shadow-button-highlight transition-opacity hover:opacity-70"
+            <Link
+              to={`/athletes/${athlete.id}/anthropometry/new`}
+              className="inline-flex min-h-12 items-center rounded-lg bg-charcoal px-4 py-2 text-sm font-medium text-surface shadow-button-highlight transition-opacity hover:opacity-70"
             >
-              {showForm ? "Cancelar" : "+ Nueva medición"}
-            </button>
+              + Nueva medición
+            </Link>
           </div>
-
-          {showForm && (
-            <div className="rounded-card bg-surface-raised p-5 shadow-card ring-1 ring-hairline">
-              <AnthropometryForm
-                athleteId={athlete.id}
-                athleteSex={athlete.sex}
-                athleteBirthDate={athlete.birth_date}
-                onSuccess={() => setShowForm(false)}
-                onAddSkinfolds={(recordId) =>
-                  navigate(skinfoldCapturePath(athlete.id, recordId))
-                }
-              />
-            </div>
-          )}
 
           <div className="rounded-card bg-surface-raised p-5 shadow-card ring-1 ring-hairline">
             <AnthropometryHistory
@@ -914,6 +947,9 @@ export function AthleteDetailPage() {
           <AthleteHistoryPanel athleteId={athleteId} role={role} />
         </Suspense>
       )}
+
+      {/* Tab content — Perfil IMDERTY (solo admin/coach, feature 047) */}
+      {activeTab === "imderty" && isStaff && <ImdertyProfileCard athleteId={athlete.id} />}
 
       {/* Tab content — Actividades (Strava) */}
       {activeTab === "activities" && <StravaTabPanel athleteId={athleteId} />}

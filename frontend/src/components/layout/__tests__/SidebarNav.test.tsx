@@ -428,17 +428,17 @@ describe("SidebarNav — Gobierno: Personal del club es admin-only (feature 041)
     ).toBeInTheDocument();
   });
 
-  it("coach NO ve 'Personal del club' (Gobierno le queda con un solo item visible: Historial)", () => {
+  it("coach NO ve 'Personal del club' (Gobierno le queda con Historial y Planilla IMDERTY)", () => {
     renderSidebar("coach", { initialPath: "/club/historial" });
 
-    // Con un único item visible para "coach" (gobierno.staff es admin-only),
-    // el área se renderiza como link plano — mismo comportamiento que Inicio.
+    // Desde la feature 047, coach ve dos items visibles en Gobierno
+    // (Historial del club + Planilla IMDERTY, ambos coach+admin), por lo
+    // que el área se renderiza como botón expandible, no como link plano.
+    const chevron = screen.getByRole("button", { name: /Gobierno/ });
+    expect(chevron).toHaveAttribute("aria-expanded", "true");
     expect(
-      screen.queryByRole("button", { name: /Gobierno/ }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: "Gobierno" }),
-    ).toHaveAttribute("href", "/club/historial");
+      screen.getByRole("link", { name: "Planilla IMDERTY" }),
+    ).toHaveAttribute("href", "/imderty/planilla");
     expect(
       screen.queryByRole("link", { name: "Personal del club" }),
     ).not.toBeInTheDocument();

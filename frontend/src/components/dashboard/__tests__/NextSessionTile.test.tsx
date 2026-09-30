@@ -114,13 +114,9 @@ describe("NextSessionTile", () => {
 
     const session = makeSession({
       id: 42,
-      // Nota: `scheduled_date` (fecha pura, sin hora) se interpreta como
-      // medianoche UTC en `formatRelativeDayCount`, que al convertir a
-      // America/Bogota (UTC-5) cae en el día calendario anterior — por eso
-      // "2026-07-17" etiqueta como "Mañana" respecto al 15 de julio en
-      // Bogotá, no "en 2 días". La selección de "próxima sesión" (que sí
-      // ancla la hora con offset -05:00 explícito) trata esta misma fecha
-      // como un instante claramente futuro de todos modos.
+      // `scheduled_date` es fecha de calendario: `lib/datetime` la ancla al
+      // mediodía UTC, así que el 17 de julio queda a 2 días del 15 en Bogotá
+      // (antes se corría al día anterior y mostraba «Mañana», bug corregido).
       scheduled_date: "2026-07-17",
       scheduled_start_time: "07:00:00",
       technical_focus: "Técnica de curvas",
@@ -131,7 +127,7 @@ describe("NextSessionTile", () => {
     renderTile();
 
     expect(screen.getByText("Técnica de curvas")).toBeInTheDocument();
-    expect(screen.getByText(/Mañana/)).toBeInTheDocument();
+    expect(screen.getByText(/en 2 días/)).toBeInTheDocument();
     expect(screen.getByText(/07:00 a\. m\./)).toBeInTheDocument();
     expect(screen.getByText(/Cancha Ginebra/)).toBeInTheDocument();
 

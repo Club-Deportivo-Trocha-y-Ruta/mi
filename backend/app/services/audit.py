@@ -94,6 +94,13 @@ class AuditEntityType(StrEnum):
     athlete_ai_explanation = "athlete_ai_explanation"
     audit_log = "audit_log"
     growth_reference_lms = "growth_reference_lms"
+    # Feature 047: hoja de asistencia mensual IMDERTY.
+    athlete_imderty_profile = "athlete_imderty_profile"
+    athlete_sensitive_authorization = "athlete_sensitive_authorization"
+    athlete_sensitive_data = "athlete_sensitive_data"
+    imderty_barrio = "imderty_barrio"
+    club_imderty_settings = "club_imderty_settings"
+    imderty_attendance_sheet = "imderty_attendance_sheet"
 
 
 # ---------------------------------------------------------------------------
@@ -110,6 +117,7 @@ class AuditDocumentKind(StrEnum):
     newsletter_email = "newsletter_email"
     race_analysis_pdf = "race_analysis_pdf"
     session_instructivo_pdf = "session_instructivo_pdf"
+    imderty_attendance_xlsx = "imderty_attendance_xlsx"
 
 
 # ---------------------------------------------------------------------------
@@ -158,6 +166,12 @@ class AuditReasonCode(StrEnum):
     # picker, written only by the purge CLI (contracts/retention-purge.md).
     retention_24m = "retention_24m"
 
+    # Feature 047 — the sensitive-data authorization (Ley 1581) was withdrawn
+    # and the three values erased. No sub-enum, no group key: it is written
+    # only by `services/imderty/profile.py::withdraw_authorization`, never
+    # offered in a picker (contracts/api.md, "withdraw").
+    withdrawn = "withdrawn"
+
 
 #: Etiquetas legibles (es-CO) para la UI. El backend solo persiste el code.
 AUDIT_REASON_LABELS: dict[AuditReasonCode, str] = {
@@ -182,6 +196,7 @@ AUDIT_REASON_LABELS: dict[AuditReasonCode, str] = {
     AuditReasonCode.parent_family_request: "Solicitud de la familia",
     AuditReasonCode.parent_duplicate_account: "Cuenta duplicada",
     AuditReasonCode.retention_24m: "Retención: 24 meses cumplidos",
+    AuditReasonCode.withdrawn: "Autorización retirada",
 }
 
 
@@ -397,6 +412,15 @@ META_ALLOWLIST: frozenset[str] = frozenset(
         # Feature 046 — skinfolds.saved / skinfolds.deleted: a count only,
         # never a reading value (`event_type` already covers the label).
         "site_count",
+        # Feature 048 — borrado de una medición: solo si tenía pliegues.
+        "had_skinfolds",
+        # Feature 047 — IMDERTY sheet export: the requested month range
+        # (canonical ``YYYY-MM``) and two counts. Never a name, a document
+        # number or a value of the new IMDERTY fields.
+        "from_month",
+        "to_month",
+        "row_count",
+        "gap_count",
     }
 )
 
@@ -895,6 +919,44 @@ _ATHLETES: dict[tuple[str, str], AuditPolicy] = {
     ("POST", "/api/athletes/{athlete_id}/anthropometry"): Audited(
         frozenset({AuditEntityType.anthropometric_record})
     ),
+    # Feature 048 — corrección y borrado de una medición (research R7). El PUT
+    # y el DELETE además escriben una fila `athlete_ai_explanation`·`delete`
+    # por cada explicación de IA invalidada (R6).
+    (
+        "PUT",
+        "/api/athletes/{athlete_id}/anthropometry/{record_id}",
+    ): Audited(
+        frozenset(
+            {
+                AuditEntityType.anthropometric_record,
+                AuditEntityType.athlete_ai_explanation,
+            }
+        )
+    ),
+    (
+        "DELETE",
+        "/api/athletes/{athlete_id}/anthropometry/{record_id}",
+    ): Audited(
+        frozenset(
+            {
+                AuditEntityType.anthropometric_record,
+                AuditEntityType.athlete_ai_explanation,
+            }
+        )
+    ),
+    # Feature 048 — dry-run de plausibilidad: POST sin escritura (R5/R7).
+    # El roster `GET /api/anthropometry/roster` no necesita clave: es una
+    # lectura pura y la caminata de rutas solo exige POST/PUT/PATCH/DELETE y
+    # `MUTATING_GETS` (y FR-005: las lecturas no se registran).
+    (
+        "POST",
+        "/api/athletes/{athlete_id}/anthropometry/plausibility",
+    ): Exempt(
+        "Plausibility dry-run (routers/anthropometry.py, feature 048 R5): "
+        "computes non-blocking warnings from the submitted values and the "
+        "previous record; it writes nothing, so there is no change to "
+        "record, and per owner decision 2 the log never records reads."
+    ),
     # Feature 046 — skinfold capture, same entity type as the parent record
     # (no new AuditEntityType member; `meta_json.event_type` distinguishes
     # `skinfolds.saved`/`skinfolds.deleted` from a plain field edit).
@@ -1315,6 +1377,44 @@ _STRAVA: dict[tuple[str, str], AuditPolicy] = {
     ),
 }
 
+#: Feature 047 — IMDERTY monthly attendance sheet. Every write and the XLSX
+#: export are instrumented; none of them carries a value of the new fields
+#: (profile, sensitive block) — field names and counts only.
+_IMDERTY: dict[tuple[str, str], AuditPolicy] = {
+    ("PUT", "/api/athletes/{athlete_id}/imderty-profile"): Audited(
+        frozenset({AuditEntityType.athlete_imderty_profile})
+    ),
+    ("PUT", "/api/athletes/{athlete_id}/primary-contact"): Audited(
+        frozenset({AuditEntityType.parent_athlete})
+    ),
+    ("POST", "/api/athletes/{athlete_id}/sensitive-authorizations"): Audited(
+        frozenset({AuditEntityType.athlete_sensitive_authorization})
+    ),
+    ("POST", "/api/athletes/{athlete_id}/sensitive-authorizations/withdraw"): Audited(
+        frozenset({AuditEntityType.athlete_sensitive_authorization})
+    ),
+    ("PUT", "/api/athletes/{athlete_id}/sensitive-data"): Audited(
+        frozenset({AuditEntityType.athlete_sensitive_data})
+    ),
+    ("POST", "/api/imderty/barrios"): Audited(
+        frozenset({AuditEntityType.imderty_barrio})
+    ),
+    ("PATCH", "/api/imderty/barrios/{barrio_id}"): Audited(
+        frozenset({AuditEntityType.imderty_barrio})
+    ),
+    ("PUT", "/api/clubs/{club_id}/imderty-settings"): Audited(
+        frozenset({AuditEntityType.club_imderty_settings})
+    ),
+    ("POST", "/api/clubs/{club_id}/imderty-sheet"): Audited(
+        frozenset(
+            {
+                AuditEntityType.imderty_attendance_sheet,
+                AuditEntityType.club_imderty_settings,
+            }
+        )
+    ),
+}
+
 #: §4.13 — the nine ``MUTATING_GETS`` keys. All instrumented (T030): eight
 #: exports plus the Strava callback, the one *mutating* GET (§4.13, `link`).
 _MUTATING_GET_ENTRIES: dict[tuple[str, str], AuditPolicy] = {
@@ -1399,6 +1499,7 @@ AUDITED_ROUTES: dict[tuple[str, str], AuditPolicy] = {
     **_RACE_IDENTITY,
     **_INTERVALS,
     **_STRAVA,
+    **_IMDERTY,
     **_MUTATING_GET_ENTRIES,
     **_ADJUDICATED_READS,
 }
@@ -1577,6 +1678,12 @@ AUDIT_ENTITY_LABELS: dict[AuditEntityType, str] = {
     AuditEntityType.strava_connection: "la conexión con Strava",
     AuditEntityType.strava_activity: "la actividad de Strava",
     AuditEntityType.growth_reference_lms: "la referencia de crecimiento (LMS)",
+    AuditEntityType.athlete_imderty_profile: "la ficha IMDERTY del deportista",
+    AuditEntityType.athlete_sensitive_authorization: "la autorización de datos sensibles",
+    AuditEntityType.athlete_sensitive_data: "los datos sensibles del deportista",
+    AuditEntityType.imderty_barrio: "el barrio del catálogo IMDERTY",
+    AuditEntityType.club_imderty_settings: "la configuración IMDERTY del club",
+    AuditEntityType.imderty_attendance_sheet: "la planilla de asistencia IMDERTY",
 }
 
 #: Etiquetas es-CO de `AuditDocumentKind`, para `{documento}` (§7.6).
@@ -1589,6 +1696,7 @@ AUDIT_DOCUMENT_LABELS: dict[AuditDocumentKind, str] = {
     AuditDocumentKind.newsletter_email: "el boletín familiar por correo",
     AuditDocumentKind.race_analysis_pdf: "el análisis de carrera en PDF",
     AuditDocumentKind.session_instructivo_pdf: "el instructivo de la sesión en PDF",
+    AuditDocumentKind.imderty_attendance_xlsx: "la planilla de asistencia IMDERTY en Excel",
 }
 
 #: Etiquetas es-CO por valor de rol (`UserRole` / `ClubRole` comparten los

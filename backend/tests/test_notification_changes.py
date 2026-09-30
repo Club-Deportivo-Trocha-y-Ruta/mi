@@ -578,16 +578,24 @@ class TestAnthropometryNotificationLogic:
         stack = ExitStack()
         phv_result = self._make_phv_result(phv_offset)
         fake_out = self._make_fake_out()
-        stack.enter_context(patch("app.routers.anthropometry.compute_age_decimal", return_value=13.08))
-        stack.enter_context(patch("app.routers.anthropometry.calculate_mirwald_offset", return_value=phv_result))
+        stack.enter_context(patch("app.services.anthropometry.compute_age_decimal", return_value=13.08))
+        stack.enter_context(patch("app.services.anthropometry.calculate_mirwald_offset", return_value=phv_result))
         stack.enter_context(patch(
-            "app.routers.anthropometry.calculate_growth_percentiles",
+            "app.services.anthropometry.calculate_growth_percentiles",
             new_callable=AsyncMock,
             return_value=None,
         ))
         stack.enter_context(patch(
             "app.routers.anthropometry.detect_approaching_circa",
             return_value=detect_return,
+        ))
+        # Feature 048 (R4): el POST consulta primero si ya hay un registro en
+        # la misma fecha; aquí no lo hay, así que la secuencia de `db.execute`
+        # de estas pruebas (club → padres → usuario atleta) no cambia.
+        stack.enter_context(patch(
+            "app.routers.anthropometry._find_same_date_record",
+            new_callable=AsyncMock,
+            return_value=None,
         ))
         stack.enter_context(patch(
             "app.schemas.anthropometry.AnthropometryOut.model_validate",

@@ -878,9 +878,10 @@ async def test_field_guide_coach_happy_path_lists_six_sites_no_athlete_data(coac
 
     with pdfplumber.open(io.BytesIO(resp.content)) as pdf:
         text = "\n".join(page.extract_text() or "" for page in pdf.pages)
-        # El instructivo debe caber en exactamente 2 páginas (hoja impresa
-        # a doble cara en la estación de medición).
-        assert len(pdf.pages) == 2
+        # Feature 048: con «Antes de medir» + 4 medidas básicas el instructivo
+        # pasa de 2 a 3 páginas (hoja impresa a doble cara + una); sin páginas
+        # casi en blanco extra.
+        assert len(pdf.pages) <= 3
         images = [img for page in pdf.pages for img in page.images]
         d_tags = [
             w for page in pdf.pages for w in page.extract_words() if w["text"] == "D"
@@ -896,11 +897,13 @@ async def test_field_guide_coach_happy_path_lists_six_sites_no_athlete_data(coac
     ):
         assert label in text
     assert "no contiene datos de ningún deportista" in text
+    assert "Antes de medir" in text  # feature 048
+    assert "Talla sentado" in text
 
     # El marcador «D» (lado derecho) está presente en cada sitio.
     assert len(d_tags) >= 6
-    # Una ilustración PNG por sitio, cuadrada y de ~45 mm de lado.
-    assert len(images) == 6
+    # Una ilustración PNG por medida básica (4) y por sitio (6), cuadradas y de ~45 mm.
+    assert len(images) == 10
     for img in images:
         width_mm = (img["x1"] - img["x0"]) * 25.4 / 72
         height_mm = (img["bottom"] - img["top"]) * 25.4 / 72

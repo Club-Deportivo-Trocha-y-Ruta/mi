@@ -9,6 +9,10 @@ import type {
 import type {
   AnthropometricRecord,
   AnthropometryCreate,
+  AnthropometryUpdate,
+  PlausibilityCheckRequest,
+  PlausibilityCheckResponse,
+  RosterRow,
 } from "@/types/anthropometry.types";
 
 export async function getAthletes(params?: {
@@ -78,5 +82,44 @@ export async function createAnthropometry(
     `/api/athletes/${athleteId}/anthropometry`,
     payload,
   );
+  return response.data;
+}
+
+export async function updateAnthropometry(
+  athleteId: number,
+  recordId: number,
+  payload: AnthropometryUpdate,
+): Promise<AnthropometricRecord> {
+  const response = await apiClient.put<AnthropometricRecord>(
+    `/api/athletes/${athleteId}/anthropometry/${recordId}`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function deleteAnthropometry(
+  athleteId: number,
+  recordId: number,
+): Promise<void> {
+  await apiClient.delete(`/api/athletes/${athleteId}/anthropometry/${recordId}`);
+}
+
+/** Dry-run de plausibilidad: no escribe nada (contracts/api.md). */
+export async function checkPlausibility(
+  athleteId: number,
+  payload: PlausibilityCheckRequest,
+): Promise<PlausibilityCheckResponse> {
+  const response = await apiClient.post<PlausibilityCheckResponse>(
+    `/api/athletes/${athleteId}/anthropometry/plausibility`,
+    payload,
+  );
+  return response.data;
+}
+
+/** Roster de la sesión grupal; `date` (YYYY-MM-DD) por defecto hoy en el backend. */
+export async function getAnthropometryRoster(date?: string): Promise<RosterRow[]> {
+  const response = await apiClient.get<RosterRow[]>("/api/anthropometry/roster", {
+    params: date ? { date } : undefined,
+  });
   return response.data;
 }

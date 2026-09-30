@@ -23,10 +23,8 @@ Sonnet). It is intentionally expressed in role terms so it survives model rename
 > guardrails and the minors'-privacy rules in `CLAUDE.md` / the constitution are.
 
 > Reasoning-heavy authoring workers may be promoted to `opus` even without
-> delegating to sub-agents. `speckit-spec-author` is on `opus` because crafting a
-> high-quality, WHAT/WHY feature description is a planning/clarification task on par
-> with `product-manager`, and the seed description bounds the quality of the whole
-> Spec Kit run.
+> delegating to sub-agents. (`speckit-spec-author`, the historical example, is now a
+> skill in `.claude/skills/` and runs on the session's model.)
 
 ## Teams (one color per team)
 
@@ -35,11 +33,11 @@ its workers share the color, so a team reads as one unit ("teams at the same lev
 
 | Team | Color | Lead (`opus`) | Workers (`sonnet`) |
 |---|---|---|---|
-| **Engineering** | `blue` | `engineering-lead` | `fastapi-architect`, `react-ui-engineer`, `devops-engineer`, `qa-engineer`, `database-architect`, `integration-engineer` |
-| **Sports / Head-Coach** | `green` | `head-coach-lead` | `training-planner`, `nutrition-advisor`, `injury-prevention-advisor`, `technique-coach`, `mental-performance-coach`, `competition-strategist`, `sports-science-advisor` |
+| **Engineering** | `blue` | `engineering-lead` | `fastapi-architect`, `react-ui-engineer`, `devops-engineer`, `qa-engineer`, `database-architect`, `integration-engineer`, `llm-pipeline-engineer` |
+| **Sports / Head-Coach** | `green` | `head-coach-lead` | `training-planner`, `nutrition-advisor`, `injury-prevention-advisor`, `technique-coach`, `mental-performance-coach`, `competition-strategist` |
 | **Data-Platform** | `cyan` | `data-platform-lead` | `data-analyst`, `data-privacy-guard`, `analytics-reporter` |
 | **Family / Communications** | `orange` | `family-relations-lead` | `parent-communicator`, `event-coordinator`, `community-content-creator` |
-| **Product** | `purple` | `product-manager` | `ux-researcher`, `release-manager`, `technical-writer`, `speckit-spec-author` |
+| **Product** | `purple` | `product-manager` | `ux-researcher`, `release-manager`, `technical-writer` |
 
 ## Adding a new agent
 

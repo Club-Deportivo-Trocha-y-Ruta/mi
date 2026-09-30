@@ -15,6 +15,13 @@
 
 import { expect, test, type Page } from "@playwright/test";
 
+import {
+  apiBaseUrl,
+  authHeaders,
+  listRecords,
+  localIso,
+} from "./helpers/anthropometry-fixtures";
+
 const COACH_EMAIL = "entrenador@trochyruta.com";
 const COACH_PASSWORD = "Coach2026!";
 const PARENT_EMAIL = "padre@trochayruta.com";
@@ -34,17 +41,49 @@ async function login(page: Page, email: string, password: string) {
 }
 
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  // Fecha LOCAL, igual que el formulario (`todayISO`): `toISOString()` da la
+  // fecha UTC y en la noche de Colombia ya es «mañana» (fecha futura → 422).
+  return localIso();
 }
 
-/** Llena el formulario de peso/talla y dispara "Guardar y agregar pliegues". */
-async function createAnthropometryRecordAndOpenSkinfolds(page: Page) {
+/**
+ * Feature 048: «+ Nueva medición» es un enlace a la página de captura. Se usa
+ * el modo «Rápido» (una sola pantalla) y la salida «Guardar y agregar
+ * pliegues» vive en el panel «Revisar».
+ */
+async function openQuickCaptureAndReview(
+  page: Page,
+  values: { weight: string; standing: string; sitting: string },
+) {
   await page.goto(`/athletes/${ATHLETE_ID}?tab=anthropometry`);
-  await page.getByRole("button", { name: /\+ nueva medición/i }).click();
-  await page.getByLabel(/fecha de evaluación/i).fill(todayIso());
-  await page.getByLabel(/peso \(kg\)/i).fill("46.0");
-  await page.getByLabel(/talla de pie/i).fill("156.0");
-  await page.getByLabel(/talla sentado/i).fill("74.0");
+  await page.getByRole("link", { name: /\+ nueva medición/i }).click();
+  await expect(page).toHaveURL(new RegExp(`/athletes/${ATHLETE_ID}/anthropometry/new$`));
+  await page.getByRole("radio", { name: "Rápido" }).click();
+  await page.getByLabel("Fecha de la medición").fill(todayIso());
+  await page.getByLabel(/^peso \(kg\)$/i).fill(values.weight);
+  await page.getByLabel(/^talla de pie \(cm\)$/i).fill(values.standing);
+  await page.getByLabel(/lectura del tallímetro, sentado \(cm\)/i).fill(values.sitting);
+  await page.getByRole("button", { name: "Revisar y guardar" }).click();
+  await expect(page.getByRole("heading", { name: "Revisar", exact: true })).toBeVisible();
+}
+
+/** Borra por API las mediciones del atleta 1 fechadas hoy (cascada: su set de pliegues). */
+async function deleteTodayRecords(page: Page) {
+  const headers = await authHeaders(page.request, "coach");
+  const records = await listRecords(page.request, ATHLETE_ID);
+  for (const record of records) {
+    if (record.evaluation_date.slice(0, 10) === todayIso()) {
+      await page.request.delete(
+        `${apiBaseUrl()}/api/athletes/${ATHLETE_ID}/anthropometry/${record.id}`,
+        { headers },
+      );
+    }
+  }
+}
+
+/** Captura peso/talla y dispara "Guardar y agregar pliegues". */
+async function createAnthropometryRecordAndOpenSkinfolds(page: Page) {
+  await openQuickCaptureAndReview(page, { weight: "46.0", standing: "156.0", sitting: "74.0" });
 
   const skinfoldsButton = page.getByRole("button", { name: /guardar y agregar pliegues/i });
   await expect(skinfoldsButton).toBeVisible({ timeout: 15_000 });
@@ -66,6 +105,21 @@ test.describe("Composición corporal por pliegues cutáneos", () => {
   // por el primero (intervalo mínimo entre tomas) y el tercero (vista de la
   // familia) depende de que ya exista al menos una toma para el atleta.
   test.describe.configure({ mode: "serial" });
+
+  // Feature 048: una medición por fecha (409). Una corrida anterior (o un
+  // fallo a mitad) deja la medición de hoy del atleta 1 — se borra antes y
+  // después (la cascada borra también su set de pliegues, lo que reabre el
+  // intervalo de 90 días para la próxima corrida).
+  test.beforeAll(async ({ browser }) => {
+    const page = await browser.newPage();
+    await deleteTodayRecords(page);
+    await page.close();
+  });
+  test.afterAll(async ({ browser }) => {
+    const page = await browser.newPage();
+    await deleteTodayRecords(page);
+    await page.close();
+  });
 
   test("coach captura pliegues (con omisión y tercera lectura), restaura un borrador y ve Σ4 estimado", async ({
     page,
@@ -151,12 +205,9 @@ test.describe("Composición corporal por pliegues cutáneos", () => {
     page,
   }) => {
     await login(page, COACH_EMAIL, COACH_PASSWORD);
-    await page.goto(`/athletes/${ATHLETE_ID}?tab=anthropometry`);
-    await page.getByRole("button", { name: /\+ nueva medición/i }).click();
-    await page.getByLabel(/fecha de evaluación/i).fill(todayIso());
-    await page.getByLabel(/peso \(kg\)/i).fill("46.2");
-    await page.getByLabel(/talla de pie/i).fill("156.2");
-    await page.getByLabel(/talla sentado/i).fill("74.2");
+    // Mismo día que el set recién creado: en «Revisar» la salida a pliegues
+    // no se ofrece y aparece el aviso del intervalo mínimo (sin guardar).
+    await openQuickCaptureAndReview(page, { weight: "46.2", standing: "156.2", sitting: "74.2" });
 
     const intervalNote = page.getByTestId("skinfolds-interval-note");
     await expect(intervalNote).toBeVisible({ timeout: 15_000 });

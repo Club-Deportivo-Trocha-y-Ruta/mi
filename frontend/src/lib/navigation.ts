@@ -222,7 +222,7 @@ export const NAV_AREAS: NavArea[] = [
     icon: History,
     group: "club",
     roles: ["coach", "admin"],
-    matchPrefixes: ["/club", "/admin/usuarios"],
+    matchPrefixes: ["/club", "/admin/usuarios", "/imderty"],
     items: [
       {
         id: "gobierno.history",
@@ -235,6 +235,15 @@ export const NAV_AREAS: NavArea[] = [
         label: "Personal del club",
         to: "/admin/usuarios",
         roles: ["admin"],
+      },
+      // Feature 047 — la planilla mensual de asistencia IMDERTY. El
+      // catálogo de barrios (`/imderty/barrios`, admin only) no tiene ítem
+      // de nav propio: se llega desde un enlace dentro de esta pantalla.
+      {
+        id: "gobierno.imderty",
+        label: "Planilla IMDERTY",
+        to: "/imderty/planilla",
+        roles: ["coach", "admin"],
       },
     ],
   },

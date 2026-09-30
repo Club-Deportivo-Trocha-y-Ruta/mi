@@ -1,89 +1,105 @@
-// Requiere: docker compose up
-import { test, expect } from '@playwright/test';
-import { gotoDemoAthlete } from './helpers/demo-athlete';
+// Requiere el stack e2e aislado (frontend/scripts/e2e-stack.sh).
+//
+// Feature 048 (T055): «+ Nueva medición» ya no abre un formulario en línea
+// con vista previa PHV en vivo; es un enlace a la página de captura
+// (`/athletes/:id/anthropometry/new`) y el PHV se muestra en el paso
+// «Revisar» (resumen en lenguaje llano + «Detalle técnico» plegado).
+//
+// Cada prueba usa su propio deportista sintético («Ficticio») y lo limpia:
+// con la regla «una medición por fecha» (409), medir siempre al atleta del
+// seed en la misma fecha hacía el spec no repetible sobre el mismo stack.
+import { test, expect, type Page } from '@playwright/test';
 
-const COACH_EMAIL = 'entrenador@trochyruta.com';
-const COACH_PASSWORD = 'Coach2026!';
+import { loginAsCoach } from './helpers/demo-athlete';
+import {
+  cleanupAthlete,
+  createSyntheticAthlete,
+  listRecords,
+  toDisplayDate,
+  type SyntheticAthlete,
+} from './helpers/anthropometry-fixtures';
 
-async function loginAsCoach(page: import('@playwright/test').Page) {
-  await page.goto('/login');
-  await page.getByRole('textbox', { name: /correo/i }).fill(COACH_EMAIL);
-  await page.getByRole('textbox', { name: /contraseña/i }).fill(COACH_PASSWORD);
-  await page.getByRole('button', { name: /iniciar sesión|ingresar/i }).click();
-  await expect(page).not.toHaveURL(/\/login/);
+const EVAL_DATE = '2026-04-14';
+
+async function openCapture(page: Page, athlete: SyntheticAthlete) {
+  await page.goto(`/athletes/${athlete.id}`);
+  // Pestaña «Antropometría» (con acento).
+  await page.getByRole('button', { name: /antropometr[ií]a/i }).click();
+  // «+ Nueva medición» es ahora un enlace a la página de captura.
+  await page.getByRole('link', { name: /nueva medici[óo]n/i }).click();
+  await expect(page).toHaveURL(new RegExp(`/athletes/${athlete.id}/anthropometry/new$`));
 }
 
-async function navigateToFirstAthlete(page: import('@playwright/test').Page) {
-  // Atleta demo resuelto por API (con mediciones sembradas): el orden de la
-  // tabla cambia cuando `athletes.spec.ts` crea atletas en paralelo.
-  await gotoDemoAthlete(page);
+async function fillQuick(
+  page: Page,
+  values: { weight: string; standing: string; sitting: string; date?: string },
+) {
+  await page.getByRole('radio', { name: 'Rápido' }).click();
+  // Sin `date`, queda la fecha de hoy que propone el formulario.
+  if (values.date) await page.getByLabel('Fecha de la medición').fill(values.date);
+  await page.getByLabel(/^peso \(kg\)$/i).fill(values.weight);
+  await page.getByLabel(/^talla de pie \(cm\)$/i).fill(values.standing);
+  await page.getByLabel(/lectura del tallímetro, sentado \(cm\)/i).fill(values.sitting);
+  await page.getByRole('button', { name: 'Revisar y guardar' }).click();
 }
 
 // E2E-005 — Registrar medición antropométrica y ver PHV calculado
 test('E2E-005: registrar medición antropométrica y verificar cálculo PHV', async ({ page }) => {
-  await loginAsCoach(page);
-  await navigateToFirstAthlete(page);
+  const athlete = await createSyntheticAthlete(page.request, { tag: 'E005' });
+  try {
+    await loginAsCoach(page);
+    await openCapture(page, athlete);
+    await fillQuick(page, { weight: '45.5', standing: '155.0', sitting: '73.0', date: EVAL_DATE });
 
-  // Cambiar a la tab de Antropometría (el texto del botón lleva acento: "Antropometría")
-  await page.getByRole('button', { name: /antropometr[ií]a/i }).click();
+    // Resumen de maduración en «Revisar»: etiqueta llana + detalle técnico.
+    const summary = page.getByTestId('phv-plain-summary');
+    await expect(summary).toBeVisible();
+    await expect(summary).toContainText(
+      /aún no llega al estirón|está en pleno estirón|ya pasó el estirón/i,
+    );
+    await summary.getByRole('button', { name: 'Detalle técnico' }).click();
+    // Longitud de pierna = 155 − 73 = 82 cm.
+    await expect(summary).toContainText('82 cm');
+    await expect(summary).toContainText('Maturity offset');
+    await expect(summary).toContainText('Edad al PHV');
 
-  // Abrir formulario de nueva medición (botón "+ Nueva medición", con acento)
-  await page.getByRole('button', { name: /nueva medici[óo]n/i }).click();
+    await page.getByRole('button', { name: 'Guardar y terminar' }).click();
 
-  // Completar los campos numéricos — el panel PHV preview se activa en tiempo real
-  await page.getByLabel(/peso \(kg\)/i).fill('45.5');
-  await page.getByLabel(/talla de pie/i).fill('155.0');
-  await page.getByLabel(/talla sentado/i).fill('73.0');
-
-  // Verificar panel PHV en tiempo real antes de guardar
-  await expect(page.getByTestId('leg-length')).toContainText('82');
-  await expect(page.getByTestId('maturity-offset')).toBeVisible();
-  await expect(page.getByTestId('age-at-phv')).toBeVisible();
-
-  const maturationStatus = page.getByTestId('maturation-status');
-  await expect(maturationStatus).toBeVisible();
-  const statusText = await maturationStatus.textContent();
-  expect(['Pre-PHV', 'Circa-PHV', 'Post-PHV'].some(s => statusText?.includes(s))).toBeTruthy();
-
-  // Completar fecha y guardar (labels con acento: "Fecha de evaluación", "Guardar medición").
-  // Feature 046: el botón pasa a "Guardar y terminar" cuando el atleta es
-  // elegible para pliegues cutáneos (junto a la nueva salida "Guardar y
-  // agregar pliegues") — se acepta cualquiera de los dos, esta prueba no es
-  // sobre pliegues.
-  await page.getByLabel(/fecha de evaluaci[óo]n/i).fill('2026-04-14');
-  await page.getByRole('button', { name: /guardar (medici[óo]n|y terminar)/i }).click();
-
-  // Tras guardar, el historial en desktop (viewport 1280px) muestra la nueva
-  // medición. El testid "anthropometry-history" es la lista mobile (md:hidden);
-  // en desktop usamos "-desktop".
-  await expect(page.getByTestId('anthropometry-history-desktop')).toBeVisible({
-    timeout: 15_000,
-  });
+    // El historial (escritorio, 1280 px) muestra la nueva medición.
+    await expect(page).toHaveURL(new RegExp(`/athletes/${athlete.id}\\?tab=anthropometry`), {
+      timeout: 15_000,
+    });
+    const history = page.getByTestId('anthropometry-history-desktop');
+    await expect(history).toBeVisible({ timeout: 15_000 });
+    await expect(history.getByRole('row').filter({ hasText: toDisplayDate(EVAL_DATE) })).toHaveCount(1);
+    expect(await listRecords(page.request, athlete.id)).toHaveLength(1);
+  } finally {
+    await cleanupAthlete(page.request, athlete.id);
+  }
 });
 
-// E2E-006 — Previsualización PHV en tiempo real durante el formulario
-test('E2E-006: previsualización PHV se actualiza en tiempo real al completar campos', async ({ page }) => {
-  await loginAsCoach(page);
-  await navigateToFirstAthlete(page);
+// E2E-006 — El PHV de «Revisar» se recalcula al corregir un valor
+test('E2E-006: el resumen PHV se recalcula al corregir la talla sentado', async ({ page }) => {
+  const athlete = await createSyntheticAthlete(page.request, { tag: 'E006' });
+  try {
+    await loginAsCoach(page);
+    await openCapture(page, athlete);
 
-  // Cambiar a la tab de Antropometría (texto con acento)
-  await page.getByRole('button', { name: /antropometr[ií]a/i }).click();
+    // Hoy, niño nacido el 2014-05-10 (≥ 12,3 años), 152 cm: sentado 76 →
+    // offset ≈ −1,8 (antes del estirón); sentado 85 → ≈ −0,85 (en pleno estirón).
+    await fillQuick(page, { weight: '42', standing: '152', sitting: '76' });
+    const summary = page.getByTestId('phv-plain-summary');
+    await expect(summary).toContainText('Aún no llega al estirón');
 
-  // Abrir formulario de nueva medición (botón "+ Nueva medición", con acento)
-  await page.getByRole('button', { name: /nueva medici[óo]n/i }).click();
-
-  // El panel PHV siempre está visible (muestra mensaje de "Completa los campos")
-  const phvPreview = page.getByTestId('phv-preview');
-  await expect(phvPreview).toBeVisible();
-
-  // Ingresar peso
-  await page.getByLabel(/peso \(kg\)/i).fill('45.5');
-  // Ingresar talla de pie
-  await page.getByLabel(/talla de pie/i).fill('155.0');
-  // Ingresar talla sentado — a partir de aquí se activa el cálculo real
-  await page.getByLabel(/talla sentado/i).fill('73.0');
-
-  // La sección de Vista previa PHV muestra datos calculados (ya no el mensaje vacío)
-  await expect(page.getByTestId('leg-length')).toBeVisible();
-  await expect(page.getByTestId('maturation-status')).toBeVisible();
+    // Editar un valor invalida el panel «Revisar»; al volver a revisar, el
+    // resumen refleja el nuevo cálculo (sentado 85 → en pleno estirón).
+    await page.getByLabel(/lectura del tallímetro, sentado \(cm\)/i).fill('85');
+    await expect(page.getByRole('heading', { name: 'Revisar', exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Revisar y guardar' }).click();
+    await expect(summary).toContainText('Está en pleno estirón');
+    // Nada se guardó: «Revisar» es previo al guardado.
+    expect(await listRecords(page.request, athlete.id)).toHaveLength(0);
+  } finally {
+    await cleanupAthlete(page.request, athlete.id);
+  }
 });

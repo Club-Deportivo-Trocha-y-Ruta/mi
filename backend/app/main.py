@@ -4,13 +4,15 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.database import engine
-from app.routers import ai, alerts, audit, auth, users, clubs, athletes, anthropometry, athlete_race_analysis, body_composition, calendar, dashboard, growth, intervals, parent_athletes, profile, race_analysis, race_competitors, race_events, race_identity, race_imports, race_series, reports, training_sessions
+from app.routers import ai, alerts, audit, auth, users, clubs, athletes, anthropometry, anthropometry_roster, athlete_race_analysis, body_composition, calendar, dashboard, growth, imderty, intervals, parent_athletes, profile, race_analysis, race_competitors, race_events, race_identity, race_imports, race_series, reports, training_sessions
 from app.routers.session_assistant import router as session_assistant_router
 from app.routers.club_race_insights import router as club_race_insights_router
 from app.routers.consent import consent_router, public_router as consent_public_router
@@ -174,6 +176,31 @@ async def third_party_progression_handler(
     )
 
 
+#: Keys of a pydantic error entry that may echo what the client sent. The
+#: default FastAPI 422 body includes ``input`` (the rejected value itself)
+#: and ``ctx`` (constraint context, which for some error types embeds the
+#: value or a fragment of it). With minors' data in the request bodies
+#: (Ley 1581 — document numbers, phones, the IMDERTY sensitive block) the
+#: response must never reflect them back, so they are dropped app-wide.
+#: ``type``/``loc``/``msg`` are kept: the frontend only reads those.
+_VALIDATION_ECHO_KEYS = frozenset({"input", "ctx", "url"})
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """Same 422 shape as FastAPI's default (``{"detail": [...]}``) minus the
+    keys that could echo a submitted value (feature 047, contracts/api.md).
+    Nothing is logged: the rejected values stay out of the logs too.
+    """
+    errors = [
+        {key: value for key, value in error.items() if key not in _VALIDATION_ECHO_KEYS}
+        for error in exc.errors()
+    ]
+    return JSONResponse(status_code=422, content={"detail": jsonable_encoder(errors)})
+
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """Excepciones no manejadas registradas aquí (en vez de dejarlas escapar
@@ -196,6 +223,8 @@ app.include_router(alerts.router, prefix="/api/athletes", tags=["alerts"])
 app.include_router(dashboard.router, prefix="/api/dashboard", tags=["dashboard"])
 app.include_router(athletes.router, prefix="/api/athletes", tags=["athletes"])
 app.include_router(anthropometry.router, prefix="/api/athletes", tags=["anthropometry"])
+# Feature 048 (US3) — roster de la jornada de medición (GET /api/anthropometry/roster).
+app.include_router(anthropometry_roster.router, prefix="/api/anthropometry", tags=["anthropometry"])
 # Feature 046 — skinfold capture (PUT/DELETE), same prefix as anthropometry.
 app.include_router(body_composition.router, prefix="/api/athletes", tags=["body-composition"])
 # Feature 046, US5 (T057) — not athlete-scoped, own prefix.
@@ -235,6 +264,8 @@ app.include_router(webhooks_resend_router, prefix="/api/webhooks", tags=["webhoo
 app.include_router(audit.clubs_router, prefix="/api/clubs", tags=["audit"])
 app.include_router(audit.athletes_router, prefix="/api/athletes", tags=["audit"])
 app.include_router(audit.catalog_router)
+# Feature 047 — IMDERTY monthly attendance sheet; sub-routers own their full paths.
+app.include_router(imderty.router, prefix="/api", tags=["imderty"])
 
 if settings.strava_enabled:
     from app.routers import activities as activities_router_module

@@ -341,7 +341,10 @@ async def critic_agent(state: dict) -> dict[str, Any]:
             precheck_issues_out[vn] = precheck_result.issues
 
             llm_feedback, run_metrics = await agent.invoke_v3(
-                precheck_result.sanitized_draft, ground_truth, precheck_result.issues
+                precheck_result.sanitized_draft,
+                ground_truth,
+                precheck_result.issues,
+                is_adult=is_adult_age(athlete_age),
             )
             aggregate = _accumulate(
                 aggregate, run_metrics, prompt_key="prompt_version_critic"

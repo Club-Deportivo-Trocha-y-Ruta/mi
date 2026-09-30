@@ -37,8 +37,9 @@ class _FakeCriticAgentV3:
     def is_enabled() -> bool:
         return True
 
-    async def invoke_v3(self, draft, ground_truth, precheck_issues):
+    async def invoke_v3(self, draft, ground_truth, precheck_issues, *, is_adult=False):
         self.invoke_v3_calls.append((draft, ground_truth, precheck_issues))
+        self.is_adult_seen = is_adult
         return self._feedback, RunMetrics(
             tokens_in=1, tokens_out=1, latency_ms=1, cost_usd=0.0,
             prompt_version="race_critic_v3",
@@ -201,6 +202,7 @@ async def test_v3_branch_adult_hours_and_outcome_goal_precheck_not_flagged(monke
 
     assert update["per_valida_verdicts"][1].must_block is False
     assert update["precheck_issues"][1] == []
+    assert fake.is_adult_seen is True  # el revisor de tono también lo recibe
 
 
 @pytest.mark.asyncio
@@ -224,3 +226,4 @@ async def test_v3_branch_adult_hours_precheck_still_flagged_for_minor(monkeypatc
 
     assert update["per_valida_verdicts"][1].must_block is True
     assert update["precheck_issues"][1]  # al menos un issue LTAD
+    assert fake.is_adult_seen is False

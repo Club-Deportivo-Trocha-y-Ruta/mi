@@ -10,6 +10,8 @@
 
 import { expect, test, type Page } from "@playwright/test";
 
+import { gotoDemoAthlete } from "./helpers/demo-athlete";
+
 const COACH_EMAIL = "entrenador@trochyruta.com";
 const COACH_PASSWORD = "Coach2026!";
 const PARENT_EMAIL = "padre@trochayruta.com";
@@ -24,16 +26,10 @@ async function login(page: Page, email: string, password: string) {
 }
 
 async function openFirstAthleteAnthropometryTab(page: Page) {
-  // Sidebar coach: "Atletas". Las filas de la tabla no navegan; el link "Ver" sí.
-  await page.getByRole("link", { name: /^atletas$/i }).click();
-  await expect(page).toHaveURL(/\/athletes/);
-  const anthroResponse = page.waitForResponse(
-    (r) => /\/anthropometry/.test(r.url()) && r.status() === 200,
-    { timeout: 30_000 },
-  );
-  await page.getByRole("link", { name: /^Ver$/ }).first().click();
-  await expect(page).toHaveURL(/\/athletes\/\d+/);
-  await anthroResponse;
+  // Atleta demo resuelto por API (el de menor id con mediciones sembradas),
+  // no «el primer Ver de la lista»: otros specs crean deportistas sintéticos
+  // en paralelo (feature 048 incluida) y el orden de la tabla cambia.
+  await gotoDemoAthlete(page);
   // El botón del tab lleva acento: "Antropometría".
   await page.getByRole("button", { name: /antropometr[ií]a/i }).click();
   // Esperar a que el historial (desktop) termine de montar para que el caller
@@ -80,20 +76,21 @@ test.describe("Análisis particular IA por medición", () => {
       .catch(() => false);
 
     if (!historyExists) {
-      await page.getByRole("button", { name: /nueva medici[óo]n/i }).click();
-      await page.getByLabel(/peso \(kg\)/i).fill("45.5");
-      await page.getByLabel(/talla de pie/i).fill("155.0");
-      await page.getByLabel(/talla sentado/i).fill("73.0");
-      await page.getByLabel(/fecha de evaluaci[óo]n/i).fill("2026-04-14");
-      // Feature 046: el botón se llama "Guardar medición" sólo cuando el
-      // atleta no es elegible para pliegues cutáneos (< 9 años, intervalo
-      // bloqueado, etc.); si es elegible pasa a "Guardar y terminar" (junto
-      // a la nueva salida "Guardar y agregar pliegues"). Se acepta
-      // cualquiera de los dos — esta prueba no es sobre pliegues, sólo
-      // necesita sembrar una medición.
-      await page
-        .getByRole("button", { name: /guardar (medici[óo]n|y terminar)/i })
-        .click();
+      // Feature 048: «+ Nueva medición» es un enlace a la página de
+      // captura; el modo «Rápido» registra todo en una pantalla y el
+      // guardado vive en el panel «Revisar». Esta prueba no es sobre la
+      // captura, solo necesita sembrar una medición.
+      await page.getByRole("link", { name: /nueva medici[óo]n/i }).click();
+      await page.getByRole("radio", { name: "Rápido" }).click();
+      await page.getByLabel("Fecha de la medición").fill("2026-04-14");
+      await page.getByLabel(/^peso \(kg\)$/i).fill("45.5");
+      await page.getByLabel(/^talla de pie \(cm\)$/i).fill("155.0");
+      await page.getByLabel(/lectura del tallímetro, sentado \(cm\)/i).fill("73.0");
+      await page.getByRole("button", { name: "Revisar y guardar" }).click();
+      await page.getByRole("button", { name: "Guardar y terminar" }).click();
+      await expect(
+        page.getByTestId("anthropometry-history-desktop"),
+      ).toBeVisible({ timeout: 15_000 });
     }
 
     await openFirstMeasurementDetail(page);

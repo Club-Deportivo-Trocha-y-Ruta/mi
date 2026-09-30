@@ -42,6 +42,13 @@
 
 [Gates determined based on constitution file]
 
+<!--
+  Principle III (responsive, complementary): for every screen added or changed, name
+  its primary device and state how it adapts at 360 px / 768 px / ≥1280 px (tables →
+  narrow-screen pattern, forms → single column + input types, dialogs → scrollable).
+  Parent (phone-primary) screens: name the mobile Playwright e2e coverage.
+-->
+
 ## Project Structure
 
 ### Documentation (this feature)

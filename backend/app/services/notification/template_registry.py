@@ -473,7 +473,7 @@ DOCUMENT_TEMPLATES: dict[str, DocumentTemplateSpec] = {
         template_id=DocumentTemplate.BODY_COMPOSITION_FIELD_GUIDE,
         format=DocumentFormat.PDF,
         template_path="documents/pdf/skinfold_field_guide.html",
-        required_context_keys=frozenset({"sites"}),
+        required_context_keys=frozenset({"sites", "precheck", "basic_measures"}),
         description=(
             "Instructivo estático de toma de pliegues cutáneos (feature 046, "
             "US5, contracts/skinfolds-api.md §7). Contenido genérico, común a "

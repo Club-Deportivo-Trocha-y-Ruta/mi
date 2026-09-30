@@ -38,6 +38,7 @@ from app.schemas.notification import NotificationRecipient, NotificationRequest,
 from app.schemas.training_session import AttendanceRead
 from app.services import training as training_svc
 from app.services.athlete_scope import archive_athlete, restore_athlete
+from app.services.imderty import profile as imderty_profile_svc
 from app.services.category import compute_age_decimal, compute_years_in_club, get_category
 from app.services.notification.service import NotificationService
 from app.services.notification.task_dispatcher import TaskDispatcher
@@ -386,8 +387,15 @@ async def update_athlete(
             )
 
     update_data = body.model_dump(exclude_none=True)
+    previous_last_name = athlete.last_name
     for field, value in update_data.items():
         setattr(athlete, field, value)
+
+    # IMDERTY (feature 047, T031): a changed last_name may no longer match a
+    # previously confirmed surname split — clear the confirmation so the
+    # profile falls back to a freshly proposed split.
+    if "last_name" in update_data and update_data["last_name"] != previous_last_name:
+        await imderty_profile_svc.clear_surname_confirmation(db, athlete.id)
 
     # Sincronizar nombres con el user vinculado si cambiaron
     if "first_name" in update_data or "last_name" in update_data:

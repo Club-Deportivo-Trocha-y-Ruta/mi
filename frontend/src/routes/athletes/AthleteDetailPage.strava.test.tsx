@@ -56,9 +56,6 @@ vi.mock("@/api/ai", () => ({
 
 // Sub-componentes pesados que no son objeto de este archivo — mismo patrón
 // que AthleteDetailPage.test.tsx.
-vi.mock("@/components/athletes/AnthropometryForm", () => ({
-  AnthropometryForm: () => <div data-testid="anthropometry-form">AnthropometryForm</div>,
-}));
 vi.mock("@/components/athletes/AnthropometryHistory", () => ({
   AnthropometryHistory: () => <div data-testid="anthropometry-history">AnthropometryHistory</div>,
 }));

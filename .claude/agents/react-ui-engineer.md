@@ -61,7 +61,7 @@ frontend/src/
 3. **TanStack Query for server state**: All communication with the backend must go through TanStack Query hooks. Never `useEffect` + manual `fetch`.
 4. **Zustand only for client state**: State that does NOT come from the server (UI state, preferences, sidebar open/close).
 5. **Type safety**: Strict TypeScript. Define types in `types/` for shared models. Infer types from Zod schemas when possible.
-6. **Responsive design**: Mobile-first. The coach uses a tablet in the field; parents use a phone.
+6. **Responsive design**: design for the screen's primary device, then always make it adapt (constitution Principle III — complementary, never skipped): usable at 360 px, 768 px and ≥1280 px, no page-level horizontal scroll, tables with an explicit narrow-screen pattern, single-column forms with correct `inputmode` on phones, scrollable dialogs, nothing hover-only. The coach uses a tablet or phone in the field; parents use a phone.
 7. **Accessibility**: shadcn components are already accessible (Radix) — maintain that standard.
 8. **Privacy**: Never display sensitive minor data (exact DOB, medical data) without access control. Use age in years, not full date.
 
@@ -81,4 +81,4 @@ When asked to implement a component or feature:
 3. Define the necessary types/interfaces
 4. Create the TanStack Query hook if it needs server data
 5. Implement the component following established patterns
-6. Ensure it is responsive (mobile-first)
+6. Ensure it adapts to its primary device and to phone width (Rule 6)

@@ -10,6 +10,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Index,
+    Integer,
     String,
     UniqueConstraint,
 )
@@ -25,6 +26,7 @@ if TYPE_CHECKING:
     from app.models.athlete_badge import AthleteBadge
     from app.models.athlete_newsletter import AthleteMonthlyNewsletter
     from app.models.club import Club
+    from app.models.imderty import AthleteImdertyProfile
     from app.models.parent_invite import ParentInvite
     from app.models.user import User
 
@@ -142,12 +144,23 @@ class Athlete(UpdatedByMixin, Base):
         foreign_keys="[AthleteMonthlyNewsletter.athlete_id]",
         order_by="(desc(AthleteMonthlyNewsletter.year), desc(AthleteMonthlyNewsletter.month))",
     )
+    # Feature 047 — perfil IMDERTY (1:1, creado al primer guardado). Carga
+    # perezosa por defecto; los servicios usan selectinload explícito.
+    imderty_profile: Mapped["AthleteImdertyProfile | None"] = relationship(
+        "AthleteImdertyProfile",
+        back_populates="athlete",
+        foreign_keys="[AthleteImdertyProfile.athlete_id]",
+        uselist=False,
+    )
 
 
 class ParentAthlete(Base):
     __tablename__ = "parent_athlete"
     __table_args__ = (
         UniqueConstraint("parent_id", "athlete_id", name="uq_parent_athlete"),
+        UniqueConstraint(
+            "primary_contact_key", name="uq_parent_athlete_primary_contact_key"
+        ),
         Index("ix_parent_athlete_athlete_id", "athlete_id"),
     )
 
@@ -159,6 +172,10 @@ class ParentAthlete(Base):
     relationship_type: Mapped[FamilyRelationship] = mapped_column(
         "relationship", Enum(FamilyRelationship)
     )
+    # Feature 047 — igual a athlete_id cuando este acudiente es el «contacto
+    # principal» del atleta; NULL en otro caso. El índice único garantiza a lo
+    # sumo uno por atleta (FR-022a).
+    primary_contact_key: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     parent: Mapped[User] = relationship(
         "User",

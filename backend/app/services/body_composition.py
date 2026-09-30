@@ -340,6 +340,81 @@ async def check_interval(
         )
 
 
+async def check_interval_for_date(
+    db: AsyncSession,
+    athlete_id: int,
+    record: AnthropometricRecord,
+    new_date: date,
+    settings: "Settings",
+) -> None:
+    """Feature 048 (research R6, FR-007): same rule as `check_interval`, but
+    evaluated as if `record` (which already carries a set) were moved to
+    `new_date`.
+
+    `check_interval` is a no-op once a set exists, so a PUT that changes the
+    evaluation date of a record with skinfolds calls this instead. The
+    record's own set is excluded (``id != record.id``); the previous counted
+    set is looked up at or before `new_date`. Raises
+    `SkinfoldIntervalTooShortError` with the same `previous_set_date` /
+    `next_allowed_date` the wizard returns. Read-only; no logging.
+
+    Both directions are checked (owner-approved change, contracts/api.md PUT
+    409 row): the previous counted set at or before `new_date`, and the next
+    counted set strictly after it (a date within `body_comp_min_interval_days`
+    BEFORE a later set is also a violation). Fully-declined sets are ignored
+    in both directions.
+
+    Error shape is unchanged. Backward conflict: `previous_set_date` = that
+    earlier set, `next_allowed_date` = it + interval (the wizard's rule).
+    Forward conflict: `previous_set_date` carries the conflicting LATER set's
+    date and `next_allowed_date` = that set + interval, i.e. the earliest
+    date after which the record can sit without clashing with it (moving
+    earlier than `later - interval` is also valid).
+    """
+    stmt = (
+        select(AnthropometricRecord.evaluation_date, SkinfoldMeasurement)
+        .join(
+            SkinfoldMeasurement,
+            SkinfoldMeasurement.anthropometric_record_id == AnthropometricRecord.id,
+        )
+        .where(
+            AnthropometricRecord.athlete_id == athlete_id,
+            AnthropometricRecord.id != record.id,
+        )
+        .order_by(AnthropometricRecord.evaluation_date.desc())
+    )
+    result = await db.execute(stmt)
+
+    previous_set_date: date | None = None
+    later_set_date: date | None = None
+    for evaluation_date, measurement in result.all():
+        if not _is_counted_set(measurement):
+            continue
+        if evaluation_date <= new_date:
+            if previous_set_date is None:
+                previous_set_date = evaluation_date  # closest earlier (desc order)
+        else:
+            later_set_date = evaluation_date  # ends as the closest later one
+
+    min_interval_days = settings.body_comp_min_interval_days
+    if (
+        previous_set_date is not None
+        and (new_date - previous_set_date).days < min_interval_days
+    ):
+        raise SkinfoldIntervalTooShortError(
+            previous_set_date=previous_set_date,
+            next_allowed_date=previous_set_date + timedelta(days=min_interval_days),
+        )
+    if (
+        later_set_date is not None
+        and (later_set_date - new_date).days < min_interval_days
+    ):
+        raise SkinfoldIntervalTooShortError(
+            previous_set_date=later_set_date,
+            next_allowed_date=later_set_date + timedelta(days=min_interval_days),
+        )
+
+
 def check_min_age(
     athlete: "Athlete",
     record: AnthropometricRecord,

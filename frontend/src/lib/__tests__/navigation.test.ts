@@ -147,6 +147,7 @@ describe("matriz de visibilidad por rol (data-model.md §3)", () => {
     expect(gobierno.items.map((i) => i.id)).toEqual([
       "gobierno.history",
       "gobierno.staff",
+      "gobierno.imderty",
     ]);
   });
 
