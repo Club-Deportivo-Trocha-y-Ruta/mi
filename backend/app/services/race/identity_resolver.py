@@ -26,6 +26,13 @@ partía en dos a una misma persona impresa con y sin segundo apellido.
    varios sin desempate → ``IdentityUnresolved``. Un competidor de terceros
    (sin ``athlete_id``) nunca recibe una terna distinta por coincidir el
    nombre (decisión del dueño 2026-09-22): se crea otro competidor.
+6. **Por nombre + dorsal** en la misma serie (una copa en una temporada),
+   para cualquiera, también terceros (decisión del dueño 2026-10-19): el
+   dorsal es fijo por persona en la copa, así que el mismo nombre con el
+   mismo dorsal en una válida anterior es la misma persona aunque la terna
+   cambie (firmas viejas sin ciudad, club mal leído por el parser anterior).
+   Un único competidor → se adjunta + firma; ninguno o varios → competidor
+   nuevo. Solo si el ingestor fijó ``series_id`` y la fila trae dorsal.
 
 ``IdentityUnresolved`` es una guarda de clase 500: con el candado de commit
 (``409 identity_review_pending``) no debería alcanzarse nunca. En ``strict=False``
@@ -93,10 +100,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.race_competitor import CompetitorSex, RaceCompetitor
 from app.models.race_competitor_signature import RaceCompetitorSignature
+from app.models.race_event import RaceEvent
 from app.models.race_identity_candidate import (
     IdentityCandidateState,
     RaceIdentityCandidate,
 )
+from app.models.race_result import RaceResult
 from app.services.race.normalizer import normalize_club, normalize_name
 
 logger = logging.getLogger(__name__)
@@ -255,6 +264,8 @@ class ResolutionBranch(str, enum.Enum):
 
     signature_hit = "signature_hit"
     name_attach = "name_attach"
+    #: Mismo nombre y mismo dorsal en una válida anterior de la serie.
+    name_bib_attach = "name_bib_attach"
     decision_same_person = "decision_same_person"
     decision_different_people = "decision_different_people"
     new_competitor = "new_competitor"
@@ -293,9 +304,14 @@ class IdentityResolver:
     del ingestor. Una instancia por ingesta: cachea el índice de candidatos.
     """
 
-    def __init__(self, db: AsyncSession, *, strict: bool = True) -> None:
+    def __init__(
+        self, db: AsyncSession, *, strict: bool = True, series_id: Optional[int] = None
+    ) -> None:
         self.db = db
         self.strict = strict
+        #: Serie de la ingesta (paso 6, nombre + dorsal). Sin ella, el paso no corre.
+        self.series_id = series_id
+        self._series_event_ids: Optional[set[int]] = None
         self._decisions: Optional[dict[Triple, list[_DecisionHit]]] = None
         #: Firmas ya usadas por una fila en colisión de esta ingesta (una
         #: válida): dos filas que chocan nunca caen en el mismo competidor.
@@ -334,7 +350,7 @@ class IdentityResolver:
         if collision_discriminator and await self._is_third_party(triple, signatures):
             return await self._resolve_collision(
                 triple, signatures, collision_discriminator, season, category,
-                name=name, club=club, city=city, sex=sex,
+                name=name, club=club, city=city, sex=sex, bib=bib,
             )
 
         # 1. Firma exacta — o, si la terna está separada, por discriminador.
@@ -392,11 +408,8 @@ class IdentityResolver:
             )
 
         # 5. Por nombre — solo competidores vinculados a un atleta del club.
-        by_name = [
-            c
-            for c in await self._competitors_by_name(triple[0])
-            if c.id not in excluded and c.athlete_id is not None
-        ]
+        named = [c for c in await self._competitors_by_name(triple[0]) if c.id not in excluded]
+        by_name = [c for c in named if c.athlete_id is not None]
         if len(by_name) > 1:
             return await self._unresolved(
                 "varios_competidores", len(by_name), triple, season, name, club, city, sex
@@ -408,6 +421,17 @@ class IdentityResolver:
                 season,
                 source_candidate_id=None,
                 branch=ResolutionBranch.name_attach,
+            )
+
+        # 6. Por nombre + dorsal en la misma serie.
+        by_bib = await self._competitors_with_bib(named, bib)
+        if len(by_bib) == 1:
+            return await self._attach(
+                by_bib[0],
+                triple,
+                season,
+                source_candidate_id=None,
+                branch=ResolutionBranch.name_bib_attach,
             )
         return await self._create(
             triple,
@@ -466,6 +490,34 @@ class IdentityResolver:
             select(RaceCompetitor).where(RaceCompetitor.normalized_name == normalized)
         )
         return sorted(result.scalars().all(), key=lambda c: c.id)
+
+    async def _competitors_with_bib(
+        self, competitors: list[RaceCompetitor], bib: str | None
+    ) -> list[int]:
+        """Ids de ``competitors`` que ya corrieron con ese dorsal en una válida
+        de ``series_id`` (resultados no borrados)."""
+        bib_text = (bib or "").strip()
+        if self.series_id is None or not bib_text.isdigit() or not competitors:
+            return []
+        if self._series_event_ids is None:
+            events = await self.db.execute(
+                select(RaceEvent).where(RaceEvent.series_id == self.series_id)
+            )
+            self._series_event_ids = {e.id for e in events.scalars().all()}
+        found: list[int] = []
+        for competitor in competitors:
+            results = await self.db.execute(
+                select(RaceResult).where(
+                    RaceResult.competitor_id == competitor.id,
+                    RaceResult.bib_number == int(bib_text),
+                )
+            )
+            if any(
+                r.event_id in self._series_event_ids and r.deleted_at is None
+                for r in results.scalars().all()
+            ):
+                found.append(competitor.id)
+        return found
 
     async def _decisions_for(self, triple: Triple) -> list[_DecisionHit]:
         if self._decisions is None:
@@ -621,10 +673,13 @@ class IdentityResolver:
         club: str | None,
         city: str | None,
         sex: CompetitorSex | None,
+        bib: str | None = None,
     ) -> Resolution:
         """Fila de terceros cuya terna se repite en esta válida: la firma
         exacta de su discriminador; si no, la única firma de categoría ya
-        existente y compatible (la persona de válidas anteriores); si no, un
+        existente y compatible (la persona de válidas anteriores); si no, el
+        único competidor con el mismo nombre y dorsal en la serie (paso 6,
+        p. ej. un tetero que corre con y sin pedales el mismo día); si no, un
         competidor nuevo. Una firma usada por otra fila de la colisión no se
         reusa."""
         free = [s for s in signatures if s.id not in self._claimed]
@@ -642,6 +697,22 @@ class IdentityResolver:
                 chosen = compatible[0]
         if chosen is not None:
             discriminator = chosen.discriminator
+        elif not any(s.discriminator == discriminator for s in signatures):
+            named = await self._competitors_by_name(triple[0])
+            by_bib = await self._competitors_with_bib(named, bib)
+            if len(by_bib) == 1:
+                resolution = await self._attach(
+                    by_bib[0],
+                    triple,
+                    season,
+                    source_candidate_id=None,
+                    branch=ResolutionBranch.name_bib_attach,
+                    discriminator=discriminator,
+                )
+                claimed = await self._find_signature(triple, discriminator)
+                if claimed is not None:
+                    self._claimed.add(claimed.id)
+                return resolution
         resolution = await self._resolve_third_party(
             triple, signatures, discriminator, season,
             name=name, club=club, city=city, sex=sex,
@@ -694,6 +765,7 @@ class IdentityResolver:
         *,
         source_candidate_id: Optional[int],
         branch: ResolutionBranch,
+        discriminator: str = "",
     ) -> Resolution:
         try:
             async with self.db.begin_nested():
@@ -703,6 +775,7 @@ class IdentityResolver:
                         normalized_name=triple[0],
                         club_norm=triple[1],
                         city_norm=triple[2],
+                        discriminator=discriminator,
                         first_season=season,
                         last_season=season,
                         source_candidate_id=source_candidate_id,
@@ -710,7 +783,7 @@ class IdentityResolver:
                 )
                 await self.db.flush()
         except IntegrityError:
-            return await self._reuse_concurrent(triple, season)
+            return await self._reuse_concurrent(triple, season, discriminator)
         competitor = await self._competitor_by_id(competitor_id)
         return Resolution(
             competitor=competitor,

@@ -45,8 +45,8 @@ DEFAULT_TYR_THRESHOLD: int = 85
 #: ``race_categories``. Igualdad exacta sobre header normalizado para evitar
 #: la colisión ``"INFANTIL A" ⊂ "INFANTIL A FEMENINO"`` (edge-cases.md §4.4).
 #:
-#: 46 entradas: las 26 categorías observadas en Válida IV (edge-cases.md §2)
-#: más 20 alias históricos Copa Valle 2022/2024/2025 (feature 044, ver
+#: 48 entradas: las 26 categorías observadas en Válida IV (edge-cases.md §2)
+#: más 22 alias históricos Copa Valle 2022/2023/2024/2025 (feature 044, ver
 #: ``contracts/category-mapping.md`` y ``HEADER_ALIASES``). Si una válida
 #: futura usa un texto distinto (ej. ``INFANTIL A (FEMENINO)``), ampliar
 #: este dict — punto único de cambio.
@@ -111,6 +111,42 @@ HEADER_TO_CODE: dict[str, str] = {
     "infantil damas": "INF_F_U",
     "sport a": "SPORT_A_2022",
     "sport b": "SPORT_B_2022",
+    # --- Copa Valle 2023: renombres 1:1 (sin código nuevo) ------------------
+    # ``TETERO SIN PEDALES`` (singular, todas las actas 2023) = ``TET_SP``;
+    # ``PRE-INFANTIL B - MAS`` (MAS = masculino, convive con ``PRE-INFANTIL -
+    # NIÑAS`` aparte) = ``PRE_B``. NO se mapean a propósito: ``NOVATOS``/
+    # ``NOVATAS``/``NOVATOS A``/``NOVATOS B`` (sin equivalente en el catálogo:
+    # exigen categoría nueva y migración) ni ``PRE-INFANTIL A-MIXTO``/``B -
+    # MIXTO`` (válida I: niños y niñas juntos, una unión que no es renombre de
+    # ``PRE_A``/``PRE_B``) — esos encabezados quedan ``code=None``.
+    "tetero sin pedales": "TET_SP",
+    "preinfantil b mas": "PRE_B",
+}
+
+#: Resolución **por temporada** (Copa Valle 2023). Algunos encabezados de 2023
+#: se escriben igual que otros de 2022 pero son categorías distintas (``SPORT
+#: A``/``B``, ``MASTER A1``/``A2``), y otros solo existen en 2023 (``NOVATOS``,
+#: ``PRE-INFANTIL A-MIXTO``). Las claves de ``HEADER_TO_CODE`` son globales, así
+#: que estas van aparte: ``parse_category_header(..., season=2023)`` las consulta
+#: **primero**; con otra temporada (o ``season=None``) este dict no existe y el
+#: resultado es el de siempre — 2022 sigue en ``*_2022`` y 2024+ no cambia.
+#: Todos los códigos son propios de temporada (``is_active=False``, ver
+#: ``scripts/seed_race_categories.py``); ninguno se funde con una categoría
+#: activa ni con la de otra temporada.
+HEADER_TO_CODE_BY_SEASON: dict[int, dict[str, str]] = {
+    2023: {
+        "novatos": "NOV_2023",
+        "novatas": "NOV_F_2023",
+        "novatos a": "NOV_A_2023",
+        "novatos b": "NOV_B_2023",
+        # ``PRE-INFANTIL A-MIXTO`` queda ``preinfantil amixto`` al quitar guiones.
+        "preinfantil amixto": "PRE_A_MIX_2023",
+        "preinfantil b mixto": "PRE_B_MIX_2023",
+        "sport a": "SPORT_A_2023",
+        "sport b": "SPORT_B_2023",
+        "master a1": "MAS_A1_2023",
+        "master a2": "MAS_A2_2023",
+    },
 }
 
 #: Subconjunto de keys de ``HEADER_TO_CODE`` que son alias históricos (feature
@@ -140,6 +176,8 @@ HEADER_ALIASES: frozenset[str] = frozenset(
         "infantil damas",
         "sport a",
         "sport b",
+        "tetero sin pedales",
+        "preinfantil b mas",
     }
 )
 
@@ -374,7 +412,16 @@ def parse_time(raw: str) -> tuple[ResultStatus, Optional[int], int]:
     raise ValueError(f"Tiempo no parseable: {raw!r}")
 
 
-def parse_category_header(s: str) -> Optional[str]:
+def _normalize_header(raw_name: str) -> str:
+    """Forma normalizada de un encabezado (sin prefijo ``CAT:``)."""
+    header = _strip_diacritics_lower(raw_name)
+    # Strip guión interno: CSV usa "PRE-INFANTIL"/"PRE-JUVENIL", PDF usa
+    # "PREINFANTIL"/"PREJUVENIL". HEADER_TO_CODE almacena la forma sin guión.
+    header = header.replace("-", "")
+    return re.sub(r"\s+", " ", header).strip()
+
+
+def parse_category_header(s: str, season: Optional[int] = None) -> Optional[str]:
     """De ``"CAT: INFANTIL A FEMENINO"`` a ``"INF_A_F"``.
 
     Reglas (edge-cases.md §2.1):
@@ -385,21 +432,26 @@ def parse_category_header(s: str) -> Optional[str]:
     - Retorna ``None`` si no matchea el prefijo ``CAT:`` o si el header
       normalizado no está en el dict (categoría desconocida — el parser
       debe loggear warning con el texto raw).
+    - ``season`` (opcional): si hay tabla propia para esa temporada
+      (``HEADER_TO_CODE_BY_SEASON``) y el header está en ella, gana sobre
+      ``HEADER_TO_CODE``. Sin ``season`` el comportamiento no cambia.
     """
     if not s:
         return None
     m = _CAT_HEADER_RE.match(s)
     if not m:
         return None
-    header = _strip_diacritics_lower(m.group(1))
-    # Strip guión interno: CSV usa "PRE-INFANTIL"/"PRE-JUVENIL", PDF usa
-    # "PREINFANTIL"/"PREJUVENIL". HEADER_TO_CODE almacena la forma sin guión.
-    header = header.replace("-", "")
-    header = re.sub(r"\s+", " ", header).strip()
+    header = _normalize_header(m.group(1))
+    if season is not None:
+        by_season = HEADER_TO_CODE_BY_SEASON.get(season)
+        if by_season is not None and header in by_season:
+            return by_season[header]
     return HEADER_TO_CODE.get(header)
 
 
-def mapping_kind_for(raw_header: str, category: Optional[object]) -> str:
+def mapping_kind_for(
+    raw_header: str, category: Optional[object], season: Optional[int] = None
+) -> str:
     """Clasifica cómo resolvió un header de categoría (feature 044, US2).
 
     Recibe el header CRUDO (con prefijo ``CAT:``/``CATEGORIA:``), igual que
@@ -428,9 +480,8 @@ def mapping_kind_for(raw_header: str, category: Optional[object]) -> str:
     m = _CAT_HEADER_RE.match(raw_header)
     if not m:
         return "exact"
-    header = _strip_diacritics_lower(m.group(1))
-    header = header.replace("-", "")
-    header = re.sub(r"\s+", " ", header).strip()
-    if header in HEADER_ALIASES:
+    header = _normalize_header(m.group(1))
+    by_season = HEADER_TO_CODE_BY_SEASON.get(season, {}) if season is not None else {}
+    if header in by_season or header in HEADER_ALIASES:
         return "rename" if category.is_active else "season_specific"
     return "exact"

@@ -62,6 +62,7 @@ from app.services.race.pdf_parser import (
     ParsedCategory,
     ParsedResults,
     ResultsRow,
+    apply_season_categories,
     parse_event_header,
     parse_results_document,
 )
@@ -229,7 +230,9 @@ def _category_headers_raw(parsed: ParsedResults) -> dict[str, str]:
 
 
 def _categories_read(
-    parsed: ParsedResults, cat_by_code: dict[str, "RaceCategory"]
+    parsed: ParsedResults,
+    cat_by_code: dict[str, "RaceCategory"],
+    season: Optional[int] = None,
 ) -> list[ParsedCategoryRead]:
     """Construye el ``categories[]`` de la respuesta de ``/parse`` — header
     crudo, code resuelto, ``mapping_kind`` y completitud por categoría
@@ -237,7 +240,7 @@ def _categories_read(
     out: list[ParsedCategoryRead] = []
     for category in parsed.categories:
         cat_obj = cat_by_code.get(category.code) if category.code else None
-        mapping_kind = mapping_kind_for(f"CAT: {category.header_raw}", cat_obj)
+        mapping_kind = mapping_kind_for(f"CAT: {category.header_raw}", cat_obj, season)
         report = check_category(category)
         out.append(
             ParsedCategoryRead(
@@ -341,7 +344,9 @@ async def _response_for_already_staged(
         tmp_results.flush()
         results_path = PathLib(tmp_results.name)
     try:
-        parsed_doc = await _parse_results_with_timeout(results_path, results_ext)
+        parsed_doc = apply_season_categories(
+            await _parse_results_with_timeout(results_path, results_ext), season
+        )
     finally:
         try:
             results_path.unlink(missing_ok=True)
@@ -356,7 +361,7 @@ async def _response_for_already_staged(
         cat_by_code = {
             c.code: c for c in (await db.execute(cat_stmt)).scalars().all()
         }
-    categories_read = _categories_read(parsed_doc, cat_by_code)
+    categories_read = _categories_read(parsed_doc, cat_by_code, season)
     unreadable_rows_read = [
         UnreadableRowRead(page=r.page, ordinal=r.ordinal)
         for r in parsed_doc.unreadable_rows
@@ -520,7 +525,9 @@ async def stage_results_file(
         results_path = PathLib(tmp_results.name)
     warnings_collected: list[ParseWarning] = []
     try:
-        parsed_doc = await _parse_results_with_timeout(results_path, results_ext)
+        parsed_doc = apply_season_categories(
+            await _parse_results_with_timeout(results_path, results_ext), season
+        )
         warnings_collected.extend(_points_inferred_warnings(parsed_doc))
         # FR-025 (contracts/historical-load.md §"Staging service"):
         # season/válida/fecha/sede vienen SIEMPRE de los parámetros — nunca
@@ -577,7 +584,7 @@ async def stage_results_file(
         cat_by_code = {
             c.code: c for c in (await db.execute(cat_stmt)).scalars().all()
         }
-    categories_read = _categories_read(parsed_doc, cat_by_code)
+    categories_read = _categories_read(parsed_doc, cat_by_code, season)
     unreadable_rows_read = [
         UnreadableRowRead(page=r.page, ordinal=r.ordinal)
         for r in parsed_doc.unreadable_rows

@@ -32,7 +32,10 @@ signature exact hit                      → that competitor
 separated third-party triple, no single compatible discriminator
                                          → '' signature, else bib:<bib>@<season> (created if missing)
 name hit, one LINKED competitor, no signal → attach + add signature
-name hit, only unlinked competitors      → new competitor + signature (never merge a third party by name)
+name hit, only unlinked competitors      → new competitor + signature (never merge a third party by name alone)
+same name + same bib earlier in the series (one competitor) → attach + add signature (2026-10-19; bib is fixed
+                                           per person within a cup season; also used before creating a
+                                           collision row's signature). None or several → new competitor
 decision same_person                     → decided competitor + add signature (source_candidate_id)
 decision different_people                → new competitor + signature
 name hit, several linked competitors, no tie-break → impossible after the gate; raise IdentityUnresolved (500-class guard, tested)

@@ -288,6 +288,8 @@ class RaceIngestor:
 
             # --- 2. Upsert RaceEvent por (series_id, sequence_number) -
             event = await self._upsert_event(series.id, meta, ingested_by_user_id)
+            # Paso 6 del resolver (nombre + dorsal): el dorsal vale dentro de la serie.
+            resolver.series_id = series.id
 
             # --- 3. Idempotencia por SHA256 (RESULTADOS) ----------------
             # Feature 044 (US5, T060): un ``only_categories`` no-``None``

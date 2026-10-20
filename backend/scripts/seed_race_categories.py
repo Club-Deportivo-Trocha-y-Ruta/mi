@@ -51,6 +51,15 @@ acta no los trae y no hay fuente confiable (Sport = `MIXED`, como `PROMO`).
 Renombres 1:1 de 2022 (sin código nuevo): `PREINFANTIL DAMAS` → `PRE_F_U` y
 `MASTER D1` → `MAS_D`.
 
+Copa Valle 2023 (mismo criterio; decisión del coach): `NOV_2023`/`NOV_F_2023`
+(Novatos/Novatas de las válidas), `NOV_A_2023`/`NOV_B_2023` (Novatos A/B del
+departamental, `MIXED`: el acta no dice sexo), `PRE_A_MIX_2023`/`PRE_B_MIX_2023`
+(Ginebra juntó niños y niñas; edades copiadas de `PRE_A` 6–7 y `PRE_B` 7–8,
+nunca fundidas con ellas) y `SPORT_A_2023`/`SPORT_B_2023`/`MAS_A1_2023`/
+`MAS_A2_2023`, que **no** son las de 2022. Se resuelven por temporada
+(`normalizer.HEADER_TO_CODE_BY_SEASON`); la migración `7c3e9a1f5b24` inserta las
+mismas filas en bases ya desplegadas.
+
 `sort_order`: se insertaron en huecos existentes del catálogo (sin renumerar
 ninguna de las 26 filas activas). `PRE_F_U` va en 24, entre `PRE_B_F` (23) y
 `INF_A` (30) — justo después de sus dos equivalentes activas. `MAS_B_2025` y
@@ -84,6 +93,9 @@ CATEGORIES: list[
     ("PRE_B_F",  "Preinfantil B Femenino",    CategoryGender.F,     7,    8,    CategoryTier.menores, 23, True),
     # Propia de temporada 2024/2025 — grupo único, ver docstring del módulo.
     ("PRE_F_U",  "Preinfantil femenino (grupo único)", CategoryGender.F, 6, 8,  CategoryTier.menores, 24, False),
+    # Propias de temporada 2023 — Ginebra juntó niños y niñas en A y B.
+    ("PRE_A_MIX_2023", "Preinfantil A mixto (2023)", CategoryGender.MIXED, 6, 7, CategoryTier.menores, 25, False),
+    ("PRE_B_MIX_2023", "Preinfantil B mixto (2023)", CategoryGender.MIXED, 7, 8, CategoryTier.menores, 26, False),
     ("INF_A",    "Infantil A",                CategoryGender.M,     9,    10,   CategoryTier.menores, 30, True),
     ("INF_B",    "Infantil B",                CategoryGender.M,     11,   12,   CategoryTier.menores, 31, True),
     ("INF_A_F",  "Infantil A Femenino",       CategoryGender.F,     9,    10,   CategoryTier.menores, 32, True),
@@ -104,6 +116,13 @@ CATEGORIES: list[
     # Propias de temporada 2022 — Sport A/B, ver docstring del módulo.
     ("SPORT_A_2022", "Sport A (2022)",        CategoryGender.MIXED, None, None, CategoryTier.adulto,  71, False),
     ("SPORT_B_2022", "Sport B (2022)",        CategoryGender.MIXED, None, None, CategoryTier.adulto,  72, False),
+    # Propias de temporada 2023 — Novatos y Sport A/B (distintas de las de 2022).
+    ("NOV_2023",     "Novatos (2023)",        CategoryGender.M,     None, None, CategoryTier.adulto,  73, False),
+    ("NOV_F_2023",   "Novatas (2023)",        CategoryGender.F,     None, None, CategoryTier.adulto,  74, False),
+    ("NOV_A_2023",   "Novatos A (2023)",      CategoryGender.MIXED, None, None, CategoryTier.adulto,  75, False),
+    ("NOV_B_2023",   "Novatos B (2023)",      CategoryGender.MIXED, None, None, CategoryTier.adulto,  76, False),
+    ("SPORT_A_2023", "Sport A (2023)",        CategoryGender.MIXED, None, None, CategoryTier.adulto,  77, False),
+    ("SPORT_B_2023", "Sport B (2023)",        CategoryGender.MIXED, None, None, CategoryTier.adulto,  78, False),
     # Master
     ("MAS_A",    "Master A",                  CategoryGender.M,     30,   39,   CategoryTier.master,  80, True),
     ("MAS_B1",   "Master B1",                 CategoryGender.M,     40,   44,   CategoryTier.master,  81, True),
@@ -118,6 +137,9 @@ CATEGORIES: list[
     ("MAS_A1_2022", "Máster A1 (2022)",       CategoryGender.M,     None, None, CategoryTier.master,  88, False),
     ("MAS_A2_2022", "Máster A2 (2022)",       CategoryGender.M,     None, None, CategoryTier.master,  89, False),
     ("MAS_F",    "Master Femenino",           CategoryGender.F,     30,   None, CategoryTier.master,  90, True),
+    # Propias de temporada 2023 — ver docstring del módulo. Sort 91-92 tras MAS_F.
+    ("MAS_A1_2023", "Máster A1 (2023)",       CategoryGender.M,     None, None, CategoryTier.master,  91, False),
+    ("MAS_A2_2023", "Máster A2 (2023)",       CategoryGender.M,     None, None, CategoryTier.master,  92, False),
 ]
 
 

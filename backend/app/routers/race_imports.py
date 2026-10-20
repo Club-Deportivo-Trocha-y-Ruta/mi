@@ -133,6 +133,7 @@ from app.services.race.pdf_parser import (
     ParsedCategory,
     ParsedResults,
     ResultsRow,
+    apply_season_categories,
 )
 from app.services.race.revision import detect_revision
 from app.services.race.revision_diff_view import build_event_diff_view
@@ -799,7 +800,10 @@ async def _reload_results_document(imp: RaceImport) -> ParsedResults:
     # ¿Es el path un temporal nuevo (SFTP) o el mismo local ya existente?
     results_is_tmp = str(results_tmp_path) != str(imp.storage_path or "")
     try:
-        parsed = await _parse_results_with_timeout(results_tmp_path, results_ext)
+        parsed = apply_season_categories(
+            await _parse_results_with_timeout(results_tmp_path, results_ext),
+            ((meta.get("header") or {}).get("season")),
+        )
     finally:
         if results_is_tmp:
             try:

@@ -23,6 +23,7 @@ from app.models.race_result import ResultStatus
 from app.services.race.normalizer import (
     HEADER_TO_CODE,
     is_trocha_y_ruta,
+    mapping_kind_for,
     normalize_club,
     normalize_name,
     parse_category_header,
@@ -373,17 +374,17 @@ class TestParseCategoryHeader:
         assert parse_category_header("INFANTIL A") is None
         assert parse_category_header("") is None
 
-    def test_header_to_code_has_46_entries_after_044_aliases(self):
+    def test_header_to_code_has_48_entries_after_2023_aliases(self):
         """Sanity check: 26 originales (edge-cases §1) + 12 alias históricos
         del contrato de la 044 (8 renombres + 4 propios de temporada) + 8 de 2022
-        (2 renombres 1:1 y 6 propios de temporada) = 46.
+        (2 renombres 1:1 y 6 propios de temporada) + 2 de 2023 (renombres 1:1) = 48.
 
         Reemplaza el sanity check previo de "26 entries" — T028 agrega los
         alias al MISMO dict (``HEADER_TO_CODE``, no uno separado), así que
         el tamaño total debe crecer. Si este test falla con
         ``len == 26``, T028 todavía no corrió.
         """
-        assert len(HEADER_TO_CODE) == 46
+        assert len(HEADER_TO_CODE) == 48
 
 
 # ---------------------------------------------------------------------------
@@ -442,7 +443,7 @@ class TestHeaderAliasesFrozenset:
     (no las 26 originales) — usado por ``mapping_kind_for`` para distinguir
     ``exact`` de ``rename``/``season_specific``."""
 
-    def test_contains_exactly_the_20_alias_headers(self):
+    def test_contains_exactly_the_22_alias_headers(self):
         from app.services.race.normalizer import HEADER_ALIASES
 
         assert HEADER_ALIASES == frozenset(
@@ -467,6 +468,8 @@ class TestHeaderAliasesFrozenset:
                 "infantil damas",
                 "sport a",
                 "sport b",
+                "tetero sin pedales",
+                "preinfantil b mas",
             }
         )
 
@@ -560,3 +563,115 @@ class TestAliasesCopaVallecaucana2022:
         2022 (inactivos) — nunca a ``MAS_A``, ``PROMO`` ni ``INF_*_F``."""
         assert parse_category_header(f"CATEGORIA: {header}") == code
         assert code not in {"MAS_A", "PROMO", "INF_A_F", "INF_B_F"}
+
+
+class TestAliasesCopaValle2023:
+    """Copa Valle 2023: dos renombres 1:1 y encabezados que NO se mapean."""
+
+    @pytest.mark.parametrize(
+        "header, code",
+        [
+            ("TETERO SIN PEDALES", "TET_SP"),
+            ("TETEROS CON PEDALES", "TET_CP"),
+            ("PRE-INFANTIL B - MAS", "PRE_B"),
+            ("PRE-INFANTIL A", "PRE_A"),
+            ("PRE-INFANTIL - NIÑAS", "PRE_F_U"),
+            ("PRE-JUVENIL A", "PJUV_A"),
+            ("PREJUVENIL B DAMAS", "PJUV_B_F"),
+            ("MASTER C2", "MAS_C2"),
+        ],
+    )
+    def test_encabezados_2023_resuelven(self, header, code):
+        assert parse_category_header(f"CAT: {header}") == code
+
+    @pytest.mark.parametrize(
+        "header",
+        ["NOVATOS", "NOVATAS", "NOVATOS A", "NOVATOS B", "PRE-INFANTIL A-MIXTO", "PRE-INFANTIL B - MIXTO"],
+    )
+    def test_sin_temporada_los_propios_de_2023_quedan_desconocidos(self, header):
+        """Sin ``season`` (o con otra) no se inventa un código: la tabla de
+        2023 solo aplica cuando la carga declara 2023."""
+        assert parse_category_header(f"CAT: {header}") is None
+        assert parse_category_header(f"CAT: {header}", season=2024) is None
+
+
+class TestResolucionPorTemporada2023:
+    """Decisión del coach: Novatos, Pre-infantil mixto, Sport y Máster A1/A2 de
+    2023 son categorías propias de temporada."""
+
+    @pytest.mark.parametrize(
+        "header, code",
+        [
+            ("NOVATOS", "NOV_2023"),
+            ("NOVATAS", "NOV_F_2023"),
+            ("NOVATOS A", "NOV_A_2023"),
+            ("NOVATOS B", "NOV_B_2023"),
+            ("PRE-INFANTIL A-MIXTO", "PRE_A_MIX_2023"),
+            ("PRE-INFANTIL B - MIXTO", "PRE_B_MIX_2023"),
+            ("SPORT A", "SPORT_A_2023"),
+            ("SPORT B", "SPORT_B_2023"),
+            ("MASTER A1", "MAS_A1_2023"),
+            ("MASTER A2", "MAS_A2_2023"),
+        ],
+    )
+    def test_2023_resuelve_a_codigos_2023(self, header, code):
+        assert parse_category_header(f"CAT: {header}", season=2023) == code
+
+    @pytest.mark.parametrize(
+        "header, code",
+        [
+            ("SPORT A", "SPORT_A_2022"),
+            ("SPORT B", "SPORT_B_2022"),
+            ("MASTER A1", "MAS_A1_2022"),
+            ("MASTER A2", "MAS_A2_2022"),
+            ("MASTER A 2", "MAS_A2_2022"),
+        ],
+    )
+    @pytest.mark.parametrize("season", [None, 2022])
+    def test_2022_sigue_en_los_codigos_2022(self, header, code, season):
+        assert parse_category_header(f"CATEGORIA: {header}", season=season) == code
+
+    @pytest.mark.parametrize(
+        "header, code",
+        [
+            ("MASTER A1", "MAS_A1_2022"),
+            ("SPORT A", "SPORT_A_2022"),
+            ("ELITE HOMBRES", "ELITE_M"),
+            ("MASTER B", "MAS_B_2025"),
+            ("INFANTIL A", "INF_A"),
+        ],
+    )
+    @pytest.mark.parametrize("season", [2024, 2025, 2026])
+    def test_otras_temporadas_no_cambian(self, header, code, season):
+        assert parse_category_header(f"CAT: {header}", season=season) == code
+
+    @pytest.mark.parametrize(
+        "header, code",
+        [
+            ("MASTER B1", "MAS_B1"),
+            ("MASTER B2", "MAS_B2"),
+            ("MASTER C1", "MAS_C1"),
+            ("MASTER C2", "MAS_C2"),
+            ("MASTER D1", "MAS_D"),
+            ("ELITE", "ELITE_M"),
+            ("ELITE DAMAS", "ELITE_F"),
+            ("MASTER DAMAS", "MAS_F"),
+        ],
+    )
+    def test_los_demas_de_2023_conservan_su_mapeo(self, header, code):
+        assert parse_category_header(f"CAT: {header}", season=2023) == code
+        assert parse_category_header(f"CAT: {header}") == code
+
+    def test_tabla_por_temporada_solo_trae_codigos_inactivos_de_2023(self):
+        from app.services.race.normalizer import HEADER_TO_CODE_BY_SEASON
+
+        assert set(HEADER_TO_CODE_BY_SEASON) == {2023}
+        assert all(c.endswith("_2023") for c in HEADER_TO_CODE_BY_SEASON[2023].values())
+
+    def test_mapping_kind_es_season_specific_para_2023(self):
+        from types import SimpleNamespace
+
+        inactiva = SimpleNamespace(is_active=False)
+        assert mapping_kind_for("CAT: NOVATOS", inactiva, 2023) == "season_specific"
+        assert mapping_kind_for("CAT: SPORT A", inactiva, 2023) == "season_specific"
+        assert mapping_kind_for("CAT: NOVATOS", None, None) == "unknown"

@@ -39,6 +39,7 @@ from tests.services.race.identity_support import (
     ingest,
     make_engine,
     row,
+    series_for,
     session_factory,
 )
 
@@ -297,6 +298,128 @@ async def test_ingestor_stores_city_text(db):
     await ingest(db, 2025, 1, {"INF_A": [row(NAME, city=CITY_B)]})
     comp = (await db.execute(select(RaceCompetitor))).scalars().one()
     assert comp.city_text == CITY_B
+
+
+# ---------------------------------------------------------------------------
+# Paso 6: nombre + dorsal en la misma serie (decisión 2026-10-19)
+# ---------------------------------------------------------------------------
+
+
+async def _competitor_ids(db, valida: int) -> list[int]:
+    from app.models.race_event import RaceEvent
+
+    result = await db.execute(
+        select(RaceResult.competitor_id)
+        .join(RaceEvent, RaceEvent.id == RaceResult.event_id)
+        .where(RaceEvent.sequence_number == valida)
+        .order_by(RaceResult.bib_number)
+    )
+    return list(result.scalars().all())
+
+
+@pytest.mark.asyncio
+async def test_third_party_same_name_and_bib_in_the_series_is_the_same_person(db):
+    """Firma vieja sin ciudad y válida nueva con ciudad: el mismo dorsal en la
+    misma copa une a la persona en vez de partirla en dos competidores."""
+    await ingest(db, 2026, 1, {"INF_A": [row(NAME, city="", bib="407")]})
+    await ingest(db, 2026, 2, {"INF_A": [row(NAME, city=CITY_A, bib="407")]})
+    assert await _competitor_ids(db, 1) == await _competitor_ids(db, 2)
+    assert await _count(db, RaceCompetitor) == 1
+    assert await _count(db, RaceCompetitorSignature) == 2
+    assert await _count(db, RaceIdentityCandidate) == 0
+
+
+@pytest.mark.asyncio
+async def test_name_bib_attach_branch_and_later_signature_hit(db):
+    await ingest(db, 2026, 1, {"INF_A": [row(NAME, club=CLUB_A, bib="407")]})
+    series = await series_for(db, 2026)
+    res = await IdentityResolver(db, series_id=series.id).resolve(
+        name=NAME, club=CLUB_B, city=CITY_A, season=2026, bib="407"
+    )
+    assert not res.created and res.branch == ResolutionBranch.name_bib_attach
+    again = await IdentityResolver(db, series_id=series.id).resolve(
+        name=NAME, club=CLUB_B, city=CITY_A, season=2026, bib="407"
+    )
+    assert again.branch == ResolutionBranch.signature_hit
+    assert again.competitor.id == res.competitor.id
+
+
+@pytest.mark.asyncio
+async def test_third_party_same_name_other_bib_stays_separate(db):
+    await ingest(db, 2026, 1, {"INF_A": [row(NAME, city="", bib="407")]})
+    await ingest(db, 2026, 2, {"INF_A": [row(NAME, city=CITY_A, bib="408")]})
+    assert await _count(db, RaceCompetitor) == 2
+
+
+@pytest.mark.asyncio
+async def test_same_bib_in_another_season_is_not_a_signal(db):
+    """El dorsal solo vale dentro de la serie: otra temporada es otra copa."""
+    await ingest(db, 2025, 1, {"INF_A": [row(NAME, city="", bib="407")]})
+    await ingest(db, 2026, 2, {"INF_A": [row(NAME, city=CITY_A, bib="407")]})
+    assert await _count(db, RaceCompetitor) == 2
+
+
+@pytest.mark.asyncio
+async def test_resolver_without_series_skips_the_bib_step(db):
+    await ingest(db, 2026, 1, {"INF_A": [row(NAME, club=CLUB_A, bib="407")]})
+    res = await IdentityResolver(db).resolve(
+        name=NAME, club=CLUB_B, city=CITY_A, season=2026, bib="407"
+    )
+    assert res.created and res.branch == ResolutionBranch.new_competitor
+
+
+@pytest.mark.asyncio
+async def test_two_competitors_with_name_and_bib_do_not_guess(db):
+    """Dos competidores ya separados con el mismo nombre y dorsal: no se elige."""
+    await ingest(db, 2026, 1, {"INF_A": [row(NAME, club=CLUB_A, bib="407")]})
+    await ingest(db, 2026, 2, {"INF_A": [row(NAME, club=CLUB_B, bib="407")]})
+    # La válida 2 ya se unió por dorsal; se separa a mano para el caso límite.
+    ids = await _competitor_ids(db, 2)
+    twin = RaceCompetitor(normalized_name=signature_triple(NAME, "", "")[0], display_name=NAME)
+    db.add(twin)
+    await db.flush()
+    first = (await db.execute(select(RaceResult).where(RaceResult.competitor_id == ids[0]))).scalars().all()
+    first[-1].competitor_id = twin.id
+    await db.flush()
+    series = await series_for(db, 2026)
+    res = await IdentityResolver(db, series_id=series.id).resolve(
+        name=NAME, club="Club Sintetico Este", city=CITY_A, season=2026, bib="407"
+    )
+    assert res.created and res.branch == ResolutionBranch.new_competitor
+
+
+@pytest.mark.asyncio
+async def test_collision_rows_follow_their_bib_into_the_series_history(db):
+    """Un tetero corre con y sin pedales el mismo día (misma terna, dos
+    dorsales): cada fila sigue a su competidor por el dorsal aunque la terna
+    vieja no tuviera ciudad, y una reingesta da lo mismo."""
+
+    def both(city: str) -> dict:
+        return {
+            "TET_SP": [row(NAME, city=city, bib="1402")],
+            "TET_CP": [row(NAME, city=city, bib="555")],
+        }
+
+    await ingest(db, 2026, 1, both(""))
+    before = await _competitors_by_code(db, 1)
+    await ingest(db, 2026, 2, both(CITY_A))
+    assert await _competitors_by_code(db, 2) == before
+    competitors = await _count(db, RaceCompetitor)
+    await ingest(db, 2026, 2, both(CITY_A), sha="otro-sha")
+    assert await _count(db, RaceCompetitor) == competitors
+
+
+async def _competitors_by_code(db, valida: int) -> dict[str, int]:
+    from app.models.race_category import RaceCategory
+    from app.models.race_event import RaceEvent
+
+    result = await db.execute(
+        select(RaceCategory.code, RaceResult.competitor_id)
+        .join(RaceCategory, RaceCategory.id == RaceResult.category_id)
+        .join(RaceEvent, RaceEvent.id == RaceResult.event_id)
+        .where(RaceEvent.sequence_number == valida)
+    )
+    return dict(result.all())
 
 
 # ---------------------------------------------------------------------------

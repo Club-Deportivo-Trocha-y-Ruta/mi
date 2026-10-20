@@ -47,6 +47,17 @@ Descarte de cabeceras: líneas que matchean ``COPA VALLE``, ``VALIDA``,
 ``RESULTADOS``, ``CLASIFICACION``, ``GENERAL``, ``Ord N``, ``ORD N`` se
 descartan. Línea espuria ``0 COPA VALLE…`` (§4.10) se tolera.
 
+Formato 2023 «tiempo antes del club» (``_TIME_FIRST_HEADER_RE``)
+-----------------------------------------------------------------
+Las actas de la XXVII Copa Valle (2023) imprimen otra tabla: ``Pos N°
+Apellidos Nombres Time Club o Equipo [Copa|Medalla]`` — el **tiempo va entre el
+nombre y el club**, los puntos (solo las válidas I, VII y VIII) o la medalla (solo
+el departamental de Jamundí) van al final, y la categoría es una fila combinada
+de la propia tabla (``TETERO SIN PEDALES 1``: el número es la tanda de salida,
+no parte del nombre; el departamental no la trae). Se activa **por página**,
+solo cuando el encabezado de columnas es ese; los formatos 2024+ y 2022 no
+pasan por ninguna rama nueva. Detalle en ``_TIME_FIRST_HEADER_RE``.
+
 Logging: **solo** página, ordinal, dorsal y conteos. Nunca un nombre, una
 ciudad ni un club — los archivos son actas de menores de edad.
 """
@@ -244,6 +255,64 @@ _RESULTS_ROW_NO_POINTS_RE = re.compile(
 _RESULTS_ROW_NO_TIME_RE = re.compile(
     r"^(?P<pos>\d+)\s+(?P<bib>\d+)" + _BIB_SEP + r"(?P<body>.+?)\s+(?P<points>\d+)\s*$"
 )
+
+#: Encabezado de columnas del acta **2023**: ``Pos N° Apellidos Nombres Time
+#: Club o Equipo [Copa]`` (o ``... Time Municipio Medalla`` / ``... Time Club o
+#: Equipo Medalla`` en el departamental de Jamundí). Es lo que distingue ese
+#: formato: el tiempo va **antes** del club. No matchea ``Ord N° Nombre ...
+#: Tiempo`` (2022, 2024+), así que las demás actas no cambian de camino.
+_TIME_FIRST_HEADER_RE = re.compile(
+    r"^\s*POS\s+N[°º]?\s+APELLIDOS\s+NOMBRES\s+TIME\b", re.IGNORECASE
+)
+
+#: Fila 2023 con columna de puntos (``Copa``): ``<pos> <bib> <apellidos nombres>
+#: <tiempo|estado> [<club>] <puntos>``. El club es opcional (hay filas con la
+#: celda vacía) y puede ser el marcador ``0``; por eso los puntos son lo último
+#: y solo se exigen en las páginas cuyo encabezado trae ``Copa``.
+_RESULTS_ROW_TIME_FIRST_RE = re.compile(
+    _ROW_HEAD + _ROW_TIME + r"(?:\s+(?P<club>\S.*?))?\s+(?P<points>\d+)\s*$",
+    re.IGNORECASE,
+)
+
+#: Fila 2023 **sin** columna de puntos (válidas II–VI, departamental): lo que
+#: sigue al tiempo es el club (y, en Jamundí, la medalla, que la lectura por
+#: banda separa por celda). Un ``0`` final es el club «sin club», no puntos.
+_RESULTS_ROW_TIME_FIRST_NO_POINTS_RE = re.compile(
+    _ROW_HEAD + _ROW_TIME + r"(?:\s+(?P<club>\S.*?))?\s*$",
+    re.IGNORECASE,
+)
+
+#: Fila 2023 **clasificada sin tiempo**: ``<pos> <bib> <apellidos nombres club>``
+#: sin token de tiempo. Solo se acepta en el camino por banda y únicamente
+#: cuando la celda ``Time`` de la tabla está vacía (``_band_cells_time_first``),
+#: porque sin ancla cualquier texto sería una fila.
+_RESULTS_ROW_TIME_FIRST_NO_TIME_RE = re.compile(
+    r"^(?P<pos>\d+)\s+(?P<bib>\d+)" + _BIB_SEP + r"(?P<body>.+?)\s*$"
+)
+
+#: Líneas del título de la hoja 2023 que no son categoría aunque no lleven
+#: dígitos: ``XXVII COPA VALLE``, ``COMISIÓN VALLECAUCANA…``, ``IV válida CALI``.
+_TIME_FIRST_TITLE_RE = re.compile(
+    r"COPA\s+VALLE|CICLOMONTA|COMISI[ÓO]N|CLASIFICACION|\bV[ÁA]LIDA\b|CAMPEONATO",
+    re.IGNORECASE,
+)
+
+#: Arranque de fila de resultados: ``<pos> <bib> …``.
+_ROW_START_RE = re.compile(r"^\d+\s+\d+(?:\s|\D)")
+
+#: Celda ``Time`` con una palabra suelta (``Sanción`` en la válida III de 2023):
+#: ni tiempo ni estado reconocido. La fila se conserva como clasificada sin
+#: tiempo en vez de perderse. Solo letras: cualquier dígito sigue siendo ilegible.
+_TIME_CELL_WORD_RE = re.compile(r"^[^\W\d_]+$")
+
+#: Tanda de salida impresa al final del rótulo de categoría 2023
+#: (``PRE-JUVENIL B 4A``, ``ELITE DAMAS 2``): un entero con letra A/B opcional,
+#: separado por espacio. ``MASTER A1`` no matchea (el ``1`` va pegado a la letra).
+_WAVE_SUFFIX_RE = re.compile(r"\s+\d[AB]?$")
+
+#: Único token con dígito que puede llevar un rótulo de categoría: la letra de
+#: grupo máster (``A1``, ``B2``, ``D1``). Cualquier otro dígito delata una nota.
+_CATEGORY_DIGIT_TOKEN_RE = re.compile(r"^[A-D]\d$", re.IGNORECASE)
 
 #: Encabezado de categoría dentro de una línea: ``CAT: <NOMBRE>`` (actas
 #: 2024+) o ``CATEGORIA: <NOMBRE>`` (actas 2022). Captura el nombre tal como
@@ -512,11 +581,24 @@ def _band_cells(
 _POSITION_POINTS_2022: tuple[int, ...] = (
     40, 36, 33, 30, 27, 25, 23, 21, 19, 17, 15, 13, 11, 9, 7, 5, 3, 1,
 )
+#: Escala de la Copa Valle 2023 (1.º…20.º; del 21.º en adelante, 1). Medida sobre
+#: las 4 actas 2023 con columna ``Copa`` (I, VII, VIII y Palmira, ~1 330 filas con
+#: puntaje impreso): coincide en todas las filas salvo las pocas reubicadas por
+#: sanción del jurado. Difiere de 2022 solo desde el 17.º (4, 3, 2 en vez de 3, 1).
+#: Respaldo para las actas 2023 sin columna de puntos; nunca reemplaza un puntaje
+#: impreso.
+_POSITION_POINTS_2023: tuple[int, ...] = (
+    40, 36, 33, 30, 27, 25, 23, 21, 19, 17, 15, 13, 11, 9, 7, 5, 4, 3, 2, 1,
+)
 _STATUS_ONE_POINT = ("DNF",)
 _STATUS_NO_POINTS = ("DSQ", "DNS")
 
 
-def _infer_points(position: int, time_raw: str) -> int:
+def _infer_points(
+    position: int,
+    time_raw: str,
+    scale: tuple[int, ...] = _POSITION_POINTS_2022,
+) -> int:
     """Puntos de una fila de un acta sin columna ``Puntos``.
 
     Regla medida en las actas 2022 con puntos impresos: tiempo o vuelta
@@ -531,7 +613,7 @@ def _infer_points(position: int, time_raw: str) -> int:
     if position < 1:
         return 0
     index = position - 1
-    return _POSITION_POINTS_2022[index] if index < len(_POSITION_POINTS_2022) else 1
+    return scale[index] if index < len(scale) else 1
 
 
 def _row_from_match(
@@ -582,7 +664,7 @@ def _row_from_match(
 
 
 def _match_row_text(
-    text: str, *, has_points: bool = True
+    text: str, *, has_points: bool = True, time_first: bool = False
 ) -> tuple[Optional[re.Match], str]:
     """Intenta interpretar el texto de una banda/línea como fila de resultados.
 
@@ -593,7 +675,20 @@ def _match_row_text(
     ``has_points=False`` (página cuyo encabezado no trae ``Puntos``) exige el
     token de tiempo/estado al final de la fila y deja ``points`` en 0; no hay
     variante "sin tiempo" porque sin ancla cualquier texto sería una fila.
+
+    ``time_first=True`` (actas 2023, ``_TIME_FIRST_HEADER_RE``) usa las
+    variantes con el tiempo antes del club; ``has_points`` indica si la tabla
+    trae la columna ``Copa``. Aquí tampoco hay variante "sin tiempo" (la
+    resuelve el camino por banda, que sí puede mirar la celda ``Time``).
     """
+    if time_first:
+        row_re = (
+            _RESULTS_ROW_TIME_FIRST_RE
+            if has_points
+            else _RESULTS_ROW_TIME_FIRST_NO_POINTS_RE
+        )
+        match = row_re.match(text)
+        return (match, match.group("time")) if match is not None else (None, "")
     if not has_points:
         match = _RESULTS_ROW_NO_POINTS_RE.match(text)
         return (match, match.group("time")) if match is not None else (None, "")
@@ -624,6 +719,133 @@ def _page_has_points(text: str) -> bool:
         if _is_columns_header(line):
             return "PUNTOS" in line.upper()
     return True
+
+
+def _has_columns_header(text: str) -> bool:
+    """La página trae algún encabezado de columnas (2023 o anterior)."""
+    return any(
+        _is_columns_header(line) or _is_time_first_header(line)
+        for line in text.splitlines()
+    )
+
+
+def _is_time_first_header(text: str) -> bool:
+    """Encabezado de columnas del acta 2023 (tiempo antes del club)."""
+    return _TIME_FIRST_HEADER_RE.match(text) is not None
+
+
+def _page_layout(text: str) -> tuple[bool, bool]:
+    """``(time_first, has_points)`` de la página según su encabezado de columnas.
+
+    En el formato 2023 la columna de puntos se llama ``Copa``; sin ella (válidas
+    II–VI y departamental) los puntos se infieren como en el listado 2022. Para
+    cualquier otro encabezado delega en ``_page_has_points`` y ``time_first`` es
+    ``False``: los formatos anteriores no cambian.
+    """
+    for line in text.splitlines():
+        if _is_time_first_header(line):
+            return True, bool(re.search(r"\bCOPA\b", line, re.IGNORECASE))
+    return False, _page_has_points(text)
+
+
+def _time_first_category(above: str) -> Optional[str]:
+    """Categoría 2023 de la línea impresa justo encima del encabezado de columnas.
+
+    Quita la tanda de salida final (``_WAVE_SUFFIX_RE``). Rechaza lo que no
+    puede ser un rótulo de categoría: vacío, largo, con dígitos restantes (una
+    nota del jurado como ``Corredora 908 se relega…``), cabeceras descartables
+    y el título de la válida (``IV válida CALI``).
+    """
+    candidate = _WAVE_SUFFIX_RE.sub("", above.strip()).strip()
+    if (
+        not candidate
+        or len(candidate) > 60
+        or any(
+            any(ch.isdigit() for ch in token) and not _CATEGORY_DIGIT_TOKEN_RE.match(token)
+            for token in candidate.split()
+        )
+        or _is_discardable_line(candidate)
+        or _TIME_FIRST_TITLE_RE.search(candidate)
+        or _category_header_of(candidate) is not None
+    ):
+        return None
+    return candidate
+
+
+def _is_category_title_band(
+    bbox: tuple[float, float, float, float],
+    category_tops: Sequence[float],
+) -> bool:
+    """Fila de la tabla 2023 que contiene el rótulo de categoría.
+
+    Es la primera fila de cada tabla (celda combinada con el nombre de la
+    categoría y la tanda). Se reconoce porque alguna línea de categoría ya
+    reconocida cae dentro de su banda. Una fila combinada que *no* contiene una
+    categoría reconocida no se salta: se reporta como ilegible.
+    """
+    _, top, _, bottom = bbox
+    return any(top <= t <= bottom for t in category_tops)
+
+
+def _band_cells_time_first(
+    runs: Sequence[tuple[float, str]],
+    cell_boxes: Sequence[Optional[tuple[float, float, float, float]]],
+) -> Optional[list[str]]:
+    """Celdas de una banda 2023 asignadas por el ``x`` donde arranca cada run.
+
+    Orden de columnas: ``pos, bib, apellidos, nombres, tiempo, club`` y, si hay,
+    una séptima (``Copa`` o ``Medalla``). Devuelve ``None`` si la tabla no tiene
+    al menos las seis o algún run cae fuera de toda celda.
+    """
+    if len(cell_boxes) < 6:
+        return None
+    return _cells_from_runs(runs, cell_boxes)
+
+
+def _row_from_time_first(
+    match: re.Match,
+    time_raw: str,
+    cells: Optional[list[str]],
+    *,
+    has_points: bool,
+) -> ResultsRow:
+    """Arma un ``ResultsRow`` de un acta 2023.
+
+    ``name`` = ``Nombres`` + ``Apellidos`` (celdas 3 y 2, **invertido** respecto
+    del acta, que imprime apellidos primero): las actas 2024+ imprimen el nombre
+    completo con el nombre de pila primero, y la identidad entre temporadas
+    compara el texto normalizado (medido: 0 coincidencias exactas 2023↔2024 con
+    el orden del acta, 149 mismas palabras en otro orden). Sin celdas (respaldo
+    por texto) no hay forma fiable de separar las dos columnas y el nombre queda
+    en el orden impreso. ``club`` = celda 5. ``city`` queda vacía: el acta 2023
+    no trae ciudad. La séptima celda (``Medalla``) no tiene destino en el modelo
+    y se descarta; la de ``Copa`` ya viene en ``points``. Sin celdas se usa el
+    cuerpo del regex (el nombre incluye apellidos) y el club del grupo.
+    """
+    pos = int(match.group("pos"))
+    if cells is not None and (cells[2] or cells[3]):
+        name = " ".join(part for part in (cells[3], cells[2]) if part)
+        club = cells[5]
+    else:
+        name = match.group("body").strip()
+        club = (match.groupdict().get("club") or "").strip()
+    printed = match.groupdict().get("points") if has_points else None
+    if printed is None and has_points and cells is not None and len(cells) > 6:
+        # Fila sin tiempo: no hay regex de puntos, pero la celda ``Copa`` sí.
+        printed = cells[6] if cells[6].isdigit() else None
+    return ResultsRow(
+        position=pos,
+        bib=match.group("bib"),
+        name=name,
+        city="",
+        club=club,
+        time_raw=time_raw,
+        points=(
+            int(printed)
+            if printed is not None
+            else _infer_points(pos, time_raw, _POSITION_POINTS_2023)
+        ),
+    )
 
 
 def _implicit_category_header(above: str) -> Optional[str]:
@@ -676,7 +898,14 @@ def _parse_page(
 ) -> None:
     """Procesa una página: intercala encabezados ``CAT:`` y bandas de fila."""
     text = page.extract_text() or ""
-    has_points = _page_has_points(text)
+    time_first, has_points = _page_layout(text)
+    if _has_columns_header(text):
+        state.layout = (time_first, has_points)
+    elif state.layout is not None and state.layout[0]:
+        # Página de continuación sin encabezado de columnas (la tabla de una
+        # categoría 2023 se parte y la última fila cae sola en la página
+        # siguiente): hereda el formato de la página anterior.
+        time_first, has_points = state.layout
 
     tables = []
     find_tables = getattr(page, "find_tables", None)
@@ -686,14 +915,25 @@ def _parse_page(
     if not tables:
         # Respaldo: páginas donde ``find_tables`` no devuelve tabla (o páginas
         # que no exponen la API, como los dobles de prueba).
-        _parse_page_by_lines(text, page_no, state, has_points=has_points)
+        _parse_page_by_lines(
+            text, page_no, state, has_points=has_points, time_first=time_first
+        )
         return
 
-    _parse_page_by_bands(page, text, tables, page_no, state, has_points=has_points)
+    _parse_page_by_bands(
+        page, text, tables, page_no, state, has_points=has_points, time_first=time_first
+    )
 
 
 def _parse_page_by_bands(
-    page, text: str, tables, page_no: int, state: "_DocState", *, has_points: bool = True
+    page,
+    text: str,
+    tables,
+    page_no: int,
+    state: "_DocState",
+    *,
+    has_points: bool = True,
+    time_first: bool = False,
 ) -> None:
     """Camino principal: una banda por fila, chars en orden de flujo."""
     table_idx = _build_table_index([table.extract() for table in tables])
@@ -713,6 +953,9 @@ def _parse_page_by_bands(
 
     # Eventos ordenados por posición vertical: encabezados CAT: y bandas.
     events: list[tuple[float, int, str, object]] = []
+    category_tops: list[float] = []  #: top de las líneas de categoría 2023.
+    #: Borde inferior del primer encabezado de columnas 2023 de la página.
+    header_bottom = float("-inf")
     extract_lines = getattr(page, "extract_text_lines", None)
     if callable(extract_lines):
         text_lines = list(extract_lines())
@@ -722,6 +965,16 @@ def _parse_page_by_bands(
                 events.append((line["top"], 0, "cat", header_raw))
         seen_category = state.current is not None
         for i, line in enumerate(text_lines[1:], start=1):
+            if time_first and _is_time_first_header(line["text"]):
+                # Acta 2023: la categoría es la línea justo encima del
+                # encabezado de columnas (sin ``CAT:``, con la tanda al final).
+                if header_bottom == float("-inf"):
+                    header_bottom = line["bottom"]  # el primero de la página
+                header_raw = _time_first_category(text_lines[i - 1]["text"])
+                if header_raw is not None:
+                    events.append((text_lines[i - 1]["top"], 0, "cat", header_raw))
+                    category_tops.append(text_lines[i - 1]["top"])
+                continue
             if not _is_columns_header(line["text"]):
                 continue
             above = text_lines[i - 1]
@@ -752,8 +1005,45 @@ def _parse_page_by_bands(
             continue
         if _category_header_of(band) is not None:
             continue  # el encabezado ya es un evento "cat"; no es una fila
+        if time_first and (
+            _is_time_first_header(band)
+            or _is_category_title_band(bboxes[idx], category_tops)
+            or (
+                # Título de la válida impreso dentro de la primera tabla: por
+                # encima del encabezado de columnas y sin forma de fila.
+                bboxes[idx][3] <= header_bottom + 1.0
+                and not _ROW_START_RE.match(band)
+            )
+        ):
+            continue  # título, encabezado de columnas o fila de categoría
 
-        match, time_raw = _match_row_text(band, has_points=has_points)
+        if (
+            time_first
+            and len({round(x) for x, _ in runs}) == 1
+            and not _ROW_START_RE.match(band)
+        ):
+            # Nota libre del jurado en una celda combinada («Corredora N se
+            # relega…»): no es una fila. Solo se cuenta; el texto puede nombrar
+            # a un menor y no se registra.
+            state.notes_skipped += 1
+            logger.info("Nota del jurado omitida en página %d", page_no)
+            continue
+
+        match, time_raw = _match_row_text(
+            band, has_points=has_points, time_first=time_first
+        )
+        cells = (
+            _band_cells_time_first(runs, cell_boxes[idx]) if time_first else None
+        )
+        if (
+            match is None
+            and time_first
+            and cells is not None
+            and (not cells[4] or _TIME_CELL_WORD_RE.match(cells[4]))
+        ):
+            # Clasificado sin tiempo: la celda ``Time`` está vacía o trae una
+            # palabra de sanción (``Sanción``), no un tiempo ni un estado.
+            match = _RESULTS_ROW_TIME_FIRST_NO_TIME_RE.match(band)
         if match is None:
             state.unreadable.append(UnreadableRow(page=page_no, ordinal=cell_ordinals[idx]))
             logger.warning(
@@ -764,25 +1054,38 @@ def _parse_page_by_bands(
             continue
 
         band_keys.add((match.group("pos"), match.group("bib")))
-        state.add_row(
-            _row_from_match(
+        if time_first:
+            row = _row_from_time_first(match, time_raw, cells, has_points=has_points)
+        else:
+            row = _row_from_match(
                 match, time_raw, table_idx, _band_cells(runs, cell_boxes[idx])
-            ),
-            page_no,
-            has_points=has_points,
-        )
+            )
+        state.add_row(row, page_no, has_points=has_points)
 
-    _warn_on_path_mismatch(text, band_keys, page_no, has_points=has_points)
+    _warn_on_path_mismatch(
+        text, band_keys, page_no, has_points=has_points, time_first=time_first
+    )
 
 
 def _parse_page_by_lines(
-    text: str, page_no: int, state: "_DocState", *, has_points: bool = True
+    text: str,
+    page_no: int,
+    state: "_DocState",
+    *,
+    has_points: bool = True,
+    time_first: bool = False,
 ) -> None:
     """Respaldo por líneas de texto (comportamiento previo a la feature 044)."""
     previous = ""
     for line in text.splitlines():
         stripped = line.strip()
         if not stripped:
+            continue
+        if time_first and _is_time_first_header(stripped):
+            header_raw = _time_first_category(previous)
+            if header_raw is not None:
+                state.start_category(header_raw)
+            previous = stripped
             continue
         if _is_columns_header(stripped):
             implicit = _implicit_category_header(previous)
@@ -800,21 +1103,38 @@ def _parse_page_by_lines(
         if _is_discardable_line(stripped):
             continue
 
-        match, time_raw = _match_row_text(stripped, has_points=has_points)
+        match, time_raw = _match_row_text(
+            stripped, has_points=has_points, time_first=time_first
+        )
         if match is None:
             # Sub-header partido o ruido — no es una fila.
             continue
 
-        state.add_row(
-            _row_from_match(match, time_raw, {}), page_no, has_points=has_points
+        row = (
+            _row_from_time_first(match, time_raw, None, has_points=has_points)
+            if time_first
+            else _row_from_match(match, time_raw, {})
         )
+        state.add_row(row, page_no, has_points=has_points)
 
 
 def _warn_on_path_mismatch(
-    text: str, band_keys: set[tuple[str, str]], page_no: int, *, has_points: bool = True
+    text: str,
+    band_keys: set[tuple[str, str]],
+    page_no: int,
+    *,
+    has_points: bool = True,
+    time_first: bool = False,
 ) -> None:
     """Verificación cruzada banda ↔ línea de texto (research R-01 punto 7)."""
-    row_re = _RESULTS_ROW_RE if has_points else _RESULTS_ROW_NO_POINTS_RE
+    if time_first:
+        row_re = (
+            _RESULTS_ROW_TIME_FIRST_RE
+            if has_points
+            else _RESULTS_ROW_TIME_FIRST_NO_POINTS_RE
+        )
+    else:
+        row_re = _RESULTS_ROW_RE if has_points else _RESULTS_ROW_NO_POINTS_RE
     line_keys: set[tuple[str, str]] = set()
     for line in text.splitlines():
         stripped = line.strip()
@@ -845,6 +1165,10 @@ class _DocState:
     current: Optional[ParsedCategory] = None
     unknown_headers: set[str] = field(default_factory=set)
     points_inferred_rows: int = 0
+    #: ``(time_first, has_points)`` del último encabezado de columnas visto.
+    layout: Optional[tuple[bool, bool]] = None
+    #: Notas libres del jurado (texto en un solo bloque, una o varias líneas de banda) omitidas, solo conteo.
+    notes_skipped: int = 0
 
     def start_category(self, header_raw: str) -> None:
         """Abre una categoría. Un encabezado repetido de forma contigua
@@ -904,6 +1228,24 @@ def parse_results_document(path: Path) -> ParsedResults:
         unreadable_rows=state.unreadable,
         points_inferred_rows=state.points_inferred_rows,
     )
+
+
+def apply_season_categories(parsed: ParsedResults, season: Optional[int]) -> ParsedResults:
+    """Re-resuelve el ``code`` de cada categoría con la tabla de su temporada.
+
+    El parser no conoce la temporada (``season`` viene de los parámetros del
+    staging, nunca del PDF), así que ``parse_results_document`` resuelve con la
+    tabla global y esta función corrige después los encabezados que 2023 escribe
+    distinto (``normalizer.HEADER_TO_CODE_BY_SEASON``). Muta y devuelve
+    ``parsed``; es idempotente y no hace nada con ``season=None``.
+    """
+    if season is None:
+        return parsed
+    for category in parsed.categories:
+        code = parse_category_header(f"CAT: {category.header_raw}", season)
+        if code is not None:
+            category.code = code
+    return parsed
 
 
 def parse_results_pdf(path: Path) -> dict[str, list[ResultsRow]]:
